@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { listSchemes } from "@/lib/store";
 
+// Render per-request so the open-scheme list reflects live data (not frozen at
+// build) and the build doesn't call Supabase while compiling.
+export const dynamic = "force-dynamic";
+
 // Public landing for labs: the proficiency-testing schemes currently open for
 // applications. No confidential data — title, object, dates, min participants.
 export default async function ApplyHome() {

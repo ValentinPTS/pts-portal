@@ -2,6 +2,10 @@ import { listSchemeSummaries } from "@/lib/store";
 import { FolderTile } from "@/components/Tiles";
 import { TYPE_SLUG, typeLabel } from "@/lib/folders";
 
+// Render per-request so the scheme counts reflect live data (not frozen at build)
+// and the build doesn't call Supabase while compiling.
+export const dynamic = "force-dynamic";
+
 // Home = the two top-level folders (Testing / Calibration). New schemes are
 // created inside, organised by year. Only needs counts → scheme summaries.
 export default async function Home() {
