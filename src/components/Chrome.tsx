@@ -1,0 +1,48 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+
+// Splits the app chrome: the public application flow (/apply/*) renders full-bleed
+// with its own (dark) layout; everything else gets the admin header + main.
+// The folder-explorer pages (home, /files/*, a scheme's folder) render full-width
+// (they provide their own sidebar + padding); other pages stay centered.
+export default function Chrome({ children }: { children: React.ReactNode }) {
+  const path = usePathname() ?? "";
+  // Public application flow + the laboratory portal render full-bleed with their
+  // own (non-owner) headers — no admin chrome.
+  if (path.startsWith("/apply") || path.startsWith("/lab")) return <>{children}</>;
+
+  const explorer = path === "/" || path.startsWith("/files") || /^\/schemes\/[^/]+$/.test(path);
+  const wide = path.includes("/build/") || path.startsWith("/skins/"); // skin editor needs room for two columns
+  const onSkins = path.startsWith("/skins");
+
+  const navLink = (href: string, label: string, active: boolean) => (
+    <Link
+      href={href}
+      className="no-underline text-white"
+      style={{
+        padding: "7px 14px", borderRadius: 999, fontSize: 13, fontWeight: active ? 700 : 500,
+        background: active ? "rgba(255,255,255,0.18)" : "transparent",
+      }}
+    >
+      {label}
+    </Link>
+  );
+
+  return (
+    <>
+      <header className="flex items-center gap-3 px-6 py-3 text-white" style={{ background: "var(--green-dark)" }}>
+        <Link href="/" className="font-bold text-lg tracking-tight no-underline text-white">PTS Bulgaria</Link>
+        <span className="text-sm opacity-80">· Provider portal</span>
+        <nav className="ml-auto flex items-center gap-1">
+          {navLink("/", "Files", explorer)}
+          {navLink("/skins", "Skins", onSkins)}
+        </nav>
+      </header>
+      <main className={explorer ? "flex-1 w-full flex flex-col" : `flex-1 w-full ${wide ? "max-w-7xl" : "max-w-5xl"} mx-auto px-6 py-8`}>
+        {children}
+      </main>
+    </>
+  );
+}

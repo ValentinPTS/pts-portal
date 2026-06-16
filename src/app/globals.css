@@ -1,26 +1,224 @@
 @import "tailwindcss";
 
+/* ============================================================
+   PTS theme — one source of truth for colour.
+   App UI uses this broadened palette; printed documents keep
+   the strict brand (handled in the document renderer).
+   ============================================================ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* brand greens — refined deep forest palette */
+  --green-deep: #1e4d32;
+  --green-dark: #2b6744;
+  --green: #3a7b52;
+  --green-light: #9cc3ab;
+  --green-line: #b7d0c0;
+  --green-soft: #e8f1ea;
+  --canvas: #ecefed;
+  /* accent red */
+  --red: #a23b30;
+  --red-soft: #c46a5e;
+  --red-tint: #f6e7e6;
+  /* supporting accents */
+  --blue: #3b6ea5;
+  --teal: #2a8c82;
+  --purple: #7a5ba6;
+  --amber: #c0883e;
+  --gold: #c9a227;
+  /* status */
+  --success: #5f7d52;
+  --warning: #c0883e;
+  --error: #9e2b2b;
+  --info: #3b6ea5;
+  /* neutrals */
+  --ink: #18261f;
+  --slate: #3d3d3d;
+  --muted: #63706a;
+  --line: #e2e6e4;
+  --bg: #f1f3f1;
+  --paper: #fbf6ee;
+  --white: #ffffff;
 }
 
+/* expose brand tokens to Tailwind utilities (bg-green, text-ink, …) */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-green-deep: var(--green-deep);
+  --color-green-dark: var(--green-dark);
+  --color-green: var(--green);
+  --color-green-light: var(--green-light);
+  --color-green-soft: var(--green-soft);
+  --color-red: var(--red);
+  --color-blue: var(--blue);
+  --color-teal: var(--teal);
+  --color-purple: var(--purple);
+  --color-amber: var(--amber);
+  --color-gold: var(--gold);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
+  --color-info: var(--info);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-paper: var(--paper);
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  height: 100%;
+}
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans), "Segoe UI", system-ui, sans-serif;
+}
+
+/* small, reusable UI primitives — keep the app simple & sectioned */
+.card {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  border-radius: 10px;
+  padding: 11px 18px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.btn:hover {
+  background: var(--green-soft);
+  border-color: var(--green-line);
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: var(--green-dark);
+  color: #fff;
+  border-color: var(--green-dark);
+}
+.btn-primary:hover {
+  background: var(--green-deep);
+  border-color: var(--green-deep);
+}
+.chip {
+  display: inline-block;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  padding: 2px 9px;
+  border-radius: 20px;
+  color: #fff;
+}
+
+/* keyboard focus — applies to buttons, links and inputs that adopt the primitives */
+.btn:focus-visible,
+.input:focus-visible,
+.input:focus {
+  outline: none;
+  border-color: var(--green-line);
+  box-shadow: 0 0 0 3px var(--green-soft);
+}
+
+/* form/control primitives — adopt these to keep screens consistent */
+.btn-sm {
+  font-size: 13px;
+  padding: 8px 13px;
+  border-radius: 9px;
+}
+.field-label {
+  display: block;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+.input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font-size: 14px;
+  color: var(--ink);
+  background: #fff;
+}
+.section-title {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--green-dark);
+  letter-spacing: -0.01em;
+}
+
+/* empty / error / loading states (see components/States.tsx) */
+.state-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 40px 24px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.state-ico {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--green-soft);
+  border: 1px solid var(--green-line);
+}
+.state-ico.error {
+  background: var(--red-tint);
+  border-color: var(--red-soft);
+}
+.state-title {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--ink);
+}
+.state-body {
+  font-size: 13px;
+  color: var(--muted);
+  max-width: 440px;
+  line-height: 1.5;
+}
+.state-skel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px;
+}
+.skel {
+  height: 12px;
+  border-radius: 6px;
+  background: var(--line);
+  animation: pts-pulse 1.4s ease-in-out infinite;
+}
+.skel:first-child {
+  height: 18px;
+  background: #cdd6d0;
+}
+@keyframes pts-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel { animation: none; }
 }

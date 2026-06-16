@@ -24,14 +24,23 @@
 .DS_Store
 *.pem
 
+# local preview/test artifacts (rendered HTML + screenshots)
+.tmp/
+
+# never commit credentials of any kind
+*.token
+*_token
+gh-token*
+
 # debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files — ignore real secrets, but keep the template tracked
 .env*
+!.env.example
 
 # vercel
 .vercel
