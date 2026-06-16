@@ -71,15 +71,29 @@ export async function proxy(request: NextRequest) {
   }
 
   // Signed in: the OWNER area (everything that isn't the lab area or a login page)
-  // is owners-only. A signed-in non-owner (a lab) is sent to its portal — it can
-  // never READ owner pages or document/print routes. (apply/api/static/brand are
-  // excluded by the matcher below.)
+  // is owners-only AND requires completed 2FA. A signed-in non-owner (a lab) is
+  // sent to its portal; an owner who hasn't passed 2FA is sent to /account to
+  // enrol/verify — so the admin area can't even be READ at aal1. (apply/api/
+  // static/brand are excluded by the matcher below.)
   const ownerArea = !isLabArea && !isLogin && !isLabLogin;
-  if (ownerArea && !isOwner(user.email)) {
-    const to = request.nextUrl.clone();
-    to.pathname = "/lab";
-    to.search = "";
-    return NextResponse.redirect(to);
+  if (ownerArea) {
+    if (!isOwner(user.email)) {
+      const to = request.nextUrl.clone();
+      to.pathname = "/lab";
+      to.search = "";
+      return NextResponse.redirect(to);
+    }
+    // /account is exempt (that's where 2FA is enrolled — gating it would loop).
+    const isAccount = path === "/account" || path.startsWith("/account/");
+    if (!isAccount) {
+      const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (aal?.currentLevel !== "aal2") {
+        const to = request.nextUrl.clone();
+        to.pathname = "/account";
+        to.search = "?enroll=1";
+        return NextResponse.redirect(to);
+      }
+    }
   }
 
   return response;
