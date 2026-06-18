@@ -44,7 +44,7 @@ export function SchemeTile({ s }: { s: Scheme }) {
 }
 
 // A document file tile (inside a scheme).
-export function DocTile({ href, name, form, built }: { href: string; name: string; form: string; built: boolean }) {
+export function DocTile({ href, name, form, built, action = "Open ↗", builtLabel = "Built ✓", emptyLabel = "Not started" }: { href: string; name: string; form: string; built: boolean; action?: string; builtLabel?: string; emptyLabel?: string }) {
   return (
     <Link href={href} className="card no-underline" style={{ overflow: "hidden", display: "flex", flexDirection: "column", padding: 0 }}>
       <div style={{ padding: 15, display: "flex", flexDirection: "column", gap: 9 }}>
@@ -53,8 +53,8 @@ export function DocTile({ href, name, form, built }: { href: string; name: strin
         <div style={{ fontSize: 12, color: "var(--muted)" }}>{form}</div>
       </div>
       <div style={{ ...stripStyle, padding: "9px 15px" }}>
-        <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 999, color: built ? "#2b6744" : "#5b6b62", background: built ? "#e8f1ea" : "#eef1ee" }}>{built ? "Built ✓" : "Not started"}</span>
-        <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 700, color: "var(--green-dark)" }}>Open ↗</span>
+        <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 999, color: built ? "#2b6744" : "#5b6b62", background: built ? "#e8f1ea" : "#eef1ee" }}>{built ? builtLabel : emptyLabel}</span>
+        <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 700, color: "var(--green-dark)" }}>{action}</span>
       </div>
     </Link>
   );

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getScheme } from "@/lib/store";
-import { DOCUMENTS } from "@/lib/documents";
+import { DOCUMENTS, isFormDoc } from "@/lib/documents";
 import ExplorerShell from "@/components/ExplorerShell";
 import { DocTile } from "@/components/Tiles";
 import SkinPicker from "@/components/SkinPicker";
@@ -50,6 +50,11 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(232px,1fr))", gap: 16 }}>
         {DOCUMENTS.map((d) => {
+          const formDoc = isFormDoc(d.key);
+          if (formDoc) {
+            const filled = !!s.formData?.[d.key] && Object.values(s.formData[d.key]).some(Boolean);
+            return <DocTile key={d.key} href={`/schemes/${id}/fill/${d.key}`} name={d.nameEn} form={d.formNumber} built={filled} action="Fill ✎" builtLabel="Filled ✓" emptyLabel="To fill" />;
+          }
           const saved = s.docs?.[d.key];
           const built = !!(saved && (saved.bg || saved.en));
           return <DocTile key={d.key} href={`/schemes/${id}/build/${d.key}`} name={d.nameEn} form={d.formNumber} built={built} />;

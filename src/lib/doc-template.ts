@@ -2,6 +2,7 @@ import type { Scheme, Lang, DocOptions } from "./types";
 import type { Skin } from "../skins/types";
 import { getDoc } from "./documents";
 import { BODY_START, BODY_END, stripBodyMarkers, withSkin } from "./doc-shell";
+import { withFormCtx } from "./form-fields";
 import { resolveSkin } from "../skins";
 
 // Bridges the faithful document renderers and the Word-like builder.
@@ -54,8 +55,11 @@ export function docPrintHtml(
 ): string {
   const def = getDoc(key);
   if (!def?.render) return "";
-  // render the shell (cover/footer/CSS) in the scheme's chosen skin
-  const full = withSkin(skin ?? resolveSkin(s), () => def.render!(s, lang, opts));
+  // render the shell (cover/footer/CSS) in the scheme's chosen skin, with any
+  // saved form-field values for this document drawn into the controls.
+  const full = withSkin(skin ?? resolveSkin(s), () =>
+    withFormCtx({ fill: false, values: s.formData?.[key] ?? {} }, () => def.render!(s, lang, opts))
+  );
   const b = bodyBounds(full);
   if (!b) return stripBodyMarkers(full);
   return stripBodyMarkers(full.slice(0, b.start) + "\n" + editedBody + "\n" + full.slice(b.end));

@@ -3,6 +3,7 @@ import { getScheme } from "@/lib/store";
 import { getDoc } from "@/lib/documents";
 import { listParticipants } from "@/lib/participants";
 import { stripBodyMarkers, withSkin } from "@/lib/doc-shell";
+import { withFormCtx } from "@/lib/form-fields";
 import { resolveSkinAsync, getSkinAsync } from "@/skins";
 import type { DocOptions } from "@/lib/types";
 
@@ -49,7 +50,10 @@ export async function GET(
   // ?skin=<id> previews a specific skin (used by the skins gallery); else the scheme's own
   const skinParam = req.nextUrl.searchParams.get("skin");
   const skin = skinParam ? await getSkinAsync(skinParam) : await resolveSkinAsync(scheme);
-  const html = stripBodyMarkers(withSkin(skin, () => def.render!(scheme, lang, opts)));
+  const fieldValues = scheme.formData?.[doc] ?? {};
+  const html = stripBodyMarkers(
+    withSkin(skin, () => withFormCtx({ fill: false, values: fieldValues }, () => def.render!(scheme, lang, opts)))
+  );
 
   return new Response(html, {
     headers: {

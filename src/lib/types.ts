@@ -238,6 +238,9 @@ export interface Scheme {
   // documents authored in the Word-like editor — rich HTML per language, keyed by
   // document key. This is the current builder's storage.
   docs?: Record<string, { bg: string; en: string }>;
+  // owner-filled values for fillable document form fields (checkboxes, options,
+  // ratings, blanks). Keyed by document key → field id → value. JSONB, no migration.
+  formData?: Record<string, Record<string, string>>;
   // chosen document skin (visual theme) id; absent → the built-in "Classic" skin.
   skin?: string;
   // friendly folder name shown in the explorer; absent → falls back to the title/number.
