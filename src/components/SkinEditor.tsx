@@ -5,6 +5,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createCustomSkinAction, updateCustomSkinAction, uploadSkinLogoAction } from "@/lib/actions";
 import CoverCanvas from "@/components/CoverCanvas";
+import { useLang } from "@/components/LangProvider";
 import {
   previewDocHtml, basePreset, COVER_LABEL,
   HEADING_FONTS, BODY_FONTS, BASES,
@@ -36,6 +37,8 @@ export default function SkinEditor({
   const [selected, setSelected] = useState<CoverElKey | null>(null);
   const [pending, start] = useTransition();
   const router = useRouter();
+  const { lang: uiLang } = useLang();
+  const L = (bg: string, en: string) => (uiLang === "bg" ? bg : en);
 
   const set = <K extends keyof Data>(k: K, v: Data[K]) => setData((d) => ({ ...d, [k]: v }));
   const setColor = (k: keyof Data["colors"], v: string) => setData((d) => ({ ...d, colors: { ...d.colors, [k]: v } }));
@@ -83,7 +86,7 @@ export default function SkinEditor({
 
   function save() {
     setErr(null);
-    if (!data.name.trim()) { setErr("A skin name is required."); return; }
+    if (!data.name.trim()) { setErr(L("Необходимо е име на облика.", "A skin name is required.")); return; }
     start(async () => {
       const res = mode === "edit"
         ? await updateCustomSkinAction(skinId!, data)
@@ -100,15 +103,15 @@ export default function SkinEditor({
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ fontSize: 13, color: "var(--muted)" }}>
-            <Link href="/skins" style={{ color: "var(--muted)" }}>Skins</Link> › {mode === "edit" ? "Edit skin" : "New skin"}
+            <Link href="/skins" style={{ color: "var(--muted)" }}>{L("Облици", "Skins")}</Link> › {mode === "edit" ? L("Редактирай облик", "Edit skin") : L("Нов облик", "New skin")}
           </div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--green-dark)", letterSpacing: "-0.01em", margin: "2px 0 0" }}>
-            {data.name.trim() || (mode === "edit" ? "Edit skin" : "New skin")}
+            {data.name.trim() || (mode === "edit" ? L("Редактирай облик", "Edit skin") : L("Нов облик", "New skin"))}
           </h1>
         </div>
-        <Link href="/skins" className="btn" style={{ fontSize: 14 }}>Cancel</Link>
+        <Link href="/skins" className="btn" style={{ fontSize: 14 }}>{L("Отказ", "Cancel")}</Link>
         <button type="button" className="btn btn-primary" style={{ fontSize: 14 }} onClick={save} disabled={pending}>
-          {pending ? "Saving…" : "Save skin"}
+          {pending ? L("Запазване…", "Saving…") : L("Запази облика", "Save skin")}
         </button>
       </div>
       {err && (
@@ -120,23 +123,23 @@ export default function SkinEditor({
         <div style={{ width: 380, flexShrink: 0, display: "flex", flexDirection: "column", gap: 16 }}>
           {/* Basics */}
           <section className="card" style={{ padding: 16 }}>
-            <Title>Basics</Title>
-            <Field label="Skin name">
+            <Title>{L("Основни", "Basics")}</Title>
+            <Field label={L("Име на облика", "Skin name")}>
               <input
                 value={data.name}
                 onChange={(e) => set("name", e.target.value.slice(0, 60))}
-                placeholder="e.g. Forest Pro"
+                placeholder={L("напр. Forest Pro", "e.g. Forest Pro")}
                 style={inputStyle}
               />
             </Field>
-            <Field label="For">
+            <Field label={L("За", "For")}>
               <Segmented
                 value={data.scope}
-                options={[["T", "Testing"], ["C", "Calibration"], ["both", "Both"]]}
+                options={[["T", L("Тестване", "Testing")], ["C", L("Калибриране", "Calibration")], ["both", L("И двете", "Both")]]}
                 onChange={(v) => set("scope", v as SkinScope)}
               />
             </Field>
-            <Field label="Start from">
+            <Field label={L("Започни от", "Start from")}>
               <select value={data.base} onChange={(e) => applyBase(e.target.value as SkinBase)} style={inputStyle}>
                 {BASES.map((b) => <option key={b.id} value={b.id}>{b.label} — {b.description}</option>)}
               </select>
@@ -145,22 +148,22 @@ export default function SkinEditor({
 
           {/* Colours */}
           <section className="card" style={{ padding: 16 }}>
-            <Title>Colours</Title>
-            <ColorRow label="Primary" value={data.colors.primary} onChange={(v) => setColor("primary", v)} />
-            <ColorRow label="Accent" value={data.colors.accent} onChange={(v) => setColor("accent", v)} />
-            <ColorRow label="Headings" value={data.colors.heading} onChange={(v) => setColor("heading", v)} />
-            <ColorRow label="Background" value={data.colors.bg} onChange={(v) => setColor("bg", v)} />
+            <Title>{L("Цветове", "Colours")}</Title>
+            <ColorRow label={L("Основен", "Primary")} value={data.colors.primary} onChange={(v) => setColor("primary", v)} />
+            <ColorRow label={L("Акцент", "Accent")} value={data.colors.accent} onChange={(v) => setColor("accent", v)} />
+            <ColorRow label={L("Заглавия", "Headings")} value={data.colors.heading} onChange={(v) => setColor("heading", v)} />
+            <ColorRow label={L("Фон", "Background")} value={data.colors.bg} onChange={(v) => setColor("bg", v)} />
           </section>
 
           {/* Fonts */}
           <section className="card" style={{ padding: 16 }}>
-            <Title>Fonts</Title>
-            <Field label="Headings">
+            <Title>{L("Шрифтове", "Fonts")}</Title>
+            <Field label={L("Заглавия", "Headings")}>
               <select value={data.fonts.heading} onChange={(e) => setFont("heading", e.target.value)} style={inputStyle}>
                 {HEADING_FONTS.map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
               </select>
             </Field>
-            <Field label="Body">
+            <Field label={L("Основен текст", "Body")}>
               <select value={data.fonts.body} onChange={(e) => setFont("body", e.target.value)} style={inputStyle}>
                 {BODY_FONTS.map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
               </select>
@@ -169,52 +172,52 @@ export default function SkinEditor({
 
           {/* Logo */}
           <section className="card" style={{ padding: 16 }}>
-            <Title>Logo</Title>
+            <Title>{L("Лого", "Logo")}</Title>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, marginBottom: 6 }}>
               <input type="radio" checked={data.logo === "default"} onChange={() => set("logo", "default")} />
-              PTS logo (default)
+              {L("Лого на PTS (по подразбиране)", "PTS logo (default)")}
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
               <input type="radio" checked={data.logo !== "default"} onChange={() => set("logo", "https://")} />
-              Custom image URL
+              {L("Потребителски URL на изображение", "Custom image URL")}
             </label>
             {data.logo !== "default" && (
               <input
                 value={data.logo}
                 onChange={(e) => set("logo", e.target.value.slice(0, 400))}
-                placeholder="https://…  (or /brand/your-logo.png)"
+                placeholder={L("https://…  (или /brand/your-logo.png)", "https://…  (or /brand/your-logo.png)")}
                 style={{ ...inputStyle, marginTop: 6 }}
               />
             )}
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
               <label className="btn" style={{ fontSize: 13, cursor: uploading ? "default" : "pointer", display: "inline-flex" }}>
-                {uploading ? "Uploading…" : "Upload image…"}
+                {uploading ? L("Качване…", "Uploading…") : L("Качи изображение…", "Upload image…")}
                 <input type="file" accept="image/png,image/jpeg,image/webp" disabled={uploading} onChange={onPickLogo} style={{ display: "none" }} />
               </label>
               {logoErr && <span style={{ color: "var(--red)", fontSize: 12 }}>{logoErr}</span>}
             </div>
             <p style={{ fontSize: 12, color: "var(--muted)", margin: "8px 0 0" }}>
-              Upload a PNG/JPG/WEBP (max 1.5 MB), or paste an <code>https://</code> URL. SVG isn’t accepted for upload.
+              {L("Качете PNG/JPG/WEBP (макс. 1.5 MB) или поставете ", "Upload a PNG/JPG/WEBP (max 1.5 MB), or paste an ")}<code>https://</code>{L(" URL. SVG не се приема за качване.", " URL. SVG isn’t accepted for upload.")}
             </p>
           </section>
 
           {/* Cover layout */}
           <section className="card" style={{ padding: 16 }}>
-            <Title>Cover layout</Title>
+            <Title>{L("Оформление на корицата", "Cover layout")}</Title>
 
-            <Field label="Density">
-              <Segmented value={data.density} options={[["compact", "Compact"], ["normal", "Normal"], ["airy", "Airy"]]} onChange={(v) => set("density", v as Density)} small />
+            <Field label={L("Плътност", "Density")}>
+              <Segmented value={data.density} options={[["compact", L("Компактна", "Compact")], ["normal", L("Нормална", "Normal")], ["airy", L("Просторна", "Airy")]]} onChange={(v) => set("density", v as Density)} small />
             </Field>
             <div style={{ marginBottom: 12 }}>
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600 }}>
                 <input type="checkbox" checked={data.band.on} onChange={(e) => setData((d) => ({ ...d, band: { ...d.band, on: e.target.checked } }))} />
-                Header band (logo + title on a colour panel)
+                {L("Лента в горната част (лого + заглавие върху цветен панел)", "Header band (logo + title on a colour panel)")}
               </label>
               {data.band.on && (
                 <div style={{ marginTop: 8 }}>
                   <Segmented
                     value={data.band.color}
-                    options={[["primary", "Primary"], ["accent", "Accent"], ["heading", "Headings"]]}
+                    options={[["primary", L("Основен", "Primary")], ["accent", L("Акцент", "Accent")], ["heading", L("Заглавия", "Headings")]]}
                     onChange={(v) => setData((d) => ({ ...d, band: { ...d.band, color: v as BandColor } }))}
                     small
                   />
@@ -222,7 +225,7 @@ export default function SkinEditor({
               )}
             </div>
 
-            <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 8px" }}>Drag to reorder · toggle what shows · set align &amp; size.</p>
+            <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 8px" }}>{L("Влачете за пренареждане · превключете какво се показва · задайте подравняване и размер.", "Drag to reorder · toggle what shows · set align & size.")}</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {data.elements.map((el, i) => (
                 <div
@@ -248,7 +251,7 @@ export default function SkinEditor({
                       className="btn"
                       style={{ fontSize: 11, padding: "4px 9px", color: el.shown ? "var(--green-dark)" : "var(--muted)" }}
                     >
-                      {el.shown ? "Shown" : "Hidden"}
+                      {el.shown ? L("Показан", "Shown") : L("Скрит", "Hidden")}
                     </button>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 24 }}>
@@ -268,9 +271,9 @@ export default function SkinEditor({
         {/* ── live preview / on-canvas editing ── */}
         <div style={{ flex: 1, minWidth: 360, position: "sticky", top: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--green-dark)" }}>Live preview</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--green-dark)" }}>{L("Преглед на живо", "Live preview")}</span>
             <Segmented value={lang} options={[["bg", "БГ"], ["en", "EN"]]} onChange={(v) => setLang(v as "bg" | "en")} small />
-            <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: "auto" }}>click an element · drag to reorder</span>
+            <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: "auto" }}>{L("щракнете върху елемент · влачете за пренареждане", "click an element · drag to reorder")}</span>
           </div>
           <div style={{ border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden", background: "var(--bg)", height: 760, display: "flex", justifyContent: "center" }}>
             <CoverCanvas

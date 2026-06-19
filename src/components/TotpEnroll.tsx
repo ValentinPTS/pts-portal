@@ -2,10 +2,12 @@
 
 import { useActionState, useState } from "react";
 import { startTotpEnrollAction, verifyTotpEnrollAction, type AuthState } from "@/lib/auth-actions";
+import { useLang } from "@/components/LangProvider";
 
 type Enroll = { factorId?: string; qr?: string; secret?: string; error?: string };
 
 export default function TotpEnroll() {
+  const { t } = useLang();
   const [enroll, setEnroll] = useState<Enroll | null>(null);
   const [busy, setBusy] = useState(false);
   const [verify, verifyFn] = useActionState<AuthState, FormData>(verifyTotpEnrollAction, {});
@@ -19,7 +21,7 @@ export default function TotpEnroll() {
   if (!enroll) {
     return (
       <button className="btn btn-primary mt-3" onClick={begin} disabled={busy}>
-        {busy ? "Preparing…" : "🔐 Set up an authenticator (TOTP)"}
+        {busy ? t("totp.preparing") : t("totp.setup")}
       </button>
     );
   }
@@ -32,7 +34,7 @@ export default function TotpEnroll() {
   return (
     <div className="card p-4 mt-3" style={{ maxWidth: 460 }}>
       <p className="text-sm" style={{ color: "var(--muted)" }}>
-        1. Scan this QR with Google Authenticator / Authy / 1Password, or enter the key manually.
+        {t("totp.step1")}
       </p>
       <div className="my-3 flex justify-center" style={{ background: "#fff", padding: 8, borderRadius: 8 }}>
         {qr.startsWith("data:") ? (
@@ -44,13 +46,13 @@ export default function TotpEnroll() {
       </div>
       {enroll.secret && (
         <p className="text-xs text-center" style={{ color: "var(--muted)" }}>
-          Manual key: <span className="font-mono" style={{ color: "var(--ink)" }}>{enroll.secret}</span>
+          {t("totp.manualKey")} <span className="font-mono" style={{ color: "var(--ink)" }}>{enroll.secret}</span>
         </p>
       )}
       <form action={verifyFn} className="mt-3">
         <input type="hidden" name="factorId" value={enroll.factorId ?? ""} />
         <label className="block text-sm" style={{ color: "var(--muted)" }}>
-          2. Enter the 6-digit code to confirm
+          {t("totp.step2")}
           <input
             name="code"
             inputMode="numeric"
@@ -61,7 +63,7 @@ export default function TotpEnroll() {
           />
         </label>
         {verify.error && <p className="text-sm mt-2" style={{ color: "var(--red)" }}>{verify.error}</p>}
-        <button type="submit" className="btn btn-primary mt-3">Confirm &amp; enable 2FA</button>
+        <button type="submit" className="btn btn-primary mt-3">{t("totp.confirm")}</button>
       </form>
     </div>
   );

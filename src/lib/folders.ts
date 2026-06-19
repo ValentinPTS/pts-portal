@@ -1,4 +1,5 @@
 import type { Scheme, SchemeStatus } from "./types";
+import { t as trans, type UiLang } from "./i18n";
 
 // Helpers for the folder-explorer navigation: Type → Year → Scheme → Documents.
 export type FolderType = "T" | "C";
@@ -7,8 +8,8 @@ export const TYPE_SLUG: Record<FolderType, string> = { T: "testing", C: "calibra
 export function typeFromSlug(slug: string): FolderType | null {
   return slug === "testing" ? "T" : slug === "calibration" ? "C" : null;
 }
-export function typeLabel(t: FolderType): string {
-  return t === "C" ? "Calibration" : "Testing";
+export function typeLabel(t: FolderType, lang: UiLang = "en"): string {
+  return trans(lang, t === "C" ? "type.calibration" : "type.testing");
 }
 
 // Per-type accent so testing (green) and calibration (teal-blue) are instantly distinguishable.
@@ -53,9 +54,9 @@ export const TONE = {
   gray: { fg: "#5b6b62", bg: "#eef1ee" },
   blue: { fg: "#2f6f8f", bg: "#e7f0f6" },
 };
-export function statusChip(st: SchemeStatus): { label: string; fg: string; bg: string } {
+export function statusChip(st: SchemeStatus, lang: UiLang = "en"): { label: string; fg: string; bg: string } {
   const s = STATUS[st] ?? STATUS.draft;
-  return { label: s.label, ...TONE[s.tone] };
+  return { label: trans(lang, `status.${st}`), ...TONE[s.tone] };
 }
 
 // next official number/id for a new project of this type + year (e.g. PTS 26/04-T-1)

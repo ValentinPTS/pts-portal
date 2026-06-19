@@ -2,9 +2,9 @@
 
 import { useRef, useState } from "react";
 import { submitApplicationAction } from "@/lib/actions";
+import { useLang } from "@/components/LangProvider";
 
 type Param = { standard: string; characteristic: string };
-type Lang = "bg" | "en";
 
 export default function ApplyWizard({
   schemeId,
@@ -23,7 +23,7 @@ export default function ApplyWizard({
   objectEn: string;
   params: Param[];
 }) {
-  const [lang, setLang] = useState<Lang>("bg");
+  const { lang } = useLang();
   const [step, setStep] = useState(1);
   const [error, setError] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
@@ -103,27 +103,6 @@ export default function ApplyWizard({
         № {number} — {L(titleBg, titleEn)}
       </div>
       <div className="mx-auto mt-3" style={{ width: 60, height: 3, background: "var(--green)" }} />
-
-      {/* language toggle */}
-      <div className="flex justify-center gap-2 mt-4">
-        {(["bg", "en"] as Lang[]).map((l) => (
-          <button
-            key={l}
-            onClick={() => setLang(l)}
-            style={{
-              padding: "4px 12px",
-              borderRadius: 8,
-              border: "1px solid #36422c",
-              background: lang === l ? "var(--green-dark)" : "transparent",
-              color: lang === l ? "#fff" : "#cdd6c2",
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            {l === "bg" ? "БГ" : "EN"}
-          </button>
-        ))}
-      </div>
 
       {/* step indicator */}
       <div

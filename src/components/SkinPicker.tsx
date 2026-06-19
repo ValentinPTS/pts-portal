@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveSchemeSkinAction } from "@/lib/actions";
+import { useLang } from "@/components/LangProvider";
 
 // Per-scheme skin picker. Changing it stores scheme.skin and re-renders the
 // scheme's documents in the chosen skin (the document previews/PDFs pick it up).
@@ -16,6 +17,7 @@ export default function SkinPicker({
   current: string;
   skins: { id: string; name: string }[];
 }) {
+  const { t } = useLang();
   const [val, setVal] = useState(current);
   const [pending, start] = useTransition();
   const router = useRouter();
@@ -30,7 +32,7 @@ export default function SkinPicker({
 
   return (
     <label className="flex items-center gap-2 text-sm" style={{ color: "var(--muted)" }}>
-      Skin
+      {t("scheme.skin")}
       <select
         value={val}
         onChange={(e) => change(e.target.value)}
@@ -41,8 +43,8 @@ export default function SkinPicker({
           <option key={s.id} value={s.id}>{s.name}</option>
         ))}
       </select>
-      {pending && <span className="text-xs">saving…</span>}
-      <Link href="/skins" className="text-xs" style={{ color: "var(--green-dark)", fontWeight: 600 }}>Manage</Link>
+      {pending && <span className="text-xs">{t("skinpicker.saving")}</span>}
+      <Link href="/skins" className="text-xs" style={{ color: "var(--green-dark)", fontWeight: 600 }}>{t("common.manage")}</Link>
     </label>
   );
 }

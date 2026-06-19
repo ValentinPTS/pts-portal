@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { Sofia_Sans_Condensed, PT_Serif } from "next/font/google";
 import "./globals.css";
 import Chrome from "@/components/Chrome";
+import { LangProvider } from "@/components/LangProvider";
+import { getUiLang } from "@/lib/i18n-server";
+import { getSessionUser, isOwnerEmail } from "@/lib/auth";
 
 // Headings / UI — Sofia Sans Condensed (brand display font, variable, incl. Cyrillic)
 const sofia = Sofia_Sans_Condensed({
@@ -22,13 +25,19 @@ export const metadata: Metadata = {
   description: "Proficiency Testing Solutions Bulgaria — provider portal",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const lang = await getUiLang();
+  const session = await getSessionUser();
+  const user = session ? { email: session.email, owner: isOwnerEmail(session.email) } : null;
+
   return (
-    <html lang="en" className={`${sofia.variable} ${ptSerif.variable} h-full antialiased`}>
+    <html lang={lang} className={`${sofia.variable} ${ptSerif.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
-        <Chrome>{children}</Chrome>
+        <LangProvider initial={lang}>
+          <Chrome user={user}>{children}</Chrome>
+        </LangProvider>
       </body>
     </html>
   );

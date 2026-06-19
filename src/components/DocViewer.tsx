@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { issueCertificateAction } from "@/lib/actions";
+import { useLang } from "@/components/LangProvider";
 
 type Participant = { code: string; labName: string; certNo?: string; certDate?: string };
 
@@ -18,6 +19,7 @@ export default function DocViewer({
   name: string;
   participants?: Participant[];
 }) {
+  const { t } = useLang();
   const [lang, setLang] = useState<"en" | "bg">("en");
   const [busy, setBusy] = useState(false);
   const [participant, setParticipant] = useState(""); // "" = blank/template
@@ -45,7 +47,7 @@ export default function DocViewer({
       a.remove();
       URL.revokeObjectURL(url);
     } catch (e) {
-      alert("PDF generation failed: " + (e as Error).message);
+      alert(t("dv.pdfFailed") + (e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -72,9 +74,9 @@ export default function DocViewer({
             onChange={(e) => setParticipant(e.target.value)}
             className="btn"
             style={{ background: "#fff" }}
-            title="Issue for a specific laboratory"
+            title={t("dv.issueForLab")}
           >
-            <option value="">— Blank template —</option>
+            <option value="">{t("dv.blankTemplate")}</option>
             {participants.map((p) => (
               <option key={p.code} value={p.code}>
                 {p.code} · {p.labName}
@@ -83,7 +85,7 @@ export default function DocViewer({
           </select>
         )}
         <button className="btn btn-primary ml-auto" onClick={generatePdf} disabled={busy}>
-          {busy ? "Generating…" : "⬇ Generate PDF"}
+          {busy ? t("dv.generating") : t("dv.generatePdf")}
         </button>
       </div>
 
@@ -96,12 +98,12 @@ export default function DocViewer({
         >
           <input type="hidden" name="schemeId" value={id} />
           <input type="hidden" name="code" value={participant} />
-          <span style={{ color: "var(--muted)" }}>Certificate №:</span>
+          <span style={{ color: "var(--muted)" }}>{t("dv.certNo")}</span>
           <b style={{ color: sel?.certNo ? "var(--green-dark)" : "var(--muted)" }}>
-            {sel?.certNo ?? "— not issued yet —"}
+            {sel?.certNo ?? t("dv.notIssued")}
           </b>
           <label className="ml-2" style={{ color: "var(--muted)" }}>
-            Issue date:{" "}
+            {t("dv.issueDate")}{" "}
             <input
               key={sel?.certDate ?? "new"}
               name="date"
@@ -112,7 +114,7 @@ export default function DocViewer({
             />
           </label>
           <button type="submit" className="btn">
-            {sel?.certNo ? "Save date" : "Issue № (auto)"}
+            {sel?.certNo ? t("dv.saveDate") : t("dv.issueAuto")}
           </button>
         </form>
       )}

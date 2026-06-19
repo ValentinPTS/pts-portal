@@ -2,13 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useLang } from "@/components/LangProvider";
+import LanguageToggle from "@/components/LanguageToggle";
+import AccountMenu from "@/components/AccountMenu";
+
+type User = { email: string; owner: boolean } | null;
 
 // Splits the app chrome: the public application flow (/apply/*) renders full-bleed
 // with its own (dark) layout; everything else gets the admin header + main.
 // The folder-explorer pages (home, /files/*, a scheme's folder) render full-width
 // (they provide their own sidebar + padding); other pages stay centered.
-export default function Chrome({ children }: { children: React.ReactNode }) {
+export default function Chrome({ user, children }: { user: User; children: React.ReactNode }) {
   const path = usePathname() ?? "";
+  const { t } = useLang();
   // Public application flow + the laboratory portal render full-bleed with their
   // own (non-owner) headers — no admin chrome.
   if (path.startsWith("/apply") || path.startsWith("/lab")) return <>{children}</>;
@@ -34,10 +40,13 @@ export default function Chrome({ children }: { children: React.ReactNode }) {
     <>
       <header className="flex items-center gap-3 px-6 py-3 text-white" style={{ background: "var(--green-dark)" }}>
         <Link href="/" className="font-bold text-lg tracking-tight no-underline text-white">PTS Bulgaria</Link>
-        <span className="text-sm opacity-80">· Provider portal</span>
-        <nav className="ml-auto flex items-center gap-1">
-          {navLink("/", "Files", explorer)}
-          {navLink("/skins", "Skins", onSkins)}
+        <span className="text-sm opacity-80">· {t("header.providerPortal")}</span>
+        <nav className="ml-auto flex items-center gap-2">
+          {navLink("/", t("nav.files"), explorer)}
+          {navLink("/skins", t("nav.skins"), onSkins)}
+          <span style={{ width: 1, height: 22, background: "rgba(255,255,255,0.25)", margin: "0 4px" }} />
+          <LanguageToggle />
+          {user && <AccountMenu email={user.email} owner={user.owner} />}
         </nav>
       </header>
       <main className={explorer ? "flex-1 w-full flex flex-col" : `flex-1 w-full ${wide ? "max-w-7xl" : "max-w-5xl"} mx-auto px-6 py-8`}>

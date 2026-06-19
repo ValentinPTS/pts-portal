@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { CoverEl, CoverElKey, Align, ElSize } from "@/skins/custom";
+import { useLang } from "@/components/LangProvider";
 
 // On-canvas cover editing. Renders the faithful live-preview iframe (same-origin
 // srcDoc) and an interactive overlay measured from the rendered document: click an
@@ -33,6 +34,8 @@ export default function CoverCanvas({
   width?: number;
   height?: number;
 }) {
+  const { lang: uiLang } = useLang();
+  const L = (bg: string, en: string) => (uiLang === "bg" ? bg : en);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [boxes, setBoxes] = useState<Box[]>([]);
   const drag = useRef<{ key: CoverElKey; from: number; startY: number; moved: boolean } | null>(null);
@@ -103,7 +106,7 @@ export default function CoverCanvas({
     >
       <iframe
         ref={iframeRef}
-        title="Skin preview"
+        title={L("Преглед на облика", "Skin preview")}
         srcDoc={srcDoc}
         style={{ width, height, border: 0, transform: `scale(${scale})`, transformOrigin: "top left", pointerEvents: "none" }}
       />
@@ -150,7 +153,7 @@ export default function CoverCanvas({
             <TBtn key={s} on={selEl.size === s} onClick={() => onSetEl(sel.key, { size: s })}>{s.toUpperCase()}</TBtn>
           ))}
           <Bar />
-          <TBtn onClick={() => { onSetEl(sel.key, { shown: false }); onSelect(null); }}>Hide</TBtn>
+          <TBtn onClick={() => { onSetEl(sel.key, { shown: false }); onSelect(null); }}>{L("Скрий", "Hide")}</TBtn>
         </div>
       )}
     </div>

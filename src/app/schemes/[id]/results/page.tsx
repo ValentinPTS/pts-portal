@@ -4,6 +4,7 @@ import { getScheme } from "@/lib/store";
 import { listParticipants } from "@/lib/participants";
 import { metricsForScheme, scoreMetric, type ScoredRow } from "@/lib/scoring";
 import { saveScoringAction, autoAssignAction } from "@/lib/actions";
+import { getServerT } from "@/lib/i18n-server";
 
 const inputCls = "w-full rounded px-2 py-1 text-sm";
 const inputStyle = { border: "1px solid var(--line)", background: "#fff" } as const;
@@ -20,14 +21,14 @@ function NumCell({ name, def }: { name: string; def: string }) {
   );
 }
 
-function verdictBadge(r?: ScoredRow) {
+function verdictBadge(r: ScoredRow | undefined, tr: (k: string) => string) {
   if (!r || r.verdict === null) return <span style={{ color: "var(--muted)" }}>—</span>;
   const map: Record<string, [string, string]> = {
-    satisfactory: ["Satisfactory", "var(--success)"],
-    warning: ["Warning", "#b8860b"],
-    action: ["Action", "var(--red)"],
-    A: ["A · satisfactory", "var(--success)"],
-    N: ["N · unsatisfactory", "var(--red)"],
+    satisfactory: [tr("verdict.ok"), "var(--success)"],
+    warning: [tr("verdict.warn"), "#b8860b"],
+    action: [tr("verdict.action"), "var(--red)"],
+    A: [tr("results.gradeA"), "var(--success)"],
+    N: [tr("results.gradeN"), "var(--red)"],
   };
   const [text, color] = map[r.verdict] ?? ["—", "var(--muted)"];
   return <span style={{ color, fontWeight: 700 }}>● {text}</span>;
@@ -44,6 +45,7 @@ export default async function ResultsPage({
   const participants = await listParticipants(id);
   const metrics = metricsForScheme(s);
   const isCal = s.type === "C";
+  const { tr } = await getServerT();
 
   return (
     <div>
@@ -51,19 +53,17 @@ export default async function ResultsPage({
         ← {s.number}
       </Link>
       <h1 className="text-2xl font-bold mt-2" style={{ color: "var(--green-dark)" }}>
-        Results &amp; scoring
+        {tr("results.title")}
       </h1>
       <p className="text-sm" style={{ color: "var(--muted)" }}>
-        Enter each participant&apos;s result and uncertainty, plus the assigned{" "}
-        {isCal ? "(reference) value" : "value, σ and its uncertainty"}. Scores —{" "}
-        <b>{isCal ? "Eₙ" : "z and ζ"}</b> — are computed on Save (ISO 13528) and flow straight into the Final Report.
+        {tr(isCal ? "results.subtitleCal" : "results.subtitleTest")}
       </p>
 
       {participants.length === 0 ? (
         <div className="card p-4 mt-5" style={{ borderLeft: "4px solid var(--amber)" }}>
-          <p>No participants yet — add them before entering results.</p>
+          <p>{tr("results.noParticipants")}</p>
           <Link href={`/schemes/${id}/participants`} className="btn btn-primary mt-2">
-            👥 Go to Participants
+            {tr("results.goParticipants")}
           </Link>
         </div>
       ) : (
@@ -85,19 +85,19 @@ export default async function ResultsPage({
                 <div className="grid gap-3 mb-3" style={{ gridTemplateColumns: isCal ? "1fr 1fr" : "1fr 1fr 1fr" }}>
                   <label className="block">
                     <span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>
-                      {isCal ? "Reference value X_ref" : "Assigned value xₚₜ"}
+                      {tr(isCal ? "results.refValue" : "results.assignedValue")}
                     </span>
                     <NumCell name={`a_${mi}_xpt`} def={fv(a?.xpt)} />
                   </label>
                   {!isCal && (
                     <label className="block">
-                      <span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>σ (proficiency assessment)</span>
+                      <span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{tr("results.sigma")}</span>
                       <NumCell name={`a_${mi}_sigma`} def={fv(a?.sigma)} />
                     </label>
                   )}
                   <label className="block">
                     <span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>
-                      {isCal ? "Expanded uncertainty U_ref" : "Uncertainty u(xₚₜ)"}
+                      {tr(isCal ? "results.uRef" : "results.uXpt")}
                     </span>
                     <NumCell name={`a_${mi}_u`} def={fv(a?.u)} />
                   </label>
@@ -107,8 +107,8 @@ export default async function ResultsPage({
                 <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ background: "var(--green-soft)", color: "var(--green-dark)" }}>
-                      <th className="text-left p-2">Code</th>
-                      <th className="text-left p-2">Laboratory</th>
+                      <th className="text-left p-2">{tr("col.code")}</th>
+                      <th className="text-left p-2">{tr("col.laboratory")}</th>
                       <th className="text-left p-2" style={{ width: 110 }}>{isCal ? "X_lab" : "Result xᵢ"}</th>
                       <th className="text-left p-2" style={{ width: 110 }}>{isCal ? "U_lab" : "u(xᵢ)"}</th>
                       {isCal ? (
@@ -119,7 +119,7 @@ export default async function ResultsPage({
                           <th className="text-right p-2" style={{ width: 60 }}>ζ</th>
                         </>
                       )}
-                      <th className="text-left p-2" style={{ width: 150 }}>Evaluation</th>
+                      <th className="text-left p-2" style={{ width: 150 }}>{tr("results.evaluation")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -140,7 +140,7 @@ export default async function ResultsPage({
                               <td className="p-2 text-right font-mono">{score(r?.zeta ?? null)}</td>
                             </>
                           )}
-                          <td className="p-2">{verdictBadge(r)}</td>
+                          <td className="p-2">{verdictBadge(r, tr)}</td>
                         </tr>
                       );
                     })}
@@ -151,22 +151,20 @@ export default async function ResultsPage({
           })}
 
           <div className="flex gap-3 flex-wrap">
-            <button type="submit" className="btn btn-primary">Save &amp; recompute scores</button>
+            <button type="submit" className="btn btn-primary">{tr("results.save")}</button>
             {!isCal && (
               <button
                 type="submit"
                 formAction={autoAssignAction}
                 className="btn"
-                title="Fill the assigned value, σ and u(xₚₜ) from the entered results using ISO 13528 Algorithm A (robust consensus). You can still edit them afterwards."
               >
-                ⚙ Save &amp; auto-compute assigned (robust)
+                {tr("results.autoCompute")}
               </button>
             )}
-            <Link href={`/schemes/${id}/doc/report`} className="btn">View Final Report →</Link>
+            <Link href={`/schemes/${id}/doc/report`} className="btn">{tr("results.viewReport")}</Link>
           </div>
           <p className="text-xs mt-2" style={{ color: "var(--muted)" }}>
-            Leave a cell blank to skip it. Decimal comma (1,5) or dot (1.5) both work. Scores recompute on every Save.
-            {!isCal && " “Auto-compute” derives the assigned value/σ from the participants’ results (robust mean, ISO 13528) — a starting point you can override."}
+            {tr("results.footnote")}
           </p>
         </form>
       )}

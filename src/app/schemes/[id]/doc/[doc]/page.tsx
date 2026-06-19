@@ -4,6 +4,7 @@ import { getScheme } from "@/lib/store";
 import { getDoc } from "@/lib/documents";
 import { listParticipants } from "@/lib/participants";
 import DocViewer from "@/components/DocViewer";
+import { getServerT } from "@/lib/i18n-server";
 
 export default async function DocPage({
   params,
@@ -14,6 +15,8 @@ export default async function DocPage({
   const s = await getScheme(id);
   const def = getDoc(doc);
   if (!s || !def) notFound();
+  const { lang, tr } = await getServerT();
+  const docName = lang === "bg" ? def.nameBg : def.nameEn;
 
   // The Certificate is issued per participant — offer a lab selector + the
   // stored certificate number/date for each.
@@ -31,18 +34,18 @@ export default async function DocPage({
         ← {s.number}
       </Link>
       <h1 className="text-2xl font-bold mt-2" style={{ color: "var(--green-dark)" }}>
-        {def.nameEn}{" "}
+        {docName}{" "}
         <span className="text-sm font-normal" style={{ color: "var(--muted)" }}>· {def.formNumber}</span>
       </h1>
       <Link href={`/schemes/${id}/edit`} className="btn mt-2 inline-flex">
-        ✎ Edit scheme data
+        {tr("doc.editSchemeData")}
       </Link>
 
       {def.render ? (
-        <DocViewer id={s.id} doc={def.key} number={s.number} name={def.nameEn} participants={participants} />
+        <DocViewer id={s.id} doc={def.key} number={s.number} name={docName} participants={participants} />
       ) : (
         <div className="card p-6 mt-4" style={{ color: "var(--muted)" }}>
-          This document isn’t generated yet — coming next.
+          {tr("doc.notGenerated")}
         </div>
       )}
     </div>

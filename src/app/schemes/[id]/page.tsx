@@ -7,6 +7,7 @@ import { DocTile } from "@/components/Tiles";
 import SkinPicker from "@/components/SkinPicker";
 import { skinsForTypeAsync } from "@/skins";
 import { TYPE_SLUG, typeLabel, schemeYear, schemeName, statusChip, ACCENT } from "@/lib/folders";
+import { getServerT } from "@/lib/i18n-server";
 
 // A scheme folder → its 14 documents as files, plus the scheme tools.
 export default async function SchemePage({ params }: { params: Promise<{ id: string }> }) {
@@ -14,19 +15,20 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
   const s = await getScheme(id);
   if (!s) notFound();
 
+  const { lang, tr } = await getServerT();
   const type = s.type;
   const year = schemeYear(s);
   const slug = TYPE_SLUG[type];
   const ac = ACCENT[type];
-  const st = statusChip(s.status);
+  const st = statusChip(s.status, lang);
   const skins = await skinsForTypeAsync(type);
 
   return (
     <ExplorerShell
       active={{ type, year, schemeId: id }}
       breadcrumb={[
-        { label: "Home", href: "/" },
-        { label: typeLabel(type), href: `/files/${slug}` },
+        { label: tr("common.home"), href: "/" },
+        { label: typeLabel(type, lang), href: `/files/${slug}` },
         { label: year, href: `/files/${slug}/${year}` },
         { label: schemeName(s) },
       ]}
@@ -40,24 +42,25 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <Link href={`/schemes/${id}/edit`} className="btn" style={{ fontSize: 13 }}>Edit data</Link>
-          <Link href={`/schemes/${id}/participants`} className="btn" style={{ fontSize: 13 }}>Participants</Link>
-          <Link href={`/schemes/${id}/applications`} className="btn" style={{ fontSize: 13 }}>Applications</Link>
-          <Link href={`/schemes/${id}/results`} className="btn" style={{ fontSize: 13 }}>Results</Link>
+          <Link href={`/schemes/${id}/edit`} className="btn" style={{ fontSize: 13 }}>{tr("scheme.editData")}</Link>
+          <Link href={`/schemes/${id}/participants`} className="btn" style={{ fontSize: 13 }}>{tr("scheme.participants")}</Link>
+          <Link href={`/schemes/${id}/applications`} className="btn" style={{ fontSize: 13 }}>{tr("scheme.applications")}</Link>
+          <Link href={`/schemes/${id}/results`} className="btn" style={{ fontSize: 13 }}>{tr("scheme.results")}</Link>
           <SkinPicker schemeId={id} current={s.skin ?? "classic"} skins={skins.map((k) => ({ id: k.meta.id, name: k.meta.name }))} />
         </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(232px,1fr))", gap: 16 }}>
         {DOCUMENTS.map((d) => {
+          const name = lang === "bg" ? d.nameBg : d.nameEn;
           const formDoc = isFormDoc(d.key);
           if (formDoc) {
             const filled = !!s.formData?.[d.key] && Object.values(s.formData[d.key]).some(Boolean);
-            return <DocTile key={d.key} href={`/schemes/${id}/fill/${d.key}`} name={d.nameEn} form={d.formNumber} built={filled} action="Fill ✎" builtLabel="Filled ✓" emptyLabel="To fill" />;
+            return <DocTile key={d.key} href={`/schemes/${id}/fill/${d.key}`} name={name} form={d.formNumber} built={filled} action={tr("tile.fill")} builtLabel={tr("tile.filled")} emptyLabel={tr("tile.toFill")} />;
           }
           const saved = s.docs?.[d.key];
           const built = !!(saved && (saved.bg || saved.en));
-          return <DocTile key={d.key} href={`/schemes/${id}/build/${d.key}`} name={d.nameEn} form={d.formNumber} built={built} />;
+          return <DocTile key={d.key} href={`/schemes/${id}/build/${d.key}`} name={name} form={d.formNumber} built={built} action={tr("tile.open")} builtLabel={tr("tile.built")} emptyLabel={tr("tile.notStarted")} />;
         })}
       </div>
     </ExplorerShell>

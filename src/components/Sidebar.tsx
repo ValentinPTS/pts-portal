@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listSchemeSummaries, listSchemesByYear } from "@/lib/store";
 import { FolderIcon, FileIcon, HomeIcon, GridIcon } from "@/components/FileIcons";
 import { TYPE_SLUG, typeLabel, schemeName, yearsForType, schemesIn, ACCENT, type FolderType } from "@/lib/folders";
+import { getServerT } from "@/lib/i18n-server";
 
 type Active = { type?: FolderType; year?: string; schemeId?: string };
 
@@ -31,18 +32,19 @@ export default async function Sidebar({ active }: { active: Active }) {
   const openYear =
     active.type && active.year ? await listSchemesByYear(active.type, active.year) : [];
   const types: FolderType[] = ["T", "C"];
+  const { lang, tr } = await getServerT();
 
   return (
     <aside style={{ width: 272, flexShrink: 0, background: "#fff", borderRight: "1px solid var(--line)", padding: "16px 12px" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        <Row href="/" label="Home" icon={<HomeIcon />} />
+        <Row href="/" label={tr("common.home")} icon={<HomeIcon />} />
         <div style={{ height: 8 }} />
         {types.map((t) => {
           const open = active.type === t;
           const ac = ACCENT[t];
           return (
             <div key={t} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <Row href={`/files/${TYPE_SLUG[t]}`} label={typeLabel(t)} chevron={open ? "▾" : "▸"} bold icon={<FolderIcon accent={ac.accent} soft={ac.soft} />} />
+              <Row href={`/files/${TYPE_SLUG[t]}`} label={typeLabel(t, lang)} chevron={open ? "▾" : "▸"} bold icon={<FolderIcon accent={ac.accent} soft={ac.soft} />} />
               {open && yearsForType(summaries, t).map((y) => {
                 const yopen = active.year === y;
                 return (
@@ -60,7 +62,7 @@ export default async function Sidebar({ active }: { active: Active }) {
         <div style={{ height: 12 }} />
         <div style={{ height: 1, background: "var(--line)", margin: "0 8px" }} />
         <div style={{ height: 8 }} />
-        <Row href="/skins" label="Skins" icon={<GridIcon />} />
+        <Row href="/skins" label={tr("nav.skins")} icon={<GridIcon />} />
       </div>
     </aside>
   );

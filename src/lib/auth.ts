@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
 
@@ -63,7 +64,9 @@ export interface OwnerSession {
   aal2: boolean; // has completed 2FA this session
 }
 
-export async function getSessionUser(): Promise<OwnerSession | null> {
+// Memoized per request (React cache): the root layout's header, the page's
+// requireOwner(), and any /account read share a single getUser() round-trip.
+export const getSessionUser = cache(async (): Promise<OwnerSession | null> => {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return null;
   const supabase = await createServerSupabase();
   const {
@@ -72,7 +75,7 @@ export async function getSessionUser(): Promise<OwnerSession | null> {
   if (!user) return null;
   const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
   return { userId: user.id, email: (user.email ?? "").toLowerCase(), aal2: aal?.currentLevel === "aal2" };
-}
+});
 
 // THE gate. No-op while auth is off. When on: must be a signed-in owner who has
 // completed 2FA. Redirects (never returns) on failure.

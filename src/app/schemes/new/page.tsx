@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createSchemeAction } from "@/lib/actions";
+import { getServerT } from "@/lib/i18n-server";
 
 const inputCls = "w-full rounded px-2 py-1 text-sm";
 const inputStyle = { border: "1px solid var(--line)", background: "#fff" } as const;
@@ -21,36 +22,31 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function NewSchemePage() {
+export default async function NewSchemePage() {
+  const { tr } = await getServerT();
   return (
     <div>
-      <Link href="/" className="text-sm" style={{ color: "var(--muted)" }}>← All schemes</Link>
-      <h1 className="text-2xl font-bold mt-2" style={{ color: "var(--green-dark)" }}>New scheme</h1>
-      <p className="text-sm" style={{ color: "var(--muted)" }}>
-        Set the basics — you’ll fill the parameters, dates and prices on the next screen, and all documents
-        generate from them.
-      </p>
+      <Link href="/" className="text-sm" style={{ color: "var(--muted)" }}>← {tr("new.allSchemes")}</Link>
+      <h1 className="text-2xl font-bold mt-2" style={{ color: "var(--green-dark)" }}>{tr("new.title")}</h1>
+      <p className="text-sm" style={{ color: "var(--muted)" }}>{tr("new.subtitle")}</p>
 
       <form action={createSchemeAction} className="mt-2">
-        <SectionTitle>Identity</SectionTitle>
+        <SectionTitle>{tr("new.identity")}</SectionTitle>
         <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr" }}>
           <label className="block">
-            <span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>Type</span>
+            <span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{tr("new.type")}</span>
             <select name="type" defaultValue="T" className={inputCls} style={inputStyle}>
-              <option value="T">Testing (T)</option>
-              <option value="C">Calibration (C)</option>
+              <option value="T">{tr("new.optTesting")}</option>
+              <option value="C">{tr("new.optCalibration")}</option>
             </select>
           </label>
-          <Field label="Year (YY)" name="year" def="26" />
-          <Field label="Month (MM)" name="month" placeholder="01" />
-          <Field label="Sequence" name="seq" def="1" />
+          <Field label={tr("new.yearYY")} name="year" def="26" />
+          <Field label={tr("new.monthMM")} name="month" placeholder="01" />
+          <Field label={tr("new.sequence")} name="seq" def="1" />
         </div>
-        <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>
-          Number becomes e.g. <b>PTS 26/01-T-1</b>. (Calibration documents currently use the testing layout —
-          full calibration support is a later step.)
-        </p>
+        <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>{tr("new.numberNote")}</p>
 
-        <SectionTitle>Title & object</SectionTitle>
+        <SectionTitle>{tr("new.titleObject")}</SectionTitle>
         <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
           <Field label="Title (EN)" name="titleEn" placeholder="Testing of …" />
           <Field label="Заглавие (БГ)" name="titleBg" placeholder="Изпитване на …" />
@@ -58,21 +54,21 @@ export default function NewSchemePage() {
           <Field label="Обект (БГ)" name="objectBg" />
         </div>
 
-        <SectionTitle>Settings</SectionTitle>
+        <SectionTitle>{tr("new.settings")}</SectionTitle>
         <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
           <label className="block">
-            <span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>Distribution</span>
+            <span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{tr("new.distribution")}</span>
             <select name="distribution" defaultValue="simultaneous" className={inputCls} style={inputStyle}>
-              <option value="simultaneous">Simultaneous (Testing)</option>
-              <option value="sequential">Sequential (Calibration)</option>
+              <option value="simultaneous">{tr("new.optSimultaneous")}</option>
+              <option value="sequential">{tr("new.optSequential")}</option>
             </select>
           </label>
-          <Field label="Minimum participants" name="minParticipants" def="5" />
+          <Field label={tr("new.minParticipants")} name="minParticipants" def="5" />
         </div>
 
         <div className="mt-7 flex gap-3">
-          <button type="submit" className="btn btn-primary">Create scheme →</button>
-          <Link href="/" className="btn">Cancel</Link>
+          <button type="submit" className="btn btn-primary">{tr("new.create")}</button>
+          <Link href="/" className="btn">{tr("common.cancel")}</Link>
         </div>
       </form>
     </div>

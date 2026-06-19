@@ -3,6 +3,7 @@ import { listSchemeSummaries } from "@/lib/store";
 import { skinsForTypeAsync, getDefaultSkinIdAsync, SKINS } from "@/skins";
 import { setDefaultSkinAction } from "@/lib/actions";
 import DeleteSkinButton from "@/components/DeleteSkinButton";
+import { getServerT } from "@/lib/i18n-server";
 
 const BUILTIN = new Set(SKINS.map((s) => s.meta.id));
 
@@ -15,6 +16,7 @@ export default async function SkinsPage({ searchParams }: { searchParams: Promis
   const skins = await skinsForTypeAsync(type);
   const defId = await getDefaultSkinIdAsync(type);
   const sample = (await listSchemeSummaries()).find((s) => s.type === type);
+  const { tr } = await getServerT();
 
   const tab = (val: "T" | "C", label: string) => (
     <Link
@@ -35,16 +37,16 @@ export default async function SkinsPage({ searchParams }: { searchParams: Promis
     <div>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 240 }}>
-          <h1 className="text-3xl font-bold" style={{ color: "var(--green-dark)", letterSpacing: "-0.01em" }}>Document skins</h1>
-          <p style={{ color: "var(--muted)" }}>Choose how your documents look. Each scheme picks its own skin — set a default for testing and for calibration.</p>
+          <h1 className="text-3xl font-bold" style={{ color: "var(--green-dark)", letterSpacing: "-0.01em" }}>{tr("skins.title")}</h1>
+          <p style={{ color: "var(--muted)" }}>{tr("skins.subtitle")}</p>
         </div>
-        <Link href="/skins/new" className="btn btn-primary" style={{ fontSize: 14 }}>+ New skin</Link>
+        <Link href="/skins/new" className="btn btn-primary" style={{ fontSize: 14 }}>{tr("skins.new")}</Link>
       </div>
 
-      <div className="flex gap-2 mt-4 mb-5">{tab("T", "Testing schemes")}{tab("C", "Calibration schemes")}</div>
+      <div className="flex gap-2 mt-4 mb-5">{tab("T", tr("skins.tabTesting"))}{tab("C", tr("skins.tabCalibration"))}</div>
 
       {!sample && (
-        <p className="text-sm" style={{ color: "var(--muted)" }}>No {type === "C" ? "calibration" : "testing"} scheme yet to preview against — create one to see live previews.</p>
+        <p className="text-sm" style={{ color: "var(--muted)" }}>{tr("skins.noSample")}</p>
       )}
 
       <div className="grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))" }}>
@@ -64,15 +66,15 @@ export default async function SkinsPage({ searchParams }: { searchParams: Promis
                     style={{ width: 820, height: 1080, border: 0, transform: "scale(0.31)", transformOrigin: "top left", pointerEvents: "none", position: "absolute", top: 12, left: "50%", marginLeft: -127 }}
                   />
                 ) : (
-                  <div className="flex items-center justify-center" style={{ height: "100%", color: "var(--muted)", fontSize: 13 }}>no preview</div>
+                  <div className="flex items-center justify-center" style={{ height: "100%", color: "var(--muted)", fontSize: 13 }}>{tr("skins.noPreview")}</div>
                 )}
               </div>
               {/* info */}
               <div className="p-4">
                 <div className="flex items-center gap-2">
                   <span className="font-bold" style={{ fontSize: 16 }}>{sk.meta.name}</span>
-                  {isDefault && <span className="chip" style={{ background: "var(--green-dark)" }}>★ Default</span>}
-                  {isCustom && <span className="chip" style={{ background: "var(--muted)" }}>Custom</span>}
+                  {isDefault && <span className="chip" style={{ background: "var(--green-dark)" }}>{tr("skins.default")}</span>}
+                  {isCustom && <span className="chip" style={{ background: "var(--muted)" }}>{tr("skins.custom")}</span>}
                 </div>
                 <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>{sk.meta.description}</p>
                 <div className="flex gap-2 mt-3" style={{ flexWrap: "wrap" }}>
@@ -80,12 +82,12 @@ export default async function SkinsPage({ searchParams }: { searchParams: Promis
                     <form action={setDefaultSkinAction}>
                       <input type="hidden" name="type" value={type} />
                       <input type="hidden" name="skinId" value={sk.meta.id} />
-                      <button type="submit" className="btn btn-primary" style={{ fontSize: 13 }}>Set as default</button>
+                      <button type="submit" className="btn btn-primary" style={{ fontSize: 13 }}>{tr("skins.setDefault")}</button>
                     </form>
                   )}
-                  {isCustom && <Link href={`/skins/${sk.meta.id}/edit`} className="btn" style={{ fontSize: 13 }}>Edit</Link>}
+                  {isCustom && <Link href={`/skins/${sk.meta.id}/edit`} className="btn" style={{ fontSize: 13 }}>{tr("common.edit")}</Link>}
                   {sample && (
-                    <a href={previewUrl} target="_blank" rel="noreferrer" className="btn" style={{ fontSize: 13 }}>Preview</a>
+                    <a href={previewUrl} target="_blank" rel="noreferrer" className="btn" style={{ fontSize: 13 }}>{tr("skins.preview")}</a>
                   )}
                   {isCustom && <DeleteSkinButton id={sk.meta.id} name={sk.meta.name} />}
                 </div>
@@ -95,9 +97,7 @@ export default async function SkinsPage({ searchParams }: { searchParams: Promis
         })}
       </div>
 
-      <p className="text-xs mt-6" style={{ color: "var(--muted)" }}>
-        A skin is the document’s look (cover, fonts, colours, layout). Each scheme chooses its own on its Documents page; the default seeds new schemes. Build your own with <Link href="/skins/new" style={{ color: "var(--green-dark)", fontWeight: 600 }}>+ New skin</Link>.
-      </p>
+      <p className="text-xs mt-6" style={{ color: "var(--muted)" }}>{tr("skins.footer")}</p>
     </div>
   );
 }

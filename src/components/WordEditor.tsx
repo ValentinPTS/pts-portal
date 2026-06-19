@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { saveDocHtmlAction, translateDocHtmlAction, translateAction, addLibraryItemAction, saveDocTemplateAction, deleteDocTemplateAction } from "@/lib/actions";
+import { useLang } from "@/components/LangProvider";
 
 type Snippet = { id: string; name: string; bg: string; en: string };
 type Field = { key: string; label: string; bg: string; en: string };
@@ -152,6 +153,8 @@ export default function WordEditor({
   savedTemplates?: Tmpl[];
   copyFrom?: CopyItem[];
 }) {
+  const { lang: uiLang } = useLang();
+  const L = (bg: string, en: string) => (uiLang === "bg" ? bg : en);
   const ref = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [lang, setLang] = useState<"bg" | "en">("bg");
@@ -250,11 +253,11 @@ export default function WordEditor({
     setBusy("tr");
     const r = await translateDocHtmlAction(nb);
     setBusy("");
-    if (r.error) return alert("Translation: " + r.error);
+    if (r.error) return alert(L("Превод: ", "Translation: ") + r.error);
     setEn(r.html ?? "");
     setSaved(false);
     if (lang === "en" && ref.current) ref.current.innerHTML = r.html ?? "";
-    else alert("English draft ready — switch to EN to review/edit it.");
+    else alert(L("Английската чернова е готова — превключете към EN, за да я прегледате/редактирате.", "English draft ready — switch to EN to review/edit it."));
   }
   async function downloadPdf() {
     await save();
@@ -273,7 +276,7 @@ export default function WordEditor({
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      alert("PDF failed: " + (e as Error).message);
+      alert(L("Грешка при PDF: ", "PDF failed: ") + (e as Error).message);
     }
     setBusy("");
   }
@@ -296,7 +299,13 @@ export default function WordEditor({
 
   // save the current document (both languages) as a reusable template
   async function saveAsTemplate() {
-    const name = window.prompt(`Name this “${docNameEn}” template (it'll be offered when starting this document in any ${schemeType === "C" ? "calibration" : "testing"} scheme):`, docNameEn);
+    const name = window.prompt(
+      L(
+        `Наименувайте този шаблон „${docNameEn}“ (ще се предлага при стартиране на този документ във всяка ${schemeType === "C" ? "калибровъчна" : "изпитвателна"} схема):`,
+        `Name this “${docNameEn}” template (it'll be offered when starting this document in any ${schemeType === "C" ? "calibration" : "testing"} scheme):`,
+      ),
+      docNameEn,
+    );
     if (name === null) return;
     const { nb, ne } = fold();
     setBusy("tmpl");
@@ -304,10 +313,10 @@ export default function WordEditor({
     setBusy("");
     if (r.error) return alert(r.error);
     if (r.item) setTmpls((t) => [...t, { id: r.item!.id, name: r.item!.name, bg: r.item!.bg, en: r.item!.en }]);
-    alert("Saved as a template.");
+    alert(L("Запазено като шаблон.", "Saved as a template."));
   }
   async function deleteTemplate(id: string) {
-    if (!window.confirm("Delete this saved template?")) return;
+    if (!window.confirm(L("Да изтрия ли този запазен шаблон?", "Delete this saved template?"))) return;
     setTmpls((t) => t.filter((x) => x.id !== id));
     await deleteDocTemplateAction(id);
   }
@@ -319,7 +328,7 @@ export default function WordEditor({
     setBusy("addtr");
     const r = await translateAction(abg.trim(), "bg", "en");
     setBusy("");
-    if (r.error) return alert("Translation: " + r.error);
+    if (r.error) return alert(L("Превод: ", "Translation: ") + r.error);
     setAen(r.text ?? "");
   }
   async function saveOwnItem() {
@@ -343,8 +352,8 @@ export default function WordEditor({
         </button>
         {open && (
           <div style={{ padding: "0 12px 12px" }}>
-            <div className="we-prev" dangerouslySetInnerHTML={{ __html: html || "<p style='color:#999'>(empty — fill it in)</p>" }} />
-            <button className="btn btn-primary mt-2" style={{ fontSize: 13 }} onClick={() => insertHtml(html)}>Insert ↩</button>
+            <div className="we-prev" dangerouslySetInnerHTML={{ __html: html || L("<p style='color:#999'>(празно — попълнете го)</p>", "<p style='color:#999'>(empty — fill it in)</p>") }} />
+            <button className="btn btn-primary mt-2" style={{ fontSize: 13 }} onClick={() => insertHtml(html)}>{L("Вмъкни ↩", "Insert ↩")}</button>
           </div>
         )}
       </div>
@@ -357,21 +366,21 @@ export default function WordEditor({
       <>
         <style>{EDITOR_CSS}</style>
         <div className="card p-5" style={{ borderLeft: "4px solid var(--green-dark)", maxWidth: 640 }}>
-          <div className="font-bold" style={{ color: "var(--green-dark)", fontSize: 18 }}>Start “{docNameEn}” from…</div>
+          <div className="font-bold" style={{ color: "var(--green-dark)", fontSize: 18 }}>{L(`Започни „${docNameEn}“ от…`, `Start “${docNameEn}” from…`)}</div>
           <div className="flex gap-2 mt-4 flex-wrap">
-            {hasDefault && <button className="btn btn-primary" onClick={() => startWith(defaultBg, defaultEn)}>Default template</button>}
-            <button className="btn" onClick={() => startWith("", "")}>＋ Blank page</button>
+            {hasDefault && <button className="btn btn-primary" onClick={() => startWith(defaultBg, defaultEn)}>{L("Шаблон по подразбиране", "Default template")}</button>}
+            <button className="btn" onClick={() => startWith("", "")}>{L("＋ Празна страница", "＋ Blank page")}</button>
           </div>
 
           {tmpls.length > 0 && (
             <div className="mt-5">
-              <div className="we-seclabel">YOUR SAVED TEMPLATES</div>
+              <div className="we-seclabel">{L("ВАШИТЕ ЗАПАЗЕНИ ШАБЛОНИ", "YOUR SAVED TEMPLATES")}</div>
               <div className="mt-2" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {tmpls.map((t) => (
                   <div key={t.id} style={startRow}>
                     <span style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>{t.name}</span>
-                    <button className="btn" style={{ fontSize: 13, padding: "6px 12px" }} onClick={() => startWith(t.bg, t.en)}>Use</button>
-                    <button title="Delete template" onClick={() => deleteTemplate(t.id)} style={{ border: 0, background: "none", cursor: "pointer", color: "var(--muted)", fontSize: 15, lineHeight: 1 }}>✕</button>
+                    <button className="btn" style={{ fontSize: 13, padding: "6px 12px" }} onClick={() => startWith(t.bg, t.en)}>{L("Използвай", "Use")}</button>
+                    <button title={L("Изтрий шаблона", "Delete template")} onClick={() => deleteTemplate(t.id)} style={{ border: 0, background: "none", cursor: "pointer", color: "var(--muted)", fontSize: 15, lineHeight: 1 }}>✕</button>
                   </div>
                 ))}
               </div>
@@ -380,7 +389,7 @@ export default function WordEditor({
 
           {copyFrom.length > 0 && (
             <div className="mt-5">
-              <div className="we-seclabel">COPY FROM A PREVIOUS SCHEME</div>
+              <div className="we-seclabel">{L("КОПИРАЙ ОТ ПРЕДИШНА СХЕМА", "COPY FROM A PREVIOUS SCHEME")}</div>
               <div className="mt-2" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {copyFrom.map((c) => (
                   <div key={c.id} style={startRow}>
@@ -388,7 +397,7 @@ export default function WordEditor({
                       <div style={{ fontWeight: 700, color: "var(--green-dark)" }}>{c.number}</div>
                       <div className="text-xs" style={{ color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.title}</div>
                     </div>
-                    <button className="btn" style={{ fontSize: 13, padding: "6px 12px" }} onClick={() => startWith(c.bg, c.en)}>Copy</button>
+                    <button className="btn" style={{ fontSize: 13, padding: "6px 12px" }} onClick={() => startWith(c.bg, c.en)}>{L("Копирай", "Copy")}</button>
                   </div>
                 ))}
               </div>
@@ -396,7 +405,10 @@ export default function WordEditor({
           )}
 
           <p className="text-xs mt-4" style={{ color: "var(--muted)" }}>
-            You can edit everything after you start. Save a finished document as a reusable template from the toolbar (★ Save as template).
+            {L(
+              "Можете да редактирате всичко след като започнете. Запазете завършен документ като шаблон за повторна употреба от лентата с инструменти (★ Запази като шаблон).",
+              "You can edit everything after you start. Save a finished document as a reusable template from the toolbar (★ Save as template).",
+            )}
           </p>
         </div>
       </>
@@ -417,34 +429,34 @@ export default function WordEditor({
 
       {/* action bar */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <button className="btn btn-primary" onClick={save} disabled={busy === "save"}>{busy === "save" ? "Saving…" : saved ? "Saved ✓" : "Save"}</button>
-        <span className="text-sm" style={{ color: "var(--muted)", marginLeft: 6 }}>Preview:</span>
+        <button className="btn btn-primary" onClick={save} disabled={busy === "save"}>{busy === "save" ? L("Запазване…", "Saving…") : saved ? L("Запазено ✓", "Saved ✓") : L("Запази", "Save")}</button>
+        <span className="text-sm" style={{ color: "var(--muted)", marginLeft: 6 }}>{L("Преглед:", "Preview:")}</span>
         {(["bg", "en"] as const).map((l) => (
           <button key={l} className="btn" onClick={() => switchLang(l)} style={lang === l ? { background: "var(--green-soft)", color: "var(--green-dark)", borderColor: "var(--green-line)" } : {}}>{l === "bg" ? "БГ" : "EN"}</button>
         ))}
-        <button className="btn" onClick={translate} disabled={busy === "tr"} title="Translate the whole document BG→EN">{busy === "tr" ? "Translating…" : "⇄ BG → EN"}</button>
+        <button className="btn" onClick={translate} disabled={busy === "tr"} title={L("Преведи целия документ BG→EN", "Translate the whole document BG→EN")}>{busy === "tr" ? L("Превеждане…", "Translating…") : "⇄ BG → EN"}</button>
         <button className="btn" onClick={downloadPdf} disabled={busy === "pdf"}>{busy === "pdf" ? "…" : "⬇ PDF"}</button>
-        <button className="btn" onClick={saveAsTemplate} disabled={busy === "tmpl"} title="Save this document as a reusable template for this scheme type">{busy === "tmpl" ? "…" : "★ Save as template"}</button>
-        <button className="btn ml-auto" onClick={() => setPanel((p) => !p)}>{panel ? "Items ▸" : "Items ◂"}</button>
+        <button className="btn" onClick={saveAsTemplate} disabled={busy === "tmpl"} title={L("Запази този документ като шаблон за повторна употреба за този тип схема", "Save this document as a reusable template for this scheme type")}>{busy === "tmpl" ? "…" : L("★ Запази като шаблон", "★ Save as template")}</button>
+        <button className="btn ml-auto" onClick={() => setPanel((p) => !p)}>{panel ? L("Елементи ▸", "Items ▸") : L("Елементи ◂", "Items ◂")}</button>
       </div>
 
       {/* formatting toolbar */}
       <div className="we-toolbar mb-3">
-        {tool("B", "Bold", () => exec("bold"))}
-        {tool("I", "Italic", () => exec("italic"))}
-        {tool("U", "Underline", () => exec("underline"))}
+        {tool("B", L("Получер", "Bold"), () => exec("bold"))}
+        {tool("I", L("Курсив", "Italic"), () => exec("italic"))}
+        {tool("U", L("Подчертан", "Underline"), () => exec("underline"))}
         <span className="we-sep" />
-        {tool("H2", "Heading", () => exec("formatBlock", "h2"))}
-        {tool("¶", "Normal text", () => exec("formatBlock", "p"))}
+        {tool("H2", L("Заглавие", "Heading"), () => exec("formatBlock", "h2"))}
+        {tool("¶", L("Нормален текст", "Normal text"), () => exec("formatBlock", "p"))}
         <span className="we-sep" />
-        {tool("•  List", "Bullet list", () => exec("insertUnorderedList"))}
-        {tool("1.  List", "Numbered list", () => exec("insertOrderedList"))}
+        {tool(L("•  Списък", "•  List"), L("Списък с водещи символи", "Bullet list"), () => exec("insertUnorderedList"))}
+        {tool(L("1.  Списък", "1.  List"), L("Номериран списък", "Numbered list"), () => exec("insertOrderedList"))}
         <span className="we-sep" />
-        {tool("Image", "Insert image / logo", () => fileRef.current?.click())}
+        {tool(L("Изображение", "Image"), L("Вмъкни изображение / лого", "Insert image / logo"), () => fileRef.current?.click())}
         <span className="we-sep" />
-        {tool("Undo", "Undo", () => exec("undo"))}
-        {tool("Redo", "Redo", () => exec("redo"))}
-        <span className="text-xs" style={{ marginLeft: "auto", color: "var(--muted)" }}>Editing: <b style={{ color: "var(--green-dark)" }}>{lang === "bg" ? "Български" : "English"}</b></span>
+        {tool(L("Отмени", "Undo"), L("Отмени", "Undo"), () => exec("undo"))}
+        {tool(L("Върни", "Redo"), L("Върни", "Redo"), () => exec("redo"))}
+        <span className="text-xs" style={{ marginLeft: "auto", color: "var(--muted)" }}>{L("Редактиране:", "Editing:")} <b style={{ color: "var(--green-dark)" }}>{lang === "bg" ? L("Български", "Bulgarian") : L("Английски", "English")}</b></span>
       </div>
 
       <div className="we-body">
@@ -452,17 +464,17 @@ export default function WordEditor({
           {/* image controls — appear (floating, above the page) when an image is selected */}
           {imgSel && (
             <div className="we-imgbar">
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 14, color: "var(--ink)" }}><IconImage /> Image</span>
-              <span className="text-xs" style={{ color: "var(--muted)" }}>Size</span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 14, color: "var(--ink)" }}><IconImage /> {L("Изображение", "Image")}</span>
+              <span className="text-xs" style={{ color: "var(--muted)" }}>{L("Размер", "Size")}</span>
               <input type="range" min={10} max={100} step={5} value={imgW} onChange={(e) => setImgWidth(parseInt(e.target.value, 10))} />
               <span style={{ fontSize: 13, fontWeight: 700, width: 38 }}>{imgW}%</span>
-              {alignPill("left", "Left", "Float left (text wraps right)")}
-              {alignPill("center", "Centre", "Centre")}
-              {alignPill("right", "Right", "Float right (text wraps left)")}
-              {alignPill("inline", "Inline", "Inline with text")}
-              <button className="we-pill danger" onMouseDown={(e) => e.preventDefault()} onClick={removeImg}>✕  Remove</button>
+              {alignPill("left", L("Ляво", "Left"), L("Подравни вляво (текстът обтича отдясно)", "Float left (text wraps right)"))}
+              {alignPill("center", L("Център", "Centre"), L("Центрирай", "Centre"))}
+              {alignPill("right", L("Дясно", "Right"), L("Подравни вдясно (текстът обтича отляво)", "Float right (text wraps left)"))}
+              {alignPill("inline", L("В реда", "Inline"), L("В реда с текста", "Inline with text"))}
+              <button className="we-pill danger" onMouseDown={(e) => e.preventDefault()} onClick={removeImg}>{L("✕  Премахни", "✕  Remove")}</button>
               <span className="we-sep" />
-              <span className="text-xs" style={{ color: "var(--muted)" }}>Tip: drag the image to move it</span>
+              <span className="text-xs" style={{ color: "var(--muted)" }}>{L("Съвет: плъзнете изображението, за да го преместите", "Tip: drag the image to move it")}</span>
             </div>
           )}
           <div
@@ -479,42 +491,45 @@ export default function WordEditor({
           <aside className="we-panel">
             <div className="we-panelhdr">
               <IconItems />
-              <span className="ttl">Items</span>
-              <button className="we-collapse" title="Hide panel" onClick={() => setPanel(false)}>▸</button>
+              <span className="ttl">{L("Елементи", "Items")}</span>
+              <button className="we-collapse" title={L("Скрий панела", "Hide panel")} onClick={() => setPanel(false)}>▸</button>
             </div>
 
-            <div className="we-seclabel" style={{ margin: "8px 0 4px" }}>AUTO-FIELDS</div>
+            <div className="we-seclabel" style={{ margin: "8px 0 4px" }}>{L("АВТО-ПОЛЕТА", "AUTO-FIELDS")}</div>
             {fields.map((f) => itemCard(`f:${f.key}`, f.label, lang === "bg" ? f.bg : f.en))}
 
-            <div className="we-seclabel" style={{ margin: "14px 0 4px" }}>SNIPPETS</div>
+            <div className="we-seclabel" style={{ margin: "14px 0 4px" }}>{L("ФРАГМЕНТИ", "SNIPPETS")}</div>
             {snippets.map((s) => itemCard(`s:${s.id}`, s.name, lang === "bg" ? s.bg : s.en))}
 
-            {custom.length > 0 && <div className="we-seclabel" style={{ margin: "14px 0 4px", color: "var(--gold)" }}>MY ITEMS</div>}
+            {custom.length > 0 && <div className="we-seclabel" style={{ margin: "14px 0 4px", color: "var(--gold)" }}>{L("МОИ ЕЛЕМЕНТИ", "MY ITEMS")}</div>}
             {custom.map((c) => itemCard(`c:${c.id}`, c.name, lang === "bg" ? c.bg : c.en))}
 
             <div className="mt-3">
               {adding ? (
                 <div className="card p-3" style={{ background: "var(--green-soft)", borderColor: "var(--green-line)" }}>
-                  <input placeholder="Item name" value={naym} onChange={(e) => setNaym(e.target.value)} style={{ width: "100%", border: "1px solid var(--line)", borderRadius: 7, padding: "7px 9px", fontSize: 13, marginBottom: 6 }} />
-                  <textarea placeholder="Text (Bulgarian)" value={abg} onChange={(e) => setAbg(e.target.value)} rows={3} style={{ width: "100%", border: "1px solid var(--line)", borderRadius: 7, padding: "7px 9px", fontSize: 13 }} />
+                  <input placeholder={L("Име на елемента", "Item name")} value={naym} onChange={(e) => setNaym(e.target.value)} style={{ width: "100%", border: "1px solid var(--line)", borderRadius: 7, padding: "7px 9px", fontSize: 13, marginBottom: 6 }} />
+                  <textarea placeholder={L("Текст (български)", "Text (Bulgarian)")} value={abg} onChange={(e) => setAbg(e.target.value)} rows={3} style={{ width: "100%", border: "1px solid var(--line)", borderRadius: 7, padding: "7px 9px", fontSize: 13 }} />
                   <button className="btn mt-2" style={{ fontSize: 12, padding: "5px 12px" }} onClick={translateAddForm} disabled={busy === "addtr"}>{busy === "addtr" ? "…" : "⇄ БГ → EN"}</button>
-                  <textarea placeholder="Text (English)" value={aen} onChange={(e) => setAen(e.target.value)} rows={3} style={{ width: "100%", border: "1px solid var(--line)", borderRadius: 7, padding: "7px 9px", fontSize: 13, marginTop: 6 }} />
+                  <textarea placeholder={L("Текст (английски)", "Text (English)")} value={aen} onChange={(e) => setAen(e.target.value)} rows={3} style={{ width: "100%", border: "1px solid var(--line)", borderRadius: 7, padding: "7px 9px", fontSize: 13, marginTop: 6 }} />
                   <div className="flex gap-2 mt-2">
-                    <button className="btn btn-primary" style={{ fontSize: 13 }} onClick={saveOwnItem} disabled={busy === "additem"}>{busy === "additem" ? "Saving…" : "Save item"}</button>
-                    <button className="btn" style={{ fontSize: 13 }} onClick={() => setAdding(false)}>Cancel</button>
+                    <button className="btn btn-primary" style={{ fontSize: 13 }} onClick={saveOwnItem} disabled={busy === "additem"}>{busy === "additem" ? L("Запазване…", "Saving…") : L("Запази елемента", "Save item")}</button>
+                    <button className="btn" style={{ fontSize: 13 }} onClick={() => setAdding(false)}>{L("Отказ", "Cancel")}</button>
                   </div>
                 </div>
               ) : (
-                <button className="we-addown" onClick={() => setAdding(true)}>＋  Add your own item</button>
+                <button className="we-addown" onClick={() => setAdding(true)}>{L("＋  Добави собствен елемент", "＋  Add your own item")}</button>
               )}
             </div>
 
-            <p className="text-xs mt-3" style={{ color: "var(--muted)" }}>Click an item to preview it, then Insert. Your own items are saved for every scheme.</p>
+            <p className="text-xs mt-3" style={{ color: "var(--muted)" }}>{L("Кликнете върху елемент, за да го прегледате, след това Вмъкни. Вашите собствени елементи се запазват за всяка схема.", "Click an item to preview it, then Insert. Your own items are saved for every scheme.")}</p>
           </aside>
         )}
       </div>
       <p className="text-xs mt-2" style={{ color: "var(--muted)" }}>
-        Edit like a document. The branded cover/head page + fonts are applied automatically in the PDF, matching your real documents.
+        {L(
+          "Редактирайте като документ. Брандираната титулна/заглавна страница и шрифтовете се прилагат автоматично в PDF файла, в съответствие с реалните Ви документи.",
+          "Edit like a document. The branded cover/head page + fonts are applied automatically in the PDF, matching your real documents.",
+        )}
       </p>
     </div>
   );

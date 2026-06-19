@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { FolderIcon, FileIcon } from "@/components/FileIcons";
 import { ACCENT, statusChip, schemeName, type FolderType } from "@/lib/folders";
+import { t, DEFAULT_LANG, type UiLang } from "@/lib/i18n";
 import type { Scheme } from "@/lib/types";
 
 const stripStyle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", background: "#f8faf8", borderTop: "1px solid var(--line)" };
@@ -20,9 +21,9 @@ export function FolderTile({ href, label, sub, type }: { href: string; label: st
 }
 
 // A scheme folder tile (hybrid: big icon + status chip + details strip).
-export function SchemeTile({ s }: { s: Scheme }) {
+export function SchemeTile({ s, lang = DEFAULT_LANG }: { s: Scheme; lang?: UiLang }) {
   const ac = ACCENT[s.type];
-  const st = statusChip(s.status);
+  const st = statusChip(s.status, lang);
   const built = Object.values(s.docs ?? {}).filter((d) => d?.bg || d?.en).length;
   const date = s.orderDate || s.revisionDate || "";
   return (
@@ -36,7 +37,7 @@ export function SchemeTile({ s }: { s: Scheme }) {
         <div style={{ fontSize: 13, color: "var(--muted)" }}>{s.number}</div>
       </div>
       <div style={stripStyle}>
-        <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 500 }}>{built}/14 built</span>
+        <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 500 }}>{built}/14 {t(lang, "tile.builtSuffix")}</span>
         <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>{date}</span>
       </div>
     </Link>

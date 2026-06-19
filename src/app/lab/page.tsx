@@ -6,6 +6,8 @@ import { metricsForScheme, scoreMetric } from "@/lib/scoring";
 import { statusChip } from "@/lib/folders";
 import { signOutLabAction } from "@/lib/auth-actions";
 import { EmptyState } from "@/components/States";
+import LanguageToggle from "@/components/LanguageToggle";
+import { getServerT } from "@/lib/i18n-server";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,7 @@ function rank(v: string | null): Verdict | null {
 
 export default async function LabDashboard() {
   const { lab } = await requireLab();
+  const { lang, tr } = await getServerT();
   const parts = await listParticipationsForLab(lab.id);
   const schemes = await getSchemesByIds(parts.map((p) => p.schemeId));
   const byId = new Map(schemes.map((s) => [s.id, s] as const));
@@ -61,32 +64,33 @@ export default async function LabDashboard() {
       {/* header */}
       <header className="flex items-center gap-3 px-6 py-3 text-white" style={{ background: "var(--green-dark)" }}>
         <span className="font-bold text-lg tracking-tight">PTS Bulgaria</span>
-        <span className="text-sm opacity-80">· Laboratory portal</span>
+        <span className="text-sm opacity-80">· {tr("header.labPortal")}</span>
         <span className="ml-auto text-sm" style={{ fontWeight: 600 }}>{lab.name}</span>
+        <LanguageToggle />
         <form action={signOutLabAction}>
-          <button type="submit" style={{ background: "rgba(255,255,255,0.18)", color: "#fff", borderRadius: 999, padding: "7px 14px", fontSize: 13, fontWeight: 600, border: "none", cursor: "pointer" }}>Sign out</button>
+          <button type="submit" style={{ background: "rgba(255,255,255,0.18)", color: "#fff", borderRadius: 999, padding: "7px 14px", fontSize: 13, fontWeight: 600, border: "none", cursor: "pointer" }}>{tr("common.signOut")}</button>
         </form>
       </header>
 
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 22 }}>
-          <h1 className="section-title" style={{ fontSize: 30 }}>Welcome, {lab.name}</h1>
-          <span className="chip" style={{ background: "var(--green-dark)" }}>Your code · {parts[0]?.code ?? "—"}</span>
+          <h1 className="section-title" style={{ fontSize: 30 }}>{tr("lab.welcomePrefix")} {lab.name}</h1>
+          <span className="chip" style={{ background: "var(--green-dark)" }}>{tr("lab.yourCode")} · {parts[0]?.code ?? "—"}</span>
         </div>
 
         <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
           {/* my schemes */}
           <div style={{ flex: 1, minWidth: 320, display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <h2 className="section-title" style={{ fontSize: 20, flex: 1 }}>My schemes</h2>
-              <Link href="/apply" className="btn btn-primary btn-sm">+ Apply to an open scheme</Link>
+              <h2 className="section-title" style={{ fontSize: 20, flex: 1 }}>{tr("lab.mySchemes")}</h2>
+              <Link href="/apply" className="btn btn-primary btn-sm">{tr("lab.applyOpen")}</Link>
             </div>
 
             {items.length === 0 && (
               <EmptyState
-                title="No schemes yet"
-                body="When you’re approved for a proficiency testing scheme it appears here, with your results and documents."
-                action={<Link href="/apply" className="btn btn-primary btn-sm" style={{ marginTop: 4 }}>Browse open schemes ↗</Link>}
+                title={tr("lab.noSchemesTitle")}
+                body={tr("lab.noSchemesBody")}
+                action={<Link href="/apply" className="btn btn-primary btn-sm" style={{ marginTop: 4 }}>{tr("lab.browseOpen")}</Link>}
               />
             )}
 
@@ -106,8 +110,8 @@ export default async function LabDashboard() {
                     {overall ? (
                       <>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 13, fontWeight: 600 }}>Your result</span>
-                          <span className="chip" style={{ background: VCHIP[overall].bg, color: VCHIP[overall].fg }}>{VCHIP[overall].label}</span>
+                          <span style={{ fontSize: 13, fontWeight: 600 }}>{tr("lab.yourResult")}</span>
+                          <span className="chip" style={{ background: VCHIP[overall].bg, color: VCHIP[overall].fg }}>{tr(`verdict.${overall}`)}</span>
                         </div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px" }}>
                           {scores.map((s, i) => (
@@ -124,12 +128,12 @@ export default async function LabDashboard() {
 
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     {reported ? (
-                      <a href={`/lab/doc/${scheme.id}/report?lang=bg`} target="_blank" rel="noreferrer" className="btn btn-sm">↓ Final report</a>
+                      <a href={`/lab/doc/${scheme.id}/report?lang=${lang}`} target="_blank" rel="noreferrer" className="btn btn-sm">{tr("lab.finalReport")}</a>
                     ) : null}
                     {hasCert ? (
-                      <a href={`/lab/doc/${scheme.id}/certificate?lang=bg`} target="_blank" rel="noreferrer" className="btn btn-sm">↓ Certificate</a>
+                      <a href={`/lab/doc/${scheme.id}/certificate?lang=${lang}`} target="_blank" rel="noreferrer" className="btn btn-sm">{tr("lab.certificate")}</a>
                     ) : null}
-                    {!reported && !hasCert && <span style={{ fontSize: 13, color: "var(--muted)" }}>Documents available after reporting.</span>}
+                    {!reported && !hasCert && <span style={{ fontSize: 13, color: "var(--muted)" }}>{tr("lab.docsAfter")}</span>}
                   </div>
                 </div>
               );
@@ -140,20 +144,20 @@ export default async function LabDashboard() {
           <div style={{ width: 360, flexShrink: 0, display: "flex", flexDirection: "column", gap: 16 }}>
             <section className="card" style={{ padding: 22, display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <h2 className="section-title" style={{ fontSize: 18, flex: 1 }}>Profile</h2>
-                <Link href="/lab/profile" className="btn btn-sm">Edit</Link>
+                <h2 className="section-title" style={{ fontSize: 18, flex: 1 }}>{tr("lab.profile")}</h2>
+                <Link href="/lab/profile" className="btn btn-sm">{tr("common.edit")}</Link>
               </div>
-              {kv("Laboratory", lab.name)}
-              {kv("Accreditation certificate", lab.accreditationCert)}
-              {kv("Contact person", lab.contactPerson)}
-              {kv("Email", lab.email)}
-              {kv("Phone", lab.phone)}
-              {kv("Registered address", lab.registeredAddress)}
+              {kv(tr("lab.field.laboratory"), lab.name)}
+              {kv(tr("lab.field.accreditationCert"), lab.accreditationCert)}
+              {kv(tr("lab.field.contactPerson"), lab.contactPerson)}
+              {kv(tr("lab.field.email"), lab.email)}
+              {kv(tr("lab.field.phone"), lab.phone)}
+              {kv(tr("lab.field.registeredAddress"), lab.registeredAddress)}
             </section>
             <section className="card" style={{ padding: 22, display: "flex", flexDirection: "column", gap: 10 }}>
-              <h2 className="section-title" style={{ fontSize: 18 }}>Account &amp; security</h2>
-              <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>Two-factor authentication is optional for labs — you can enable it for extra protection.</p>
-              <form action={signOutLabAction}><button type="submit" className="btn btn-sm">Sign out</button></form>
+              <h2 className="section-title" style={{ fontSize: 18 }}>{tr("lab.accountSecurity")}</h2>
+              <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>{tr("lab.twoFactorOptional")}</p>
+              <form action={signOutLabAction}><button type="submit" className="btn btn-sm">{tr("common.signOut")}</button></form>
             </section>
           </div>
         </div>

@@ -9,6 +9,7 @@ import { esc } from "@/lib/doc-shell";
 import { defaultDocHtml, insertableSnippets, insertableFields } from "@/lib/doc-html";
 import { hasDocTemplate } from "@/lib/doc-template";
 import WordEditor from "@/components/WordEditor";
+import { getServerT } from "@/lib/i18n-server";
 
 export default async function BuildDocPage({
   params,
@@ -20,6 +21,7 @@ export default async function BuildDocPage({
   if (!s) notFound();
   const def = getDoc(doc);
   const participants = await listParticipants(id);
+  const { lang, tr } = await getServerT();
 
   const saved = s.docs?.[doc] ?? { bg: "", en: "" };
   const dft = defaultDocHtml(s, doc, participants);
@@ -48,10 +50,10 @@ export default async function BuildDocPage({
   return (
     <div>
       <Link href={`/schemes/${id}`} className="text-sm" style={{ color: "var(--muted)" }}>
-        ← {s.number} · documents
+        ← {s.number} · {tr("build.documentsWord")}
       </Link>
       <h1 className="text-3xl font-bold mt-1 mb-4" style={{ color: "var(--green-dark)", letterSpacing: "-0.01em" }}>
-        Build: {def?.nameEn ?? doc}
+        {tr("build.prefix")}: {(lang === "bg" ? def?.nameBg : def?.nameEn) ?? doc}
       </h1>
       <WordEditor
         schemeId={s.id}
