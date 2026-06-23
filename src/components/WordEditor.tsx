@@ -34,11 +34,7 @@ const EDITOR_CSS = `
   /* the paper = exactly the PDF content box (182mm), real document body styles */
   .we-page{--green-dark:#5f7d52;--green:#88a77b;--green-soft:#eef3ea;--green-line:#b7d0c0;--red:#9e2b2b;--ink:#1a1a1a;--muted:#6b6b6b;--line:#dcdcdc;position:relative;width:${PAGE_W_MM}mm;color:var(--ink);border:1px solid var(--line);border-radius:4px;
     padding:26px 30px 50px;box-shadow:0 8px 28px rgba(15,30,22,.10);
-    font-family:'PT Serif',Georgia,serif;font-size:11pt;line-height:1.5;
-    background:repeating-linear-gradient(to bottom,
-      #fff 0, #fff calc(${PAGE_BREAK_MM}mm - 0.5px),
-      var(--line) calc(${PAGE_BREAK_MM}mm - 0.5px), var(--line) ${PAGE_BREAK_MM}mm,
-      var(--canvas,#eef1ee) ${PAGE_BREAK_MM}mm, var(--canvas,#eef1ee) calc(${PAGE_BREAK_MM}mm + 16px));}
+    font-family:'PT Serif',Georgia,serif;font-size:11pt;line-height:1.5;background:#fff;}
   .we-docbody{position:relative;min-height:55vh;outline:none;}
   .we-docbody:focus{outline:none;}
   .we-page.focused{box-shadow:0 8px 28px rgba(15,30,22,.12),0 0 0 2px var(--green-light);}
@@ -58,8 +54,8 @@ const EDITOR_CSS = `
 
   /* page-break guides + image selection handles overlay */
   .we-guides{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none;z-index:5;}
-  .we-brk{position:absolute;left:0;right:0;display:flex;justify-content:center;}
-  .we-brk span{font-size:9px;color:var(--muted);background:var(--canvas);padding:1px 9px;border-radius:6px;}
+  .we-brk{position:absolute;left:-30px;right:-30px;border-top:1px dashed #c9c9c9;display:flex;justify-content:center;pointer-events:none;}
+  .we-brk span{font-size:9px;color:var(--muted);background:#fff;padding:0 9px;transform:translateY(-50%);}
   .we-ov{position:absolute;inset:0;pointer-events:none;z-index:6;}
   .we-h{position:absolute;width:11px;height:11px;background:#fff;border:1.6px solid var(--green-dark);border-radius:2px;pointer-events:auto;}
   .we-h.nw{cursor:nwse-resize;} .we-h.ne{cursor:nesw-resize;} .we-h.sw{cursor:nesw-resize;} .we-h.se{cursor:nwse-resize;}
@@ -218,6 +214,36 @@ export default function WordEditor({
   const insertHtml = (html: string) => { ref.current?.focus(); document.execCommand("insertHTML", false, html); setSaved(false); refreshGuides(); };
   const current = () => ref.current?.innerHTML ?? "";
 
+  // ── text size: A− / A+ apply a font-size to the selection (or the block) ──
+  function applyFontSize(pt: number) {
+    const el = ref.current; if (!el) return;
+    const sel = window.getSelection(); if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (!el.contains(range.commonAncestorContainer)) return;
+    if (range.collapsed) {
+      const n = range.startContainer;
+      const node = n.nodeType === 1 ? (n as HTMLElement) : n.parentElement;
+      const block = node?.closest("p,li,h1,h2,h3,div,td,th") as HTMLElement | null;
+      if (block && el.contains(block)) block.style.fontSize = pt + "pt";
+    } else {
+      const span = document.createElement("span"); span.style.fontSize = pt + "pt";
+      try { range.surroundContents(span); }
+      catch {
+        span.appendChild(range.extractContents()); range.insertNode(span);
+        const r = document.createRange(); r.selectNodeContents(span); sel.removeAllRanges(); sel.addRange(r);
+      }
+    }
+    setSaved(false); refreshGuides();
+  }
+  function bumpFont(delta: number) {
+    const sel = window.getSelection(); if (!sel || sel.rangeCount === 0) return;
+    const n = sel.getRangeAt(0).startContainer;
+    const node = n.nodeType === 1 ? (n as HTMLElement) : n.parentElement;
+    const px = node ? parseFloat(getComputedStyle(node).fontSize) : 14.67;
+    const curPt = Math.round((px * 72) / 96);
+    applyFontSize(Math.max(6, Math.min(48, curPt + delta)));
+  }
+
   // px size of an image from its inline style (mm) or its rendered box
   function readImgMm(img: HTMLImageElement) {
     const r = img.getBoundingClientRect();
@@ -243,10 +269,9 @@ export default function WordEditor({
     const page = pageRef.current;
     if (!page) return;
     const pageHpx = mmToPx(PAGE_BREAK_MM);
-    const period = pageHpx + 16;            // one page + the grey gap below it
     const h = page.scrollHeight;
-    const out: number[] = [];               // y of the top of each gap
-    for (let n = 1; (n - 1) * period + pageHpx < h; n++) out.push((n - 1) * period + pageHpx);
+    const out: number[] = [];               // y of each A4 page break (dashed line)
+    for (let n = 1; n * pageHpx < h; n++) out.push(n * pageHpx);
     setGuides(out);
   }
   useEffect(() => { place(); /* eslint-disable-next-line */ }, [imgSel, imgW, imgH, wrap]);
@@ -658,6 +683,9 @@ export default function WordEditor({
         {tool(L("1.  Списък", "1.  List"), L("Номериран списък", "Numbered list"), () => exec("insertOrderedList"))}
         {tool("⇤", L("Намали отстъпа", "Decrease indent"), () => exec("outdent"))}
         {tool("⇥", L("Увеличи отстъпа", "Increase indent"), () => exec("indent"))}
+        <span className="we-sep" />
+        {tool("A−", L("По-малък текст", "Smaller text"), () => bumpFont(-1))}
+        {tool("A+", L("По-голям текст", "Bigger text"), () => bumpFont(1))}
         <span className="we-sep" />
         {tool(L("Изображение", "Image"), L("Вмъкни изображение / лого", "Insert image / logo"), () => fileRef.current?.click())}
         {tool(L("▦ Таблица", "▦ Table"), L("Вмъкни таблица", "Insert table"), insertTable)}
