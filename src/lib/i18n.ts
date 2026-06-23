@@ -26,6 +26,7 @@ const DICT: Record<string, Entry> = {
   "header.labPortal": { bg: "Портал за лаборатории", en: "Laboratory portal" },
   "nav.files": { bg: "Файлове", en: "Files" },
   "nav.skins": { bg: "Облици", en: "Skins" },
+  "nav.items": { bg: "Елементи", en: "My items" },
 
   // ── common ──
   "common.back": { bg: "Назад", en: "Back" },
@@ -134,6 +135,20 @@ const DICT: Record<string, Entry> = {
   "verdict.ok": { bg: "Задоволителен", en: "Satisfactory" },
   "verdict.warn": { bg: "Предупреждение", en: "Warning" },
   "verdict.action": { bg: "Действие", en: "Action" },
+
+  // ── lab dashboard sections + stage stepper ──
+  "lab.participatingNow": { bg: "Участвате в момента", en: "Participating now" },
+  "lab.completed": { bg: "Завършени", en: "Completed" },
+  "lab.openToJoin": { bg: "Отворени схеми, в които можете да се включите", en: "Open schemes you can join" },
+  "lab.applyToParticipate": { bg: "Заяви участие →", en: "Apply to participate →" },
+  "lab.awaitingResults": { bg: "Очакват се вашите резултати", en: "Awaiting your results" },
+  "lab.deadline": { bg: "Краен срок", en: "Deadline" },
+  "lab.noOpen": { bg: "В момента няма други отворени схеми.", en: "No other open schemes right now." },
+  "stage.applied": { bg: "Заявка", en: "Applied" },
+  "stage.approved": { bg: "Одобрен", en: "Approved" },
+  "stage.samples": { bg: "Образци", en: "Samples" },
+  "stage.results": { bg: "Резултати", en: "Results" },
+  "stage.report": { bg: "Доклад", en: "Report" },
 
   // ── common (more) ──
   "common.saveChanges": { bg: "Запази промените", en: "Save changes" },
@@ -302,6 +317,37 @@ const DICT: Record<string, Entry> = {
   "dv.saveDate": { bg: "Запази датата", en: "Save date" },
   "dv.issueAuto": { bg: "Издай № (авт.)", en: "Issue № (auto)" },
   "dv.pdfFailed": { bg: "Генерирането на PDF не успя: ", en: "PDF generation failed: " },
+
+  // ── folder rename / delete ──
+  "folder.rename": { bg: "Преименувай", en: "Rename" },
+  "folder.deleteFolder": { bg: "Изтрий папката", en: "Delete folder" },
+  "folder.newName": { bg: "Ново име на папката", en: "New folder name" },
+  "folder.deleteConfirm": { bg: "Да изтрия ли тази схема и всичките ѝ документи и участници? Това действие е необратимо.", en: "Delete this scheme and all its documents and participants? This cannot be undone." },
+
+  // ── table editing (Word editor) ──
+  "tbl.insert": { bg: "Таблица", en: "Table" },
+  "tbl.title": { bg: "Таблица", en: "Table" },
+  "tbl.rowAbove": { bg: "Ред отгоре", en: "Row above" },
+  "tbl.rowBelow": { bg: "Ред отдолу", en: "Row below" },
+  "tbl.colLeft": { bg: "Колона отляво", en: "Column left" },
+  "tbl.colRight": { bg: "Колона отдясно", en: "Column right" },
+  "tbl.delRow": { bg: "Изтрий реда", en: "Delete row" },
+  "tbl.delCol": { bg: "Изтрий колоната", en: "Delete column" },
+  "tbl.delTable": { bg: "Изтрий таблицата", en: "Delete table" },
+
+  // ── My items (library) page ──
+  "items.title": { bg: "Моите елементи", en: "My items" },
+  "items.subtitle": { bg: "Многократно използваеми фрагменти, които вмъквате в документите (групата „Мои елементи“ в редактора).", en: "Reusable snippets you insert into documents (the “My items” group in the editor)." },
+  "items.new": { bg: "Нов елемент", en: "New item" },
+  "items.empty": { bg: "Все още нямате елементи — създайте първия.", en: "No items yet — create your first." },
+  "items.name": { bg: "Име", en: "Name" },
+  "items.category": { bg: "Категория", en: "Category" },
+  "items.bg": { bg: "Български", en: "Bulgarian" },
+  "items.en": { bg: "Английски", en: "English" },
+  "items.newTitle": { bg: "Нов елемент", en: "New item" },
+  "items.editTitle": { bg: "Редактиране на елемент", en: "Edit item" },
+  "items.deleteConfirm": { bg: "Да изтрия ли този елемент?", en: "Delete this item?" },
+  "items.uncategorized": { bg: "Без категория", en: "Uncategorised" },
 };
 
 // "{n} schemes" / "{n} схеми" with singular/plural agreement (BG: 1 → singular).

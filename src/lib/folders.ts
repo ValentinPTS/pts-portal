@@ -14,8 +14,8 @@ export function typeLabel(t: FolderType, lang: UiLang = "en"): string {
 
 // Per-type accent so testing (green) and calibration (teal-blue) are instantly distinguishable.
 export const ACCENT: Record<FolderType, { accent: string; soft: string; line: string }> = {
-  T: { accent: "#2b6744", soft: "#e8f1ea", line: "#b7d0c0" },
-  C: { accent: "#2f6f8f", soft: "#e7f0f6", line: "#b6d2e0" },
+  T: { accent: "#57823c", soft: "#eef3ea", line: "#cbd9be" }, // testing — primary green
+  C: { accent: "#8fa97e", soft: "#eef3ea", line: "#cbd9be" }, // calibration — logo sage
 };
 
 // These helpers work on anything with a number/type — a full Scheme OR a
@@ -49,9 +49,9 @@ const STATUS: Record<SchemeStatus, { label: string; tone: keyof typeof TONE }> =
   closed: { label: "Reported", tone: "green" },
 };
 export const TONE = {
-  green: { fg: "#2b6744", bg: "#e8f1ea" },
+  green: { fg: "#456b2c", bg: "#e3eeda" },
   amber: { fg: "#9a6b22", bg: "#faf2e0" },
-  gray: { fg: "#5b6b62", bg: "#eef1ee" },
+  gray: { fg: "#666666", bg: "#eef1ee" },
   blue: { fg: "#2f6f8f", bg: "#e7f0f6" },
 };
 export function statusChip(st: SchemeStatus, lang: UiLang = "en"): { label: string; fg: string; bg: string } {

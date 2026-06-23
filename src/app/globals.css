@@ -6,35 +6,36 @@
    the strict brand (handled in the document renderer).
    ============================================================ */
 :root {
-  /* brand greens — refined deep forest palette */
-  --green-deep: #1e4d32;
-  --green-dark: #2b6744;
-  --green: #3a7b52;
-  --green-light: #9cc3ab;
-  --green-line: #b7d0c0;
-  --green-soft: #e8f1ea;
-  --canvas: #ecefed;
-  /* accent red */
-  --red: #a23b30;
-  --red-soft: #c46a5e;
-  --red-tint: #f6e7e6;
+  /* brand greens — from ptsbg.eu + the logo sage. Two-green system:
+     deep #57823C for actions, sage #8FA97E (logo) as the brand accent. */
+  --green-deep: #456b2c;   /* darkest — primary hover */
+  --green-dark: #57823c;   /* PRIMARY action green (site buttons) */
+  --green: #6e925a;        /* mid green */
+  --green-light: #8fa97e;  /* sage — the logo green (accent) */
+  --green-line: #cbd9be;   /* light sage border */
+  --green-soft: #eef3ea;   /* green wash (soft surfaces) */
+  --canvas: #f1f1ee;       /* editor desk */
+  /* accent — terracotta (the site's emphasis colour) */
+  --red: #cf4911;
+  --red-soft: #e08a6a;
+  --red-tint: #fbeae1;
   /* supporting accents */
-  --blue: #3b6ea5;
+  --blue: #2f6f8f;
   --teal: #2a8c82;
   --purple: #7a5ba6;
-  --amber: #c0883e;
-  --gold: #c9a227;
+  --amber: #9a6b22;
+  --gold: #8fa97e;
   /* status */
-  --success: #5f7d52;
-  --warning: #c0883e;
-  --error: #9e2b2b;
-  --info: #3b6ea5;
-  /* neutrals */
-  --ink: #18261f;
-  --slate: #3d3d3d;
-  --muted: #63706a;
-  --line: #e2e6e4;
-  --bg: #f1f3f1;
+  --success: #57823c;
+  --warning: #9a6b22;
+  --error: #cf4911;
+  --info: #2f6f8f;
+  /* neutrals — white/minimal, soft ink */
+  --ink: #3e3e3e;
+  --slate: #3e3e3e;
+  --muted: #666666;
+  --line: #e3e3e3;
+  --bg: #f9f9f9;
   --paper: #fbf6ee;
   --white: #ffffff;
 }

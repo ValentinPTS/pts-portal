@@ -141,6 +141,24 @@ export async function addScheme(s: Scheme): Promise<void> {
   }
 }
 
+// Delete a scheme (folder). Participants cascade (FK on delete cascade); the
+// scheme's applications/docs live in its JSONB row, so they go with it. Owners only
+// (enforced in the action). Seeds may reappear on a fresh process — that's fine.
+export async function deleteScheme(id: string): Promise<void> {
+  const db = getDb();
+  if (db) {
+    try {
+      const { error } = await db.from("schemes").delete().eq("id", id);
+      if (error) throw error;
+      return;
+    } catch (e) {
+      warn(e);
+    }
+  }
+  const i = mem.findIndex((s) => s.id === id);
+  if (i !== -1) mem.splice(i, 1);
+}
+
 export async function updateScheme(id: string, patch: Partial<Scheme>): Promise<void> {
   const db = getDb();
   if (db) {

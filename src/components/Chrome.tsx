@@ -22,14 +22,16 @@ export default function Chrome({ user, children }: { user: User; children: React
   const explorer = path === "/" || path.startsWith("/files") || /^\/schemes\/[^/]+$/.test(path);
   const wide = path.includes("/build/") || path.startsWith("/skins/"); // skin editor needs room for two columns
   const onSkins = path.startsWith("/skins");
+  const onItems = path.startsWith("/items");
 
   const navLink = (href: string, label: string, active: boolean) => (
     <Link
       href={href}
-      className="no-underline text-white"
+      className="no-underline"
       style={{
-        padding: "7px 14px", borderRadius: 999, fontSize: 13, fontWeight: active ? 700 : 500,
-        background: active ? "rgba(255,255,255,0.18)" : "transparent",
+        padding: "7px 14px", borderRadius: 999, fontSize: 13, fontWeight: active ? 700 : 600,
+        color: active ? "#456b2c" : "var(--muted)",
+        background: active ? "#d9e6cc" : "transparent",
       }}
     >
       {label}
@@ -38,13 +40,16 @@ export default function Chrome({ user, children }: { user: User; children: React
 
   return (
     <>
-      <header className="flex items-center gap-3 px-6 py-3 text-white" style={{ background: "var(--green-dark)" }}>
-        <Link href="/" className="font-bold text-lg tracking-tight no-underline text-white">PTS Bulgaria</Link>
-        <span className="text-sm opacity-80">· {t("header.providerPortal")}</span>
+      <header className="flex items-center gap-3 px-6 py-3" style={{ background: "#fff", borderBottom: "1px solid var(--line)", color: "var(--ink)" }}>
+        <Link href="/" className="font-bold text-lg tracking-tight no-underline">
+          <span style={{ color: "var(--green-dark)" }}>PTS</span> <span style={{ color: "var(--ink)" }}>Bulgaria</span>
+        </Link>
+        <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "var(--green-light)", borderRadius: 999, padding: "3px 9px", letterSpacing: ".04em" }}>PT PROVIDER</span>
         <nav className="ml-auto flex items-center gap-2">
           {navLink("/", t("nav.files"), explorer)}
           {navLink("/skins", t("nav.skins"), onSkins)}
-          <span style={{ width: 1, height: 22, background: "rgba(255,255,255,0.25)", margin: "0 4px" }} />
+          {navLink("/items", t("nav.items"), onItems)}
+          <span style={{ width: 1, height: 22, background: "var(--line)", margin: "0 4px" }} />
           <LanguageToggle />
           {user && <AccountMenu email={user.email} owner={user.owner} />}
         </nav>

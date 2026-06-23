@@ -38,13 +38,13 @@ export default function AccountMenu({ email, owner }: { email: string; owner: bo
         aria-expanded={open}
         style={{
           display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
-          border: "1px solid rgba(255,255,255,0.4)", borderRadius: 999, padding: "3px 10px 3px 3px",
-          background: "transparent", color: "#fff", fontSize: 13,
+          border: "1px solid var(--line)", borderRadius: 999, padding: "3px 10px 3px 3px",
+          background: "#fff", color: "var(--ink)", fontSize: 13,
         }}
       >
-        <span style={{ width: 26, height: 26, borderRadius: "50%", background: "rgba(255,255,255,0.22)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>{initials}</span>
+        <span style={{ width: 26, height: 26, borderRadius: "50%", background: "var(--green-light)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>{initials}</span>
         <span style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{email}</span>
-        <span style={{ fontSize: 11, opacity: 0.85 }}>▾</span>
+        <span style={{ fontSize: 11, color: "var(--muted)" }}>▾</span>
       </button>
 
       {open && (

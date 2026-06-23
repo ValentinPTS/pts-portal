@@ -4,14 +4,14 @@ import { randomInt, randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { getScheme, updateScheme, addScheme, listSchemeSummaries } from "./store";
+import { getScheme, updateScheme, addScheme, deleteScheme, listSchemeSummaries } from "./store";
 import { blankScheme } from "./new-scheme";
-import { nextProject } from "./folders";
+import { nextProject, schemeYear } from "./folders";
 import { addParticipant, listParticipants } from "./participants";
 import { addApplication, listApplications, setApplicationStatus } from "./applications";
 import { metricsForScheme, buildScoring, computeAssigned } from "./scoring";
 import { requireOwner } from "./auth";
-import { addLibraryItem, type LibraryItem } from "./library-store";
+import { addLibraryItem, updateLibraryItem, deleteLibraryItem, type LibraryItem } from "./library-store";
 import { addSavedTemplate, deleteSavedTemplate, type SavedTemplate } from "./saved-templates";
 import { getSkinAsync, setDefaultSkinAsync } from "../skins";
 import { sanitizeSkinData } from "../skins/custom";
@@ -25,11 +25,33 @@ import type { Block } from "./types";
 
 // Save a reusable snippet to the owner's global library ("+ Add your own").
 // Returns the created item so the editor can show it immediately.
-export async function addLibraryItemAction(name: string, bg: string, en: string): Promise<{ item?: LibraryItem; error?: string }> {
+export async function addLibraryItemAction(name: string, bg: string, en: string, category?: string): Promise<{ item?: LibraryItem; error?: string }> {
   await requireOwner();
   if (!name.trim() || !bg.trim()) return { error: "A name and Bulgarian text are required." };
-  const item = await addLibraryItem({ name: name.trim(), bg: bg.trim(), en: en.trim() });
+  const item = await addLibraryItem({ name: name.trim(), bg: bg.trim(), en: en.trim(), category: (category ?? "").trim() || undefined });
+  revalidatePath("/items", "page");
   return { item };
+}
+
+// Edit an existing library item (the "My items" management page).
+export async function updateLibraryItemAction(id: string, name: string, bg: string, en: string, category?: string): Promise<{ item?: LibraryItem; error?: string }> {
+  await requireOwner();
+  if (!id) return { error: "Missing id." };
+  if (!name.trim() || !bg.trim()) return { error: "A name and Bulgarian text are required." };
+  const item = await updateLibraryItem(id, {
+    name: name.trim(), bg: bg.trim(), en: en.trim(), category: (category ?? "").trim() || "My items",
+  });
+  if (!item) return { error: "Item not found." };
+  revalidatePath("/items", "page");
+  return { item };
+}
+
+export async function deleteLibraryItemAction(id: string): Promise<{ ok?: boolean; error?: string }> {
+  await requireOwner();
+  if (!id) return { error: "Missing id." };
+  await deleteLibraryItem(id);
+  revalidatePath("/items", "page");
+  return { ok: true };
 }
 
 // ── Document builder: free BG⇄EN translation (MyMemory) + save composed blocks ──
@@ -478,6 +500,32 @@ export async function createProjectAction(formData: FormData) {
 
   revalidatePath("/", "layout");
   redirect(`/schemes/${id}`);
+}
+
+// Rename a scheme folder (its friendly display name). Owners only.
+export async function renameSchemeAction(id: string, name: string) {
+  await requireOwner();
+  const scheme = await getScheme(id);
+  if (!scheme) return;
+  const clean = String(name ?? "").trim().slice(0, 120);
+  if (!clean) return;
+  await updateScheme(id, { name: clean });
+  revalidatePath("/", "layout");
+  revalidatePath(`/schemes/${id}`, "layout");
+}
+
+// Delete a scheme folder and everything in it (documents/applications live in the
+// row; participants cascade in the DB). Destructive — the UI confirms first, and
+// requireOwner() guards the direct-POST path. Lands back on the year folder.
+export async function deleteSchemeAction(id: string) {
+  await requireOwner();
+  const scheme = await getScheme(id);
+  if (!scheme) redirect("/");
+  const slug = scheme!.type === "C" ? "calibration" : "testing";
+  const year = schemeYear(scheme!);
+  await deleteScheme(id);
+  revalidatePath("/", "layout");
+  redirect(`/files/${slug}/${year}`);
 }
 
 const two = (v: string) => v.replace(/\D/g, "").slice(0, 2).padStart(2, "0");

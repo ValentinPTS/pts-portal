@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
-import { Sofia_Sans_Condensed, PT_Serif } from "next/font/google";
+import { Open_Sans, PT_Serif } from "next/font/google";
 import "./globals.css";
 import Chrome from "@/components/Chrome";
 import { LangProvider } from "@/components/LangProvider";
 import { getUiLang } from "@/lib/i18n-server";
 import { getSessionUser, isOwnerEmail } from "@/lib/auth";
 
-// Headings / UI — Sofia Sans Condensed (brand display font, variable, incl. Cyrillic)
-const sofia = Sofia_Sans_Condensed({
+// App UI — Open Sans (the ptsbg.eu website font, incl. Cyrillic). Documents keep
+// their own formal fonts (PT Serif + Sofia Sans Condensed, loaded in the renderer).
+const openSans = Open_Sans({
   subsets: ["latin", "cyrillic"],
   variable: "--font-sans",
   display: "swap",
@@ -33,7 +34,7 @@ export default async function RootLayout({
   const user = session ? { email: session.email, owner: isOwnerEmail(session.email) } : null;
 
   return (
-    <html lang={lang} className={`${sofia.variable} ${ptSerif.variable} h-full antialiased`}>
+    <html lang={lang} className={`${openSans.variable} ${ptSerif.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         <LangProvider initial={lang}>
           <Chrome user={user}>{children}</Chrome>

@@ -17,9 +17,9 @@ export default async function LabProfilePage() {
   );
   return (
     <div style={{ minHeight: "100dvh", background: "var(--bg)" }}>
-      <header className="flex items-center gap-3 px-6 py-3 text-white" style={{ background: "var(--green-dark)" }}>
-        <span className="font-bold text-lg tracking-tight">PTS Bulgaria</span>
-        <span className="text-sm opacity-80">· {tr("header.labPortal")}</span>
+      <header className="flex items-center gap-3 px-6 py-3" style={{ background: "#fff", borderBottom: "1px solid var(--line)", color: "var(--ink)" }}>
+        <span className="font-bold text-lg tracking-tight"><span style={{ color: "var(--green-dark)" }}>PTS</span> Bulgaria</span>
+        <span className="text-sm" style={{ color: "var(--muted)" }}>· {tr("header.labPortal")}</span>
       </header>
       <main style={{ maxWidth: 640, margin: "0 auto", padding: "32px 24px" }}>
         <Link href="/lab" className="text-sm" style={{ color: "var(--muted)" }}>← {tr("lab.backToDashboard")}</Link>

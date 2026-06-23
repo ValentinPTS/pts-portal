@@ -58,3 +58,50 @@ export async function addLibraryItem(input: { name: string; bg: string; en: stri
   }
   return item;
 }
+
+export async function updateLibraryItem(
+  id: string,
+  patch: { name: string; bg: string; en: string; category: string }
+): Promise<LibraryItem | null> {
+  const db = getDb();
+  if (!db) {
+    const i = mem.findIndex((x) => x.id === id);
+    if (i === -1) return null;
+    mem[i] = { ...mem[i], ...patch };
+    return mem[i];
+  }
+  try {
+    const { data, error } = await db
+      .from("library_items")
+      .update({ name: patch.name, category: patch.category, bg: patch.bg, en: patch.en })
+      .eq("id", id)
+      .select("*")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    return { id: data.id, name: data.name, category: data.category ?? "My items", bg: data.bg ?? "", en: data.en ?? "" };
+  } catch (e) {
+    warn(e);
+    const i = mem.findIndex((x) => x.id === id);
+    if (i === -1) return null;
+    mem[i] = { ...mem[i], ...patch };
+    return mem[i];
+  }
+}
+
+export async function deleteLibraryItem(id: string): Promise<void> {
+  const db = getDb();
+  if (!db) {
+    const i = mem.findIndex((x) => x.id === id);
+    if (i !== -1) mem.splice(i, 1);
+    return;
+  }
+  try {
+    const { error } = await db.from("library_items").delete().eq("id", id);
+    if (error) throw error;
+  } catch (e) {
+    warn(e);
+    const i = mem.findIndex((x) => x.id === id);
+    if (i !== -1) mem.splice(i, 1);
+  }
+}

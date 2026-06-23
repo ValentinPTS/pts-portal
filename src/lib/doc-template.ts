@@ -62,5 +62,9 @@ export function docPrintHtml(
   );
   const b = bodyBounds(full);
   if (!b) return stripBodyMarkers(full);
-  return stripBodyMarkers(full.slice(0, b.start) + "\n" + editedBody + "\n" + full.slice(b.end));
+  // Wrap the edited body in a position:relative container — the same anchor the
+  // Word editor uses for free/overlapping images — so absolutely-positioned photos
+  // (placed in mm) land in the exact same spot in the PDF as in the editor.
+  const wrapped = `<div class="pts-docbody" style="position:relative">\n${editedBody}\n</div>`;
+  return stripBodyMarkers(full.slice(0, b.start) + "\n" + wrapped + "\n" + full.slice(b.end));
 }

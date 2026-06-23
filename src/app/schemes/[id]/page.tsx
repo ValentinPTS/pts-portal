@@ -5,6 +5,7 @@ import { DOCUMENTS, isFormDoc } from "@/lib/documents";
 import ExplorerShell from "@/components/ExplorerShell";
 import { DocTile } from "@/components/Tiles";
 import SkinPicker from "@/components/SkinPicker";
+import FolderActions from "@/components/FolderActions";
 import { skinsForTypeAsync } from "@/skins";
 import { TYPE_SLUG, typeLabel, schemeYear, schemeName, statusChip, ACCENT } from "@/lib/folders";
 import { getServerT } from "@/lib/i18n-server";
@@ -47,6 +48,8 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
           <Link href={`/schemes/${id}/applications`} className="btn" style={{ fontSize: 13 }}>{tr("scheme.applications")}</Link>
           <Link href={`/schemes/${id}/results`} className="btn" style={{ fontSize: 13 }}>{tr("scheme.results")}</Link>
           <SkinPicker schemeId={id} current={s.skin ?? "classic"} skins={skins.map((k) => ({ id: k.meta.id, name: k.meta.name }))} />
+          <span style={{ width: 1, height: 22, background: "var(--line)", margin: "0 2px" }} />
+          <FolderActions schemeId={id} name={s.name?.trim() || schemeName(s)} />
         </div>
       </div>
 
