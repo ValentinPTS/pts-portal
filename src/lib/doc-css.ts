@@ -33,9 +33,14 @@ export const DOC_CSS = `
   @page{size:A4;margin:16mm 14mm 18mm;}
   *{box-sizing:border-box;}
   body{margin:0;color:var(--ink);font-family:var(--serif);font-size:11pt;line-height:1.5;background:#fff;}
-  .page{max-width:800px;margin:0 auto;padding:26px 30px 50px;}
+  .page{max-width:800px;margin:0 auto;padding:26px 30px 50px 50px;}
+  /* traditional embroidery border down the LEFT of every page (position:fixed
+     repeats it on each printed page in Chromium); sits in the left padding so it
+     never overlaps text. */
+  .doc-side{position:fixed;top:0;bottom:0;left:0;width:8mm;background:url(/brand/embroidery-side.png) top center/100% auto repeat-y;pointer-events:none;z-index:40;}
   .head{display:flex;align-items:center;gap:16px;} .head .logo{height:64px;} .head .tag{height:24px;margin-left:auto;}
   .emb{display:block;width:100%;height:auto;margin:10px 0 6px;}
+  .emb.bottom{margin:18px 0 2px;}
   .cover{text-align:center;break-after:page;page-break-after:always;padding-bottom:18px;}
   .docttl{font-family:var(--sans);font-weight:800;color:var(--green-dark);font-size:22pt;margin:14px 0 2px;}
   .inacc{color:var(--muted);font-size:10.5pt;}

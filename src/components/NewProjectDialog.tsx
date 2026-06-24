@@ -62,13 +62,12 @@ export default function NewProjectDialog({
                 style={{ border: "1px solid var(--line)", borderRadius: 9, padding: "11px 12px", fontSize: 14 }} />
             </label>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <span style={{ fontWeight: 700, fontSize: 13 }}>{t("np.officialNumber")}</span>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ background: soft, border: `1px solid ${line}`, color: accent, fontWeight: 700, fontSize: 14, padding: "8px 12px", borderRadius: 8 }}>{nextNumber}</span>
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("np.autoAssigned")}</span>
-              </div>
-            </div>
+              <input name="number" required defaultValue={nextNumber}
+                style={{ background: soft, border: `1px solid ${line}`, color: accent, fontWeight: 700, fontSize: 15, padding: "11px 12px", borderRadius: 9, fontFamily: "var(--font-sans)", letterSpacing: "0.01em" }} />
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("np.autoAssigned")}</span>
+            </label>
 
             <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <span style={{ fontWeight: 700, fontSize: 13 }}>{t("np.object")}</span>

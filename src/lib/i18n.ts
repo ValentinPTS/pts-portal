@@ -105,7 +105,7 @@ const DICT: Record<string, Entry> = {
   "np.name": { bg: "Име на проекта", en: "Project name" },
   "np.namePlaceholder": { bg: "напр. Бетонни павета 2026", en: "e.g. Concrete Paving Blocks 2026" },
   "np.officialNumber": { bg: "Официален номер", en: "Official number" },
-  "np.autoAssigned": { bg: "присвоява се автоматично · може да се редактира по-късно", en: "assigned automatically · editable later" },
+  "np.autoAssigned": { bg: "попълва се автоматично — можете да го промените (важи за всички документи)", en: "auto-filled — you can change it (applies to every document)" },
   "np.object": { bg: "Обект / обхват", en: "Object / scope" },
   "np.objectPlaceholder": { bg: "напр. Бетонни павета 200 × 100 × 60 мм", en: "e.g. Concrete paving blocks 200 × 100 × 60 mm" },
   "np.create": { bg: "Създай проект", en: "Create project" },

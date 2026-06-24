@@ -485,8 +485,18 @@ export async function createProjectAction(formData: FormData) {
   const slug = type === "C" ? "calibration" : "testing";
   if (!year || !name) redirect(`/files/${slug}/${year}`);
 
-  const { id, number } = nextProject(await listSchemeSummaries(), type, year);
-  if (await getScheme(id)) redirect(`/schemes/${id}`);
+  const auto = nextProject(await listSchemeSummaries(), type, year);
+  // The owner may override the official number in the dialog; it flows into every
+  // document (renderers print s.number) and drives the year grouping. Fall back to
+  // the auto number if the field was cleared.
+  const number = (String(formData.get("number") ?? "").trim() || auto.number).slice(0, 60);
+  // Derive a URL-safe id from the number ("PTS 26/03-T-1" → "26-03-T-1") so the folder
+  // URL stays consistent with it; never overwrite an existing scheme (suffix on clash).
+  const baseId =
+    number.replace(/^PTS\s*/i, "").replace(/\s+/g, "").replace(/\//g, "-")
+      .replace(/[^A-Za-z0-9_-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || auto.id;
+  let id = baseId, n = 2;
+  while (await getScheme(id)) id = `${baseId}-${n++}`;
 
   const scheme = blankScheme({
     id, number, type,

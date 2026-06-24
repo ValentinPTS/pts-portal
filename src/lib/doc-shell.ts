@@ -47,7 +47,7 @@ export function wrapDoc(lang: Lang, titleAttr: string, bodyHTML: string, extraCs
 <link href="${sk.fontsHref}" rel="stylesheet">
 <style>${sk.css}${extraCss}</style>
 </head>
-<body><div class="page">${bodyHTML}</div></body>
+<body><div class="doc-side" aria-hidden="true"></div><div class="page">${bodyHTML}</div></body>
 </html>`;
 }
 
@@ -68,6 +68,7 @@ function classicCover(
     <div class="schemeno">${esc(s.number)}</div>
     <div class="schemettl">${esc(pick(lang, s.titleEn, s.titleBg))}</div>
     ${opts.withImage && s.coverImage ? `<img class="coverimg" src="${s.coverImage}" alt="">` : ""}
+    <img class="emb bottom" src="/brand/embroidery-border.png" alt="">
   </div>`;
 }
 

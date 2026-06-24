@@ -22,8 +22,12 @@ const roundMm = (mm: number) => Math.max(1, Math.round(mm));
 type Wrap = "inline" | "left" | "right" | "center" | "free";
 type Unit = "mm" | "cm" | "px";
 
+// Text-colour palette for the toolbar "A▾" button: brand greens, accents, neutrals.
+const TEXT_COLORS = ["#456b2c", "#57823c", "#6e925a", "#8fa97e", "#9e2b2b", "#cf4911", "#9a6b22", "#2f6f8f", "#1a1a1a", "#3e3e3e", "#666666", "#ffffff"];
+const TEXT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28];
+
 const EDITOR_CSS = `
-  .we-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;background:var(--green-soft);border:1px solid var(--green-line);border-radius:10px;}
+  .we-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;background:var(--green-soft);border:1px solid var(--green-line);border-radius:10px;position:sticky;top:0;z-index:30;}
   .we-tool{display:inline-flex;align-items:center;justify-content:center;min-width:38px;height:36px;padding:0 11px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;font-weight:700;font-size:15px;color:var(--ink);transition:background .12s,border-color .12s;}
   .we-tool:hover{background:var(--green-soft);border-color:var(--green-line);}
   .we-sep{width:1px;height:24px;background:var(--green-line);margin:0 3px;}
@@ -33,9 +37,11 @@ const EDITOR_CSS = `
 
   /* the paper = exactly the PDF content box (182mm), real document body styles */
   .we-page{--green-dark:#5f7d52;--green:#88a77b;--green-soft:#eef3ea;--green-line:#b7d0c0;--red:#9e2b2b;--ink:#1a1a1a;--muted:#6b6b6b;--line:#dcdcdc;position:relative;width:${PAGE_W_MM}mm;color:var(--ink);border:1px solid var(--line);border-radius:4px;
-    padding:26px 30px 50px;box-shadow:0 8px 28px rgba(15,30,22,.10);
+    padding:26px 30px 50px 50px;box-shadow:0 8px 28px rgba(15,30,22,.10);
     font-family:'PT Serif',Georgia,serif;font-size:11pt;line-height:1.5;background:#fff;}
-  .we-docbody{position:relative;min-height:55vh;outline:none;}
+  /* traditional embroidery border down the left (matches the printed document) */
+  .we-page::before{content:"";position:absolute;top:0;bottom:0;left:0;width:30px;background:url(/brand/embroidery-side.png) top center/100% auto repeat-y;border-radius:4px 0 0 4px;pointer-events:none;z-index:0;}
+  .we-docbody{position:relative;min-height:55vh;outline:none;z-index:1;}
   .we-docbody:focus{outline:none;}
   .we-page.focused{box-shadow:0 8px 28px rgba(15,30,22,.12),0 0 0 2px var(--green-light);}
   .we-page h2{font-family:'Sofia Sans Condensed',sans-serif;font-weight:700;font-size:13.5pt;color:var(--ink);border-bottom:2.5px solid var(--red);padding-bottom:5px;margin:20px 0 4px;}
@@ -54,8 +60,8 @@ const EDITOR_CSS = `
 
   /* page-break guides + image selection handles overlay */
   .we-guides{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none;z-index:5;}
-  .we-brk{position:absolute;left:-30px;right:-30px;border-top:1px dashed #c9c9c9;display:flex;justify-content:center;pointer-events:none;}
-  .we-brk span{font-size:9px;color:var(--muted);background:#fff;padding:0 9px;transform:translateY(-50%);}
+  .we-brk{position:absolute;left:-28px;right:-28px;border-top:2.5px solid #8fa97e;display:flex;justify-content:center;pointer-events:none;z-index:7;}
+  .we-brk span{font-size:10px;font-weight:700;color:#456b2c;background:#fff;border:1.5px solid #8fa97e;border-radius:999px;padding:2px 12px;transform:translateY(-50%);}
   .we-ov{position:absolute;inset:0;pointer-events:none;z-index:6;}
   .we-h{position:absolute;width:11px;height:11px;background:#fff;border:1.6px solid var(--green-dark);border-radius:2px;pointer-events:auto;}
   .we-h.nw{cursor:nwse-resize;} .we-h.ne{cursor:nesw-resize;} .we-h.sw{cursor:nesw-resize;} .we-h.se{cursor:nwse-resize;}
@@ -74,7 +80,7 @@ const EDITOR_CSS = `
   .we-unit button{border:0;background:#fff;padding:5px 8px;font-size:12px;font-weight:700;cursor:pointer;color:var(--muted);}
   .we-unit button.active{background:var(--green-soft);color:var(--green-dark);}
 
-  .we-panel{width:330px;flex-shrink:0;background:var(--white);border:1px solid var(--line);border-radius:14px;box-shadow:0 4px 14px rgba(15,30,22,.06);padding:16px;max-height:82vh;overflow:auto;}
+  .we-panel{width:330px;flex-shrink:0;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 4px 14px rgba(15,30,22,.06);padding:16px;position:sticky;top:76px;align-self:flex-start;max-height:calc(100vh - 96px);overflow:auto;}
   .we-panelhdr{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
   .we-panelhdr .ttl{font-weight:700;font-size:16px;color:var(--ink);}
   .we-collapse{margin-left:auto;border:0;background:none;cursor:pointer;color:var(--muted);font-size:14px;line-height:1;padding:4px;}
@@ -122,6 +128,12 @@ const EDITOR_CSS = `
   .we-page .odecl{font-family:'Sofia Sans Condensed',sans-serif;font-weight:800;color:var(--red);text-align:center;font-size:1.1em;letter-spacing:2px;margin:12px 0 10px;}
   .we-page .frame{border:2px solid var(--green-line);border-radius:10px;padding:28px;display:flex;flex-direction:column;align-items:center;text-align:center;}
   .we-page .ctitle{font-family:'Sofia Sans Condensed',sans-serif;font-weight:800;color:var(--green-dark);font-size:2.4em;letter-spacing:2px;margin:18px 0 2px;}
+
+  /* text-size selector + text-colour palette */
+  .we-size{height:36px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:0 8px;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;}
+  .we-colorpop{position:absolute;top:calc(100% + 6px);left:0;z-index:50;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(15,30,22,.18);padding:14px;width:236px;}
+  .we-sw{width:28px;height:28px;border-radius:7px;border:1px solid rgba(0,0,0,.08);cursor:pointer;padding:0;}
+  .we-sw:hover{transform:scale(1.08);}
 `;
 
 const IconImage = () => (
@@ -201,6 +213,9 @@ export default function WordEditor({
   const [box, setBox] = useState<{ l: number; t: number; w: number; h: number } | null>(null); // px rel. to paper
   const [guides, setGuides] = useState<number[]>([]); // page-break y offsets (px rel. to paper)
   const [cell, setCell] = useState<HTMLTableCellElement | null>(null); // selected table cell
+  const [colorOpen, setColorOpen] = useState(false);          // text-colour palette open
+  const [textColor, setTextColor] = useState("#9e2b2b");      // last-used text colour (button indicator)
+  const colorRef = useRef<HTMLSpanElement>(null);
   const lockRef = useRef(lockAspect);
   lockRef.current = lockAspect;
   const drag = useRef<null | { mode: "resize" | "move"; handle: string; px: number; py: number; w: number; h: number; left: number; top: number; ratio: number }>(null);
@@ -244,6 +259,14 @@ export default function WordEditor({
     applyFontSize(Math.max(6, Math.min(48, curPt + delta)));
   }
 
+  // ── text colour: apply a colour to the selection (style attr, so it prints) ──
+  function applyColor(c: string) {
+    ref.current?.focus();
+    try { document.execCommand("styleWithCSS", false, "true"); } catch { /* not all browsers */ }
+    document.execCommand("foreColor", false, c);
+    setTextColor(c); setColorOpen(false); setSaved(false);
+  }
+
   // px size of an image from its inline style (mm) or its rendered box
   function readImgMm(img: HTMLImageElement) {
     const r = img.getBoundingClientRect();
@@ -275,6 +298,13 @@ export default function WordEditor({
     setGuides(out);
   }
   useEffect(() => { place(); /* eslint-disable-next-line */ }, [imgSel, imgW, imgH, wrap]);
+  // close the text-colour palette when clicking outside it
+  useEffect(() => {
+    if (!colorOpen) return;
+    const h = (e: MouseEvent) => { if (colorRef.current && !colorRef.current.contains(e.target as Node)) setColorOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [colorOpen]);
   useEffect(() => {
     if (!started) return;
     refreshGuides();
@@ -686,6 +716,45 @@ export default function WordEditor({
         <span className="we-sep" />
         {tool("A−", L("По-малък текст", "Smaller text"), () => bumpFont(-1))}
         {tool("A+", L("По-голям текст", "Bigger text"), () => bumpFont(1))}
+        <select
+          className="we-size"
+          title={L("Размер на текста", "Text size")}
+          defaultValue=""
+          onMouseDown={(e) => e.stopPropagation()}
+          onChange={(e) => { const v = parseInt(e.target.value, 10); if (v) applyFontSize(v); e.currentTarget.selectedIndex = 0; }}
+        >
+          <option value="" disabled>{L("Размер", "Size")}</option>
+          {TEXT_SIZES.map((n) => (<option key={n} value={n}>{n} pt</option>))}
+        </select>
+        {/* text colour palette */}
+        <span ref={colorRef} style={{ position: "relative", display: "inline-flex" }}>
+          <button type="button" className="we-tool" title={L("Цвят на текста", "Text colour")} style={{ gap: 3 }} onMouseDown={(e) => e.preventDefault()} onClick={() => setColorOpen((o) => !o)}>
+            <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", lineHeight: 1 }}>
+              <span style={{ fontWeight: 700, fontSize: 15 }}>A</span>
+              <span style={{ width: 15, height: 4, borderRadius: 1, background: textColor, marginTop: 1 }} />
+            </span>
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>▾</span>
+          </button>
+          {colorOpen && (
+            <div className="we-colorpop">
+              <div style={{ fontWeight: 700, fontSize: 13, color: "var(--ink)", marginBottom: 8 }}>{L("Цвят на текста", "Text colour")}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 8 }}>
+                {TEXT_COLORS.map((c) => (
+                  <button key={c} type="button" className="we-sw" title={c} style={{ background: c, borderColor: c === "#ffffff" ? "#ccc" : "rgba(0,0,0,.08)" }} onMouseDown={(e) => e.preventDefault()} onClick={() => applyColor(c)} />
+                ))}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+                <button type="button" className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={() => applyColor("#1a1a1a")}>
+                  <span style={{ width: 12, height: 12, borderRadius: 999, background: "#1a1a1a", display: "inline-block" }} /> {L("Автоматичен", "Automatic")}
+                </button>
+                <label className="we-pill" style={{ marginLeft: "auto", position: "relative", overflow: "hidden" }} onMouseDown={(e) => e.preventDefault()}>
+                  ＋ {L("Друг", "Custom")}
+                  <input type="color" onChange={(e) => applyColor(e.target.value)} style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }} />
+                </label>
+              </div>
+            </div>
+          )}
+        </span>
         <span className="we-sep" />
         {tool(L("Изображение", "Image"), L("Вмъкни изображение / лого", "Insert image / logo"), () => fileRef.current?.click())}
         {tool(L("▦ Таблица", "▦ Table"), L("Вмъкни таблица", "Insert table"), insertTable)}
