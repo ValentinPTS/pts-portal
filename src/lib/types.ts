@@ -204,7 +204,9 @@ export interface Scheme {
   titleBg: string;
   objectEn: string;
   objectBg: string;
-  coverImage?: string; // /brand/...
+  coverImage?: string; // /brand/... or an uploaded https URL
+  coverImageWidth?: number; // cover photo width as % of the content (default 46)
+  coverImageAlign?: "left" | "center" | "right"; // cover photo placement (default center)
   distribution: "simultaneous" | "sequential";
   formNumber: string; // "F 7.2.1-1"
   revision: string; // "Revision 1"

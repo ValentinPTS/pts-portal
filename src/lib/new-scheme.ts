@@ -26,7 +26,9 @@ export function blankScheme(opts: {
     titleBg: opts.titleBg,
     objectEn: opts.objectEn,
     objectBg: opts.objectBg,
-    coverImage: undefined,
+    // each new scheme gets a ready cover photo on the title page (swap it per scheme
+    // in the editor / Edit → Cover photo): calibration → the device, testing → the sample item.
+    coverImage: opts.type === "C" ? "/brand/cover-force-transducer.png" : "/brand/cover-paving-blocks.png",
     distribution: opts.distribution,
     formNumber: "F 7.2.1-1",
     revision: "Revision 1",

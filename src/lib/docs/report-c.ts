@@ -1,5 +1,5 @@
 import type { Scheme, Lang } from "../types";
-import { esc, pick, wrapDoc, sec, footer } from "../doc-shell";
+import { esc, pick, wrapDoc, sec, footer, coverImgTag } from "../doc-shell";
 import { reportResultsCalibration } from "../scoring";
 
 const FORM = "F 7.4.3-1";
@@ -16,6 +16,7 @@ const REPORT_C_CSS = `
   .snasbox .regno{font-size:9.5pt;color:var(--ink);}
   .provider{margin-top:30px;font-family:var(--sans);font-weight:700;font-size:10pt;line-height:1.5;}
   .provider .blue{color:#3b6fb0;}
+  .cover .coverimg{max-height:42mm;margin:12px auto;}
   .pending{border:1px dashed var(--green-dark);background:var(--green-soft);border-radius:6px;padding:10px 12px;margin:8px 0;color:var(--green-dark);font-family:var(--sans);font-size:10pt;}
   .formula{background:var(--green-soft);border-left:3px solid var(--green);padding:8px 12px;font-family:var(--sans);margin:8px 0;}
   .crit{display:flex;gap:10px;margin:8px 0;}
@@ -57,6 +58,7 @@ export function renderReportC(s: Scheme, lang: Lang): string {
     <div class="docttl">${L("FINAL REPORT", "ОКОНЧАТЕЛЕН ДОКЛАД")}</div>
     <div class="schemeno">${L("ON PROFICIENCY TESTING No.", "ОТ ИЗПИТВАНЕ ЗА ПРИГОДНОСТ №")} ${esc(s.number)}</div>
     <div class="schemettl">${L(s.titleEn, s.titleBg)}</div>
+    ${coverImgTag(s)}
     <div class="provider">
       <div>${L("PT Provider PTS Bulgaria at", "Организатор на изпитване за пригодност PTS Bulgaria към")}</div>
       <div>Proficiency Testing Solutions Bulgaria Ltd</div>

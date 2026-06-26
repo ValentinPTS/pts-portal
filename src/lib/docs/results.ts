@@ -1,27 +1,29 @@
 import type { Scheme, Lang } from "../types";
 import { esc, pick, wrapDoc, cover, heading, footer } from "../doc-shell";
+import { fText } from "../form-fields";
 
 const FORM = "F 7.2.1-7";
 
 export function renderResults(s: Scheme, lang: Lang): string {
   const L = (en: string, bg: string) => esc(pick(lang, en, bg));
 
-  const assigned = L("— to be assigned by PTS —", "— попълва се от РТ провайдъра —");
+  const assigned = L("— assigned by PTS —", "— попълва се от РТ провайдъра —");
 
-  // Top blank fields — values are assigned by the provider, not entered here.
+  // Top fields — the provider assigns the laboratory + item codes.
   const topFields = `<div class="fld"><span class="fl">${L(
     "Laboratory Code:",
     "Код на лабораторията:"
-  )}</span> <span class="blank"></span> <span class="muted">${assigned}</span></div>
+  )}</span> ${fText("lab_code", 200)} <span class="muted">${assigned}</span></div>
     <div class="fld"><span class="fl">${L(
       "PT Item's code:",
       "Код на обекта на РТ схемата:"
-    )}</span> <span class="blank"></span> <span class="muted">${assigned}</span></div>`;
+    )}</span> ${fText("item_code", 200)} <span class="muted">${assigned}</span></div>`;
 
-  // One small result-entry table per parameter.
+  // One small result-entry table per parameter — the lab enters its reported
+  // result + expanded uncertainty for each characteristic.
   const tables = s.parameters
     .map(
-      (pr) => `<h3 class="sub">${L(pr.characteristicEn, pr.characteristicBg)} — ${L(
+      (pr, i) => `<h3 class="sub">${L(pr.characteristicEn, pr.characteristicBg)} — ${L(
         pr.standardEn,
         pr.standardBg
       )}</h3>
@@ -31,8 +33,8 @@ export function renderResults(s: Scheme, lang: Lang): string {
       <th>${L("Expanded uncertainty U (k=2, P≈95%)", "Разширена неопределеност U (k=2, P≈95%)")}</th>
     </tr></thead><tbody><tr>
       <td>${L(pr.characteristicEn, pr.characteristicBg)}</td>
-      <td><span class="blank"></span></td>
-      <td><span class="blank"></span></td>
+      <td>${fText(`result_${i}`, 160)}</td>
+      <td>${fText(`unc_${i}`, 160)}</td>
     </tr></tbody></table>`
     )
     .join("\n");

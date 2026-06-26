@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getScheme } from "@/lib/store";
 import { updateSchemeAction } from "@/lib/actions";
+import CoverPhotoField from "@/components/CoverPhotoField";
 
 const inputCls = "w-full rounded px-2 py-1 text-sm";
 const inputStyle = { border: "1px solid var(--line)", background: "#fff" } as const;
@@ -48,6 +49,15 @@ export default async function EditSchemePage({
         <input type="hidden" name="id" value={s.id} />
 
         <SectionTitle>Basics</SectionTitle>
+        <label className="block mb-3">
+          <span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>Official number (PTS №) — shown on every document &amp; sets the year folder</span>
+          <input
+            name="number"
+            defaultValue={s.number}
+            className="rounded px-3 py-2 text-sm font-bold"
+            style={{ border: "1px solid var(--green-line)", background: "var(--green-soft)", color: "var(--green-dark)", maxWidth: 320, fontFamily: "var(--font-sans)" }}
+          />
+        </label>
         <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
           <Field label="Title (EN)" name="titleEn" def={s.titleEn} />
           <Field label="Заглавие (БГ)" name="titleBg" def={s.titleBg} />
@@ -55,6 +65,9 @@ export default async function EditSchemePage({
           <Field label="Обект (БГ)" name="objectBg" def={s.objectBg} />
           <Field label="Minimum participants" name="minParticipants" def={String(s.minParticipants)} />
         </div>
+
+        <SectionTitle>Cover photo (title page)</SectionTitle>
+        <CoverPhotoField image={s.coverImage} width={s.coverImageWidth} align={s.coverImageAlign} />
 
         <SectionTitle>Schedule (the green calendars · §10)</SectionTitle>
         <div className="grid gap-3">

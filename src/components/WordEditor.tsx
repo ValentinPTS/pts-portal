@@ -7,6 +7,7 @@ import { FONTS_HREF } from "@/lib/doc-css";
 
 type Snippet = { id: string; name: string; bg: string; en: string };
 type Field = { key: string; label: string; bg: string; en: string };
+type FormEl = { id: string; nameBg: string; nameEn: string; bg: string; en: string };
 type Tmpl = { id: string; name: string; bg: string; en: string };
 type CopyItem = { id: string; number: string; title: string; bg: string; en: string };
 
@@ -25,6 +26,46 @@ type Unit = "mm" | "cm" | "px";
 // Text-colour palette for the toolbar "A▾" button: brand greens, accents, neutrals.
 const TEXT_COLORS = ["#456b2c", "#57823c", "#6e925a", "#8fa97e", "#9e2b2b", "#cf4911", "#9a6b22", "#2f6f8f", "#1a1a1a", "#3e3e3e", "#666666", "#ffffff"];
 const TEXT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28];
+// Must match COVER_MARK in lib/doc-css.ts — flags content that already carries its
+// own title page (so the editor shows the cover and the export doesn't re-add it).
+const COVER_MARK = "<!--PTS:CV-->";
+const hasCover = (html: string) => html.includes(COVER_MARK);
+
+// Title-page (cover) styling for the three built-in skins, scoped to the editor
+// paper so the baked-in cover renders faithfully while editing (the body keeps the
+// editor's own styles). Mirrors DOC_CSS / the skin overrides.
+const COVER_CSS = `
+  .we-page .cover{text-align:center;padding-bottom:14px;}
+  .we-page .head{display:flex;align-items:center;gap:16px;} .we-page .head .logo{height:60px;} .we-page .head .tag{height:24px;margin-left:auto;}
+  .we-page .emb{display:block;width:100%;height:auto;margin:10px 0 6px;}
+  .we-page .docttl{font-family:'Sofia Sans Condensed',sans-serif;font-weight:800;color:#5f7d52;font-size:22pt;margin:14px 0 2px;}
+  .we-page .inacc{color:var(--muted);font-size:10.5pt;}
+  .we-page .schemeno{font-family:'Sofia Sans Condensed',sans-serif;font-weight:700;color:var(--red);font-size:14pt;margin-top:10px;}
+  .we-page .schemettl{font-family:'Sofia Sans Condensed',sans-serif;font-weight:700;font-size:13pt;margin:2px 0 10px;}
+  .we-page .coverimg{max-width:46%;height:auto;border-radius:8px;margin-top:10px;cursor:pointer;}
+  .we-page .coverimg-empty{opacity:.95;}
+  .we-page .contacts{display:flex;gap:14px;justify-content:center;margin-top:22px;flex-wrap:wrap;}
+  .we-page .contact{display:flex;align-items:center;gap:10px;border:1px solid #88a77b;border-radius:10px;padding:9px 16px;background:#fff;}
+  .we-page .contact .ico{display:inline-flex;flex:0 0 auto;} .we-page .contact .ico svg{width:28px;height:28px;display:block;}
+  .we-page .contact .ctext{color:var(--red);font-family:'Sofia Sans Condensed',sans-serif;font-weight:700;font-size:11pt;letter-spacing:.2px;}
+  /* Modern skin cover */
+  .we-page .mcover{padding-bottom:14px;}
+  .we-page .mcover .mband{display:flex;align-items:center;gap:16px;background:#2b6744;border-radius:12px;padding:18px 22px;}
+  .we-page .mcover .mband .mlogo{height:50px;filter:brightness(0) invert(1);}
+  .we-page .mcover .mband .mttl{font-family:'Sofia Sans Condensed',sans-serif;font-weight:800;color:#fff;font-size:21pt;letter-spacing:.4px;}
+  .we-page .mcover .minfo{margin-top:18px;}
+  .we-page .mcover .minfo .mno{font-family:'Sofia Sans Condensed',sans-serif;font-weight:800;color:#2b6744;font-size:16pt;}
+  .we-page .mcover .minfo .mname{font-family:'Sofia Sans Condensed',sans-serif;font-weight:700;font-size:13pt;margin-top:2px;}
+  .we-page .mcover .minfo .macc{color:var(--muted);font-size:10.5pt;margin-top:6px;}
+  .we-page .mcover .coverimg{max-width:52%;}
+  /* Minimal skin cover */
+  .we-page .mincover{text-align:left;padding:6px 0 14px;}
+  .we-page .mincover .minlogo{height:38px;}
+  .we-page .mincover .mintitle{font-family:'Sofia Sans Condensed',sans-serif;font-weight:800;color:#111;font-size:24pt;letter-spacing:.4px;margin:22px 0 0;}
+  .we-page .mincover .minrule{height:2px;width:60px;background:#111;margin:10px 0 14px;}
+  .we-page .mincover .minno{font-family:'Sofia Sans Condensed',sans-serif;font-weight:700;font-size:12.5pt;}
+  .we-page .mincover .minacc{color:var(--muted);font-size:10.5pt;margin-top:4px;}
+`;
 
 const EDITOR_CSS = `
   .we-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;background:var(--green-soft);border:1px solid var(--green-line);border-radius:10px;position:sticky;top:0;z-index:30;}
@@ -58,11 +99,16 @@ const EDITOR_CSS = `
   .we-page table th{background:var(--green-soft);color:var(--green-dark);}
   .we-docbody:empty:before{content:"${"Start typing, or insert an item from the panel →"}";color:var(--muted);}
 
-  /* page-break guides + image selection handles overlay */
-  .we-guides{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none;z-index:5;}
-  .we-brk{position:absolute;left:-28px;right:-28px;border-top:2.5px solid #8fa97e;display:flex;justify-content:center;pointer-events:none;z-index:7;}
-  .we-brk span{font-size:10px;font-weight:700;color:#456b2c;background:#fff;border:1.5px solid #8fa97e;border-radius:999px;padding:2px 12px;transform:translateY(-50%);}
+  /* page break: the block is still pushed to the next page (white fills the rest),
+     but the visible separation is only a thin ~18px grey strip with the label */
+  .we-gap{position:relative;user-select:none;pointer-events:none;}
+  .we-gapsep{position:absolute;left:-50px;right:-30px;bottom:0;height:18px;background:var(--canvas);display:flex;align-items:center;justify-content:center;z-index:3;}
+  .we-gaplabel{font-size:10px;font-weight:700;color:#456b2c;background:#fff;border:1.5px solid #8fa97e;border-radius:999px;padding:1px 12px;}
+  /* image selection handles overlay */
   .we-ov{position:absolute;inset:0;pointer-events:none;z-index:6;}
+  /* inline PDF preview */
+  .we-preview{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--canvas);}
+  .we-preview iframe{display:block;width:100%;height:82vh;border:0;}
   .we-h{position:absolute;width:11px;height:11px;background:#fff;border:1.6px solid var(--green-dark);border-radius:2px;pointer-events:auto;}
   .we-h.nw{cursor:nwse-resize;} .we-h.ne{cursor:nesw-resize;} .we-h.sw{cursor:nesw-resize;} .we-h.se{cursor:nwse-resize;}
   .we-h.n,.we-h.s{cursor:ns-resize;} .we-h.e,.we-h.w{cursor:ew-resize;}
@@ -129,6 +175,13 @@ const EDITOR_CSS = `
   .we-page .frame{border:2px solid var(--green-line);border-radius:10px;padding:28px;display:flex;flex-direction:column;align-items:center;text-align:center;}
   .we-page .ctitle{font-family:'Sofia Sans Condensed',sans-serif;font-weight:800;color:var(--green-dark);font-size:2.4em;letter-spacing:2px;margin:18px 0 2px;}
 
+  /* fillable-form building blocks (Form elements) rendered inside the editor */
+  .we-page .ff-opt{display:inline-flex;align-items:center;gap:7px;font-family:'Sofia Sans Condensed',sans-serif;font-size:10pt;margin:4px 14px 4px 0;}
+  .we-page .ff-box{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.6px solid var(--green-dark);border-radius:3px;color:var(--green-dark);font-size:11px;font-weight:700;flex:0 0 auto;}
+  .we-page .ff-rb{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.6px solid var(--green-dark);border-radius:50%;flex:0 0 auto;}
+  .we-page .ff-line{display:inline-block;border-bottom:1px solid var(--ink);min-width:220px;padding:0 3px 1px;font-family:'Sofia Sans Condensed',sans-serif;font-size:10pt;line-height:1.4;}
+  .we-page .ff-line[data-empty="1"]{border-bottom-color:var(--line);min-height:14px;}
+
   /* text-size selector + text-colour palette */
   .we-size{height:36px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:0 8px;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;}
   .we-colorpop{position:absolute;top:calc(100% + 6px);left:0;z-index:50;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(15,30,22,.18);padding:14px;width:236px;}
@@ -160,10 +213,13 @@ export default function WordEditor({
   initialEn,
   defaultBg,
   defaultEn,
+  coverBg = "",
+  coverEn = "",
   hasDefault,
   schemeType = "T",
   snippets,
   fields,
+  formElements = [],
   customItems = [],
   savedTemplates = [],
   copyFrom = [],
@@ -175,10 +231,13 @@ export default function WordEditor({
   initialEn: string;
   defaultBg: string;
   defaultEn: string;
+  coverBg?: string;
+  coverEn?: string;
   hasDefault: boolean;
   schemeType?: "T" | "C";
   snippets: Snippet[];
   fields: Field[];
+  formElements?: FormEl[];
   customItems?: Snippet[];
   savedTemplates?: Tmpl[];
   copyFrom?: CopyItem[];
@@ -188,10 +247,12 @@ export default function WordEditor({
   const pageRef = useRef<HTMLDivElement>(null);   // the paper (positioning context for handles)
   const ref = useRef<HTMLDivElement>(null);       // the editable body (.we-docbody)
   const fileRef = useRef<HTMLInputElement>(null);
+  const replaceRef = useRef<HTMLInputElement>(null);
   const [lang, setLang] = useState<"bg" | "en">("bg");
   const [bg, setBg] = useState(initialBg);
   const [en, setEn] = useState(initialEn);
   const [started, setStarted] = useState(initialBg !== "" || initialEn !== "");
+  const [coverIn, setCoverIn] = useState(hasCover(initialBg) || hasCover(initialEn));
   const [saved, setSaved] = useState(true);
   const [busy, setBusy] = useState("");
   const [panel, setPanel] = useState(true);
@@ -211,8 +272,10 @@ export default function WordEditor({
   const [unit, setUnit] = useState<Unit>("mm");
   const [lockAspect, setLockAspect] = useState(true);
   const [box, setBox] = useState<{ l: number; t: number; w: number; h: number } | null>(null); // px rel. to paper
-  const [guides, setGuides] = useState<number[]>([]); // page-break y offsets (px rel. to paper)
   const [cell, setCell] = useState<HTMLTableCellElement | null>(null); // selected table cell
+  const [preview, setPreview] = useState(false);              // inline PDF preview open
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);  // object URL of the rendered PDF
+  const pgTimer = useRef<ReturnType<typeof setTimeout> | null>(null); // debounce page-gap reflow
   const [colorOpen, setColorOpen] = useState(false);          // text-colour palette open
   const [textColor, setTextColor] = useState("#9e2b2b");      // last-used text colour (button indicator)
   const colorRef = useRef<HTMLSpanElement>(null);
@@ -227,7 +290,14 @@ export default function WordEditor({
 
   const exec = (cmd: string, val?: string) => { ref.current?.focus(); document.execCommand(cmd, false, val); setSaved(false); };
   const insertHtml = (html: string) => { ref.current?.focus(); document.execCommand("insertHTML", false, html); setSaved(false); refreshGuides(); };
-  const current = () => ref.current?.innerHTML ?? "";
+  // The page-gap spacers (.we-gap) are presentation only — strip them so the saved
+  // / exported HTML is the clean document.
+  const current = () => {
+    const el = ref.current; if (!el) return "";
+    const clone = el.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll(".we-gap").forEach((n) => n.remove());
+    return clone.innerHTML;
+  };
 
   // ── text size: A− / A+ apply a font-size to the selection (or the block) ──
   function applyFontSize(pt: number) {
@@ -287,15 +357,63 @@ export default function WordEditor({
     const ir = img.getBoundingClientRect(), pr = page.getBoundingClientRect();
     setBox({ l: ir.left - pr.left, t: ir.top - pr.top, w: ir.width, h: ir.height });
   }
-  // recompute page-break guides from the paper's current height
+  // Real page-break gaps: insert a non-editable spacer before any block that would
+  // straddle an A4 boundary, pushing it whole to the next page (like the PDF's
+  // page-break-inside:avoid) — so text never sits on the break and pages 1/2 are
+  // clearly separated. Spacers (.we-gap) are presentation only (stripped on save).
+  const GAP_PX = 18; // small grey page-break separation (10–20px); the rest stays white
   function refreshGuides() {
-    const page = pageRef.current;
-    if (!page) return;
-    const pageHpx = mmToPx(PAGE_BREAK_MM);
-    const h = page.scrollHeight;
-    const out: number[] = [];               // y of each A4 page break (dashed line)
-    for (let n = 1; n * pageHpx < h; n++) out.push(n * pageHpx);
-    setGuides(out);
+    const body = ref.current;
+    if (!body) return;
+    body.querySelectorAll(":scope > .we-gap").forEach((n) => n.remove());
+    const pageH = mmToPx(PAGE_BREAK_MM);
+    let pageNum = 1;
+    let boundary = pageH; // docbody y where the current page's content ends
+    const makeGap = (n: number, heightPx: number) => {
+      const gap = document.createElement("div");
+      gap.className = "we-gap";
+      gap.contentEditable = "false";
+      gap.style.height = heightPx + "px";
+      const sep = document.createElement("div");
+      sep.className = "we-gapsep";
+      const span = document.createElement("span");
+      span.className = "we-gaplabel";
+      span.textContent = uiLang === "bg" ? `стр. ${n} / ${n + 1}` : `page ${n} / ${n + 1}`;
+      sep.appendChild(span);
+      gap.appendChild(sep);
+      return gap;
+    };
+    const isCover = (el: HTMLElement) =>
+      el.classList && (el.classList.contains("cover") || el.classList.contains("mcover") || el.classList.contains("mincover"));
+    const blocks = Array.from(body.children).filter(
+      (c) => c instanceof HTMLElement && getComputedStyle(c).position !== "absolute"
+    ) as HTMLElement[];
+    for (const el of blocks) {
+      const top = el.offsetTop;
+      const h = el.offsetHeight;
+      // the title page always gets its own page — push everything after it to page 2
+      if (isCover(el)) {
+        const bottom = top + h;
+        const remaining = Math.max(0, boundary - bottom);
+        const gap = makeGap(pageNum, remaining + GAP_PX);
+        if (el.nextSibling) body.insertBefore(gap, el.nextSibling); else body.appendChild(gap);
+        pageNum++;
+        boundary = bottom + remaining + GAP_PX + pageH;
+        continue;
+      }
+      if (h >= pageH) { boundary = top + Math.ceil(h / pageH) * pageH; continue; } // too tall to push
+      if (top + h > boundary) {
+        const remaining = Math.max(0, boundary - top); // white space that fills the rest of the page
+        body.insertBefore(makeGap(pageNum, remaining + GAP_PX), el);
+        pageNum++;
+        boundary = el.offsetTop + pageH; // the next page starts at this block's new top
+      }
+    }
+  }
+  // Debounced reflow for typing (programmatic DOM edits don't fire onInput, so no loop).
+  function schedulePaginate() {
+    if (pgTimer.current) clearTimeout(pgTimer.current);
+    pgTimer.current = setTimeout(() => refreshGuides(), 400);
   }
   useEffect(() => { place(); /* eslint-disable-next-line */ }, [imgSel, imgW, imgH, wrap]);
   // close the text-colour palette when clicking outside it
@@ -305,6 +423,9 @@ export default function WordEditor({
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, [colorOpen]);
+  // free the preview object URL when it changes / on unmount
+  useEffect(() => () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl); }, [pdfUrl]);
+  useEffect(() => () => { if (pgTimer.current) clearTimeout(pgTimer.current); }, []);
   useEffect(() => {
     if (!started) return;
     refreshGuides();
@@ -522,16 +643,20 @@ export default function WordEditor({
     if (lang === "en" && ref.current) ref.current.innerHTML = r.html ?? "";
     else alert(L("Английската чернова е готова — превключете към EN, за да я прегледате/редактирате.", "English draft ready — switch to EN to review/edit it."));
   }
+  // Render the current document to a PDF blob (saving first) → object URL.
+  async function renderPdfUrl(): Promise<string> {
+    const res = await fetch("/api/pdf", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: schemeId, doc: docKey, lang, composed: true }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return URL.createObjectURL(await res.blob());
+  }
   async function downloadPdf() {
     await save();
     setBusy("pdf");
     try {
-      const res = await fetch("/api/pdf", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: schemeId, doc: docKey, lang, composed: true }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const url = URL.createObjectURL(await res.blob());
+      const url = await renderPdfUrl();
       const a = document.createElement("a");
       a.href = url; a.download = `${schemeId}_${docKey}_${lang}.pdf`; a.click();
       URL.revokeObjectURL(url);
@@ -539,6 +664,25 @@ export default function WordEditor({
       alert(L("Грешка при PDF: ", "PDF failed: ") + (e as Error).message);
     }
     setBusy("");
+  }
+  // Inline page preview = the real PDF (true pages 1, 2 … with gaps, exactly as
+  // downloaded). Editing stays in the continuous view; this is the faithful check.
+  async function openPreview() {
+    await save();
+    setBusy("prev");
+    try {
+      const url = await renderPdfUrl();
+      setPdfUrl((old) => { if (old) URL.revokeObjectURL(old); return url; });
+      setPreview(true);
+    } catch (e) {
+      alert(L("Грешка при PDF: ", "PDF failed: ") + (e as Error).message);
+    }
+    setBusy("");
+  }
+  function closePreview() {
+    setPreview(false);
+    setPdfUrl((old) => { if (old) URL.revokeObjectURL(old); return null; });
+    setTimeout(refreshGuides, 0);
   }
   function onImage(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -558,8 +702,36 @@ export default function WordEditor({
     rd.readAsDataURL(f);
     e.target.value = "";
   }
+  // Replace the selected image (e.g. swap the cover photo) in place, keeping its
+  // size/placement; clears the placeholder look once a real photo is dropped in.
+  function onReplaceImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f || !imgSel) { e.target.value = ""; return; }
+    const rd = new FileReader();
+    rd.onload = () => {
+      imgSel.src = String(rd.result);
+      imgSel.classList.remove("coverimg-empty");
+      setSaved(false); place(); refreshGuides();
+    };
+    rd.readAsDataURL(f);
+    e.target.value = "";
+  }
   function startWith(b: string, e: string) {
     setBg(b); setEn(e); setLang("bg"); setStarted(true); setSaved(false);
+    setCoverIn(hasCover(b) || hasCover(e));
+  }
+  // Prepend the document's title page (cover) to an already-started document that
+  // doesn't have one yet — so existing docs gain the editable cover without losing
+  // their edits. Updates the live language in the DOM and the other in state.
+  function addTitlePage() {
+    const el = ref.current;
+    if (!el) return;
+    const covCur = lang === "bg" ? coverBg : coverEn;
+    if (covCur && !hasCover(el.innerHTML)) el.innerHTML = covCur + "\n" + el.innerHTML;
+    if (lang === "bg") setEn((x) => (coverEn && !hasCover(x) ? coverEn + "\n" + x : x));
+    else setBg((x) => (coverBg && !hasCover(x) ? coverBg + "\n" + x : x));
+    setCoverIn(true); setSaved(false);
+    setTimeout(refreshGuides, 0);
   }
 
   async function saveAsTemplate() {
@@ -623,12 +795,12 @@ export default function WordEditor({
     const startRow: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--line)", borderRadius: 9, padding: "8px 10px" };
     return (
       <>
-        <style>{EDITOR_CSS}</style>
+        <style>{EDITOR_CSS + COVER_CSS}</style>
         <link rel="stylesheet" href={FONTS_HREF} />
         <div className="card p-5" style={{ borderLeft: "4px solid var(--green-dark)", maxWidth: 640 }}>
           <div className="font-bold" style={{ color: "var(--green-dark)", fontSize: 18 }}>{L(`Започни „${docNameEn}“ от…`, `Start “${docNameEn}” from…`)}</div>
           <div className="flex gap-2 mt-4 flex-wrap">
-            {hasDefault && <button className="btn btn-primary" onClick={() => startWith(defaultBg, defaultEn)}>{L("Шаблон по подразбиране", "Default template")}</button>}
+            {hasDefault && <button className="btn btn-primary" onClick={() => startWith(coverBg ? coverBg + "\n" + defaultBg : defaultBg, coverEn ? coverEn + "\n" + defaultEn : defaultEn)}>{L("Шаблон по подразбиране", "Default template")}</button>}
             <button className="btn" onClick={() => startWith("", "")}>{L("＋ Празна страница", "＋ Blank page")}</button>
           </div>
 
@@ -683,9 +855,10 @@ export default function WordEditor({
 
   return (
     <div>
-      <style>{EDITOR_CSS}</style>
+      <style>{EDITOR_CSS + COVER_CSS}</style>
       <link rel="stylesheet" href={FONTS_HREF} />
       <input ref={fileRef} type="file" accept="image/*" hidden onChange={onImage} />
+      <input ref={replaceRef} type="file" accept="image/*" hidden onChange={onReplaceImage} />
 
       {/* action bar */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -696,11 +869,20 @@ export default function WordEditor({
         ))}
         <button className="btn" onClick={translate} disabled={busy === "tr"} title={L("Преведи целия документ BG→EN", "Translate the whole document BG→EN")}>{busy === "tr" ? L("Превеждане…", "Translating…") : "⇄ BG → EN"}</button>
         <button className="btn" onClick={downloadPdf} disabled={busy === "pdf"}>{busy === "pdf" ? "…" : "⬇ PDF"}</button>
+        <button className="btn" onClick={preview ? closePreview : openPreview} disabled={busy === "prev"}
+          style={preview ? { background: "var(--green-soft)", color: "var(--green-dark)", borderColor: "var(--green-line)" } : {}}
+          title={L("Виж точните страници (както в PDF)", "See the exact pages (as in the PDF)")}>
+          {busy === "prev" ? "…" : preview ? L("✎ Редактиране", "✎ Edit") : L("⤢ Страници", "⤢ Pages")}
+        </button>
+        {!coverIn && (coverBg || coverEn) && (
+          <button className="btn" onClick={addTitlePage} title={L("Добави заглавна страница (корица) към този документ", "Add the title page (cover) to this document")} style={{ borderColor: "var(--green-line)", color: "var(--green-dark)" }}>{L("＋ Заглавна страница", "＋ Title page")}</button>
+        )}
         <button className="btn" onClick={saveAsTemplate} disabled={busy === "tmpl"} title={L("Запази този документ като шаблон за повторна употреба за този тип схема", "Save this document as a reusable template for this scheme type")}>{busy === "tmpl" ? "…" : L("★ Запази като шаблон", "★ Save as template")}</button>
         <button className="btn ml-auto" onClick={() => setPanel((p) => !p)}>{panel ? L("Елементи ▸", "Items ▸") : L("Елементи ◂", "Items ◂")}</button>
       </div>
 
       {/* formatting toolbar */}
+      {!preview && (
       <div className="we-toolbar mb-3">
         {tool("B", L("Получер", "Bold"), () => exec("bold"))}
         {tool(<span style={{ fontStyle: "italic" }}>I</span>, L("Курсив", "Italic"), () => exec("italic"))}
@@ -763,7 +945,13 @@ export default function WordEditor({
         {tool("↷", L("Върни", "Redo"), () => exec("redo"))}
         <span className="text-xs" style={{ marginLeft: "auto", color: "var(--muted)" }}>{L("Редактиране:", "Editing:")} <b style={{ color: "var(--green-dark)" }}>{lang === "bg" ? L("Български", "Bulgarian") : L("Английски", "English")}</b></span>
       </div>
+      )}
 
+      {preview && pdfUrl ? (
+        <div className="we-preview">
+          <iframe title={L("Преглед на страниците", "Page preview")} src={pdfUrl} />
+        </div>
+      ) : (
       <div className="we-body">
         <div className="we-col">
           {/* image controls — Word-like: exact mm size, wrap, layering */}
@@ -795,6 +983,7 @@ export default function WordEditor({
                   <button className="we-pill" title={L("Премести назад", "Send back")} onClick={() => layer(-1)}>↓ {L("Назад", "Back")}</button>
                 </>
               )}
+              <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={() => replaceRef.current?.click()}>⟳ {L("Смени снимката", "Replace")}</button>
               <button className="we-pill danger" onMouseDown={(e) => e.preventDefault()} onClick={removeImg}>✕ {L("Премахни", "Remove")}</button>
             </div>
           )}
@@ -819,15 +1008,9 @@ export default function WordEditor({
               className="we-docbody"
               contentEditable
               suppressContentEditableWarning
-              onInput={() => { setSaved(false); refreshGuides(); }}
+              onInput={() => { setSaved(false); schedulePaginate(); }}
               onKeyUp={syncCell}
             />
-            {/* page-break guides */}
-            <div className="we-guides">
-              {guides.map((y, i) => (
-                <div key={i} className="we-brk" style={{ top: y }}><span>{L(`стр. ${i + 1} / ${i + 2}`, `page ${i + 1} / ${i + 2}`)}</span></div>
-              ))}
-            </div>
             {/* selection handles */}
             {imgSel && box && (
               <div className="we-ov">
@@ -858,6 +1041,9 @@ export default function WordEditor({
             <div className="we-seclabel" style={{ margin: "14px 0 4px" }}>{L("ФРАГМЕНТИ", "SNIPPETS")}</div>
             {snippets.map((s) => itemCard(`s:${s.id}`, s.name, lang === "bg" ? s.bg : s.en))}
 
+            {formElements.length > 0 && <div className="we-seclabel" style={{ margin: "14px 0 4px" }}>{L("ЕЛЕМЕНТИ ЗА ФОРМУЛЯР", "FORM ELEMENTS")}</div>}
+            {formElements.map((e) => itemCard(`fe:${e.id}`, uiLang === "bg" ? e.nameBg : e.nameEn, lang === "bg" ? e.bg : e.en))}
+
             {custom.length > 0 && <div className="we-seclabel" style={{ margin: "14px 0 4px", color: "var(--gold)" }}>{L("МОИ ЕЛЕМЕНТИ", "MY ITEMS")}</div>}
             {custom.map((c) => itemCard(`c:${c.id}`, c.name, lang === "bg" ? c.bg : c.en))}
 
@@ -882,9 +1068,13 @@ export default function WordEditor({
           </aside>
         )}
       </div>
+      )}
       <p className="text-xs mt-2" style={{ color: "var(--muted)" }}>
-        {L("Страницата е с размер A4 — каквото виждате, това се отпечатва. Кликнете изображение, за да промените размера (точен размер в мм), да го преместите или да го наслоите.",
-           "The page is A4 size — what you see is what prints. Click an image to resize it (exact mm size), move it, or layer it.")}
+        {preview
+          ? L("Това е точният PDF — страница 1, 2 … с реалните полета между тях. Натиснете „✎ Редактиране“, за да се върнете.",
+               "This is the exact PDF — page 1, 2 … with the real gaps between them. Press “✎ Edit” to go back.")
+          : L("Страницата е A4 — текстът се пренася на нова страница при всяко прекъсване. Натиснете „⤢ Страници“, за да видите точните страници като в PDF.",
+               "The page is A4 — text moves to a new page at each break. Press “⤢ Pages” to see the exact pages as in the PDF.")}
       </p>
     </div>
   );

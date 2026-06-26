@@ -1,5 +1,6 @@
 import type { Scheme, Lang } from "../types";
 import { esc, pick, wrapDoc, cover, heading, footer } from "../doc-shell";
+import { fText } from "../form-fields";
 
 const FORM = "F 7.2.1-7";
 
@@ -14,23 +15,24 @@ export function renderResultsC(s: Scheme, lang: Lang): string {
   const c = s.calibration;
   const unit = c ? esc(c.unit) : "";
 
-  const assigned = L("— to be assigned by PTS —", "— попълва се от РТ провайдъра —");
+  const assigned = L("— assigned by PTS —", "— попълва се от РТ провайдъра —");
 
-  // Top blank fields — Laboratory Code is assigned by the provider (NO real
-  // code); PT item is the travelling device.
+  // Top fields — Laboratory Code is assigned by the provider; PT item is the
+  // travelling device (its name shown as a hint).
   const topFields = `<div class="fld"><span class="fl">${L(
     "Laboratory Code:",
     "Лабораторен код:"
-  )}</span> <span class="blank"></span> <span class="muted">${assigned}</span></div>
+  )}</span> ${fText("lab_code", 200)} <span class="muted">${assigned}</span></div>
     <div class="fld"><span class="fl">${L(
       "PT Item:",
       "Обект:"
-    )}</span> <span class="blank"></span> <span class="muted">${
+    )}</span> ${fText("item", 200)} <span class="muted">${
     c ? L(c.deviceEn, c.deviceBg) : ""
   }</span></div>`;
 
   // One results table per force direction (e.g. Table 1 — Tension Force,
-  // Table 2 — Compression Force). Each table has one row per calibration point.
+  // Table 2 — Compression Force). Each table has one row per calibration point;
+  // the participant fills the result + expanded uncertainty for each.
   const directionsEn = c ? c.directionsEn : [];
   const directionsBg = c ? c.directionsBg : [];
   const points = c ? c.points : [];
@@ -47,10 +49,10 @@ export function renderResultsC(s: Scheme, lang: Lang): string {
       const dirBg = directionsBg[i] ?? dirEn;
       const rows = points
         .map(
-          (pt) => `<tr>
+          (pt, j) => `<tr>
         <td>${esc(pt)}${unit ? ` ${unit}` : ""}</td>
-        <td><span class="blank"></span></td>
-        <td><span class="blank"></span></td>
+        <td>${fText(`result_${i}_${j}`, 150)}</td>
+        <td>${fText(`unc_${i}_${j}`, 150)}</td>
       </tr>`
         )
         .join("\n");

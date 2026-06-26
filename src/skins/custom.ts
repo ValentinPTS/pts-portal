@@ -414,6 +414,9 @@ export function compileSkin(data: CustomSkinData): Skin {
     fontsHref: skinFontsHref(data),
     cover: (s, lang, en, bg, opts) => coverHtml(data, s, lang, en, bg, opts),
     footer: (s, formNumber) => footerHtml(data, s, formNumber),
+    // carry the embroidery side border only when this skin shows the embroidery
+    // (on for the Classic base, off for the alternative looks) — owner-controlled.
+    sideBorder: data.elements.some((e) => e.key === "embroidery" && e.shown),
   };
 }
 
@@ -451,10 +454,13 @@ function sampleBody(lang: Lang): string {
 // (same skinCss + coverHtml), so what you see is what the PDF renders.
 export function previewDocHtml(data: CustomSkinData, lang: Lang = "bg"): string {
   const cover = coverHtml(data, SAMPLE, lang, SAMPLE_DOC_EN, SAMPLE_DOC_BG, { withImage: false });
+  // mirror the render path: show the embroidery side border when the skin keeps it
+  const side = data.elements.some((e) => e.key === "embroidery" && e.shown)
+    ? `<div class="doc-side" aria-hidden="true"></div>` : "";
   return `<!DOCTYPE html><html lang="${lang === "bg" ? "bg" : "en"}"><head><meta charset="utf-8">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="${skinFontsHref(data)}" rel="stylesheet">
 <style>${skinCss(data)}</style></head>
-<body><div class="page">${cover}${sampleBody(lang)}</div></body></html>`;
+<body>${side}<div class="page">${cover}${sampleBody(lang)}</div></body></html>`;
 }

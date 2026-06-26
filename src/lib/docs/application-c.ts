@@ -1,5 +1,6 @@
 import type { Scheme, Lang } from "../types";
 import { esc, pick, wrapDoc, cover, sec, footer } from "../doc-shell";
+import { fText, fCheck } from "../form-fields";
 
 const FORM = "F 7.2.1-3";
 
@@ -10,18 +11,18 @@ const FORM = "F 7.2.1-3";
 export function renderApplicationC(s: Scheme, lang: Lang): string {
   const L = (en: string, bg: string) => esc(pick(lang, en, bg));
 
-  // A labelled blank field (.fld + .fl + .blank from doc-shell).
-  const field = (en: string, bg: string) =>
-    `<div class="fld"><span class="fl">${L(en, bg)}</span> <span class="blank"></span></div>`;
+  // A labelled fillable blank (.fld + .fl + a text field).
+  const field = (id: string, en: string, bg: string) =>
+    `<div class="fld"><span class="fl">${L(en, bg)}</span> ${fText(id, 280)}</div>`;
 
   const c = s.calibration;
 
   // §1 — Laboratory details
   const s1 = [
-    field("Name of the Laboratory", "Наименование на лабораторията"),
-    field("Contact Person:", "Лице за контакт:"),
-    field("Telephone:", "Телефон:"),
-    field("E-mail:", "Електронна поща:"),
+    field("lab_name", "Name of the Laboratory", "Наименование на лабораторията"),
+    field("contact_person", "Contact Person:", "Лице за контакт:"),
+    field("phone", "Telephone:", "Телефон:"),
+    field("email", "E-mail:", "Електронна поща:"),
   ].join("");
 
   // §2 — Participation by force direction.
@@ -37,12 +38,13 @@ export function renderApplicationC(s: Scheme, lang: Lang): string {
 
   // One row per direction (Compression first, then Tension, per the source).
   const dirsEn = c?.directionsEn ?? [];
-  const dirsBg = c?.directionsBg ?? [];
   const order = (en: string) => (/compress/i.test(en) ? 0 : /tens/i.test(en) ? 1 : 2);
   const idx = dirsEn.map((_, i) => i).sort((a, b) => order(dirsEn[a]) - order(dirsEn[b]));
 
   const pointsHeader = `${L("Calibration Points", "Точки на калибриране")}${unit ? ` (${esc(unit)})` : ""}`;
 
+  // The Participation tick + Note are owner-filled; the item/quantity/points come
+  // from the scheme's calibration data.
   const rows = idx.length
     ? idx
         .map(
@@ -50,8 +52,8 @@ export function renderApplicationC(s: Scheme, lang: Lang): string {
         ${n === 0 ? `<td rowspan="${idx.length}">${itemCell}</td>` : ""}
         <td>${quantity}</td>
         <td>${pointsCol}</td>
-        <td>▢</td>
-        <td><span class="blank"></span></td>
+        <td>${fCheck(`part_${n}`, "")}</td>
+        <td>${fText(`note_${n}`, 160)}</td>
       </tr>`
         )
         .join("")
@@ -59,8 +61,8 @@ export function renderApplicationC(s: Scheme, lang: Lang): string {
         <td>${itemCell}</td>
         <td>${quantity}</td>
         <td>${pointsCol}</td>
-        <td>▢</td>
-        <td><span class="blank"></span></td>
+        <td>${fCheck("part_0", "")}</td>
+        <td>${fText("note_0", 160)}</td>
       </tr>`;
 
   const s2 = `<table class="ptable"><thead><tr>
@@ -81,23 +83,23 @@ export function renderApplicationC(s: Scheme, lang: Lang): string {
 
   // §3 — Information on receiving the PT item
   const s3 = [
-    field("Shipping address:", "Адрес за доставка:"),
-    field("Postal code:", "Пощенски код:"),
+    field("ship_address", "Shipping address:", "Адрес за доставка:"),
+    field("postal_code", "Postal code:", "Пощенски код:"),
   ].join("");
 
   // §4 — Invoice data
   const s4 = [
-    field("Name of the Organization:", "Наименование на организацията:"),
-    field("Tax Identification / Taxpayer Number:", "ЕИК / Данъчен номер:"),
-    field("Value Added Tax (VAT) Number:", "Номер по ДДС:"),
-    field("Tax Address (registration address):", "Данъчен адрес (адрес на регистрация):"),
-    field("Accountable Person:", "Отговорно лице (МОЛ):"),
+    field("org_name", "Name of the Organization:", "Наименование на организацията:"),
+    field("eik", "Tax Identification / Taxpayer Number:", "ЕИК / Данъчен номер:"),
+    field("vat", "Value Added Tax (VAT) Number:", "Номер по ДДС:"),
+    field("tax_address", "Tax Address (registration address):", "Данъчен адрес (адрес на регистрация):"),
+    field("mol", "Accountable Person:", "Отговорно лице (МОЛ):"),
   ].join("");
 
-  // §5 — Contacts (left BLANK, no invented names)
-  const s5 = `<div class="fld"><span class="blank"></span></div>
-    <div class="fld"><span class="blank"></span></div>
-    <div class="fld"><span class="blank"></span></div>`;
+  // §5 — Contacts (free lines)
+  const s5 = `<div class="fld">${fText("contact_1", 420)}</div>
+    <div class="fld">${fText("contact_2", 420)}</div>
+    <div class="fld">${fText("contact_3", 420)}</div>`;
 
   const warn = `<p class="imp">${L(
     "The application date is the date on which the completed Application for Participation is received at the e-mail address above.",

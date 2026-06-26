@@ -216,6 +216,35 @@ export async function uploadSkinLogoAction(formData: FormData): Promise<{ url?: 
   }
 }
 
+// Upload a scheme cover photo → same public bucket (covers/ path) → public URL.
+// Stored on scheme.coverImage. Owners only; raster-only + size-capped + random name.
+export async function uploadCoverImageAction(formData: FormData): Promise<{ url?: string; error?: string }> {
+  await requireOwner();
+  const file = formData.get("file");
+  if (!(file instanceof File)) return { error: "No file received." };
+  const ext = LOGO_EXT[file.type];
+  if (!ext) return { error: "Use a PNG, JPG or WEBP image." };
+  if (file.size > 2_000_000) return { error: "Image too large (max 2 MB)." };
+  const db = getDb();
+  if (!db) return { error: "Uploads need Supabase configured." };
+  try {
+    const { data: bucket } = await db.storage.getBucket(LOGO_BUCKET);
+    if (!bucket) {
+      const { error: be } = await db.storage.createBucket(LOGO_BUCKET, {
+        public: true, fileSizeLimit: "2MB", allowedMimeTypes: Object.keys(LOGO_EXT),
+      });
+      if (be && !/exist/i.test(be.message)) throw be;
+    }
+    const path = `covers/${randomUUID()}.${ext}`;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const { error } = await db.storage.from(LOGO_BUCKET).upload(path, bytes, { contentType: file.type, upsert: false });
+    if (error) throw error;
+    return { url: db.storage.from(LOGO_BUCKET).getPublicUrl(path).data.publicUrl };
+  } catch (e) {
+    return { error: (e as Error)?.message || "Upload failed." };
+  }
+}
+
 // Save the Word-like editor's HTML for a document (both languages).
 export async function saveDocHtmlAction(schemeId: string, docKey: string, bg: string, en: string) {
   await requireOwner(); // no-op until auth is on; then owners-only
@@ -642,7 +671,19 @@ export async function updateSchemeAction(formData: FormData) {
     };
   }
 
+  // cover photo: URL (uploaded), width (%) and placement, all owner-set on the Edit page.
+  const coverImage = str("coverImage", existing.coverImage ?? "");
+  const cwRaw = parseInt(str("coverImageWidth", ""), 10);
+  const caRaw = str("coverImageAlign", "");
+  const coverImageAlign = caRaw === "left" || caRaw === "center" || caRaw === "right" ? caRaw : existing.coverImageAlign;
+
   await updateScheme(id, {
+    // official PTS number — shown on every document + drives the year grouping.
+    // Falls back to the existing number if the field was cleared.
+    number: (str("number", existing.number) || existing.number).slice(0, 60),
+    coverImage: coverImage || undefined,
+    coverImageWidth: Number.isFinite(cwRaw) ? Math.min(100, Math.max(10, cwRaw)) : existing.coverImageWidth,
+    coverImageAlign,
     titleEn: str("titleEn", existing.titleEn),
     titleBg: str("titleBg", existing.titleBg),
     objectEn: str("objectEn", existing.objectEn),

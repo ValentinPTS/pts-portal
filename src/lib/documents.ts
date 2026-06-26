@@ -63,5 +63,5 @@ export function getDoc(key: string): DocDef | undefined {
 // Documents whose controls (checkboxes, options, ratings, blanks) are fillable
 // form fields (lib/form-fields.ts). These get a "Fill" action on the scheme page
 // and persist their values to scheme.formData. Grows as renderers are converted.
-export const FORM_DOCS = new Set<string>(["feedback"]);
+export const FORM_DOCS = new Set<string>(["feedback", "declaration", "application", "protocol", "results"]);
 export const isFormDoc = (key: string): boolean => FORM_DOCS.has(key);

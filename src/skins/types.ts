@@ -18,6 +18,10 @@ export interface Skin {
   meta: SkinMeta;
   css: string; // full document stylesheet (the classic DOC_CSS + this skin's overrides)
   fontsHref: string; // the <link> stylesheet href for the skin's web fonts
+  // Show the traditional embroidery border down the side of every page. Defaults to
+  // true (the PTS brand); custom skins follow their "embroidery" cover toggle so the
+  // alternative looks (modern/bold/minimal…) stay clean.
+  sideBorder?: boolean;
   // The cover/head block (no body markers — the shell adds those).
   cover(s: Scheme, lang: Lang, docTitleEn: string, docTitleBg: string, opts?: { withImage?: boolean }): string;
   // The footer block (no body markers).

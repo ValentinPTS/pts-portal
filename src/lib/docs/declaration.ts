@@ -1,5 +1,6 @@
 import type { Scheme, Lang } from "../types";
 import { esc, pick, wrapDoc, cover, heading, footer } from "../doc-shell";
+import { fText } from "../form-fields";
 
 const FORM = "F 4.2-2";
 
@@ -29,11 +30,11 @@ export function renderDeclaration(s: Scheme, lang: Lang): string {
   const headName = `<div class="fld"><span class="fl">${L(
     "Head of the laboratory:",
     "Ръководител на лабораторията:"
-  )}</span> <span class="blank"></span></div>`;
+  )}</span> ${fText("head_name", 260)}</div>`;
 
   const signature = `<div class="sig">
-    <div class="col">${L("Date", "Дата")}</div>
-    <div class="col">${L("Name and Surname", "Име и Фамилия")}</div>
+    <div class="col">${fText("sig_date", 140)}<br>${L("Date", "Дата")}</div>
+    <div class="col">${fText("sig_name", 200)}<br>${L("Name and Surname", "Име и Фамилия")}</div>
   </div>`;
 
   const body = [

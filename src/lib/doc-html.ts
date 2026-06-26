@@ -1,7 +1,8 @@
 import type { Scheme, Lang, Participant, DocOptions } from "./types";
+import type { Skin } from "../skins/types";
 import { esc, pick, wrapDoc, cover, footer } from "./doc-shell";
-import { LIBRARY, FIELDS, renderFieldHtml } from "./blocks";
-import { docDefaultBody } from "./doc-template";
+import { LIBRARY, FIELDS, FORM_ELEMENTS, renderFieldHtml } from "./blocks";
+import { docDefaultBody, docCoverHtml } from "./doc-template";
 
 // The live participant list → the option shape the document renderers expect.
 function toOpts(participants: Participant[]): DocOptions {
@@ -26,6 +27,17 @@ export function defaultDocHtml(s: Scheme, docKey: string, participants: Particip
   };
 }
 
+// The editable TITLE PAGE (cover) for the document, in the scheme's skin — both
+// languages. Empty string when the document has no generic cover. The editor
+// prepends this to the body so the whole document (title page + body) is one canvas.
+export function coverDocHtml(s: Scheme, docKey: string, participants: Participant[] = [], skin?: Skin): { bg: string; en: string } {
+  const opts = toOpts(participants);
+  return {
+    bg: docCoverHtml(s, docKey, "bg", opts, skin),
+    en: docCoverHtml(s, docKey, "en", opts, skin),
+  };
+}
+
 // Wrap the editor's body HTML in the branded document (cover/head page + footer).
 export function wrapForPrint(s: Scheme, bodyHtml: string, lang: Lang, titleEn: string, titleBg: string): string {
   const inner = cover(s, lang, titleEn, titleBg, { withImage: true }) + `<div class="body">${bodyHtml}</div>` + footer(s, "draft");
@@ -43,4 +55,8 @@ export function insertableFields(s: Scheme, participants: Participant[] = []): {
     bg: renderFieldHtml(s, f.key, "bg", participants),
     en: renderFieldHtml(s, f.key, "en", participants),
   }));
+}
+// Fillable-form building blocks for the "Form elements" panel group (bilingual label + HTML).
+export function insertableFormElements(): { id: string; nameBg: string; nameEn: string; bg: string; en: string }[] {
+  return FORM_ELEMENTS;
 }

@@ -11,7 +11,7 @@ export const forceCalibration: Scheme = {
   titleBg: "Калибриране на силомер",
   objectEn: "Force gauge — load: tension and compression",
   objectBg: "Силомер — вид на натоварване: опън и натиск",
-  coverImage: undefined,
+  coverImage: "/brand/cover-force-transducer.png", // the calibrated device shown on the title page
   distribution: "sequential",
   formNumber: "F 7.2.1-1",
   revision: "Revision 1",

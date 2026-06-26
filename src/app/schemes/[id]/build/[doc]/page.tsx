@@ -6,8 +6,9 @@ import { listParticipants } from "@/lib/participants";
 import { listLibraryItems } from "@/lib/library-store";
 import { listSavedTemplates } from "@/lib/saved-templates";
 import { esc } from "@/lib/doc-shell";
-import { defaultDocHtml, insertableSnippets, insertableFields } from "@/lib/doc-html";
+import { defaultDocHtml, coverDocHtml, insertableSnippets, insertableFields, insertableFormElements } from "@/lib/doc-html";
 import { hasDocTemplate } from "@/lib/doc-template";
+import { resolveSkinAsync } from "@/skins";
 import WordEditor from "@/components/WordEditor";
 import { getServerT } from "@/lib/i18n-server";
 
@@ -25,6 +26,9 @@ export default async function BuildDocPage({
 
   const saved = s.docs?.[doc] ?? { bg: "", en: "" };
   const dft = defaultDocHtml(s, doc, participants);
+  // the editable title page (cover) for this document in the scheme's skin
+  const skin = await resolveSkinAsync(s);
+  const cov = coverDocHtml(s, doc, participants, skin);
   // the owner's saved snippets → insertable items (wrap plain text as a paragraph)
   const custom = (await listLibraryItems()).map((c) => ({
     id: c.id,
@@ -63,10 +67,13 @@ export default async function BuildDocPage({
         initialEn={saved.en}
         defaultBg={dft.bg}
         defaultEn={dft.en}
+        coverBg={cov.bg}
+        coverEn={cov.en}
         hasDefault={hasDocTemplate(doc)}
         schemeType={s.type}
         snippets={insertableSnippets()}
         fields={insertableFields(s, participants)}
+        formElements={insertableFormElements()}
         customItems={custom}
         savedTemplates={savedTemplates}
         copyFrom={copyFrom}

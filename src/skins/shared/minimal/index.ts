@@ -1,6 +1,6 @@
 import type { Scheme, Lang } from "../../../lib/types";
 import type { Skin } from "../../types";
-import { DOC_CSS, esc, pick } from "../../../lib/doc-shell";
+import { DOC_CSS, esc, pick, contactsBar, coverImgTag } from "../../../lib/doc-shell";
 
 // "Minimal" — black-on-white, one hairline rule, no embroidery, maximum content
 // space. Works for testing and calibration. Shared document CSS + theme overrides.
@@ -29,7 +29,8 @@ function cover(s: Scheme, lang: Lang, docTitleEn: string, docTitleBg: string, op
     <div class="minrule"></div>
     <div class="minno">${esc(s.number)} · ${esc(pick(lang, s.titleEn, s.titleBg))}</div>
     <div class="minacc">${esc(inAcc)} ${esc(s.standard)}</div>
-    ${opts.withImage && s.coverImage ? `<img class="coverimg" src="${s.coverImage}" alt="" style="max-width:46%;margin-top:12px;border-radius:6px">` : ""}
+    ${coverImgTag(s)}
+    ${contactsBar()}
   </div>`;
 }
 function footer(s: Scheme, formNumber: string): string {

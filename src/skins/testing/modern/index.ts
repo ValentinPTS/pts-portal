@@ -1,6 +1,6 @@
 import type { Scheme, Lang } from "../../../lib/types";
 import type { Skin } from "../../types";
-import { DOC_CSS, esc, pick } from "../../../lib/doc-shell";
+import { DOC_CSS, esc, pick, contactsBar, coverImgTag } from "../../../lib/doc-shell";
 
 // "Modern" — a cleaner, sans-led look: a green header band on the cover, a left
 // accent rule on section headings instead of the red underline, airier spacing.
@@ -34,7 +34,8 @@ function cover(s: Scheme, lang: Lang, docTitleEn: string, docTitleBg: string, op
       <div class="mname">${esc(pick(lang, s.titleEn, s.titleBg))}</div>
       <div class="macc">${esc(inAcc)} ${esc(s.standard)}</div>
     </div>
-    ${opts.withImage && s.coverImage ? `<img class="coverimg" src="${s.coverImage}" alt="">` : ""}
+    ${coverImgTag(s)}
+    ${contactsBar()}
   </div>`;
 }
 function footer(s: Scheme, formNumber: string): string {
@@ -42,7 +43,7 @@ function footer(s: Scheme, formNumber: string): string {
 }
 
 export const modernSkin: Skin = {
-  meta: { id: "modern", name: "Modern", description: "Cleaner sans layout with a side accent and airy spacing.", types: ["T"] },
+  meta: { id: "modern", name: "Modern", description: "Cleaner sans layout with a side accent and airy spacing.", types: ["T", "C"] },
   css: DOC_CSS + OVERRIDES,
   fontsHref: FONTS_HREF,
   cover,

@@ -20,6 +20,13 @@ export const BODY_END = "<!--PTS:BE-->";
 export const stripBodyMarkers = (html: string) =>
   html.split(BODY_START).join("").split(BODY_END).join("");
 
+// Marker placed at the very start of an editable region that INCLUDES the title
+// page (cover). Its presence tells the export pipeline the saved content already
+// carries its own cover, so the skin's cover must NOT be re-added on top. Legacy
+// documents (saved before editable covers) have no marker → cover is regenerated.
+export const COVER_MARK = "<!--PTS:CV-->";
+export const stripCoverMark = (html: string) => html.split(COVER_MARK).join("");
+
 // Web-font stylesheet for the built-in skins (PT Serif body + Sofia Sans headings).
 export const FONTS_HREF =
   "https://fonts.googleapis.com/css2?family=PT+Serif:wght@400;700&family=Sofia+Sans+Condensed:wght@400;600;700;800&display=swap";
@@ -46,7 +53,12 @@ export const DOC_CSS = `
   .inacc{color:var(--muted);font-size:10.5pt;}
   .schemeno{font-family:var(--sans);font-weight:700;color:var(--red);font-size:14pt;margin-top:10px;}
   .schemettl{font-family:var(--sans);font-weight:700;font-size:13pt;margin:2px 0 10px;}
-  .coverimg{max-width:46%;height:auto;border-radius:8px;margin-top:6px;}
+  .coverimg{max-width:46%;height:auto;border-radius:8px;margin-top:10px;}
+  /* contact strip on every title page (globe · mail · phone) */
+  .contacts{display:flex;gap:14px;justify-content:center;margin-top:26px;flex-wrap:wrap;}
+  .contact{display:flex;align-items:center;gap:10px;border:1px solid var(--green);border-radius:10px;padding:9px 16px;background:#fff;}
+  .contact .ico{display:inline-flex;flex:0 0 auto;} .contact .ico svg{width:30px;height:30px;display:block;}
+  .contact .ctext{color:var(--red);font-family:var(--sans);font-weight:700;font-size:11pt;letter-spacing:.2px;}
   h2.sec{font-family:var(--sans);font-weight:700;font-size:13.5pt;color:var(--ink);margin:20px 0 4px;padding-bottom:5px;border-bottom:2.5px solid var(--red);}
   h2.sec .n{color:var(--green-dark);} h2.sec, .body{page-break-inside:avoid;}
   h3.sub{font-family:var(--sans);font-weight:700;font-size:11.5pt;color:var(--green-dark);margin:12px 0 3px;}
