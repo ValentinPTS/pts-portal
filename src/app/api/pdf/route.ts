@@ -66,7 +66,16 @@ export async function POST(req: NextRequest) {
     await page.goto(url, { waitUntil: "networkidle" });
     // wait for web fonts (string eval runs in the browser context, no DOM types needed here)
     await page.evaluate("document.fonts ? document.fonts.ready : Promise.resolve()").catch(() => {});
-    const footer = `<div style="width:100%;font-family:sans-serif;font-size:8px;color:#6b6b6b;text-align:center;padding:0 14mm;">${scheme.revision} · ${def.formNumber} · ${scheme.revisionDate} &nbsp;·&nbsp; <span class="pageNumber"></span> / <span class="totalPages"></span></div>`;
+    // Footer: document metadata on the left, the page number centred on the page
+    // (a table keeps the centre cell at the true page centre regardless of the left
+    // text). `.pageNumber`/`.totalPages` are filled in by Chromium per page.
+    const meta = `${scheme.revision} · ${def.formNumber} · ${scheme.revisionDate}`;
+    const pageLbl = `<span class="pageNumber"></span>`; // just the number (1, 2, 3 …)
+    const footer = `<table style="width:100%;border-collapse:collapse;font-family:'Segoe UI',Arial,sans-serif;font-size:8px;color:#6b6b6b;"><tr>` +
+      `<td style="width:34%;text-align:left;padding-left:14mm;white-space:nowrap;">${meta}</td>` +
+      `<td style="width:32%;text-align:center;font-weight:700;color:#3e3e3e;">${pageLbl}</td>` +
+      `<td style="width:34%;padding-right:14mm;"></td>` +
+      `</tr></table>`;
     const pdf = await page.pdf({
       format: "A4",
       printBackground: true,
