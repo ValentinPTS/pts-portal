@@ -1,12 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { getDb } from "./lib/supabase";
 
-// Next 16 "proxy" (formerly middleware). Refreshes the Supabase session cookie and
-// gates access by ROLE:
-//   • owner area (everything except /lab, /apply, /login, static, api) → owners only
+// Next 16 "proxy" (formerly middleware; Node.js runtime). Refreshes the Supabase
+// session cookie and gates access by ROLE:
+//   • owner area (everything except /lab, /apply, /login, static, api) → INTERNAL
+//     users only (founders in OWNER_EMAILS, or an active staff_users row:
+//     manager/staff/auditor). It's a READ gate — owner pages have no per-page guard.
 //   • /lab/*  → labs (page-level requireLab confirms)
-// Mutations still self-guard with requireOwner()/requireLab() inside each action —
-// this proxy is the READ gate (owner pages have no per-page guard).
+// Mutations still self-guard inside each action (requireWriter / requireManager /
+// requireLab) — the proxy alone is NOT sufficient (see the Next "proxy" docs), and
+// it's what keeps an auditor read-only.
 //
 // We read AUTH_ENABLED + OWNER_EMAILS straight from env here (the proxy must not
 // import next/headers). While auth is off, this is a pass-through.
@@ -18,6 +22,25 @@ function ownerEmails(): string[] {
 function isOwner(email: string | undefined | null): boolean {
   const e = (email ?? "").toLowerCase();
   return !!e && ownerEmails().includes(e);
+}
+
+// Is this signed-in user allowed to READ the owner area? Founders always; otherwise
+// an active staff_users row (manager/staff/auditor). Uses the service-role client
+// (RLS-bypassing) for the lookup. Resilient: if the table doesn't exist yet (the
+// roles migration not applied) or the lookup fails, fall back to founders-only.
+async function isInternalUser(email: string | undefined | null): Promise<boolean> {
+  if (isOwner(email)) return true;
+  const e = (email ?? "").toLowerCase();
+  if (!e) return false;
+  const db = getDb();
+  if (!db) return false;
+  try {
+    const { data, error } = await db.from("staff_users").select("status").eq("email", e).maybeSingle();
+    if (error) return false;
+    return !!data && data.status === "active";
+  } catch {
+    return false;
+  }
 }
 
 export async function proxy(request: NextRequest) {
@@ -71,13 +94,13 @@ export async function proxy(request: NextRequest) {
   }
 
   // Signed in: the OWNER area (everything that isn't the lab area or a login page)
-  // is owners-only AND requires completed 2FA. A signed-in non-owner (a lab) is
-  // sent to its portal; an owner who hasn't passed 2FA is sent to /account to
-  // enrol/verify — so the admin area can't even be READ at aal1. (apply/api/
-  // static/brand are excluded by the matcher below.)
+  // is INTERNAL-users-only AND requires completed 2FA. A signed-in user who isn't
+  // internal (a lab) is sent to its portal; an internal user who hasn't passed 2FA
+  // is sent to /account to enrol/verify — so the admin area can't even be READ at
+  // aal1. (apply/api/static/brand are excluded by the matcher below.)
   const ownerArea = !isLabArea && !isLogin && !isLabLogin;
   if (ownerArea) {
-    if (!isOwner(user.email)) {
+    if (!(await isInternalUser(user.email))) {
       const to = request.nextUrl.clone();
       to.pathname = "/lab";
       to.search = "";

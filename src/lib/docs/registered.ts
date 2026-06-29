@@ -1,5 +1,5 @@
 import type { Scheme, Lang, DocOptions } from "../types";
-import { esc, pick, wrapDoc, cover, footer } from "../doc-shell";
+import { esc, pick, wrapDoc, docHeader, footer } from "../doc-shell";
 
 // Two internal participant lists, faithful to the provider's real Excel forms:
 //   • PTS-L 4.4-1 «Списък на заявилите участие» — registration & logistics (named)
@@ -12,9 +12,25 @@ const EXTRA_CSS = `
   table.ptable td.n{text-align:center;width:30px;}
   table.ptable td.c{text-align:center;}
   table.ptable{font-size:9pt;}
+  .masked{color:var(--muted);font-style:italic;}
+  .confnote{font-size:8.5pt;color:var(--muted);font-style:italic;margin:-2px 0 8px;}
   .compiledby{margin-top:26px;font-family:var(--sans);font-size:9.5pt;}
   .compiledby .ln{display:inline-block;border-bottom:1px solid #999;min-width:220px;}
 `;
+
+// RT1 — confidentiality (§4.2). When the viewer is not a manager, the print route
+// passes revealNames:false and identifying fields collapse to a masked placeholder;
+// the participant code (4.4-2) stays, so staff can still work by code.
+function maskCell(reveal: boolean, value: string, lang: Lang): string {
+  return reveal ? esc(value) : `<span class="masked">${esc(pick(lang, "confidential", "конфиденциално"))}</span>`;
+}
+function confNote(reveal: boolean, lang: Lang): string {
+  return reveal
+    ? ""
+    : `<p class="confnote">${esc(pick(lang,
+        "Names are hidden — only a Manager may reveal the name behind a code (ISO/IEC 17043 §4.2).",
+        "Имената са скрити — само Мениджър може да разкрие името зад даден код (ISO/IEC 17043 §4.2)."))}</p>`;
+}
 
 // the person who compiles/codes the lists (Data collection & coding expert)
 function compiler(s: Scheme): { name: string; roleEn: string; roleBg: string } | undefined {
@@ -22,7 +38,7 @@ function compiler(s: Scheme): { name: string; roleEn: string; roleBg: string } |
 }
 
 function header(s: Scheme, lang: Lang, titleEn: string, titleBg: string): string {
-  return cover(s, lang, titleEn, titleBg);
+  return docHeader(s, lang, titleEn, titleBg);
 }
 
 function compiledBy(s: Scheme, lang: Lang): string {
@@ -42,17 +58,18 @@ export function renderRegistered(s: Scheme, lang: Lang, opts?: DocOptions): stri
   const L = (en: string, bg: string) => esc(pick(lang, en, bg));
   const ps = opts?.participants ?? [];
   const isCal = s.type === "C";
+  const reveal = opts?.revealNames !== false;
 
   const rows = ps.length
     ? ps
         .map(
           (p, i) => `<tr>
             <td class="n">${i + 1}</td>
-            <td>${esc(p.labName)}</td>
-            <td>${esc(p.deliveryAddress ?? "")}</td>
-            <td>${esc(p.contact ?? "")}</td>
-            <td>${esc(p.phone ?? "")}</td>
-            <td>${esc(p.email ?? "")}</td>
+            <td>${maskCell(reveal, p.labName, lang)}</td>
+            <td>${maskCell(reveal, p.deliveryAddress ?? "", lang)}</td>
+            <td>${maskCell(reveal, p.contact ?? "", lang)}</td>
+            <td>${maskCell(reveal, p.phone ?? "", lang)}</td>
+            <td>${maskCell(reveal, p.email ?? "", lang)}</td>
             <td class="c">${esc(String(p.participations ?? 1))}</td>
             <td class="c">${isCal ? `${i + 1}` : ""}</td>
           </tr>`
@@ -69,6 +86,7 @@ export function renderRegistered(s: Scheme, lang: Lang, opts?: DocOptions): stri
       `Laboratories that have applied for proficiency testing No. ${s.number} — ${s.titleEn}.`,
       `Лаборатории, заявили участие в изпитване за пригодност № ${s.number} — ${s.titleBg}.`
     )}</p>
+    ${confNote(reveal, lang)}
     <table class="ptable"><thead><tr>
       <th class="n">№</th>
       <th>${L("Laboratory", "Лаборатория")}</th>
@@ -91,6 +109,7 @@ export function renderRegisteredCoded(s: Scheme, lang: Lang, opts?: DocOptions):
   const L = (en: string, bg: string) => esc(pick(lang, en, bg));
   const ps = opts?.participants ?? [];
   const isCal = s.type === "C";
+  const reveal = opts?.revealNames !== false;
 
   // scheme scope shown for every participant (matches the real form)
   let scope = "";
@@ -108,7 +127,7 @@ export function renderRegisteredCoded(s: Scheme, lang: Lang, opts?: DocOptions):
         .map(
           (p, i) => `<tr>
             <td class="n">${i + 1}</td>
-            <td>${esc(p.labName)}</td>
+            <td>${maskCell(reveal, p.labName, lang)}</td>
             <td class="code c">${esc(p.code)}</td>
             <td>${scope}</td>
             <td>${ptItem}</td>
@@ -122,6 +141,7 @@ export function renderRegisteredCoded(s: Scheme, lang: Lang, opts?: DocOptions):
       `Name-to-code mapping for proficiency testing No. ${s.number}. The code is the only identifier used in all downstream documents and the public Register; the mapping is confidential to PTS Bulgaria.`,
       `Съответствие име ↔ код за изпитване за пригодност № ${s.number}. Кодът е единственият идентификатор във всички последващи документи и в публичния Регистър; съответствието е конфиденциално и известно само на PTS Bulgaria.`
     )}</p>
+    ${confNote(reveal, lang)}
     <table class="ptable"><thead><tr>
       <th class="n">№</th>
       <th>${L("Laboratory", "Лаборатория")}</th>

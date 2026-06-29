@@ -22,6 +22,10 @@ export interface Skin {
   // true (the PTS brand); custom skins follow their "embroidery" cover toggle so the
   // alternative looks (modern/bold/minimal…) stay clean.
   sideBorder?: boolean;
+  // Global default title-page photo (app setting) — used by coverImgTag when a
+  // scheme has no cover of its own, so one uploaded photo appears on every title
+  // page. Attached per-render by resolveSkinAsync; not part of the skin's identity.
+  defaultCover?: string;
   // The cover/head block (no body markers — the shell adds those).
   cover(s: Scheme, lang: Lang, docTitleEn: string, docTitleBg: string, opts?: { withImage?: boolean }): string;
   // The footer block (no body markers).

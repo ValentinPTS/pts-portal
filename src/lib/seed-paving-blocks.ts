@@ -71,6 +71,16 @@ export const pavingBlocks: Scheme = {
     },
   ],
 
+  // Results Sheet (F 7.2.1-7) tables — the "dimensions" parameter expands into three
+  // (Length / Width / Thickness), matching the real form exactly.
+  resultTables: [
+    { nameEn: "Length", nameBg: "Дължина", standardEn: "EN 1338, Annex C, clause C.2", standardBg: "БДС EN 1338, Приложение C, т. C.2", specimens: 3, unit: "mm" },
+    { nameEn: "Width", nameBg: "Широчина", standardEn: "EN 1338, Annex C, clause C.2", standardBg: "БДС EN 1338, Приложение C, т. C.2", specimens: 3, unit: "mm" },
+    { nameEn: "Thickness", nameBg: "Дебелина", standardEn: "EN 1338, Annex C, clause C.3", standardBg: "БДС EN 1338, Приложение C, т. C.3", specimens: 3, unit: "mm" },
+    { nameEn: "Water absorption", nameBg: "Абсорбция на вода", standardEn: "EN 1338, Annex E", standardBg: "БДС EN 1338, Приложение E", specimens: 3, unit: "%" },
+    { nameEn: "Tensile splitting strength", nameBg: "Якост на опън при разцепване", standardEn: "EN 1338, Annex F", standardBg: "БДС EN 1338, Приложение F", specimens: 8, unit: "MPa" },
+  ],
+
   schedule: [
     { date: "20.01.2026", labelEn: "Start of the scheme", labelBg: "Старт на схемата" },
     { date: "31.03.2026", labelEn: "Deadline for applications", labelBg: "Краен срок за заявления" },

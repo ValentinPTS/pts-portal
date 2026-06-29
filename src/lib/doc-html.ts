@@ -5,8 +5,11 @@ import { LIBRARY, FIELDS, FORM_ELEMENTS, renderFieldHtml } from "./blocks";
 import { docDefaultBody, docCoverHtml } from "./doc-template";
 
 // The live participant list → the option shape the document renderers expect.
-function toOpts(participants: Participant[]): DocOptions {
+// `reveal` controls the name↔code guard on the two participant lists (§4.2): only
+// a manager sees real names; everyone else gets codes + a "confidential" placeholder.
+function toOpts(participants: Participant[], reveal = true): DocOptions {
   return {
+    revealNames: reveal,
     participants: participants.map((p) => ({
       code: p.code, labName: p.labName, country: p.country, contact: p.contact,
       email: p.email, phone: p.phone, deliveryAddress: p.deliveryAddress, participations: p.participations,
@@ -19,8 +22,8 @@ function toOpts(participants: Participant[]): DocOptions {
 
 // The Default-template content as editor HTML, both languages — the faithful
 // body of the real document (its cover/head + footer are re-applied on export).
-export function defaultDocHtml(s: Scheme, docKey: string, participants: Participant[] = []): { bg: string; en: string } {
-  const opts = toOpts(participants);
+export function defaultDocHtml(s: Scheme, docKey: string, participants: Participant[] = [], reveal = true): { bg: string; en: string } {
+  const opts = toOpts(participants, reveal);
   return {
     bg: docDefaultBody(s, docKey, "bg", opts),
     en: docDefaultBody(s, docKey, "en", opts),

@@ -5,6 +5,7 @@ import { listParticipants } from "@/lib/participants";
 import { stripBodyMarkers, withSkin } from "@/lib/doc-shell";
 import { withFormCtx } from "@/lib/form-fields";
 import { resolveSkinAsync, getSkinAsync } from "@/skins";
+import { canRevealNamesNow } from "@/lib/roles";
 import type { DocOptions } from "@/lib/types";
 
 // Serves a generated document's standalone HTML (any document type).
@@ -25,9 +26,11 @@ export async function GET(
   // Per-document participant context.
   let opts: DocOptions | undefined;
   if (def.key === "registered" || def.key === "registered-coded") {
-    // The participant lists (PTS-L 4.4-1 / 4.4-2) need the full list.
+    // The participant lists (PTS-L 4.4-1 / 4.4-2) need the full list. RT1: real
+    // names are revealed only to a manager (§4.2); staff/auditors get codes only.
     const ps = await listParticipants(id);
     opts = {
+      revealNames: await canRevealNamesNow(),
       participants: ps.map((p) => ({
         code: p.code, labName: p.labName, country: p.country, contact: p.contact,
         email: p.email, phone: p.phone, deliveryAddress: p.deliveryAddress, participations: p.participations,

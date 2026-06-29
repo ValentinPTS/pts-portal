@@ -1,5 +1,5 @@
 import type { Scheme, Lang } from "../types";
-import { pick, wrapDoc, cover, sec, footer } from "../doc-shell";
+import { pick, wrapDoc, docHeader, sec, footer } from "../doc-shell";
 
 const FORM = "F 7.3.5-1";
 
@@ -175,7 +175,7 @@ export function renderInstruction(s: Scheme, lang: Lang): string {
   </div>`;
 
   const body = [
-    cover(s, lang, "INSTRUCTION FOR PARTICIPANTS", "ИНСТРУКЦИЯ ЗА УЧАСТНИЦИТЕ", { withImage: false }),
+    docHeader(s, lang, "INSTRUCTION FOR PARTICIPANTS", "ИНСТРУКЦИЯ ЗА УЧАСТНИЦИТЕ"),
     sec(1, "Number and name of the PT scheme", "Номер и наименование на схемата", lang, s1),
     sec(2, "Dispatch of the proficiency testing items", "Информация относно изпращането на обекта", lang, s2),
     sec(3, "Handling of the proficiency testing item", "Манипулиране с обекта", lang, s3),

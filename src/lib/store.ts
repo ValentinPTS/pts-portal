@@ -16,7 +16,7 @@ function yearOf(number: string): string {
   return m ? `20${m[1]}` : "";
 }
 function toRow(s: Scheme) {
-  return { id: s.id, number: s.number, type: s.type, status: s.status, year: yearOf(s.number), data: s };
+  return { id: s.id, number: s.number, type: s.type, status: s.status, year: yearOf(s.number), folder_id: s.folderId ?? null, data: s };
 }
 
 let warned = false;
@@ -30,6 +30,11 @@ let seeded = false;
 async function ensureSeed(db: NonNullable<ReturnType<typeof getDb>>) {
   if (seeded) return;
   seeded = true;
+  // Only auto-seed the two demo schemes when explicitly asked (SEED_DEMO=true). On a
+  // real configured DB this is off, so the demo schemes are NOT re-inserted and a
+  // deleted scheme stays deleted. (The in-memory fallback still carries them for
+  // no-DB local dev.)
+  if (process.env.SEED_DEMO !== "true") return;
   await db.from("schemes").upsert(SEEDS.map(toRow), { onConflict: "id", ignoreDuplicates: true });
 }
 
@@ -56,24 +61,45 @@ export interface SchemeSummary {
   type: "T" | "C";
   status: Scheme["status"];
   year: string;
+  folderId?: string;
 }
 
 export async function listSchemeSummaries(): Promise<SchemeSummary[]> {
   const db = getDb();
   const fromMem = (): SchemeSummary[] =>
-    mem.map((s) => ({ id: s.id, number: s.number, type: s.type, status: s.status, year: yearOf(s.number) }));
+    mem.map((s) => ({ id: s.id, number: s.number, type: s.type, status: s.status, year: yearOf(s.number), folderId: s.folderId }));
   if (!db) return fromMem();
   try {
     await ensureSeed(db);
-    const { data, error } = await db.from("schemes").select("id,number,type,status,year").order("id");
+    const { data, error } = await db.from("schemes").select("id,number,type,status,year,folder_id").order("id");
     if (error) throw error;
     return (data ?? []).map((r) => {
-      const row = r as { id: string; number: string; type: "T" | "C"; status: Scheme["status"]; year: string | null };
-      return { id: row.id, number: row.number, type: row.type, status: row.status, year: row.year || yearOf(row.number) };
+      const row = r as { id: string; number: string; type: "T" | "C"; status: Scheme["status"]; year: string | null; folder_id: string | null };
+      return { id: row.id, number: row.number, type: row.type, status: row.status, year: row.year || yearOf(row.number), folderId: row.folder_id ?? undefined };
     });
   } catch (e) {
     warn(e);
     return fromMem();
+  }
+}
+
+// Full schemes directly inside one folder (folderId null = under the type root).
+// The folder tiles show built-count + date, so this loads the full schemes — but
+// only the ones in this folder.
+export async function listSchemesInFolder(type: "T" | "C", folderId: string | null): Promise<Scheme[]> {
+  const db = getDb();
+  const inFolder = (s: Scheme) => s.type === type && (s.folderId ?? null) === (folderId ?? null);
+  if (!db) return mem.filter(inFolder);
+  try {
+    await ensureSeed(db);
+    let q = db.from("schemes").select("data").eq("type", type);
+    q = folderId ? q.eq("folder_id", folderId) : q.is("folder_id", null);
+    const { data, error } = await q.order("id");
+    if (error) throw error;
+    return (data ?? []).map((r) => (r as { data: Scheme }).data);
+  } catch (e) {
+    warn(e);
+    return mem.filter(inFolder);
   }
 }
 
@@ -91,6 +117,26 @@ export async function listSchemesByYear(type: "T" | "C", year: string): Promise<
   } catch (e) {
     warn(e);
     return fromMem();
+  }
+}
+
+// True if a scheme already uses this official number (YY/MM-X-N is meant to be
+// unique system-wide). `exceptId` lets a scheme keep its own number on edit.
+export async function schemeNumberExists(number: string, exceptId?: string): Promise<boolean> {
+  const n = number.trim();
+  if (!n) return false;
+  const db = getDb();
+  if (!db) return mem.some((s) => s.number === n && s.id !== exceptId);
+  try {
+    await ensureSeed(db);
+    let q = db.from("schemes").select("id").eq("number", n).limit(1);
+    if (exceptId) q = q.neq("id", exceptId);
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data ?? []).length > 0;
+  } catch (e) {
+    warn(e);
+    return mem.some((s) => s.number === n && s.id !== exceptId);
   }
 }
 

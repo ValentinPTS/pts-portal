@@ -12,7 +12,7 @@ export default function ExplorerShell({
   children,
 }: {
   breadcrumb: Crumb[];
-  active: { type?: FolderType; year?: string; schemeId?: string };
+  active: { type?: FolderType; folderId?: string; schemeId?: string };
   children: React.ReactNode;
 }) {
   return (

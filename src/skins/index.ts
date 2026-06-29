@@ -9,6 +9,7 @@ import {
   getCustomSkin,
   getDefaultSkinId,
   setDefaultSkinId,
+  getDefaultCoverImage,
 } from "../lib/custom-skins";
 
 // The skin registry. Two kinds of skin coexist:
@@ -53,9 +54,13 @@ export async function setDefaultSkinAsync(type: SchemeType, id: string): Promise
 }
 
 // The skin a scheme renders in: its chosen skin, else the type's persisted default.
+// Carries the global default title-page photo so coverImgTag can fall back to it
+// (one uploaded photo → every title page). Returned as a copy so the shared skin
+// constants are never mutated.
 export async function resolveSkinAsync(s: Scheme): Promise<Skin> {
-  if (s.skin) return getSkinAsync(s.skin);
-  return getSkinAsync(await getDefaultSkinIdAsync(s.type));
+  const base = s.skin ? await getSkinAsync(s.skin) : await getSkinAsync(await getDefaultSkinIdAsync(s.type));
+  const defaultCover = (await getDefaultCoverImage()) ?? undefined;
+  return defaultCover ? { ...base, defaultCover } : base;
 }
 
 // ── Sync fallback (built-ins only) — kept for unit tests + sync render fallback ──

@@ -8,17 +8,27 @@ import { useLang } from "@/components/LangProvider";
 // folder: friendly name + auto-assigned official PTS number + object. Type is
 // implied by the folder the user is in.
 export default function NewProjectDialog({
-  type, typeLabel, year, nextNumber, accent, soft, line, variant,
+  type, typeLabel, year, nextNumber, accent, soft, line, variant, folderId = null, samples = [],
 }: {
   type: "T" | "C"; typeLabel: string; year: string; nextNumber: string;
   accent: string; soft: string; line: string; variant: "button" | "tile";
+  folderId?: string | null;
+  samples?: { key: string; label: string }[];
 }) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
+  const [sample, setSample] = useState("");
+  const [name, setName] = useState("");
+
+  function pickSample(key: string) {
+    setSample(key);
+    const s = samples.find((x) => x.key === key);
+    if (s) setName(s.label); // pre-fill the friendly name; the sample carries the rest
+  }
 
   const trigger =
     variant === "button" ? (
-      <button onClick={() => setOpen(true)} className="btn btn-primary">＋ {t("np.new")}</button>
+      <button onClick={() => setOpen(true)} className="btn btn-primary">＋ {t("np.newScheme")}</button>
     ) : (
       <button
         onClick={() => setOpen(true)}
@@ -28,8 +38,8 @@ export default function NewProjectDialog({
         }}
       >
         <span style={{ fontSize: 30, fontWeight: 600 }}>＋</span>
-        <span style={{ fontWeight: 700, fontSize: 16 }}>{t("np.new")}</span>
-        <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("np.createsSchemeShort")}</span>
+        <span style={{ fontWeight: 700, fontSize: 16 }}>{t("np.newScheme")}</span>
+        <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("np.createsSchemeShort2")}</span>
       </button>
     );
 
@@ -49,6 +59,7 @@ export default function NewProjectDialog({
           >
             <input type="hidden" name="type" value={type} />
             <input type="hidden" name="year" value={year} />
+            <input type="hidden" name="folderId" value={folderId ?? ""} />
             <div>
               <div style={{ fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 22, color: "var(--green-dark)" }}>
                 {t("np.inPrefix")} {typeLabel} · {year}
@@ -56,9 +67,21 @@ export default function NewProjectDialog({
               <div style={{ fontSize: 13, color: "var(--muted)" }}>{t("np.subtitle")}</div>
             </div>
 
+            {samples.length > 0 && (
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={{ fontWeight: 700, fontSize: 13 }}>{t("np.startFrom")}</span>
+                <select name="sample" value={sample} onChange={(e) => pickSample(e.target.value)}
+                  style={{ border: "1px solid var(--line)", borderRadius: 9, padding: "11px 12px", fontSize: 14, background: "#fff" }}>
+                  <option value="">{t("np.blank")}</option>
+                  {samples.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                </select>
+                {sample && <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("np.sampleHint")}</span>}
+              </label>
+            )}
+
             <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <span style={{ fontWeight: 700, fontSize: 13 }}>{t("np.name")}</span>
-              <input name="name" required autoFocus placeholder={t("np.namePlaceholder")}
+              <input name="name" required autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={t("np.namePlaceholder")}
                 style={{ border: "1px solid var(--line)", borderRadius: 9, padding: "11px 12px", fontSize: 14 }} />
             </label>
 

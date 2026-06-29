@@ -54,6 +54,14 @@ export const DOC_CSS = `
   .schemeno{font-family:var(--sans);font-weight:700;color:var(--red);font-size:14pt;margin-top:10px;}
   .schemettl{font-family:var(--sans);font-weight:700;font-size:13pt;margin:2px 0 10px;}
   .coverimg{max-width:46%;height:auto;border-radius:8px;margin-top:10px;}
+  /* lighter document header (logo + embroidery band + centred title) for utility
+     forms that don't have a full title page; the wrap is a white band that bleeds
+     left over the side embroidery so the side strip starts at the first section */
+  .dochead-wrap{position:relative;z-index:41;background:#fff;margin:-26px 0 0 -50px;padding:26px 0 4px 50px;}
+  .dochead{display:flex;align-items:center;gap:18px;margin:0 0 4px;}
+  .dochead .logo{height:54px;flex:0 0 auto;}
+  .dochead .hband{flex:1;height:38px;background:url(/brand/embroidery-border.png) left center/auto 100% repeat-x;}
+  .docttl2{font-family:var(--sans);font-weight:800;color:var(--green-dark);font-size:20pt;text-align:center;letter-spacing:1.5px;margin:14px 0 8px;}
   /* contact strip on every title page (globe · mail · phone) */
   .contacts{display:flex;gap:14px;justify-content:center;margin-top:26px;flex-wrap:wrap;}
   .contact{display:flex;align-items:center;gap:10px;border:1px solid var(--green);border-radius:10px;padding:9px 16px;background:#fff;}

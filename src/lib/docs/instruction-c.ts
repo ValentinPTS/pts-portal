@@ -1,5 +1,5 @@
 import type { Scheme, Lang } from "../types";
-import { pick, wrapDoc, cover, sec, footer } from "../doc-shell";
+import { pick, wrapDoc, docHeader, sec, footer } from "../doc-shell";
 
 const FORM = "F 7.3.5-1";
 
@@ -169,7 +169,7 @@ export function renderInstructionC(s: Scheme, lang: Lang): string {
   void points;
 
   const body = [
-    cover(s, lang, "INSTRUCTION FOR THE PARTICIPANTS", "ИНСТРУКЦИЯ ЗА УЧАСТНИЦИТЕ", { withImage: false }),
+    docHeader(s, lang, "INSTRUCTION FOR THE PARTICIPANTS", "ИНСТРУКЦИЯ ЗА УЧАСТНИЦИТЕ"),
     sec(1, "Number and name of the PT scheme", "Номер и наименование на схемата", lang, s1),
     sec(
       2,

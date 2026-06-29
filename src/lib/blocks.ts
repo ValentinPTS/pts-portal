@@ -78,6 +78,12 @@ export const FORM_ELEMENTS: { id: string; nameEn: string; nameBg: string; bg: st
     bg: `<p><span class="ff-opt"><span class="ff-rb"></span><span>Да</span></span> &nbsp; <span class="ff-opt"><span class="ff-rb"></span><span>Не</span></span> &nbsp; <span class="ff-opt"><span class="ff-rb"></span><span>Друго</span></span></p>`,
   },
   {
+    // A real dropdown the owner can extend in the editor (select it → "Add option").
+    id: "fe_select", nameEn: "Dropdown (1 / 2 / 3)", nameBg: "Падащо меню (1 / 2 / 3)",
+    en: `<select class="ff-select" contenteditable="false"><option>1</option><option>2</option><option>3</option></select>`,
+    bg: `<select class="ff-select" contenteditable="false"><option>1</option><option>2</option><option>3</option></select>`,
+  },
+  {
     id: "fe_sig", nameEn: "Signature block", nameBg: "Поле за подпис",
     en: `<div class="sig"><div class="col"><span class="ff-line" style="min-width:140px"></span><br>Date</div><div class="col"><span class="ff-line" style="min-width:200px"></span><br>Name and Surname</div></div>`,
     bg: `<div class="sig"><div class="col"><span class="ff-line" style="min-width:140px"></span><br>Дата</div><div class="col"><span class="ff-line" style="min-width:200px"></span><br>Име и Фамилия</div></div>`,

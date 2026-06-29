@@ -7,7 +7,8 @@ import { DocTile } from "@/components/Tiles";
 import SkinPicker from "@/components/SkinPicker";
 import FolderActions from "@/components/FolderActions";
 import { skinsForTypeAsync } from "@/skins";
-import { TYPE_SLUG, typeLabel, schemeYear, schemeName, statusChip, ACCENT } from "@/lib/folders";
+import { TYPE_SLUG, typeLabel, schemeName, statusChip, ACCENT } from "@/lib/folders";
+import { ancestry } from "@/lib/folder-tree";
 import { getServerT } from "@/lib/i18n-server";
 
 // A scheme folder → its 14 documents as files, plus the scheme tools.
@@ -18,19 +19,20 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
 
   const { lang, tr } = await getServerT();
   const type = s.type;
-  const year = schemeYear(s);
   const slug = TYPE_SLUG[type];
   const ac = ACCENT[type];
   const st = statusChip(s.status, lang);
   const skins = await skinsForTypeAsync(type);
+  // breadcrumb follows the real folder the scheme lives in (if any)
+  const chain = s.folderId ? await ancestry(type, s.folderId) : [];
 
   return (
     <ExplorerShell
-      active={{ type, year, schemeId: id }}
+      active={{ type, folderId: s.folderId, schemeId: id }}
       breadcrumb={[
         { label: tr("common.home"), href: "/" },
         { label: typeLabel(type, lang), href: `/files/${slug}` },
-        { label: year, href: `/files/${slug}/${year}` },
+        ...chain.map((f) => ({ label: f.name, href: `/files/${slug}/f/${f.id}` })),
         { label: schemeName(s) },
       ]}
     >
@@ -47,6 +49,8 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
           <Link href={`/schemes/${id}/participants`} className="btn" style={{ fontSize: 13 }}>{tr("scheme.participants")}</Link>
           <Link href={`/schemes/${id}/applications`} className="btn" style={{ fontSize: 13 }}>{tr("scheme.applications")}</Link>
           <Link href={`/schemes/${id}/results`} className="btn" style={{ fontSize: 13 }}>{tr("scheme.results")}</Link>
+          <Link href={`/activity?scheme=${id}`} className="btn" style={{ fontSize: 13 }}>{tr("activity.viewForScheme")}</Link>
+          <a href={`/schemes/${id}/audit-pack?lang=bg`} target="_blank" rel="noopener" className="btn" style={{ fontSize: 13 }}>{tr("activity.auditPack")}</a>
           <SkinPicker schemeId={id} current={s.skin ?? "classic"} skins={skins.map((k) => ({ id: k.meta.id, name: k.meta.name }))} />
           <span style={{ width: 1, height: 22, background: "var(--line)", margin: "0 2px" }} />
           <FolderActions schemeId={id} name={s.name?.trim() || schemeName(s)} />

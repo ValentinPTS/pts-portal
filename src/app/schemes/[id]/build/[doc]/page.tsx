@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getScheme, listSchemes } from "@/lib/store";
-import { getDoc } from "@/lib/documents";
+import { getDoc, isFormDoc } from "@/lib/documents";
 import { listParticipants } from "@/lib/participants";
 import { listLibraryItems } from "@/lib/library-store";
 import { listSavedTemplates } from "@/lib/saved-templates";
@@ -10,6 +10,7 @@ import { defaultDocHtml, coverDocHtml, insertableSnippets, insertableFields, ins
 import { hasDocTemplate } from "@/lib/doc-template";
 import { resolveSkinAsync } from "@/skins";
 import WordEditor from "@/components/WordEditor";
+import { canRevealNames, getCurrentRole } from "@/lib/roles";
 import { getServerT } from "@/lib/i18n-server";
 
 export default async function BuildDocPage({
@@ -24,8 +25,13 @@ export default async function BuildDocPage({
   const participants = await listParticipants(id);
   const { lang, tr } = await getServerT();
 
-  const saved = s.docs?.[doc] ?? { bg: "", en: "" };
-  const dft = defaultDocHtml(s, doc, participants);
+  // Name guard (§4.2): only a manager sees real names on the two participant lists.
+  // Those lists are data-driven, so we always start the editor from the fresh
+  // (masked-per-role) default rather than any saved HTML.
+  const reveal = canRevealNames(await getCurrentRole());
+  const isList = doc === "registered" || doc === "registered-coded";
+  const saved = isList ? { bg: "", en: "" } : (s.docs?.[doc] ?? { bg: "", en: "" });
+  const dft = defaultDocHtml(s, doc, participants, reveal);
   // the editable title page (cover) for this document in the scheme's skin
   const skin = await resolveSkinAsync(s);
   const cov = coverDocHtml(s, doc, participants, skin);
@@ -53,9 +59,14 @@ export default async function BuildDocPage({
 
   return (
     <div>
-      <Link href={`/schemes/${id}`} className="text-sm" style={{ color: "var(--muted)" }}>
-        ← {s.number} · {tr("build.documentsWord")}
-      </Link>
+      <div className="flex items-center justify-between gap-3">
+        <Link href={`/schemes/${id}`} className="text-sm" style={{ color: "var(--muted)" }}>
+          ← {s.number} · {tr("build.documentsWord")}
+        </Link>
+        <Link href={`/schemes/${id}/build/${encodeURIComponent(doc)}/history`} className="btn btn-sm" style={{ fontSize: 12 }}>
+          {tr("hist.link")}
+        </Link>
+      </div>
       <h1 className="text-3xl font-bold mt-1 mb-4" style={{ color: "var(--green-dark)", letterSpacing: "-0.01em" }}>
         {tr("build.prefix")}: {(lang === "bg" ? def?.nameBg : def?.nameEn) ?? doc}
       </h1>
@@ -71,6 +82,7 @@ export default async function BuildDocPage({
         coverEn={cov.en}
         hasDefault={hasDocTemplate(doc)}
         schemeType={s.type}
+        isForm={isFormDoc(doc)}
         snippets={insertableSnippets()}
         fields={insertableFields(s, participants)}
         formElements={insertableFormElements()}

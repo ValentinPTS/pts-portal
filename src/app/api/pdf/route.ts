@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import type { Browser } from "playwright";
 import { getScheme } from "@/lib/store";
 import { getDoc } from "@/lib/documents";
-import { requireOwner } from "@/lib/auth";
+import { requireStaff } from "@/lib/roles";
 
 // Generates any document's PDF with Playwright (loads the generic /doc/[doc]/print
 // route), adding A4 page numbers in the footer. Node runtime (Playwright needs Node).
@@ -33,7 +33,7 @@ async function getBrowser(): Promise<Browser> {
 }
 
 export async function POST(req: NextRequest) {
-  await requireOwner(); // no-op until AUTH_ENABLED=true; then owners-only
+  await requireStaff(); // any internal role may render/print (read); writes blocked elsewhere
   let body: { id?: string; doc?: string; lang?: string; participant?: string; composed?: boolean };
   try {
     body = await req.json();

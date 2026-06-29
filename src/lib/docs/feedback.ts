@@ -1,5 +1,5 @@
 import type { Scheme, Lang } from "../types";
-import { esc, pick, wrapDoc, cover, footer } from "../doc-shell";
+import { esc, pick, wrapDoc, docHeader, footer } from "../doc-shell";
 import { fRating, fCheck, fRadio, fText, fLines } from "../form-fields";
 
 const FORM = "F 8.6-2";
@@ -73,7 +73,7 @@ export function renderFeedback(s: Scheme, lang: Lang): string {
       "Напишете своите коментари, бележки, забележки, препоръки и предложения за подобряване нивото на предоставяната услуга:",
       fLines("q7", 4))}`;
 
-  const body = `${cover(s, lang, "FEEDBACK SHEET", "ЛИСТ ЗА ОБРАТНА ВРЪЗКА")}
+  const body = `${docHeader(s, lang, "FEEDBACK SHEET", "ЛИСТ ЗА ОБРАТНА ВРЪЗКА")}
     <div class="subj">${L("regarding", "относно")} <b>${L("Proficiency Testing", "Изпитване за пригодност")} № ${esc(s.number)}</b> — ${L(s.titleEn, s.titleBg)}</div>
     <h2 class="sec">${L("Survey", "Анкета")}</h2>
     <div class="fbintro">${L(

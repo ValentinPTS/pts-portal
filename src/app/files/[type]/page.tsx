@@ -1,43 +1,75 @@
 import { notFound } from "next/navigation";
-import { listSchemeSummaries } from "@/lib/store";
+import { listSchemeSummaries, listSchemesInFolder } from "@/lib/store";
+import { listChildFolders, listFolders } from "@/lib/folder-tree";
 import ExplorerShell from "@/components/ExplorerShell";
-import { FolderTile } from "@/components/Tiles";
+import { FolderTile, SchemeTile } from "@/components/Tiles";
 import NewProjectDialog from "@/components/NewProjectDialog";
-import { typeFromSlug, typeLabel, ACCENT, yearsForType, schemesIn, nextProject } from "@/lib/folders";
+import NewFolderDialog from "@/components/NewFolderDialog";
+import { typeFromSlug, typeLabel, ACCENT, nextProject } from "@/lib/folders";
+import { samplesForType } from "@/lib/sample-schemes";
 import { getServerT } from "@/lib/i18n-server";
 import { plural } from "@/lib/i18n";
 
-// A type folder (Testing / Calibration) → its year folders. Only needs the year
-// list + per-year counts → scheme summaries (no document payload).
-export default async function TypePage({ params }: { params: Promise<{ type: string }> }) {
+// A type root (Testing / Calibration): the folders and schemes directly inside it,
+// with two create options — New folder (name only) and New scheme (full dialog).
+export const dynamic = "force-dynamic";
+
+export default async function TypePage({ params, searchParams }: { params: Promise<{ type: string }>; searchParams: Promise<{ dupNumber?: string }> }) {
   const { type: slug } = await params;
   const type = typeFromSlug(slug);
   if (!type) notFound();
+  const dupNumber = (await searchParams).dupNumber;
 
-  const schemes = await listSchemeSummaries();
-  const years = yearsForType(schemes, type);
+  const [childFolders, allFolders, summaries, rootSchemes] = await Promise.all([
+    listChildFolders(type, null),
+    listFolders(type),
+    listSchemeSummaries(),
+    listSchemesInFolder(type, null),
+  ]);
   const ac = ACCENT[type];
   const curYear = String(new Date().getFullYear());
-  const next = nextProject(schemes, type, curYear);
+  const next = nextProject(summaries.filter((s) => s.type === type), type, curYear);
   const { lang, tr } = await getServerT();
+  const samples = samplesForType(type).map((s) => ({ key: s.key, label: lang === "bg" ? s.labelBg : s.labelEn }));
+
+  const schemeCount = (fid: string) => summaries.filter((s) => s.type === type && s.folderId === fid).length;
+  const subCount = (fid: string) => allFolders.filter((f) => f.parentId === fid).length;
 
   return (
     <ExplorerShell active={{ type }} breadcrumb={[{ label: tr("common.home"), href: "/" }, { label: typeLabel(type, lang) }]}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 26, color: ac.accent }}>{typeLabel(type, lang)}</div>
-          <div style={{ fontSize: 14, color: "var(--muted)" }}>{plural(lang, years.length, "year")}</div>
+      {dupNumber && (
+        <div style={{ background: "#fdecec", border: "1px solid var(--red)", color: "#8a1f1f", borderRadius: 10, padding: "8px 12px", marginBottom: 14, fontSize: 13 }}>
+          {tr("files.dupNumber")} <strong>{dupNumber}</strong>
         </div>
-        <NewProjectDialog variant="button" type={type} typeLabel={typeLabel(type, lang)} year={curYear} nextNumber={next.number} accent={ac.accent} soft={ac.soft} line={ac.line} />
+      )}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 26, color: ac.accent }}>{typeLabel(type, lang)}</div>
+          <div style={{ fontSize: 14, color: "var(--muted)" }}>{plural(lang, childFolders.length, "folder")}</div>
+        </div>
+        <NewFolderDialog variant="button" type={type} parentId={null} accent={ac.accent} soft={ac.soft} line={ac.line} />
+        <NewProjectDialog variant="button" type={type} typeLabel={typeLabel(type, lang)} year={curYear} nextNumber={next.number} accent={ac.accent} soft={ac.soft} line={ac.line} folderId={null} samples={samples} />
       </div>
+
+      {/* folders */}
+      <div style={{ fontWeight: 700, fontSize: 13, color: "var(--muted)", margin: "4px 0 10px", letterSpacing: ".04em", textTransform: "uppercase" }}>{tr("folder.subfolders")}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 18 }}>
-        {years.map((y) => (
-          <FolderTile key={y} type={type} href={`/files/${slug}/${y}`} label={y} sub={plural(lang, schemesIn(schemes, type, y).length, "scheme")} />
+        {childFolders.map((f) => (
+          <FolderTile key={f.id} type={type} href={`/files/${slug}/f/${f.id}`} label={f.name}
+            sub={`${plural(lang, schemeCount(f.id), "scheme")}${subCount(f.id) ? ` · ${subCount(f.id)}` : ""}`} />
         ))}
-        {years.length === 0 && (
-          <div style={{ color: "var(--muted)", fontSize: 14 }}>{tr("files.emptyYears")}</div>
-        )}
+        <NewFolderDialog variant="tile" type={type} parentId={null} accent={ac.accent} soft={ac.soft} line={ac.line} />
       </div>
+
+      {/* schemes directly under the root */}
+      {rootSchemes.length > 0 && (
+        <>
+          <div style={{ fontWeight: 700, fontSize: 13, color: "var(--muted)", margin: "26px 0 10px", letterSpacing: ".04em", textTransform: "uppercase" }}>{tr("folder.schemes")}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(290px,1fr))", gap: 18 }}>
+            {rootSchemes.map((s) => <SchemeTile key={s.id} s={s} lang={lang} />)}
+          </div>
+        </>
+      )}
     </ExplorerShell>
   );
 }

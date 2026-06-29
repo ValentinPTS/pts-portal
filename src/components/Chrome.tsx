@@ -6,13 +6,14 @@ import { useLang } from "@/components/LangProvider";
 import LanguageToggle from "@/components/LanguageToggle";
 import AccountMenu from "@/components/AccountMenu";
 
-type User = { email: string; owner: boolean } | null;
+type EffectiveRole = "manager" | "staff" | "auditor" | "lab";
+type User = { email: string; role: EffectiveRole | null } | null;
 
 // Splits the app chrome: the public application flow (/apply/*) renders full-bleed
 // with its own (dark) layout; everything else gets the admin header + main.
 // The folder-explorer pages (home, /files/*, a scheme's folder) render full-width
 // (they provide their own sidebar + padding); other pages stay centered.
-export default function Chrome({ user, children }: { user: User; children: React.ReactNode }) {
+export default function Chrome({ user, canManageUsers, canViewActivity, children }: { user: User; canManageUsers?: boolean; canViewActivity?: boolean; children: React.ReactNode }) {
   const path = usePathname() ?? "";
   const { t } = useLang();
   // Public application flow + the laboratory portal render full-bleed with their
@@ -23,6 +24,8 @@ export default function Chrome({ user, children }: { user: User; children: React
   const wide = path.includes("/build/") || path.startsWith("/skins/"); // skin editor needs room for two columns
   const onSkins = path.startsWith("/skins");
   const onItems = path.startsWith("/items");
+  const onUsers = path.startsWith("/users");
+  const onActivity = path.startsWith("/activity");
 
   const navLink = (href: string, label: string, active: boolean) => (
     <Link
@@ -49,11 +52,18 @@ export default function Chrome({ user, children }: { user: User; children: React
           {navLink("/", t("nav.files"), explorer)}
           {navLink("/skins", t("nav.skins"), onSkins)}
           {navLink("/items", t("nav.items"), onItems)}
+          {canViewActivity && navLink("/activity", t("nav.activity"), onActivity)}
+          {canManageUsers && navLink("/users", t("nav.users"), onUsers)}
           <span style={{ width: 1, height: 22, background: "var(--line)", margin: "0 4px" }} />
           <LanguageToggle />
-          {user && <AccountMenu email={user.email} owner={user.owner} />}
+          {user && <AccountMenu email={user.email} role={user.role} />}
         </nav>
       </header>
+      {user?.role === "auditor" && (
+        <div style={{ background: "#fff7e6", borderBottom: "1px solid var(--amber)", color: "#8a6d00", fontSize: 12.5, fontWeight: 600, textAlign: "center", padding: "6px 12px" }}>
+          {t("banner.auditorReadonly")}
+        </div>
+      )}
       <main className={explorer ? "flex-1 w-full flex flex-col" : `flex-1 w-full ${wide ? "max-w-7xl" : "max-w-5xl"} mx-auto px-6 py-8`}>
         {children}
       </main>

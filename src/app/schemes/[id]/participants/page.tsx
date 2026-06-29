@@ -4,6 +4,7 @@ import { getScheme } from "@/lib/store";
 import { listParticipants } from "@/lib/participants";
 import { addParticipantAction, inviteLabAction } from "@/lib/actions";
 import { getServerT } from "@/lib/i18n-server";
+import { canRevealNames, getCurrentRole } from "@/lib/roles";
 
 const inputCls = "w-full rounded px-2 py-1 text-sm";
 const inputStyle = { border: "1px solid var(--line)", background: "#fff" } as const;
@@ -24,6 +25,11 @@ export default async function ParticipantsPage({
   if (!s) notFound();
   const participants = await listParticipants(id);
   const { tr } = await getServerT();
+  // RT1 — only a manager sees the real names behind the codes (§4.2). Staff and
+  // auditors see codes only. (Build mode = manager, so this is a no-op until login
+  // is turned on.) Finer write-gating of the add form is a later phase.
+  const reveal = canRevealNames(await getCurrentRole());
+  const hidden = <span style={{ color: "var(--muted)", fontStyle: "italic" }}>{tr("part.hidden")}</span>;
 
   return (
     <div>
@@ -36,7 +42,7 @@ export default async function ParticipantsPage({
           · {participants.length}
         </span>
       </h1>
-      <p className="text-sm" style={{ color: "var(--muted)" }}>{tr("part.subtitle")}</p>
+      <p className="text-sm" style={{ color: "var(--muted)" }}>{reveal ? tr("part.subtitle") : tr("part.confBanner")}</p>
 
       {/* list */}
       <div className="card mt-4 overflow-hidden">
@@ -57,21 +63,26 @@ export default async function ParticipantsPage({
             )}
             {participants.map((p) => (
               <tr key={p.id} style={{ borderTop: "1px solid var(--line)" }}>
-                <td className="p-2 font-mono font-bold" style={{ color: "var(--green-dark)" }}>{p.code}</td>
-                <td className="p-2">{p.labName}</td>
+                <td className="p-2 font-mono font-bold">
+                  <Link href={`/schemes/${id}/participants/${encodeURIComponent(p.code)}`} style={{ color: "var(--green-dark)" }}>{p.code}</Link>
+                </td>
+                <td className="p-2">{reveal ? p.labName : hidden}</td>
                 <td className="p-2">{p.country}</td>
-                <td className="p-2" style={{ color: "var(--muted)" }}>{p.contact || p.email}</td>
+                <td className="p-2" style={{ color: "var(--muted)" }}>{reveal ? (p.contact || p.email) : "—"}</td>
                 <td className="p-2"><span style={{ color: STATUS_COLOR[p.status] ?? "var(--muted)", fontWeight: 700 }}>● {tr(`pstatus.${p.status}`)}</span></td>
                 <td className="p-2">
-                  {p.labId ? (
-                    <form action={inviteLabAction}>
-                      <input type="hidden" name="labId" value={p.labId} />
-                      <input type="hidden" name="returnTo" value={`/schemes/${id}/participants`} />
-                      <button type="submit" className="btn btn-sm" style={{ fontSize: 12, padding: "5px 10px" }}>{tr("part.inviteToPortal")}</button>
-                    </form>
-                  ) : (
-                    <span style={{ color: "var(--muted)" }}>—</span>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {p.labId ? (
+                      <form action={inviteLabAction}>
+                        <input type="hidden" name="labId" value={p.labId} />
+                        <input type="hidden" name="returnTo" value={`/schemes/${id}/participants`} />
+                        <button type="submit" className="btn btn-sm" style={{ fontSize: 12, padding: "5px 10px" }}>{tr("part.inviteToPortal")}</button>
+                      </form>
+                    ) : (
+                      <span style={{ color: "var(--muted)" }}>—</span>
+                    )}
+                    <Link href={`/schemes/${id}/participants/${encodeURIComponent(p.code)}`} style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>{tr("part.openCase")} →</Link>
+                  </div>
                 </td>
               </tr>
             ))}

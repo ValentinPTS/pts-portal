@@ -46,8 +46,11 @@ export const COVER_PLACEHOLDER = "data:image/svg+xml;utf8," + encodeURIComponent
 export function coverImgTag(s: Scheme): string {
   const w = typeof s.coverImageWidth === "number" && s.coverImageWidth > 0 ? Math.min(100, Math.round(s.coverImageWidth)) : 46;
   const margin = s.coverImageAlign === "left" ? "10px auto 10px 0" : s.coverImageAlign === "right" ? "10px 0 10px auto" : "10px auto";
-  const empty = !s.coverImage;
-  const src = empty ? COVER_PLACEHOLDER : esc(s.coverImage!);
+  // The scheme's own photo, else the global default title-page photo (one upload →
+  // every title page), else the placeholder prompting to add one.
+  const url = s.coverImage || activeSkin().defaultCover || "";
+  const empty = !url;
+  const src = empty ? COVER_PLACEHOLDER : esc(url);
   return `<img class="coverimg${empty ? " coverimg-empty" : ""}" data-cover="1" src="${src}" alt="" style="max-width:${w}%;display:block;margin:${margin};">`;
 }
 
@@ -120,6 +123,23 @@ export function cover(
   opts: { withImage?: boolean } = {}
 ): string {
   return activeSkin().cover(s, lang, docTitleEn, docTitleBg, opts) + BODY_START;
+}
+
+// A lighter top for utility forms (Application, Declaration, Protocol, Instruction,
+// Results, Feedback, the participant lists): the brand logo + an embroidery band +
+// the centred document title — NO full title page, photo or contacts. Followed by
+// the body-start marker, so it honours the same contract as cover().
+export function docHeader(s: Scheme, lang: Lang, docTitleEn: string, docTitleBg: string): string {
+  void s;
+  // Wrapped in a white band that bleeds left over the embroidery side strip, so the
+  // side embroidery visually starts at the first section (not beside the logo/title).
+  return `<div class="dochead-wrap">
+    <div class="dochead">
+      <img class="logo" src="/brand/logo.png" alt="PTS Bulgaria">
+      <span class="hband" aria-hidden="true"></span>
+    </div>
+    <div class="docttl2">${esc(pick(lang, docTitleEn, docTitleBg))}</div>
+  </div>` + BODY_START;
 }
 
 export function sec(n: number | string, en: string, bg: string, lang: Lang, body: string): string {

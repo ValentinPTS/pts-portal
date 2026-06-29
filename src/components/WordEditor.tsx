@@ -26,6 +26,9 @@ type Unit = "mm" | "cm" | "px";
 // Text-colour palette for the toolbar "A▾" button: brand greens, accents, neutrals.
 const TEXT_COLORS = ["#456b2c", "#57823c", "#6e925a", "#8fa97e", "#9e2b2b", "#cf4911", "#9a6b22", "#2f6f8f", "#1a1a1a", "#3e3e3e", "#666666", "#ffffff"];
 const TEXT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28];
+// Highlight (text background) + table-cell fill swatches — soft Word-like tints.
+const HILITE_COLORS = ["#fff3a3", "#ffd9a0", "#c9f2c7", "#bfe3ff", "#ffc9de", "#e9d8fd", "#e6e6e6"];
+const CELL_COLORS = ["#eef3ea", "#fdeaea", "#fff7d6", "#e7f0fb", "#f1ece1", "#f0f0f0", "#ffffff"];
 // Must match COVER_MARK in lib/doc-css.ts — flags content that already carries its
 // own title page (so the editor shows the cover and the export doesn't re-add it).
 const COVER_MARK = "<!--PTS:CV-->";
@@ -65,19 +68,28 @@ const COVER_CSS = `
   .we-page .mincover .minrule{height:2px;width:60px;background:#111;margin:10px 0 14px;}
   .we-page .mincover .minno{font-family:'Sofia Sans Condensed',sans-serif;font-weight:700;font-size:12.5pt;}
   .we-page .mincover .minacc{color:var(--muted);font-size:10.5pt;margin-top:4px;}
+  /* lighter document header (logo + embroidery band + centred title) */
+  .we-page .dochead-wrap{position:relative;z-index:41;background:#fff;margin:-26px 0 0 -50px;padding:26px 0 4px 50px;}
+  .we-page .dochead{display:flex;align-items:center;gap:18px;margin:0 0 4px;}
+  .we-page .dochead .logo{height:54px;flex:0 0 auto;}
+  .we-page .dochead .hband{flex:1;height:38px;background:url(/brand/embroidery-border.png) left center/auto 100% repeat-x;}
+  .we-page .docttl2{font-family:'Sofia Sans Condensed',sans-serif;font-weight:800;color:#5f7d52;font-size:20pt;text-align:center;letter-spacing:1.5px;margin:14px 0 8px;}
 `;
 
 const EDITOR_CSS = `
-  .we-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;background:var(--green-soft);border:1px solid var(--green-line);border-radius:10px;position:sticky;top:0;z-index:30;}
+  /* the whole header (toolbar + contextual bars) sticks as one unit, so the
+     contextual bar is always visible right under the toolbar (whatever its height) */
+  .we-stickyhead{position:sticky;top:0;z-index:30;background:var(--canvas);padding-top:2px;}
+  .we-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;background:var(--green-soft);border:1px solid var(--green-line);border-radius:10px;}
   .we-tool{display:inline-flex;align-items:center;justify-content:center;min-width:38px;height:36px;padding:0 11px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;font-weight:700;font-size:15px;color:var(--ink);transition:background .12s,border-color .12s;}
   .we-tool:hover{background:var(--green-soft);border-color:var(--green-line);}
   .we-sep{width:1px;height:24px;background:var(--green-line);margin:0 3px;}
 
-  .we-body{display:flex;gap:24px;align-items:flex-start;background:var(--canvas);border:1px solid var(--line);border-radius:14px;padding:28px;}
+  .we-body{display:flex;gap:24px;align-items:flex-start;background:#fff;border:1px solid var(--line);border-radius:14px;padding:28px;}
   .we-col{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:16px;overflow:auto;}
 
   /* the paper = exactly the PDF content box (182mm), real document body styles */
-  .we-page{--green-dark:#5f7d52;--green:#88a77b;--green-soft:#eef3ea;--green-line:#b7d0c0;--red:#9e2b2b;--ink:#1a1a1a;--muted:#6b6b6b;--line:#dcdcdc;position:relative;width:${PAGE_W_MM}mm;color:var(--ink);border:1px solid var(--line);border-radius:4px;
+  .we-page{--green-dark:#5f7d52;--green:#88a77b;--green-soft:#eef3ea;--green-line:#b7d0c0;--red:#9e2b2b;--ink:#1a1a1a;--muted:#6b6b6b;--line:#dcdcdc;position:relative;width:${PAGE_W_MM}mm;color:var(--ink);border:2px solid #111;border-radius:4px;
     padding:26px 30px 50px 50px;box-shadow:0 8px 28px rgba(15,30,22,.10);
     font-family:'PT Serif',Georgia,serif;font-size:11pt;line-height:1.5;background:#fff;}
   /* traditional embroidery border down the left (matches the printed document) */
@@ -101,9 +113,10 @@ const EDITOR_CSS = `
 
   /* page break: the block is still pushed to the next page (white fills the rest),
      but the visible separation is only a thin ~18px grey strip with the label */
-  .we-gap{position:relative;user-select:none;pointer-events:none;}
-  .we-gapsep{position:absolute;left:-50px;right:-30px;bottom:0;height:18px;background:var(--canvas);display:flex;align-items:center;justify-content:center;z-index:3;}
-  .we-gaplabel{font-size:10px;font-weight:700;color:#456b2c;background:#fff;border:1.5px solid #8fa97e;border-radius:999px;padding:1px 12px;}
+  /* the empty space before an A4 break — tinted so the gap between pages is clearly visible */
+  .we-gap{position:relative;user-select:none;pointer-events:none;background:repeating-linear-gradient(135deg,#e9ede3,#e9ede3 8px,#dfe5d4 8px,#dfe5d4 16px);}
+  .we-gapsep{position:absolute;left:-52px;right:-32px;bottom:0;height:22px;background:#c9d4bd;border-top:1px solid #8fa97e;border-bottom:2px solid #111;display:flex;align-items:center;justify-content:center;z-index:3;}
+  .we-gaplabel{font-size:10px;font-weight:700;color:#2f5d2a;background:#fff;border:1.5px solid #8fa97e;border-radius:999px;padding:2px 14px;letter-spacing:.04em;}
   /* image selection handles overlay */
   .we-ov{position:absolute;inset:0;pointer-events:none;z-index:6;}
   /* inline PDF preview */
@@ -115,7 +128,10 @@ const EDITOR_CSS = `
   .we-h.mv{cursor:move;border-radius:50%;background:var(--green-dark);}
   .we-selbox{position:absolute;border:1.5px solid var(--green-dark);pointer-events:none;}
 
-  .we-imgbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 14px;box-shadow:0 4px 16px rgba(15,30,22,.10);align-self:stretch;}
+  .we-imgbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:1px solid var(--green-line);border-radius:12px;padding:10px 14px;box-shadow:0 6px 18px rgba(15,30,22,.12);margin-bottom:12px;}
+  .we-swrow{display:inline-flex;align-items:center;gap:5px;}
+  .we-sw-sm{width:20px;height:20px;border-radius:5px;border:1px solid rgba(0,0,0,.12);cursor:pointer;padding:0;}
+  .we-sw-sm:hover{transform:scale(1.12);}
   .we-imgbar .grp{display:inline-flex;align-items:center;gap:6px;}
   .we-num{width:52px;border:1px solid var(--line);border-radius:7px;padding:5px 6px;font-size:13px;text-align:center;}
   .we-pill{display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 11px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--ink);}
@@ -181,6 +197,7 @@ const EDITOR_CSS = `
   .we-page .ff-rb{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.6px solid var(--green-dark);border-radius:50%;flex:0 0 auto;}
   .we-page .ff-line{display:inline-block;border-bottom:1px solid var(--ink);min-width:220px;padding:0 3px 1px;font-family:'Sofia Sans Condensed',sans-serif;font-size:10pt;line-height:1.4;}
   .we-page .ff-line[data-empty="1"]{border-bottom-color:var(--line);min-height:14px;}
+  .we-page .ff-select{font-family:'Sofia Sans Condensed',sans-serif;font-size:10pt;border:1px solid var(--green-dark);border-radius:5px;padding:2px 8px;color:var(--green-dark);background:#fff;cursor:pointer;}
 
   /* text-size selector + text-colour palette */
   .we-size{height:36px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:0 8px;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;}
@@ -217,6 +234,7 @@ export default function WordEditor({
   coverEn = "",
   hasDefault,
   schemeType = "T",
+  isForm = false,
   snippets,
   fields,
   formElements = [],
@@ -235,6 +253,7 @@ export default function WordEditor({
   coverEn?: string;
   hasDefault: boolean;
   schemeType?: "T" | "C";
+  isForm?: boolean;
   snippets: Snippet[];
   fields: Field[];
   formElements?: FormEl[];
@@ -273,12 +292,16 @@ export default function WordEditor({
   const [lockAspect, setLockAspect] = useState(true);
   const [box, setBox] = useState<{ l: number; t: number; w: number; h: number } | null>(null); // px rel. to paper
   const [cell, setCell] = useState<HTMLTableCellElement | null>(null); // selected table cell
+  const [selEl, setSelEl] = useState<HTMLSelectElement | null>(null); // selected dropdown
+  const [selOpts, setSelOpts] = useState(0); // its option count (for the bar)
   const [preview, setPreview] = useState(false);              // inline PDF preview open
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);  // object URL of the rendered PDF
   const pgTimer = useRef<ReturnType<typeof setTimeout> | null>(null); // debounce page-gap reflow
   const [colorOpen, setColorOpen] = useState(false);          // text-colour palette open
   const [textColor, setTextColor] = useState("#9e2b2b");      // last-used text colour (button indicator)
   const colorRef = useRef<HTMLSpanElement>(null);
+  const [hiliteOpen, setHiliteOpen] = useState(false);        // highlight (text background) palette open
+  const hiliteRef = useRef<HTMLSpanElement>(null);
   const lockRef = useRef(lockAspect);
   lockRef.current = lockAspect;
   const drag = useRef<null | { mode: "resize" | "move"; handle: string; px: number; py: number; w: number; h: number; left: number; top: number; ratio: number }>(null);
@@ -335,6 +358,19 @@ export default function WordEditor({
     try { document.execCommand("styleWithCSS", false, "true"); } catch { /* not all browsers */ }
     document.execCommand("foreColor", false, c);
     setTextColor(c); setColorOpen(false); setSaved(false);
+  }
+  // Highlight = colour behind the selected text (Word-like). "transparent" clears it.
+  function applyHighlight(c: string) {
+    ref.current?.focus();
+    try { document.execCommand("styleWithCSS", false, "true"); } catch { /* not all browsers */ }
+    if (!document.execCommand("hiliteColor", false, c)) document.execCommand("backColor", false, c);
+    setHiliteOpen(false); setSaved(false);
+  }
+  // Fill the selected table cell's background (Word-like). "" clears it.
+  function setCellBg(c: string) {
+    if (!cell) return;
+    cell.style.backgroundColor = c;
+    setSaved(false);
   }
 
   // px size of an image from its inline style (mm) or its rendered box
@@ -423,6 +459,12 @@ export default function WordEditor({
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, [colorOpen]);
+  useEffect(() => {
+    if (!hiliteOpen) return;
+    const h = (e: MouseEvent) => { if (hiliteRef.current && !hiliteRef.current.contains(e.target as Node)) setHiliteOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [hiliteOpen]);
   // free the preview object URL when it changes / on unmount
   useEffect(() => () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl); }, [pdfUrl]);
   useEffect(() => () => { if (pgTimer.current) clearTimeout(pgTimer.current); }, []);
@@ -446,7 +488,34 @@ export default function WordEditor({
     setImgH(roundMm(pxToMm(img.getBoundingClientRect().height)));
     setWrap(wrapOf(img));
   }
-  function deselect() { setImgSel(null); setBox(null); }
+  function deselect() { setImgSel(null); setBox(null); setSelEl(null); }
+
+  // ── dropdown (select) editing: add / remove / edit its options ──
+  function addOption() {
+    if (!selEl) return;
+    const o = document.createElement("option");
+    o.textContent = String(selEl.options.length + 1); // next number (1, 2, 3, 4 …)
+    selEl.appendChild(o);
+    setSelOpts(selEl.options.length); setSaved(false);
+  }
+  function removeOption() {
+    if (!selEl || selEl.options.length <= 1) return;
+    selEl.remove(selEl.options.length - 1);
+    setSelOpts(selEl.options.length); setSaved(false);
+  }
+  function editOptions() {
+    if (!selEl) return;
+    const cur = Array.from(selEl.options).map((o) => o.textContent ?? "").join(", ");
+    const v = window.prompt(L("Опции (разделени със запетая):", "Options (comma-separated):"), cur);
+    if (v == null) return;
+    selEl.innerHTML = "";
+    v.split(",").map((x) => x.trim()).filter(Boolean).forEach((t) => {
+      const o = document.createElement("option"); o.textContent = t; selEl!.appendChild(o);
+    });
+    if (!selEl.options.length) { const o = document.createElement("option"); o.textContent = "1"; selEl.appendChild(o); }
+    setSelOpts(selEl.options.length); setSaved(false);
+  }
+  function removeSelect() { selEl?.remove(); setSelEl(null); setSaved(false); refreshGuides(); }
 
   function cellOf(el: HTMLElement | null): HTMLTableCellElement | null {
     const td = (el?.closest && el.closest("td,th")) as HTMLTableCellElement | null;
@@ -471,6 +540,12 @@ export default function WordEditor({
         drag.current = { mode: "move", handle: "", px: e.clientX, py: e.clientY, w: 0, h: 0, left, top, ratio: 1 };
         addDrag();
       }
+      return;
+    }
+    const dd = tgt.closest ? (tgt.closest("select.ff-select") as HTMLSelectElement | null) : null;
+    if (dd && ref.current?.contains(dd)) {
+      e.preventDefault(); // select it for editing instead of opening the native list
+      setSelEl(dd); setSelOpts(dd.options.length); setImgSel(null); setBox(null); setCell(null);
       return;
     }
     if (!tgt.classList.contains("we-h")) deselect();
@@ -664,6 +739,12 @@ export default function WordEditor({
       alert(L("Грешка при PDF: ", "PDF failed: ") + (e as Error).message);
     }
     setBusy("");
+  }
+  // Lock the document for filling: save the layout, then open the fields-only Fill
+  // view (only the form controls stay editable there).
+  async function lockToFill() {
+    await save();
+    window.location.href = `/schemes/${encodeURIComponent(schemeId)}/fill/${encodeURIComponent(docKey)}`;
   }
   // Inline page preview = the real PDF (true pages 1, 2 … with gaps, exactly as
   // downloaded). Editing stays in the continuous view; this is the faithful check.
@@ -874,6 +955,9 @@ export default function WordEditor({
           title={L("Виж точните страници (както в PDF)", "See the exact pages (as in the PDF)")}>
           {busy === "prev" ? "…" : preview ? L("✎ Редактиране", "✎ Edit") : L("⤢ Страници", "⤢ Pages")}
         </button>
+        {isForm && (
+          <button className="btn" onClick={lockToFill} title={L("Заключи документа за попълване — само полетата остават редактируеми", "Lock the document for filling — only the fields stay editable")} style={{ borderColor: "var(--green-line)", color: "var(--green-dark)" }}>{L("Заключи (попълване)", "Lock (fill)")}</button>
+        )}
         {!coverIn && (coverBg || coverEn) && (
           <button className="btn" onClick={addTitlePage} title={L("Добави заглавна страница (корица) към този документ", "Add the title page (cover) to this document")} style={{ borderColor: "var(--green-line)", color: "var(--green-dark)" }}>{L("＋ Заглавна страница", "＋ Title page")}</button>
         )}
@@ -881,6 +965,7 @@ export default function WordEditor({
         <button className="btn ml-auto" onClick={() => setPanel((p) => !p)}>{panel ? L("Елементи ▸", "Items ▸") : L("Елементи ◂", "Items ◂")}</button>
       </div>
 
+      <div className="we-stickyhead">
       {/* formatting toolbar */}
       {!preview && (
       <div className="we-toolbar mb-3">
@@ -937,6 +1022,24 @@ export default function WordEditor({
             </div>
           )}
         </span>
+        {/* highlight (text background) palette */}
+        <span ref={hiliteRef} style={{ position: "relative", display: "inline-flex" }}>
+          <button type="button" className="we-tool" title={L("Маркер (фон зад текста)", "Highlight (colour behind text)")} style={{ gap: 3 }} onMouseDown={(e) => e.preventDefault()} onClick={() => setHiliteOpen((o) => !o)}>
+            <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 19, height: 19, borderRadius: 3, background: "#fff3a3", fontWeight: 800, fontSize: 13, color: "#1a1a1a" }}>A</span>
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>▾</span>
+          </button>
+          {hiliteOpen && (
+            <div className="we-colorpop">
+              <div style={{ fontWeight: 700, fontSize: 13, color: "var(--ink)", marginBottom: 8 }}>{L("Маркер (фон зад текста)", "Highlight")}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 8 }}>
+                {HILITE_COLORS.map((c) => (
+                  <button key={c} type="button" className="we-sw" title={c} style={{ background: c, borderColor: "rgba(0,0,0,.08)" }} onMouseDown={(e) => e.preventDefault()} onClick={() => applyHighlight(c)} />
+                ))}
+              </div>
+              <button type="button" className="we-pill" style={{ marginTop: 10 }} onMouseDown={(e) => e.preventDefault()} onClick={() => applyHighlight("transparent")}>✕ {L("Без маркер", "No highlight")}</button>
+            </div>
+          )}
+        </span>
         <span className="we-sep" />
         {tool(L("Изображение", "Image"), L("Вмъкни изображение / лого", "Insert image / logo"), () => fileRef.current?.click())}
         {tool(L("▦ Таблица", "▦ Table"), L("Вмъкни таблица", "Insert table"), insertTable)}
@@ -947,6 +1050,76 @@ export default function WordEditor({
       </div>
       )}
 
+      {/* contextual controls — pinned in the top toolbar area so they never cover the page */}
+      {!preview && imgSel && (
+        <div className="we-imgbar">
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 14, color: "var(--ink)" }}><IconImage /> {L("Изображение", "Image")}</span>
+          <span className="grp">
+            <input className="we-num" type="number" min={1} value={toDisplay(imgW)} onChange={(e) => applyExact("w", parseFloat(e.target.value))} />
+            <span className="text-xs" style={{ color: "var(--muted)" }}>{unitLabel} {L("Ш", "W")}</span>
+            <span style={{ color: "var(--muted)" }}>×</span>
+            <input className="we-num" type="number" min={1} value={toDisplay(imgH)} onChange={(e) => applyExact("h", parseFloat(e.target.value))} />
+            <span className="text-xs" style={{ color: "var(--muted)" }}>{unitLabel} {L("В", "H")}</span>
+          </span>
+          <div className="we-unit">
+            {(["mm", "cm", "px"] as Unit[]).map((u) => (
+              <button key={u} className={unit === u ? "active" : ""} onClick={() => setUnit(u)}>{u}</button>
+            ))}
+          </div>
+          <button className={"we-pill" + (lockAspect ? " active" : "")} title={L("Заключи съотношението", "Lock aspect ratio")} onClick={() => setLockAspect((v) => !v)}>{lockAspect ? "🔒" : "🔓"} {L("Съотношение", "Aspect")}</button>
+          <span className="we-sep" />
+          {wrapPill("inline", L("В реда", "In line"), L("В реда с текста", "Inline with text"))}
+          {wrapPill("left", L("Ляво", "Left"), L("Текстът обтича отдясно", "Text wraps right"))}
+          {wrapPill("right", L("Дясно", "Right"), L("Текстът обтича отляво", "Text wraps left"))}
+          {wrapPill("center", L("Център", "Centre"), L("Центрирай", "Centre"))}
+          {wrapPill("free", L("Свободно (върху текста)", "Free (over text)"), L("Постави свободно — може да се припокрива", "Place freely — can overlap"))}
+          {wrap === "free" && (
+            <>
+              <button className="we-pill" title={L("Премести напред", "Bring forward")} onClick={() => layer(1)}>↑ {L("Напред", "Forward")}</button>
+              <button className="we-pill" title={L("Премести назад", "Send back")} onClick={() => layer(-1)}>↓ {L("Назад", "Back")}</button>
+            </>
+          )}
+          <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={() => replaceRef.current?.click()}>⟳ {L("Смени снимката", "Replace")}</button>
+          <button className="we-pill danger" onMouseDown={(e) => e.preventDefault()} onClick={removeImg}>✕ {L("Премахни", "Remove")}</button>
+        </div>
+      )}
+
+      {!preview && cell && !imgSel && (
+        <div className="we-imgbar">
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 14, color: "var(--ink)" }}>▦ {L("Таблица", "Table")}</span>
+          <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={() => addRow(false)}>↥ {L("Ред отгоре", "Row above")}</button>
+          <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={() => addRow(true)}>↧ {L("Ред отдолу", "Row below")}</button>
+          <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={() => addCol(false)}>↤ {L("Колона отляво", "Column left")}</button>
+          <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={() => addCol(true)}>↦ {L("Колона отдясно", "Column right")}</button>
+          <span className="we-sep" />
+          <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>{L("Фон", "Fill")}</span>
+          <span className="we-swrow">
+            {CELL_COLORS.map((c) => (
+              <button key={c} type="button" className="we-sw-sm" title={L("Цвят на клетката", "Cell colour")} style={{ background: c, borderColor: c === "#ffffff" ? "#ccc" : "rgba(0,0,0,.12)" }} onMouseDown={(e) => e.preventDefault()} onClick={() => setCellBg(c)} />
+            ))}
+            <button type="button" className="we-pill" style={{ fontSize: 12, padding: "3px 9px" }} onMouseDown={(e) => e.preventDefault()} onClick={() => setCellBg("")}>{L("Изчисти", "Clear")}</button>
+          </span>
+          <span className="we-sep" />
+          <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={delRow}>{L("Изтрий реда", "Delete row")}</button>
+          <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={delCol}>{L("Изтрий колоната", "Delete column")}</button>
+          <button className="we-pill danger" onMouseDown={(e) => e.preventDefault()} onClick={delTable}>✕ {L("Изтрий таблицата", "Delete table")}</button>
+        </div>
+      )}
+
+      {!preview && selEl && (
+        <div className="we-imgbar">
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 14, color: "var(--ink)" }}>▾ {L("Падащо меню", "Dropdown")}</span>
+          <span className="text-xs" style={{ color: "var(--muted)" }}>{selOpts} {L("опции", "options")}</span>
+          <span className="we-sep" />
+          <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={addOption}>＋ {L("Добави опция", "Add option")}</button>
+          <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={removeOption}>− {L("Премахни последната", "Remove last")}</button>
+          <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={editOptions}>✎ {L("Редактирай опциите", "Edit options")}</button>
+          <span className="we-sep" />
+          <button className="we-pill danger" onMouseDown={(e) => e.preventDefault()} onClick={removeSelect}>✕ {L("Премахни", "Remove")}</button>
+        </div>
+      )}
+      </div>
+
       {preview && pdfUrl ? (
         <div className="we-preview">
           <iframe title={L("Преглед на страниците", "Page preview")} src={pdfUrl} />
@@ -954,54 +1127,6 @@ export default function WordEditor({
       ) : (
       <div className="we-body">
         <div className="we-col">
-          {/* image controls — Word-like: exact mm size, wrap, layering */}
-          {imgSel && (
-            <div className="we-imgbar">
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 14, color: "var(--ink)" }}><IconImage /> {L("Изображение", "Image")}</span>
-              <span className="grp">
-                <input className="we-num" type="number" min={1} value={toDisplay(imgW)} onChange={(e) => applyExact("w", parseFloat(e.target.value))} />
-                <span className="text-xs" style={{ color: "var(--muted)" }}>{unitLabel} {L("Ш", "W")}</span>
-                <span style={{ color: "var(--muted)" }}>×</span>
-                <input className="we-num" type="number" min={1} value={toDisplay(imgH)} onChange={(e) => applyExact("h", parseFloat(e.target.value))} />
-                <span className="text-xs" style={{ color: "var(--muted)" }}>{unitLabel} {L("В", "H")}</span>
-              </span>
-              <div className="we-unit">
-                {(["mm", "cm", "px"] as Unit[]).map((u) => (
-                  <button key={u} className={unit === u ? "active" : ""} onClick={() => setUnit(u)}>{u}</button>
-                ))}
-              </div>
-              <button className={"we-pill" + (lockAspect ? " active" : "")} title={L("Заключи съотношението", "Lock aspect ratio")} onClick={() => setLockAspect((v) => !v)}>{lockAspect ? "🔒" : "🔓"} {L("Съотношение", "Aspect")}</button>
-              <span className="we-sep" />
-              {wrapPill("inline", L("В реда", "In line"), L("В реда с текста", "Inline with text"))}
-              {wrapPill("left", L("Ляво", "Left"), L("Текстът обтича отдясно", "Text wraps right"))}
-              {wrapPill("right", L("Дясно", "Right"), L("Текстът обтича отляво", "Text wraps left"))}
-              {wrapPill("center", L("Център", "Centre"), L("Центрирай", "Centre"))}
-              {wrapPill("free", L("Свободно (върху текста)", "Free (over text)"), L("Постави свободно — може да се припокрива", "Place freely — can overlap"))}
-              {wrap === "free" && (
-                <>
-                  <button className="we-pill" title={L("Премести напред", "Bring forward")} onClick={() => layer(1)}>↑ {L("Напред", "Forward")}</button>
-                  <button className="we-pill" title={L("Премести назад", "Send back")} onClick={() => layer(-1)}>↓ {L("Назад", "Back")}</button>
-                </>
-              )}
-              <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={() => replaceRef.current?.click()}>⟳ {L("Смени снимката", "Replace")}</button>
-              <button className="we-pill danger" onMouseDown={(e) => e.preventDefault()} onClick={removeImg}>✕ {L("Премахни", "Remove")}</button>
-            </div>
-          )}
-
-          {cell && !imgSel && (
-            <div className="we-imgbar">
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 14, color: "var(--ink)" }}>▦ {L("Таблица", "Table")}</span>
-              <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={() => addRow(false)}>↥ {L("Ред отгоре", "Row above")}</button>
-              <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={() => addRow(true)}>↧ {L("Ред отдолу", "Row below")}</button>
-              <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={() => addCol(false)}>↤ {L("Колона отляво", "Column left")}</button>
-              <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={() => addCol(true)}>↦ {L("Колона отдясно", "Column right")}</button>
-              <span className="we-sep" />
-              <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={delRow}>{L("Изтрий реда", "Delete row")}</button>
-              <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={delCol}>{L("Изтрий колоната", "Delete column")}</button>
-              <button className="we-pill danger" onMouseDown={(e) => e.preventDefault()} onClick={delTable}>✕ {L("Изтрий таблицата", "Delete table")}</button>
-            </div>
-          )}
-
           <div ref={pageRef} className="we-page" onMouseDown={onEditorMouseDown}>
             <div
               ref={ref}

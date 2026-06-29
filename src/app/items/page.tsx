@@ -1,14 +1,15 @@
 import { listLibraryItems } from "@/lib/library-store";
 import ItemsManager from "@/components/ItemsManager";
 import { getServerT } from "@/lib/i18n-server";
-import { requireOwner } from "@/lib/auth";
+import { requireStaff } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
 
-// "My items" — manage the owner's reusable snippet library (the MY ITEMS group in
-// the document editor). Owner-gated (proxy + requireOwner).
+// "My items" — manage the reusable snippet library (the MY ITEMS group in the
+// document editor). Internal-staff page (proxy + requireStaff); the add/edit/delete
+// actions are requireWriter, so auditors can view but not change.
 export default async function ItemsPage() {
-  await requireOwner();
+  await requireStaff();
   const items = await listLibraryItems();
   const { tr } = await getServerT();
 

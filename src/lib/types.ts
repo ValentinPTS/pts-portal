@@ -21,6 +21,10 @@ export interface DocOptions {
     deliveryAddress?: string;
     participations?: number;
   }[];
+  // RT1 — when false, the participant lists (PTS-L 4.4-1 / 4.4-2) hide real names,
+  // contacts and addresses; only the code remains. Only a manager sees names
+  // (§4.2 confidentiality). Defaults to true (build mode / older callers).
+  revealNames?: boolean;
 }
 
 // Scheme lifecycle. "open" = visible to labs online (apply); see PROJECT-ANATOMY.md.
@@ -72,6 +76,92 @@ export interface Lab {
   status: LabStatus;
   authUserId?: string; // Supabase Auth user id (set when the invite is accepted)
   createdAt: string;
+}
+
+// Phase RT1 — internal staff roles & access control (ISO/IEC 17043:2023 §5, §6.2).
+// A StaffUser is an internal portal user (not a lab). The role decides what they
+// may see/do; only a "manager" may reveal the real name behind a participant code
+// (the confidential PTS-L 4.4-2 mapping, §4.2). "lab" is NOT a staff role — labs
+// are a separate account type (see Lab above) — but the effective role union used
+// across the app (lib/roles.ts) includes it.
+export type StaffRole = "manager" | "staff" | "auditor";
+export type StaffStatus = "active" | "inactive";
+export interface StaffUser {
+  id: string;
+  email: string; // login + identity key (stored lower-cased)
+  name: string;
+  role: StaffRole;
+  status: StaffStatus;
+  createdAt: string;
+}
+
+// A real folder in the explorer tree. Lives under a type root (T/C); parentId null
+// = directly under that root. Holds subfolders and/or schemes. Year folders (2026…)
+// are ordinary folders the user creates — they persist regardless of scheme numbers.
+export interface Folder {
+  id: string;
+  type: "T" | "C";
+  name: string;
+  parentId: string | null;
+  createdAt: string;
+}
+
+// Phase RT5 — one saved revision of a Word-editor document (§8.3 control of
+// documents). Snapshots both languages plus who saved/approved it. The highest
+// version is "current"; older ones are "superseded". Append-only history.
+export interface DocRevision {
+  id: string;
+  schemeId: string;
+  docKey: string;
+  version: number;
+  bg: string;
+  en: string;
+  note?: string;
+  savedBy: string;
+  savedAt: string; // ISO
+  approved: boolean;
+  approvedBy?: string;
+  approvedAt?: string; // ISO
+}
+
+// Phase RT3 — one dated milestone in a participant's case file (§7.3.4/§7.3.5,
+// §7.4, §7.5.1). Identified by participant CODE only (never a name, §4.2). Some
+// events are auto-stamped by the portal; the rest are recorded manually by staff
+// for the offline steps (courier dispatch + waybill, posted documents, etc.).
+export type CaseEventKind =
+  | "code_assigned"      // auto — participant created / application approved
+  | "docs_sent"          // instructions / results sheet sent to the lab
+  | "items_dispatched"   // PT items shipped (ref = waybill no.)
+  | "receipt_confirmed"  // lab confirmed receipt (Protocol)
+  | "results_returned"   // lab returned its results sheet
+  | "scored"             // results scored
+  | "report_issued"      // auto — Final Report / Certificate issued
+  | "other";
+export interface CaseEvent {
+  id: string;
+  schemeId: string;
+  code: string; // the participant code — the only identifier
+  kind: CaseEventKind;
+  at: string; // the day it happened (yyyy-mm-dd)
+  ref?: string; // waybill no. / document name / reference
+  note?: string;
+  recordedBy: string; // actor email (who logged it)
+  recordedAt: string; // ISO timestamp it was recorded
+  source: "auto" | "manual";
+}
+
+// Phase RT2 — one entry in the append-only activity log (§7.5.1 / §8.4). Records
+// who did what, when. Confidentiality: `targetCode` holds a participant CODE (or an
+// opaque account id) — NEVER a real name — and `summary` is written code-only.
+export interface ActivityEvent {
+  id: string;
+  at: string; // ISO timestamp
+  actorEmail: string; // who (e.g. an e-mail, or "build" while login is off)
+  actorRole: string; // role at the time (manager/staff/auditor/lab/none)
+  action: string; // machine key, e.g. "scheme.created", "role.changed"
+  schemeId?: string; // scope, for per-scheme filtering
+  targetCode?: string; // participant code / opaque id when relevant (never a name)
+  summary: string; // human-readable, code-only
 }
 
 // A self-service application (заявка) submitted by a lab against an open scheme.
@@ -132,6 +222,19 @@ export interface Parameter {
   // σpt,min — per-characteristic lower floor for the proficiency SD (ISO 13528 /
   // Statistical project Ф 7.2.2-1 §7.4). Scoring uses σpt = max(s*, σpt,min).
   sigmaMin?: number;
+}
+
+// One result-entry table on the Results Sheet (F 7.2.1-7): a tested characteristic
+// with its standard, the number of specimen columns and the unit. A scheme can list
+// these explicitly (e.g. a "dimensions" parameter → Length / Width / Thickness);
+// otherwise the Results Sheet derives one table per Parameter.
+export interface ResultTable {
+  nameEn: string;
+  nameBg: string;
+  standardEn: string;
+  standardBg: string;
+  specimens: number; // number of specimen columns (I, II, III …)
+  unit: string; // mm, %, MPa …
 }
 
 export interface ScheduleItem {
@@ -218,6 +321,9 @@ export interface Scheme {
   team: TeamMember[];
   partner: Partner;
   parameters: Parameter[];
+  // Optional explicit Results-Sheet tables (one per row); when absent the Results
+  // Sheet derives one table per Parameter. See ResultTable.
+  resultTables?: ResultTable[];
   schedule: ScheduleItem[];
   prices: PriceRow[];
   assignedValueMethodEn: string;
@@ -247,6 +353,9 @@ export interface Scheme {
   skin?: string;
   // friendly folder name shown in the explorer; absent → falls back to the title/number.
   name?: string;
+  // which explorer folder this scheme lives in (null/absent = directly under the
+  // type root). Placement is by folder now, independent of the number's year.
+  folderId?: string;
 }
 
 // A block in the document builder. The owner stacks these to author a document.

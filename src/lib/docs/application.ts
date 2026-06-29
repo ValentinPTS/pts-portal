@@ -1,5 +1,5 @@
 import type { Scheme, Lang } from "../types";
-import { esc, pick, wrapDoc, cover, sec, footer } from "../doc-shell";
+import { esc, pick, wrapDoc, docHeader, sec, footer } from "../doc-shell";
 import { fText, fCheck, fSelect } from "../form-fields";
 
 const FORM = "F 7.2.1-3";
@@ -72,7 +72,7 @@ export function renderApplication(s: Scheme, lang: Lang): string {
   )}</p>`;
 
   const body = [
-    cover(s, lang, "APPLICATION FOR PARTICIPATION", "ЗАЯВКА ЗА УЧАСТИЕ", { withImage: false }),
+    docHeader(s, lang, "APPLICATION FOR PARTICIPATION", "ЗАЯВКА ЗА УЧАСТИЕ"),
     sec(1, "Information about the applicant", "Информация за заявителя", lang, s1),
     sec(2, "Information on participation", "Информация за участието", lang, s2),
     sec(3, "Information on receiving the PT items", "Информация за получаване на пробите", lang, s3),

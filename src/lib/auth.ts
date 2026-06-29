@@ -19,7 +19,7 @@ import { createServerClient } from "@supabase/ssr";
 
 export const AUTH_ENABLED = process.env.AUTH_ENABLED === "true";
 
-function ownerEmails(): string[] {
+export function ownerEmails(): string[] {
   return (process.env.OWNER_EMAILS ?? "")
     .split(",")
     .map((e) => e.trim().toLowerCase())

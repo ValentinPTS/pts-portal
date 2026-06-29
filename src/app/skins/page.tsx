@@ -2,7 +2,9 @@ import Link from "next/link";
 import { listSchemeSummaries } from "@/lib/store";
 import { skinsForTypeAsync, getDefaultSkinIdAsync, SKINS } from "@/skins";
 import { setDefaultSkinAction } from "@/lib/actions";
+import { getDefaultCoverImage } from "@/lib/custom-skins";
 import DeleteSkinButton from "@/components/DeleteSkinButton";
+import DefaultCoverCard from "@/components/DefaultCoverCard";
 import { getServerT } from "@/lib/i18n-server";
 
 const BUILTIN = new Set(SKINS.map((s) => s.meta.id));
@@ -16,6 +18,7 @@ export default async function SkinsPage({ searchParams }: { searchParams: Promis
   const skins = await skinsForTypeAsync(type);
   const defId = await getDefaultSkinIdAsync(type);
   const sample = (await listSchemeSummaries()).find((s) => s.type === type);
+  const defaultCover = await getDefaultCoverImage();
   const { tr } = await getServerT();
 
   const tab = (val: "T" | "C", label: string) => (
@@ -42,6 +45,8 @@ export default async function SkinsPage({ searchParams }: { searchParams: Promis
         </div>
         <Link href="/skins/new" className="btn btn-primary" style={{ fontSize: 14 }}>{tr("skins.new")}</Link>
       </div>
+
+      <DefaultCoverCard current={defaultCover} />
 
       <div className="flex gap-2 mt-4 mb-5">{tab("T", tr("skins.tabTesting"))}{tab("C", tr("skins.tabCalibration"))}</div>
 

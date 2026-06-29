@@ -128,3 +128,37 @@ export async function setDefaultSkinId(type: SkinType, id: string): Promise<void
     memSettings.set(defKey(type), id);
   }
 }
+
+// ── Global default title-page photo (one photo, used on every title page) ──────
+const COVER_KEY = "default_cover_image";
+
+export async function getDefaultCoverImage(): Promise<string | null> {
+  const db = getDb();
+  if (!db) return memSettings.get(COVER_KEY) ?? null;
+  try {
+    const { data, error } = await db.from("app_settings").select("value").eq("key", COVER_KEY).maybeSingle();
+    if (error) throw error;
+    return data?.value ?? null;
+  } catch (e) {
+    warn(e);
+    return memSettings.get(COVER_KEY) ?? null;
+  }
+}
+
+// Pass an empty string to clear it.
+export async function setDefaultCoverImage(url: string): Promise<void> {
+  const db = getDb();
+  if (!db) {
+    if (url) memSettings.set(COVER_KEY, url); else memSettings.delete(COVER_KEY);
+    return;
+  }
+  try {
+    const { error } = await db.from("app_settings").upsert({
+      key: COVER_KEY, value: url, updated_at: new Date().toISOString(),
+    });
+    if (error) throw error;
+  } catch (e) {
+    warn(e);
+    if (url) memSettings.set(COVER_KEY, url); else memSettings.delete(COVER_KEY);
+  }
+}

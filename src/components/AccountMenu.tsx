@@ -5,11 +5,16 @@ import Link from "next/link";
 import { useLang } from "@/components/LangProvider";
 import { signOutAction } from "@/lib/auth-actions";
 
-// The owner header's account control: avatar + email, opening a small menu with a
-// link to the Account & profile page and a Sign out button. Closes on outside
-// click or Escape. Labels translate with the active UI language.
-export default function AccountMenu({ email, owner }: { email: string; owner: boolean }) {
+type EffectiveRole = "manager" | "staff" | "auditor" | "lab";
+
+// The header's account control: avatar + email, opening a small menu with a link
+// to the Account & profile page and a Sign out button. Closes on outside click or
+// Escape. Labels translate with the active UI language. The role label reflects
+// the resolved role (manager/staff/auditor/lab) or "not authorized" when none.
+export default function AccountMenu({ email, role }: { email: string; role: EffectiveRole | null }) {
   const { t } = useLang();
+  const roleLabel = role ? t(`account.role.${role}`) : t("account.role.notOwner");
+  const roleColor = role === "manager" ? "var(--green-dark)" : role ? "var(--ink)" : "var(--red)";
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -58,8 +63,8 @@ export default function AccountMenu({ email, owner }: { email: string; owner: bo
         >
           <div style={{ fontSize: 12, color: "var(--muted)" }}>{t("account.signedInAs")}</div>
           <div style={{ fontSize: 13, fontWeight: 700, margin: "1px 0 6px", wordBreak: "break-all" }}>{email}</div>
-          <div style={{ fontSize: 12, color: owner ? "var(--green-dark)" : "var(--red)", marginBottom: 10 }}>
-            {owner ? t("account.role.owner") : t("account.role.notOwner")}
+          <div style={{ fontSize: 12, color: roleColor, marginBottom: 10 }}>
+            {roleLabel}
           </div>
           <div style={{ borderTop: "1px solid var(--line)", paddingTop: 8, display: "flex", flexDirection: "column", gap: 2 }}>
             <Link href="/account" role="menuitem" onClick={() => setOpen(false)} className="no-underline" style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 13, padding: "8px 8px", borderRadius: 8, color: "var(--ink)" }}>

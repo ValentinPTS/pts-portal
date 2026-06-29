@@ -1,5 +1,5 @@
 import type { Scheme, Lang } from "../types";
-import { esc, pick, wrapDoc, cover, footer } from "../doc-shell";
+import { esc, pick, wrapDoc, docHeader, footer } from "../doc-shell";
 import { fText, fRadio } from "../form-fields";
 
 const FORM = "F 7.3.4-1";
@@ -52,13 +52,7 @@ export function renderProtocolC(s: Scheme, lang: Lang): string {
     </div>`;
 
   const body = [
-    cover(
-      s,
-      lang,
-      "PROTOCOL FOR PT ITEM RECEIPT",
-      "ПРОТОКОЛ ЗА ПОЛУЧАВАНЕ НА ОБЕКТ НА ИЗПИТВАНЕ ЗА ПРИГОДНОСТ",
-      { withImage: false }
-    ),
+    docHeader(s, lang, "PROTOCOL FOR PT ITEM RECEIPT", "ПРОТОКОЛ ЗА ПОЛУЧАВАНЕ НА ОБЕКТ НА ИЗПИТВАНЕ ЗА ПРИГОДНОСТ"),
     `<div class="body">${fields}${confirm}${line1}${line2}${remarks}${signature}</div>`,
     footer(s, FORM),
   ].join("\n");

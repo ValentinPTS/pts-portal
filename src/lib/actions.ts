@@ -4,29 +4,40 @@ import { randomInt, randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { getScheme, updateScheme, addScheme, deleteScheme, listSchemeSummaries } from "./store";
+import { getScheme, updateScheme, addScheme, deleteScheme, listSchemeSummaries, listSchemesInFolder, schemeNumberExists } from "./store";
 import { blankScheme } from "./new-scheme";
-import { nextProject, schemeYear } from "./folders";
+import { nextProject } from "./folders";
 import { addParticipant, listParticipants } from "./participants";
 import { addApplication, listApplications, setApplicationStatus } from "./applications";
 import { metricsForScheme, buildScoring, computeAssigned } from "./scoring";
-import { requireOwner } from "./auth";
+import { isOwnerEmail } from "./auth";
 import { addLibraryItem, updateLibraryItem, deleteLibraryItem, type LibraryItem } from "./library-store";
 import { addSavedTemplate, deleteSavedTemplate, type SavedTemplate } from "./saved-templates";
 import { getSkinAsync, setDefaultSkinAsync } from "../skins";
 import { sanitizeSkinData } from "../skins/custom";
 import {
   upsertCustomSkin, getCustomSkin, deleteCustomSkin, getDefaultSkinId, setDefaultSkinId,
+  setDefaultCoverImage,
 } from "./custom-skins";
 import { getDb } from "./supabase";
 import { getLabByEmail, addLab, getLab, updateLab } from "./labs";
 import { getLabSession } from "./lab-auth";
-import type { Block } from "./types";
+import { addStaff, updateStaff, getStaffByEmail, getStaff } from "./staff";
+import { requireManager, requireWriter, getRoleContext } from "./roles";
+import { logActivity } from "./activity";
+import { addCaseEvent, getCaseEvent, deleteCaseEvent } from "./case-events";
+import { addRevision, getRevision, approveRevision } from "./doc-revisions";
+import { createFolder, renameFolder, deleteFolder, getFolder, listChildFolders } from "./folder-tree";
+import { SAMPLE_SCHEMES } from "./sample-schemes";
+import { TYPE_SLUG, type FolderType } from "./folders";
+import type { Block, Scheme, StaffRole, StaffStatus, LabStatus, CaseEventKind } from "./types";
+
+const STAFF_ROLES: StaffRole[] = ["manager", "staff", "auditor"];
 
 // Save a reusable snippet to the owner's global library ("+ Add your own").
 // Returns the created item so the editor can show it immediately.
 export async function addLibraryItemAction(name: string, bg: string, en: string, category?: string): Promise<{ item?: LibraryItem; error?: string }> {
-  await requireOwner();
+  await requireWriter();
   if (!name.trim() || !bg.trim()) return { error: "A name and Bulgarian text are required." };
   const item = await addLibraryItem({ name: name.trim(), bg: bg.trim(), en: en.trim(), category: (category ?? "").trim() || undefined });
   revalidatePath("/items", "page");
@@ -35,7 +46,7 @@ export async function addLibraryItemAction(name: string, bg: string, en: string,
 
 // Edit an existing library item (the "My items" management page).
 export async function updateLibraryItemAction(id: string, name: string, bg: string, en: string, category?: string): Promise<{ item?: LibraryItem; error?: string }> {
-  await requireOwner();
+  await requireWriter();
   if (!id) return { error: "Missing id." };
   if (!name.trim() || !bg.trim()) return { error: "A name and Bulgarian text are required." };
   const item = await updateLibraryItem(id, {
@@ -47,7 +58,7 @@ export async function updateLibraryItemAction(id: string, name: string, bg: stri
 }
 
 export async function deleteLibraryItemAction(id: string): Promise<{ ok?: boolean; error?: string }> {
-  await requireOwner();
+  await requireWriter();
   if (!id) return { error: "Missing id." };
   await deleteLibraryItem(id);
   revalidatePath("/items", "page");
@@ -79,7 +90,7 @@ export async function translateAction(
   from: "bg" | "en",
   to: "bg" | "en"
 ): Promise<{ text?: string; error?: string }> {
-  await requireOwner(); // no-op until auth is on; then owners-only
+  await requireWriter();
   const t = (text ?? "").trim();
   if (!t) return { text: "" };
   try {
@@ -109,7 +120,7 @@ export async function saveDocTemplateAction(
   bg: string,
   en: string
 ): Promise<{ item?: SavedTemplate; error?: string }> {
-  await requireOwner();
+  await requireWriter();
   if (!name.trim()) return { error: "A template name is required." };
   if (!bg.trim() && !en.trim()) return { error: "Nothing to save — the document is empty." };
   const item = await addSavedTemplate({
@@ -119,7 +130,7 @@ export async function saveDocTemplateAction(
 }
 
 export async function deleteDocTemplateAction(id: string): Promise<{ ok?: boolean; error?: string }> {
-  await requireOwner();
+  await requireWriter();
   if (!id) return { error: "Missing id." };
   await deleteSavedTemplate(id);
   return { ok: true };
@@ -129,7 +140,7 @@ export async function deleteDocTemplateAction(id: string): Promise<{ ok?: boolea
 // then renders in that skin. The id is validated by resolving it (built-in OR
 // custom) — an unknown id resolves to "classic", so we never store a dangling ref.
 export async function saveSchemeSkinAction(schemeId: string, skinId: string) {
-  await requireOwner();
+  await requireWriter();
   const scheme = await getScheme(schemeId);
   if (!scheme) throw new Error("Scheme not found");
   const resolved = await getSkinAsync(skinId);
@@ -140,7 +151,7 @@ export async function saveSchemeSkinAction(schemeId: string, skinId: string) {
 // Set the default skin for a scheme type (testing/calibration) from the gallery —
 // persisted in app_settings. The id is validated by resolving it first.
 export async function setDefaultSkinAction(formData: FormData) {
-  await requireOwner();
+  await requireManager();
   const type = String(formData.get("type")) === "C" ? "C" : "T";
   const resolved = await getSkinAsync(String(formData.get("skinId") ?? ""));
   await setDefaultSkinAsync(type, resolved.meta.id);
@@ -152,7 +163,7 @@ export async function setDefaultSkinAction(formData: FormData) {
 // boundary (hex-only colours, allow-listed fonts, fixed element keys, restricted
 // logo). Owners only. Never trusts the client shape.
 export async function createCustomSkinAction(input: unknown): Promise<{ id?: string; error?: string }> {
-  await requireOwner();
+  await requireManager();
   if (!String((input as { name?: unknown })?.name ?? "").trim()) return { error: "A skin name is required." };
   const id = randomUUID();
   await upsertCustomSkin(sanitizeSkinData(input, id));
@@ -161,7 +172,7 @@ export async function createCustomSkinAction(input: unknown): Promise<{ id?: str
 }
 
 export async function updateCustomSkinAction(id: string, input: unknown): Promise<{ id?: string; error?: string }> {
-  await requireOwner();
+  await requireManager();
   if (!id || !(await getCustomSkin(id))) return { error: "Skin not found." };
   if (!String((input as { name?: unknown })?.name ?? "").trim()) return { error: "A skin name is required." };
   await upsertCustomSkin(sanitizeSkinData(input, id));
@@ -171,7 +182,7 @@ export async function updateCustomSkinAction(id: string, input: unknown): Promis
 }
 
 export async function deleteCustomSkinAction(id: string): Promise<{ ok?: boolean; error?: string }> {
-  await requireOwner();
+  await requireManager();
   if (!id) return { error: "Missing id." };
   await deleteCustomSkin(id);
   // If a per-type default pointed at the deleted skin, reset it to Classic.
@@ -190,7 +201,7 @@ export async function deleteCustomSkinAction(id: string): Promise<{ ok?: boolean
 const LOGO_BUCKET = "skin-assets";
 const LOGO_EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
 export async function uploadSkinLogoAction(formData: FormData): Promise<{ url?: string; error?: string }> {
-  await requireOwner();
+  await requireManager();
   const file = formData.get("file");
   if (!(file instanceof File)) return { error: "No file received." };
   const ext = LOGO_EXT[file.type];
@@ -219,7 +230,7 @@ export async function uploadSkinLogoAction(formData: FormData): Promise<{ url?: 
 // Upload a scheme cover photo → same public bucket (covers/ path) → public URL.
 // Stored on scheme.coverImage. Owners only; raster-only + size-capped + random name.
 export async function uploadCoverImageAction(formData: FormData): Promise<{ url?: string; error?: string }> {
-  await requireOwner();
+  await requireWriter();
   const file = formData.get("file");
   if (!(file instanceof File)) return { error: "No file received." };
   const ext = LOGO_EXT[file.type];
@@ -245,20 +256,47 @@ export async function uploadCoverImageAction(formData: FormData): Promise<{ url?
   }
 }
 
+// Upload + set the GLOBAL default title-page photo (one photo, used on every scheme's
+// title page that has no cover of its own). Manager-only branding setting.
+export async function uploadDefaultCoverAction(formData: FormData): Promise<{ url?: string; error?: string }> {
+  await requireManager();
+  const res = await uploadCoverImageAction(formData); // reuse storage upload (raster-only, size-capped)
+  if (res.url) {
+    await setDefaultCoverImage(res.url);
+    await logActivity("cover.default", { summary: "Default title-page photo updated" });
+    revalidatePath("/skins", "page");
+    revalidatePath("/", "layout");
+  }
+  return res;
+}
+
+export async function clearDefaultCoverAction(): Promise<{ ok?: boolean }> {
+  await requireManager();
+  await setDefaultCoverImage("");
+  await logActivity("cover.default", { summary: "Default title-page photo cleared" });
+  revalidatePath("/skins", "page");
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
 // Save the Word-like editor's HTML for a document (both languages).
 export async function saveDocHtmlAction(schemeId: string, docKey: string, bg: string, en: string) {
-  await requireOwner(); // no-op until auth is on; then owners-only
+  await requireWriter();
   const scheme = await getScheme(schemeId);
   if (!scheme) throw new Error("Scheme not found");
   const docs = { ...(scheme.docs ?? {}), [docKey]: { bg: String(bg ?? ""), en: String(en ?? "") } };
   await updateScheme(schemeId, { docs });
+  // §8.3 — snapshot a revision (skips if unchanged). Records who saved it.
+  const actor = (await getRoleContext()).email ?? "";
+  await addRevision({ schemeId, docKey, bg: String(bg ?? ""), en: String(en ?? ""), savedBy: actor });
+  await logActivity("doc.saved", { schemeId, summary: `Document “${docKey}” edited` });
   revalidatePath(`/schemes/${schemeId}/build/${docKey}`, "page");
 }
 
 // Translate a whole document's HTML BG→EN, preserving tags/images (only text runs
 // are translated, via the free MyMemory provider). The owner then edits the EN.
 export async function translateDocHtmlAction(html: string): Promise<{ html?: string; error?: string }> {
-  await requireOwner();
+  await requireWriter();
   const parts = String(html ?? "").split(/(<[^>]+>)/);
   const out: string[] = [];
   for (const part of parts) {
@@ -273,7 +311,7 @@ export async function translateDocHtmlAction(html: string): Promise<{ html?: str
 }
 
 export async function saveComposedAction(schemeId: string, docKey: string, blocksJson: string) {
-  await requireOwner(); // no-op until auth is on; then owners-only
+  await requireWriter();
   const scheme = await getScheme(schemeId);
   if (!scheme) throw new Error("Scheme not found");
   let parsed: unknown;
@@ -363,7 +401,7 @@ export async function submitApplicationAction(formData: FormData) {
 // Owner approves a pending application → creates the participant (auto code) and
 // marks the application approved.
 export async function approveApplicationAction(formData: FormData) {
-  await requireOwner(); // no-op until AUTH_ENABLED=true; then owners-only
+  await requireWriter();
   const schemeId = String(formData.get("schemeId") ?? "");
   const appId = String(formData.get("appId") ?? "");
   const app = (await listApplications(schemeId)).find((a) => a.id === appId);
@@ -385,7 +423,7 @@ export async function approveApplicationAction(formData: FormData) {
     labId = lab.id;
   }
 
-  await addParticipant({
+  const p = await addParticipant({
     schemeId,
     labName: app.labName,
     contact: app.contactPerson,
@@ -396,6 +434,8 @@ export async function approveApplicationAction(formData: FormData) {
     labId,
   });
   await setApplicationStatus(schemeId, appId, "approved");
+  await logActivity("application.approved", { schemeId, targetCode: p.code, summary: `Application approved → participant ${p.code}` });
+  await addCaseEvent({ schemeId, code: p.code, kind: "code_assigned", source: "auto" });
 
   revalidatePath(`/schemes/${schemeId}`, "layout");
   redirect(`/schemes/${schemeId}/applications`);
@@ -425,7 +465,7 @@ export async function updateLabProfileAction(formData: FormData) {
 // email and records the auth user id. Needs Supabase email/SMTP configured to
 // deliver; fails soft (logs) otherwise so approving/linking still works.
 export async function inviteLabAction(formData: FormData) {
-  await requireOwner();
+  await requireManager();
   const labId = String(formData.get("labId") ?? "");
   const returnTo = String(formData.get("returnTo") ?? "");
   const lab = await getLab(labId);
@@ -449,11 +489,133 @@ export async function inviteLabAction(formData: FormData) {
   if (returnTo.startsWith("/")) redirect(returnTo);
 }
 
+// ── RT1: staff roles (the Manager "Users & roles" screen) ──────────────────────
+// All manager-gated: requireManager() is a no-op until AUTH_ENABLED=true, then it
+// allows only a signed-in manager (founder in OWNER_EMAILS or an active staff
+// manager) who has completed 2FA. Founders (OWNER_EMAILS) are managers by code and
+// are NOT stored here, so we never create a duplicate/over-ridable record for them.
+
+// Send a Supabase Auth invite (set-password e-mail) so a person can sign in. Needs
+// Supabase email/SMTP configured to deliver; fails soft so the row/account is still
+// created. redirectPath = where the invite link lands (owner /login or /lab/login).
+async function sendAuthInvite(email: string, redirectPath: string): Promise<{ ok: boolean; userId?: string; error?: string }> {
+  const db = getDb();
+  if (!db) return { ok: false, error: "Supabase is not configured." };
+  try {
+    const h = await headers();
+    const proto = h.get("x-forwarded-proto") ?? "https";
+    const host = h.get("host") ?? "";
+    const origin = host ? `${proto}://${host}` : "";
+    const { data, error } = await db.auth.admin.inviteUserByEmail(
+      email, origin ? { redirectTo: `${origin}${redirectPath}` } : undefined
+    );
+    if (error) throw error;
+    return { ok: true, userId: data?.user?.id };
+  } catch (e) {
+    return { ok: false, error: (e as Error)?.message || "Invite failed." };
+  }
+}
+
+export async function addStaffAction(formData: FormData): Promise<{ ok?: boolean; error?: string }> {
+  await requireManager();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const name = String(formData.get("name") ?? "").trim().slice(0, 120);
+  const role = String(formData.get("role") ?? "staff") as StaffRole;
+  if (!email || !email.includes("@")) return { error: "A valid e-mail is required." };
+  if (!STAFF_ROLES.includes(role)) return { error: "Invalid role." };
+  if (isOwnerEmail(email)) return { error: "This e-mail is already a founder (manager)." };
+  const existing = await getStaffByEmail(email);
+  if (existing) return { error: "This user already exists." };
+  await addStaff({ email, name, role });
+  // Auto-send a sign-in invite (best-effort). The row is created either way; the
+  // manager can re-send from the row's Invite button if email isn't set up.
+  const inv = await sendAuthInvite(email, "/login");
+  await logActivity("staff.added", { summary: `Staff ${email} added as ${role}${inv.ok ? " + invited" : ""}` });
+  if (!inv.ok) console.warn("[invite-staff] not sent:", inv.error);
+  revalidatePath("/users");
+  return { ok: true };
+}
+
+// Re-send a sign-in invite to a staff/auditor (the row's Invite button).
+export async function inviteStaffAction(email: string): Promise<{ ok?: boolean; error?: string }> {
+  await requireManager();
+  const e = (email ?? "").trim().toLowerCase();
+  if (!e || !e.includes("@")) return { error: "Missing e-mail." };
+  const inv = await sendAuthInvite(e, "/login");
+  if (!inv.ok) return { error: inv.error };
+  await logActivity("staff.invited", { summary: `Sign-in invite sent to ${e}` });
+  return { ok: true };
+}
+
+// Create a laboratory account directly (manager onboarding) + send its portal
+// invite. Avoids needing the public Apply→approve flow just to get a login.
+export async function addLabAction(formData: FormData): Promise<{ ok?: boolean; error?: string }> {
+  await requireManager();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const name = String(formData.get("name") ?? "").trim().slice(0, 160);
+  if (!email || !email.includes("@")) return { error: "A valid e-mail is required." };
+  const existing = await getLabByEmail(email);
+  const lab = existing ?? (await addLab({ email, name }));
+  const inv = await sendAuthInvite(email, "/lab/login");
+  if (inv.ok && inv.userId) await updateLab(lab.id, { authUserId: inv.userId });
+  if (!inv.ok) console.warn("[invite-lab] not sent:", inv.error);
+  await logActivity("lab.added", { targetCode: lab.id, summary: `Laboratory account created${inv.ok ? " + invited" : ""}` });
+  revalidatePath("/users");
+  return { ok: true };
+}
+
+// Re-send the portal invite to an existing lab (the row's Invite button).
+export async function inviteLabByIdAction(labId: string): Promise<{ ok?: boolean; error?: string }> {
+  await requireManager();
+  const lab = await getLab(labId);
+  if (!lab) return { error: "Laboratory not found." };
+  const inv = await sendAuthInvite(lab.email, "/lab/login");
+  if (!inv.ok) return { error: inv.error };
+  if (inv.userId) await updateLab(lab.id, { authUserId: inv.userId });
+  await logActivity("lab.invited", { targetCode: lab.id, summary: "Lab portal invite sent" });
+  return { ok: true };
+}
+
+export async function setStaffRoleAction(id: string, role: StaffRole): Promise<{ ok?: boolean; error?: string }> {
+  await requireManager();
+  if (!id) return { error: "Missing id." };
+  if (!STAFF_ROLES.includes(role)) return { error: "Invalid role." };
+  const before = await getStaff(id);
+  await updateStaff(id, { role });
+  if (before && before.role !== role) {
+    await logActivity("role.changed", { summary: `Role of ${before.email}: ${before.role} → ${role}` });
+  }
+  revalidatePath("/users");
+  return { ok: true };
+}
+
+export async function setStaffStatusAction(id: string, status: StaffStatus): Promise<{ ok?: boolean; error?: string }> {
+  await requireManager();
+  if (!id || (status !== "active" && status !== "inactive")) return { error: "Bad request." };
+  const before = await getStaff(id);
+  await updateStaff(id, { status });
+  await logActivity("staff.status", { summary: `Staff ${before?.email ?? id} set ${status}` });
+  revalidatePath("/users");
+  return { ok: true };
+}
+
+// Activate / deactivate a laboratory account from the Users & roles screen. The log
+// stores the opaque lab id (never the lab name) to stay confidential (§4.2).
+export async function setLabStatusAction(id: string, status: LabStatus): Promise<{ ok?: boolean; error?: string }> {
+  await requireManager();
+  if (!id || (status !== "active" && status !== "inactive")) return { error: "Bad request." };
+  await updateLab(id, { status });
+  await logActivity("lab.status", { targetCode: id, summary: `Laboratory account set ${status}` });
+  revalidatePath("/users");
+  return { ok: true };
+}
+
 export async function rejectApplicationAction(formData: FormData) {
-  await requireOwner(); // no-op until AUTH_ENABLED=true; then owners-only
+  await requireWriter();
   const schemeId = String(formData.get("schemeId") ?? "");
   const appId = String(formData.get("appId") ?? "");
   await setApplicationStatus(schemeId, appId, "rejected");
+  await logActivity("application.rejected", { schemeId, summary: "Application rejected" });
   revalidatePath(`/schemes/${schemeId}/applications`, "page");
   redirect(`/schemes/${schemeId}/applications`);
 }
@@ -463,7 +625,7 @@ export async function rejectApplicationAction(formData: FormData) {
 // keeps the same number. The date auto-fills to today but is editable.
 // No redirect — revalidate in place so the doc page keeps the selected lab.
 export async function issueCertificateAction(formData: FormData) {
-  await requireOwner(); // no-op until AUTH_ENABLED=true; then owners-only
+  await requireManager(); // §6.2 — only a manager issues/signs reports & certificates
   const schemeId = String(formData.get("schemeId") ?? "");
   const code = String(formData.get("code") ?? "").trim();
   const dateInput = String(formData.get("date") ?? "").trim();
@@ -474,21 +636,31 @@ export async function issueCertificateAction(formData: FormData) {
   const existing = certs[code];
   const now = new Date();
   const today = `${String(now.getDate()).padStart(2, "0")}.${String(now.getMonth() + 1).padStart(2, "0")}.${now.getFullYear()}`;
+  // The certificate number is generated ONCE per code and kept. Guarantee it's
+  // unique within the scheme (regenerate on the rare random clash); the scheme-number
+  // prefix already makes it unique across schemes.
+  let no = existing?.no;
+  if (!no) {
+    const used = new Set(Object.values(certs).map((c) => c.no));
+    do { no = `${scheme.number}-${randomInt(10000, 100000)}`; } while (used.has(no));
+  }
   certs[code] = {
-    no: existing?.no ?? `${scheme.number}-${randomInt(10000, 100000)}`, // generated once, kept
+    no,
     date: dateInput || existing?.date || today,
   };
   await updateScheme(schemeId, { certificates: certs });
+  await logActivity("certificate.issued", { schemeId, targetCode: code, summary: `Certificate ${certs[code].no} issued for ${code}` });
+  await addCaseEvent({ schemeId, code, kind: "report_issued", ref: certs[code].no, source: "auto" });
   revalidatePath(`/schemes/${schemeId}/doc/certificate`, "page");
 }
 
 export async function addParticipantAction(formData: FormData) {
-  await requireOwner(); // no-op until AUTH_ENABLED=true; then owners-only
+  await requireWriter();
   const schemeId = String(formData.get("schemeId") ?? "");
   const labName = String(formData.get("labName") ?? "").trim();
   if (!schemeId || !labName) redirect(`/schemes/${schemeId}/participants`);
   const partRaw = parseInt(String(formData.get("participations") ?? "1"), 10);
-  await addParticipant({
+  const p = await addParticipant({
     schemeId,
     labName,
     contact: String(formData.get("contact") ?? "").trim(),
@@ -498,27 +670,167 @@ export async function addParticipantAction(formData: FormData) {
     deliveryAddress: String(formData.get("deliveryAddress") ?? "").trim(),
     participations: Number.isFinite(partRaw) ? partRaw : 1,
   });
+  await logActivity("participant.added", { schemeId, targetCode: p.code, summary: `Participant ${p.code} added` });
+  await addCaseEvent({ schemeId, code: p.code, kind: "code_assigned", source: "auto" });
   revalidatePath(`/schemes/${schemeId}/participants`);
   redirect(`/schemes/${schemeId}/participants`);
+}
+
+// ── RT3: participant case-file timeline (dated milestones, by code) ─────────────
+// Recording is staff work — requireWriter (manager + staff; auditor is read-only).
+const CASE_MANUAL_KINDS: CaseEventKind[] = [
+  "docs_sent", "items_dispatched", "receipt_confirmed", "results_returned", "scored", "report_issued", "other",
+];
+
+export async function addCaseEventAction(formData: FormData): Promise<void> {
+  await requireWriter();
+  const schemeId = String(formData.get("schemeId") ?? "");
+  const code = String(formData.get("code") ?? "").trim();
+  const kind = String(formData.get("kind") ?? "") as CaseEventKind;
+  const at = String(formData.get("at") ?? "").trim();
+  const ref = String(formData.get("ref") ?? "").trim().slice(0, 120);
+  const note = String(formData.get("note") ?? "").trim().slice(0, 400);
+  const back = `/schemes/${schemeId}/participants/${encodeURIComponent(code)}`;
+  if (!schemeId || !code || !CASE_MANUAL_KINDS.includes(kind)) redirect(back);
+  // the code must belong to this scheme (never trust the URL)
+  const exists = (await listParticipants(schemeId)).some((p) => p.code === code);
+  if (!exists) redirect(`/schemes/${schemeId}/participants`);
+
+  const actor = (await getRoleContext()).email ?? "";
+  await addCaseEvent({ schemeId, code, kind, at, ref, note, recordedBy: actor, source: "manual" });
+  await logActivity("case.updated", { schemeId, targetCode: code, summary: `Timeline: ${kind} for ${code}${ref ? ` (${ref})` : ""}` });
+  revalidatePath(back);
+  redirect(back);
+}
+
+// Remove a mistaken timeline entry. Manager-only; the removal is itself logged, so
+// the trail stays honest (§8.4).
+export async function deleteCaseEventAction(formData: FormData): Promise<void> {
+  await requireManager();
+  const id = String(formData.get("id") ?? "");
+  const schemeId = String(formData.get("schemeId") ?? "");
+  const code = String(formData.get("code") ?? "").trim();
+  const ev = await getCaseEvent(id);
+  await deleteCaseEvent(id);
+  if (ev) await logActivity("case.removed", { schemeId, targetCode: ev.code, summary: `Timeline step “${ev.kind}” (${ev.at}) removed` });
+  redirect(`/schemes/${schemeId}/participants/${encodeURIComponent(code)}`);
+}
+
+// ── RT5: document version history (§8.3) ───────────────────────────────────────
+// Approve a revision (manager — controlled-document approval) and restore an older
+// revision as the current document (writer — a restore is itself a new save).
+export async function approveDocRevisionAction(formData: FormData): Promise<void> {
+  await requireManager();
+  const id = String(formData.get("id") ?? "");
+  const schemeId = String(formData.get("schemeId") ?? "");
+  const docKey = String(formData.get("docKey") ?? "");
+  const back = `/schemes/${schemeId}/build/${encodeURIComponent(docKey)}/history`;
+  const rev = await getRevision(id);
+  if (!rev || rev.schemeId !== schemeId || rev.docKey !== docKey) redirect(back);
+  const approver = (await getRoleContext()).email ?? "";
+  await approveRevision(id, approver);
+  await logActivity("doc.approved", { schemeId, summary: `Document “${docKey}” v${rev!.version} approved` });
+  redirect(back);
+}
+
+export async function restoreDocRevisionAction(formData: FormData): Promise<void> {
+  await requireWriter();
+  const id = String(formData.get("id") ?? "");
+  const schemeId = String(formData.get("schemeId") ?? "");
+  const docKey = String(formData.get("docKey") ?? "");
+  const back = `/schemes/${schemeId}/build/${encodeURIComponent(docKey)}/history`;
+  const rev = await getRevision(id);
+  const scheme = await getScheme(schemeId);
+  if (!rev || !scheme || rev.schemeId !== schemeId || rev.docKey !== docKey) redirect(back);
+  const docs = { ...(scheme.docs ?? {}), [docKey]: { bg: rev.bg, en: rev.en } };
+  await updateScheme(schemeId, { docs });
+  const actor = (await getRoleContext()).email ?? "";
+  await addRevision({ schemeId, docKey, bg: rev.bg, en: rev.en, savedBy: actor, note: `Restored from v${rev.version}` });
+  await logActivity("doc.restored", { schemeId, summary: `Document “${docKey}” restored from v${rev.version}` });
+  revalidatePath(`/schemes/${schemeId}/build/${docKey}`, "page");
+  redirect(back);
+}
+
+// ── Folders (real, nestable explorer folders) ──────────────────────────────────
+function folderView(type: FolderType, folderId: string | null): string {
+  const slug = TYPE_SLUG[type];
+  return folderId ? `/files/${slug}/f/${folderId}` : `/files/${slug}`;
+}
+
+// Create a plain folder (name only) — e.g. a year "2026" or a group. Lives under a
+// type root, or inside parentId. Lands back in the parent listing.
+export async function createFolderAction(formData: FormData): Promise<void> {
+  await requireWriter();
+  const type: FolderType = String(formData.get("type")) === "C" ? "C" : "T";
+  const parentId = String(formData.get("parentId") ?? "").trim() || null;
+  const name = String(formData.get("name") ?? "").trim().slice(0, 80);
+  if (!name) redirect(folderView(type, parentId));
+  // a parent (when given) must exist and be the same type
+  if (parentId) {
+    const p = await getFolder(parentId);
+    if (!p || p.type !== type) redirect(`/files/${TYPE_SLUG[type]}`);
+  }
+  const f = await createFolder({ type, parentId, name });
+  await logActivity("folder.created", { summary: `Folder “${name}” created` });
+  revalidatePath("/", "layout");
+  redirect(folderView(type, parentId ?? f.parentId));
+}
+
+export async function renameFolderAction(id: string, name: string): Promise<{ ok?: boolean; error?: string }> {
+  await requireWriter();
+  const f = await getFolder(id);
+  if (!f) return { error: "Folder not found." };
+  const clean = name.trim().slice(0, 80);
+  if (!clean) return { error: "A name is required." };
+  await renameFolder(id, clean);
+  await logActivity("folder.renamed", { summary: `Folder renamed to “${clean}”` });
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+// Delete a folder — only when EMPTY (no subfolders, no schemes), so a year of work
+// can't disappear by accident. Manager-only (destructive).
+export async function deleteFolderAction(id: string): Promise<{ ok?: boolean; error?: string; emptyNeeded?: boolean }> {
+  await requireManager();
+  const f = await getFolder(id);
+  if (!f) return { error: "Folder not found." };
+  const [subs, schemes] = await Promise.all([
+    listChildFolders(f.type, id),
+    listSchemesInFolder(f.type, id),
+  ]);
+  if (subs.length || schemes.length) {
+    return { error: "This folder isn’t empty — move or delete what’s inside it first.", emptyNeeded: true };
+  }
+  await deleteFolder(id);
+  await logActivity("folder.deleted", { summary: `Folder “${f.name}” deleted` });
+  revalidatePath("/", "layout");
+  return { ok: true };
 }
 
 // Create a new scheme from the folder explorer: type is implied by the folder,
 // the official PTS number is auto-assigned for that type+year, the owner just
 // names it (+ optional object). Lands on the new scheme's folder.
 export async function createProjectAction(formData: FormData) {
-  await requireOwner();
+  await requireWriter();
   const type: "T" | "C" = String(formData.get("type")) === "C" ? "C" : "T";
-  const year = String(formData.get("year") ?? "").trim();
+  // The folder this scheme is placed in (null = directly under the type root).
+  const folderId = String(formData.get("folderId") ?? "").trim() || null;
+  // year drives only the auto-number (PTS YY/NN-…); defaults to the current year.
+  const year = String(formData.get("year") ?? "").trim() || String(new Date().getFullYear());
   const name = String(formData.get("name") ?? "").trim();
   const object = String(formData.get("object") ?? "").trim();
-  const slug = type === "C" ? "calibration" : "testing";
-  if (!year || !name) redirect(`/files/${slug}/${year}`);
+  if (!name) redirect(folderView(type, folderId));
 
   const auto = nextProject(await listSchemeSummaries(), type, year);
   // The owner may override the official number in the dialog; it flows into every
   // document (renderers print s.number) and drives the year grouping. Fall back to
   // the auto number if the field was cleared.
   const number = (String(formData.get("number") ?? "").trim() || auto.number).slice(0, 60);
+  // The official number (YY/MM-X-N) is unique system-wide — block a duplicate (only
+  // possible when the owner manually edits it to one already in use).
+  if (await schemeNumberExists(number)) {
+    redirect(`${folderView(type, folderId)}?dupNumber=${encodeURIComponent(number)}`);
+  }
   // Derive a URL-safe id from the number ("PTS 26/03-T-1" → "26-03-T-1") so the folder
   // URL stays consistent with it; never overwrite an existing scheme (suffix on clash).
   const baseId =
@@ -527,15 +839,35 @@ export async function createProjectAction(formData: FormData) {
   let id = baseId, n = 2;
   while (await getScheme(id)) id = `${baseId}-${n++}`;
 
-  const scheme = blankScheme({
-    id, number, type,
-    titleEn: name, titleBg: name,
-    objectEn: object, objectBg: object,
-    distribution: type === "C" ? "sequential" : "simultaneous",
-    minParticipants: type === "C" ? 1 : 5,
-  });
-  scheme.name = name;
+  // "Start from a sample" → clone the ready-made scheme (all documents pre-filled),
+  // then stamp the real id/number/folder. The sample keeps its own bilingual title,
+  // object, parameters/calibration, schedule, prices and clauses.
+  const sampleKey = String(formData.get("sample") ?? "").trim();
+  const sample = sampleKey ? SAMPLE_SCHEMES[sampleKey] : undefined;
+
+  let scheme: Scheme;
+  if (sample) {
+    scheme = JSON.parse(JSON.stringify(sample)) as Scheme; // deep clone — never mutate the shared sample
+    scheme.id = id;
+    scheme.number = number;
+    scheme.type = type;
+    scheme.status = "open";
+    scheme.name = name;
+    scheme.folderId = folderId ?? undefined;
+    if (object) { scheme.objectEn = object; scheme.objectBg = object; }
+  } else {
+    scheme = blankScheme({
+      id, number, type,
+      titleEn: name, titleBg: name,
+      objectEn: object, objectBg: object,
+      distribution: type === "C" ? "sequential" : "simultaneous",
+      minParticipants: type === "C" ? 1 : 5,
+    });
+    scheme.name = name;
+    scheme.folderId = folderId ?? undefined;
+  }
   await addScheme(scheme);
+  await logActivity("scheme.created", { schemeId: id, summary: `Scheme ${number} created` });
 
   revalidatePath("/", "layout");
   redirect(`/schemes/${id}`);
@@ -543,12 +875,13 @@ export async function createProjectAction(formData: FormData) {
 
 // Rename a scheme folder (its friendly display name). Owners only.
 export async function renameSchemeAction(id: string, name: string) {
-  await requireOwner();
+  await requireWriter();
   const scheme = await getScheme(id);
   if (!scheme) return;
   const clean = String(name ?? "").trim().slice(0, 120);
   if (!clean) return;
   await updateScheme(id, { name: clean });
+  await logActivity("scheme.renamed", { schemeId: id, summary: `Scheme renamed to “${clean}”` });
   revalidatePath("/", "layout");
   revalidatePath(`/schemes/${id}`, "layout");
 }
@@ -557,20 +890,20 @@ export async function renameSchemeAction(id: string, name: string) {
 // row; participants cascade in the DB). Destructive — the UI confirms first, and
 // requireOwner() guards the direct-POST path. Lands back on the year folder.
 export async function deleteSchemeAction(id: string) {
-  await requireOwner();
+  await requireManager(); // destructive — manager only
   const scheme = await getScheme(id);
   if (!scheme) redirect("/");
-  const slug = scheme!.type === "C" ? "calibration" : "testing";
-  const year = schemeYear(scheme!);
+  const dest = folderView(scheme!.type, scheme!.folderId ?? null);
   await deleteScheme(id);
+  await logActivity("scheme.deleted", { schemeId: id, summary: `Scheme ${scheme!.number} deleted` });
   revalidatePath("/", "layout");
-  redirect(`/files/${slug}/${year}`);
+  redirect(dest);
 }
 
 const two = (v: string) => v.replace(/\D/g, "").slice(0, 2).padStart(2, "0");
 
 export async function createSchemeAction(formData: FormData) {
-  await requireOwner(); // no-op until AUTH_ENABLED=true; then owners-only
+  await requireWriter();
   const get = (k: string) => String(formData.get(k) ?? "").trim();
   const type = get("type") === "C" ? "C" : "T";
   const yy = two(get("year") || "26");
@@ -606,7 +939,7 @@ export async function createSchemeAction(formData: FormData) {
 // SECURITY: Server Actions are reachable via direct POST, not only the UI — so the
 // owner check lives INSIDE the action (proxy.ts alone is not sufficient).
 export async function updateSchemeAction(formData: FormData) {
-  await requireOwner(); // no-op until AUTH_ENABLED=true; then owners-only
+  await requireWriter();
   const id = String(formData.get("id") ?? "");
   const existing = await getScheme(id);
   if (!existing) throw new Error("Scheme not found");
@@ -722,7 +1055,7 @@ async function readScoringForm(formData: FormData) {
 
 // Save manually-entered results & assigned values.
 export async function saveScoringAction(formData: FormData) {
-  await requireOwner(); // no-op until AUTH_ENABLED=true; then owners-only
+  await requireWriter();
   const { id, scoring } = await readScoringForm(formData);
   await updateScheme(id, { scoring });
   revalidatePath(`/schemes/${id}`, "layout");
@@ -734,7 +1067,7 @@ export async function saveScoringAction(formData: FormData) {
 // calibration the assigned value is the reference lab's, kept manual. The filled
 // values remain editable, so this is a starting point, not a lock-in.
 export async function autoAssignAction(formData: FormData) {
-  await requireOwner(); // no-op until AUTH_ENABLED=true; then owners-only
+  await requireWriter();
   const { id, scheme, scoring } = await readScoringForm(formData);
   if (scheme.type !== "C") {
     scoring.assigned = { ...scoring.assigned, ...computeAssigned(metricsForScheme(scheme), scoring) };
