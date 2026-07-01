@@ -66,6 +66,29 @@ export default async function EditSchemePage({
           <Field label="Minimum participants" name="minParticipants" def={String(s.minParticipants)} />
         </div>
 
+        <SectionTitle>Lab visibility</SectionTitle>
+        <div className="grid gap-3" style={{ gridTemplateColumns: "320px 1fr", alignItems: "start" }}>
+          <label className="block">
+            <span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>Status — controls where the scheme appears for labs</span>
+            <select name="status" defaultValue={s.status} className={inputCls} style={inputStyle}>
+              <option value="draft">Draft — internal only</option>
+              <option value="open">Open — accepting applications</option>
+              <option value="running">Running</option>
+              <option value="report">Reporting</option>
+              <option value="closed">Closed</option>
+            </select>
+          </label>
+          <label className="flex items-start gap-2" style={{ marginTop: 20 }}>
+            <input type="checkbox" name="announced" defaultChecked={!!s.announced} style={{ marginTop: 3 }} />
+            <span className="text-sm" style={{ color: "var(--ink)" }}>
+              Announce to labs
+              <span className="block text-xs" style={{ color: "var(--muted)" }}>
+                Show this scheme in the lab portal&apos;s <b>Upcoming</b> tab while it is still Draft, so labs can see the round is coming. It only becomes applyable once you set the status to <b>Open</b>.
+              </span>
+            </span>
+          </label>
+        </div>
+
         <SectionTitle>Cover photo (title page)</SectionTitle>
         <CoverPhotoField image={s.coverImage} width={s.coverImageWidth} align={s.coverImageAlign} />
 

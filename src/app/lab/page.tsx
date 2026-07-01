@@ -6,6 +6,7 @@ import { metricsForScheme, scoreMetric } from "@/lib/scoring";
 import { statusChip } from "@/lib/folders";
 import { signOutLabAction } from "@/lib/auth-actions";
 import { EmptyState } from "@/components/States";
+import LabSchemeTabs from "@/components/LabSchemeTabs";
 import LanguageToggle from "@/components/LanguageToggle";
 import { getServerT } from "@/lib/i18n-server";
 
@@ -46,7 +47,16 @@ export default async function LabDashboard() {
   const schemes = await getSchemesByIds(parts.map((p) => p.schemeId));
   const byId = new Map(schemes.map((s) => [s.id, s] as const));
   const myIds = new Set(parts.map((p) => p.schemeId));
-  const openToJoin = (await listSchemes()).filter((s) => s.status === "open" && !myIds.has(s.id));
+  // One fetch → the public buckets a lab may browse. Drafts are internal WIP and are
+  // never shown to labs (confidentiality); running/report rounds a lab isn't in are
+  // in progress and closed to new applicants, so they're not listed either.
+  const allSchemes = await listSchemes();
+  const openToJoin = allSchemes.filter((s) => s.status === "open" && !myIds.has(s.id));
+  // Upcoming = a scheme the provider has explicitly ANNOUNCED to labs but not yet
+  // opened (still draft). Only announced drafts appear — unannounced drafts stay
+  // internal, so WIP never leaks. It becomes applyable once its status is Open.
+  const upcoming = allSchemes.filter((s) => s.announced && s.status === "draft" && !myIds.has(s.id));
+  const pastSchemes = allSchemes.filter((s) => s.status === "closed" && !myIds.has(s.id));
 
   const schemeName = (s: (typeof schemes)[number]) => s.name?.trim() || (lang === "bg" ? s.titleBg : s.titleEn) || s.number;
 
@@ -79,8 +89,6 @@ export default async function LabDashboard() {
     .filter((x): x is NonNullable<typeof x> => !!x);
 
   type Item = (typeof items)[number];
-  const active = items.filter((it) => !it.completed);
-  const completed = items.filter((it) => it.completed);
 
   const kv = (label: string, value: string) => (
     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -133,7 +141,71 @@ export default async function LabDashboard() {
     </div>
   );
 
-  const sectionTitle = (text: string) => <h2 className="section-title" style={{ fontSize: 19, marginTop: 6 }}>{text}</h2>;
+  const dateRange = (s: (typeof allSchemes)[number]) => {
+    const ds = (s.schedule ?? []).map((x) => x.date).filter(Boolean);
+    return ds.length > 1 ? `${ds[0]} – ${ds[ds.length - 1]}` : ds[0] ?? "";
+  };
+
+  // ── card renderers (one per bucket) ──────────────────────────────────────────
+  const participCard = (it: Item) => {
+    const st = statusChip(it.scheme.status, lang);
+    const awaiting = it.deadline ? `${tr("lab.awaitingResults")} · ${tr("lab.deadline")} ${it.deadline}` : tr("lab.awaitingResults");
+    return (
+      <div key={it.p.id} className="card" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 17 }}>{schemeName(it.scheme)}</div>
+            <div style={{ fontSize: 13, color: "var(--muted)" }}>{it.scheme.number}</div>
+          </div>
+          <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, color: st.fg, background: st.bg }}>{st.label}</span>
+        </div>
+        <Stepper idx={it.stage} />
+        {resultBlock(it.scores, it.overall, awaiting)}
+        {docButtons(it)}
+      </div>
+    );
+  };
+
+  const browseCard = (s: (typeof allSchemes)[number], mode: "open" | "upcoming" | "past") => {
+    const range = dateRange(s);
+    // Upcoming rounds are still Draft internally — show labs a friendly "Upcoming"
+    // chip, never the raw internal status.
+    const chip = mode === "upcoming"
+      ? { label: lang === "bg" ? "Предстои" : "Upcoming", bg: "var(--green-soft)", fg: "var(--green-dark)" }
+      : statusChip(s.status, lang);
+    return (
+      <div key={s.id} className="card" style={{ padding: 18, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 17 }}>{s.name?.trim() || (lang === "bg" ? s.titleBg : s.titleEn) || s.number}</div>
+          <div style={{ fontSize: 13, color: "var(--muted)" }}>{s.number}{range ? ` · ${range}` : ""}</div>
+        </div>
+        <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, color: chip.fg, background: chip.bg }}>{chip.label}</span>
+        {mode === "open" && <Link href={`/apply/${s.id}`} className="btn btn-primary btn-sm">{tr("lab.applyToParticipate")}</Link>}
+      </div>
+    );
+  };
+
+  // ── tab contents (rendered server-side, toggled by the client tab shell) ──────
+  const participatingContent = items.length === 0 ? (
+    <EmptyState title={tr("lab.noSchemesTitle")} body={tr("lab.noSchemesBody")} />
+  ) : (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>{items.map(participCard)}</div>
+  );
+  const openContent = openToJoin.length === 0 ? (
+    <p style={{ fontSize: 13, color: "var(--muted)" }}>{tr("lab.noOpen")}</p>
+  ) : (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>{openToJoin.map((s) => browseCard(s, "open"))}</div>
+  );
+  const upcomingContent = upcoming.length === 0 ? (
+    <p style={{ fontSize: 13, color: "var(--muted)" }}>{lang === "bg" ? "Няма предстоящи схеми." : "No upcoming schemes announced yet."}</p>
+  ) : (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>{upcoming.map((s) => browseCard(s, "upcoming"))}</div>
+  );
+  const pastContent = pastSchemes.length === 0 ? (
+    <p style={{ fontSize: 13, color: "var(--muted)" }}>{lang === "bg" ? "Няма минали схеми." : "No past schemes yet."}</p>
+  ) : (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>{pastSchemes.map((s) => browseCard(s, "past"))}</div>
+  );
 
   return (
     <div style={{ minHeight: "100dvh", background: "var(--bg)" }}>
@@ -154,70 +226,16 @@ export default async function LabDashboard() {
         </div>
 
         <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
-          {/* left: schemes by stage / participation */}
-          <div style={{ flex: 1, minWidth: 320, display: "flex", flexDirection: "column", gap: 14 }}>
-
-            {items.length === 0 && (
-              <EmptyState
-                title={tr("lab.noSchemesTitle")}
-                body={tr("lab.noSchemesBody")}
-                action={<Link href="/apply" className="btn btn-primary btn-sm" style={{ marginTop: 4 }}>{tr("lab.browseOpen")}</Link>}
-              />
-            )}
-
-            {active.length > 0 && sectionTitle(tr("lab.participatingNow"))}
-            {active.map((it) => {
-              const st = statusChip(it.scheme.status, lang);
-              const awaiting = it.deadline ? `${tr("lab.awaitingResults")} · ${tr("lab.deadline")} ${it.deadline}` : tr("lab.awaitingResults");
-              return (
-                <div key={it.p.id} className="card" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 17 }}>{schemeName(it.scheme)}</div>
-                      <div style={{ fontSize: 13, color: "var(--muted)" }}>{it.scheme.number}</div>
-                    </div>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, color: st.fg, background: st.bg }}>{st.label}</span>
-                  </div>
-                  <Stepper idx={it.stage} />
-                  {resultBlock(it.scores, it.overall, awaiting)}
-                  {docButtons(it)}
-                </div>
-              );
-            })}
-
-            {completed.length > 0 && sectionTitle(tr("lab.completed"))}
-            {completed.map((it) => {
-              const st = statusChip(it.scheme.status, lang);
-              return (
-                <div key={it.p.id} className="card" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 17 }}>{schemeName(it.scheme)}</div>
-                      <div style={{ fontSize: 13, color: "var(--muted)" }}>{it.scheme.number}</div>
-                    </div>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, color: st.fg, background: st.bg }}>{st.label}</span>
-                  </div>
-                  {resultBlock(it.scores, it.overall, tr("lab.docsAfter"))}
-                  {docButtons(it)}
-                </div>
-              );
-            })}
-
-            {sectionTitle(tr("lab.openToJoin"))}
-            {openToJoin.length === 0 && <p style={{ fontSize: 13, color: "var(--muted)" }}>{tr("lab.noOpen")}</p>}
-            {openToJoin.map((s) => {
-              const st = statusChip(s.status, lang);
-              return (
-                <div key={s.id} className="card" style={{ padding: 18, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                  <div style={{ flex: 1, minWidth: 200 }}>
-                    <div style={{ fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 17 }}>{s.name?.trim() || (lang === "bg" ? s.titleBg : s.titleEn) || s.number}</div>
-                    <div style={{ fontSize: 13, color: "var(--muted)" }}>{s.number}</div>
-                  </div>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, color: st.fg, background: st.bg }}>{st.label}</span>
-                  <Link href={`/apply/${s.id}`} className="btn btn-primary btn-sm">{tr("lab.applyToParticipate")}</Link>
-                </div>
-              );
-            })}
+          {/* left: tabbed scheme browser (participating · open · past) */}
+          <div style={{ flex: 1, minWidth: 320 }}>
+            <LabSchemeTabs
+              tabs={[
+                { key: "participating", label: tr("lab.participatingNow"), count: items.length, content: participatingContent },
+                { key: "open", label: lang === "bg" ? "Отворени" : "Open", count: openToJoin.length, content: openContent },
+                { key: "upcoming", label: lang === "bg" ? "Предстоящи" : "Upcoming", count: upcoming.length, content: upcomingContent },
+                { key: "past", label: lang === "bg" ? "Минали" : "Past", count: pastSchemes.length, content: pastContent },
+              ]}
+            />
           </div>
 
           {/* right: profile + account */}

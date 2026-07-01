@@ -36,9 +36,10 @@ import { addRevision, getRevision, approveRevision } from "./doc-revisions";
 import { createFolder, renameFolder, deleteFolder, getFolder, listChildFolders } from "./folder-tree";
 import { SAMPLE_SCHEMES } from "./sample-schemes";
 import { TYPE_SLUG, type FolderType } from "./folders";
-import type { Block, Scheme, StaffRole, StaffStatus, LabStatus, CaseEventKind, LabRegion, VatStatus } from "./types";
+import type { Block, Scheme, StaffRole, StaffStatus, LabStatus, CaseEventKind, LabRegion, VatStatus, SchemeStatus } from "./types";
 
 const STAFF_ROLES: StaffRole[] = ["manager", "staff", "auditor"];
+const SCHEME_STATUSES: SchemeStatus[] = ["draft", "open", "running", "report", "closed"];
 
 // Save a reusable snippet to the owner's global library ("+ Add your own").
 // Returns the created item so the editor can show it immediately.
@@ -1185,7 +1186,15 @@ export async function updateSchemeAction(formData: FormData) {
   const caRaw = str("coverImageAlign", "");
   const coverImageAlign = caRaw === "left" || caRaw === "center" || caRaw === "right" ? caRaw : existing.coverImageAlign;
 
+  // Lab visibility: lifecycle status (validated against the known set) + whether a
+  // not-yet-open scheme is announced to labs (shown in the portal's Upcoming tab).
+  const statusRaw = str("status", existing.status) as SchemeStatus;
+  const status = SCHEME_STATUSES.includes(statusRaw) ? statusRaw : existing.status;
+  const announced = formData.get("announced") === "on";
+
   await updateScheme(id, {
+    status,
+    announced,
     // official PTS number — shown on every document + drives the year grouping.
     // Falls back to the existing number if the field was cleared.
     number: (str("number", existing.number) || existing.number).slice(0, 60),

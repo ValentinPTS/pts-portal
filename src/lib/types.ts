@@ -384,6 +384,10 @@ export interface Scheme {
   skin?: string;
   // friendly folder name shown in the explorer; absent → falls back to the title/number.
   name?: string;
+  // when true, a not-yet-open scheme is shown to labs in the portal's "Upcoming"
+  // tab (announced future round). Lets a provider pre-announce a scheme WITHOUT
+  // exposing internal drafts by default. Stored in the scheme JSONB (no migration).
+  announced?: boolean;
   // which explorer folder this scheme lives in (null/absent = directly under the
   // type root). Placement is by folder now, independent of the number's year.
   folderId?: string;
