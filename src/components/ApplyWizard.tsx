@@ -1,10 +1,34 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 import { submitApplicationAction } from "@/lib/actions";
 import { useLang } from "@/components/LangProvider";
 
 type Param = { standard: string; characteristic: string };
+
+// Field + its styles live at MODULE scope on purpose. A component DEFINED INSIDE
+// another component is a brand-new type on every render, so React remounts every
+// input whenever `step` changes — silently CLEARING whatever the user typed. Once
+// the fields are cleared, the final submit posts an empty labName/email and the
+// server bounces back to /apply/[id] (which reloads the wizard at step 1 — the bug
+// that looked like "step 3 sends me to step 1"). Hoisting Field out keeps the inputs
+// mounted and their values intact across steps.
+const inputStyle: CSSProperties = {
+  width: "100%", background: "#e9eef0", border: "1px solid #2b3422", borderRadius: 10,
+  padding: "12px 14px", color: "#10140d", fontSize: "1rem",
+};
+const labelStyle: CSSProperties = { display: "block", marginBottom: 6, color: "#cdd6c2", fontSize: "0.95rem" };
+
+function Field({ name, label, req, type = "text" }: { name: string; label: string; req?: boolean; type?: string }) {
+  return (
+    <label className="block">
+      <span style={labelStyle}>
+        {label} {req && <span style={{ color: "var(--green-light)" }}>*</span>}
+      </span>
+      <input name={name} type={type} style={inputStyle} />
+    </label>
+  );
+}
 
 export default function ApplyWizard({
   schemeId,
@@ -71,28 +95,6 @@ export default function ApplyWizard({
     L("Детайли", "Details"),
     L("Обекти на изпитването", "Test items"),
   ];
-
-  const inputStyle: React.CSSProperties = {
-    width: "100%",
-    background: "#e9eef0",
-    border: "1px solid #2b3422",
-    borderRadius: 10,
-    padding: "12px 14px",
-    color: "#10140d",
-    fontSize: "1rem",
-  };
-  const labelStyle: React.CSSProperties = { display: "block", marginBottom: 6, color: "#cdd6c2", fontSize: "0.95rem" };
-
-  function Field({ name, label, req, type = "text" }: { name: string; label: string; req?: boolean; type?: string }) {
-    return (
-      <label className="block">
-        <span style={labelStyle}>
-          {label} {req && <span style={{ color: "var(--green-light)" }}>*</span>}
-        </span>
-        <input name={name} type={type} style={inputStyle} />
-      </label>
-    );
-  }
 
   return (
     <div>
