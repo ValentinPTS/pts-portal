@@ -22,6 +22,7 @@ export default function RegisterForm({ errorCode }: { errorCode?: string }) {
   const bg = lang === "bg";
   const [sel, setSel] = useState("");
   const [otherCountry, setOtherCountry] = useState("");
+  const [docNames, setDocNames] = useState<string[]>([]);
   const isOther = sel === OTHER;
   const region = isOther ? "non_eu" : "eu";
   const country = isOther ? otherCountry : sel;
@@ -141,21 +142,74 @@ export default function RegisterForm({ errorCode }: { errorCode?: string }) {
                 "Извън ЕС — моля, прикачете сертификат за акредитация / обхват и фирмена регистрация. PTS ги проверява ръчно.",
               )}
             </p>
-            <label className="block text-sm mt-2" style={{ color: "var(--muted)" }}>
-              {L("Documents (up to 3 files, PDF/JPG/PNG, max 5 MB each)", "Документи (до 3 файла, PDF/JPG/PNG, до 5 MB всеки)")} *
-              <input name="documents" type="file" multiple required accept=".pdf,.png,.jpg,.jpeg,.webp"
-                className="w-full mt-1 text-sm" />
+            <div className="text-sm mt-2" style={{ color: "var(--ink)", fontWeight: 600 }}>
+              {L("Supporting documents", "Придружаващи документи")} *
+            </div>
+            {/* Custom drop area — the native file input is visually hidden but still
+                submits its files; clicking anywhere in the label opens the picker. */}
+            <label
+              style={{
+                display: "block", marginTop: 6, cursor: "pointer", textAlign: "center",
+                border: "2px dashed var(--green-line)", borderRadius: 12, background: "#fff", padding: "20px 16px",
+              }}
+            >
+              <input
+                name="documents" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp"
+                onChange={(e) => setDocNames(Array.from(e.target.files ?? []).map((f) => f.name))}
+                style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" }}
+              />
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--green-light)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 6px", display: "block" }}>
+                <path d="M12 16V4M8 8l4-4 4 4" />
+                <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+              </svg>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--green-dark)" }}>
+                {docNames.length
+                  ? L(`${docNames.length} file(s) selected — click to change`, `${docNames.length} избран(и) — кликнете за промяна`)
+                  : L("Click to attach files", "Кликнете, за да прикачите файлове")}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                {L("PDF, JPG or PNG · up to 3 files · max 5 MB each", "PDF, JPG или PNG · до 3 файла · до 5 MB всеки")}
+              </div>
             </label>
+            {docNames.length > 0 && (
+              <ul style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4, listStyle: "none", padding: 0 }}>
+                {docNames.slice(0, 3).map((n, i) => (
+                  <li key={i} style={{ fontSize: 13, color: "var(--ink)", background: "#fff", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", display: "flex", alignItems: "center", gap: 8 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--green-light)" strokeWidth="2" style={{ flexShrink: 0 }}>
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" />
+                    </svg>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n}</span>
+                  </li>
+                ))}
+                {docNames.length > 3 && (
+                  <li style={{ fontSize: 12, color: "var(--red)" }}>{L("Only the first 3 files are kept.", "Пазят се само първите 3 файла.")}</li>
+                )}
+              </ul>
+            )}
           </div>
         )}
 
-        <button type="submit" className="btn btn-primary mt-5 w-full justify-center" disabled={!sel}>
+        <button
+          type="submit"
+          className="btn btn-primary mt-6 w-full justify-center"
+          style={{ padding: "14px 16px", fontSize: 16, fontWeight: 700 }}
+          disabled={!sel || (isOther && docNames.length === 0)}
+        >
           {L("Submit application", "Изпращане на заявка")}
         </button>
-        <p className="text-xs mt-4 text-center" style={{ color: "var(--muted)" }}>
-          {L("Already have an account?", "Вече имате акаунт?")}{" "}
-          <a href="/lab/login" style={{ color: "var(--green-dark)", fontWeight: 600 }}>{L("Laboratory sign-in", "Вход за лаборатории")}</a>
+        <p className="text-xs text-center mt-2" style={{ color: "var(--muted)" }}>
+          {L(
+            "No account is created until PTS reviews and approves your request.",
+            "Акаунт се създава едва след като PTS прегледа и одобри заявката.",
+          )}
         </p>
+
+        <div className="mt-5 pt-4 text-center" style={{ borderTop: "1px solid var(--line)" }}>
+          <span className="text-sm" style={{ color: "var(--muted)" }}>{L("Already have an account?", "Вече имате акаунт?")}</span>{" "}
+          <a href="/lab/login" className="text-sm" style={{ color: "var(--green-dark)", fontWeight: 700, textDecoration: "underline" }}>
+            {L("Laboratory sign-in", "Вход за лаборатории")}
+          </a>
+        </div>
       </form>
     </div>
   );

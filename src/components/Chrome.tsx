@@ -16,9 +16,15 @@ type User = { email: string; role: EffectiveRole | null } | null;
 export default function Chrome({ user, canManageUsers, canViewActivity, children }: { user: User; canManageUsers?: boolean; canViewActivity?: boolean; children: React.ReactNode }) {
   const path = usePathname() ?? "";
   const { t } = useLang();
-  // Public application flow + the laboratory portal render full-bleed with their
-  // own (non-owner) headers — no admin chrome.
-  if (path.startsWith("/apply") || path.startsWith("/lab")) return <>{children}</>;
+  // Public/auth flows render full-bleed with their own (non-owner) headers — no admin
+  // chrome: the scheme-application flow (/apply), the lab portal (/lab, incl.
+  // /lab/login), the team sign-in (/login) and the lab-account application (/register).
+  if (
+    path.startsWith("/apply") || path.startsWith("/lab") ||
+    path.startsWith("/login") || path.startsWith("/register")
+  ) {
+    return <>{children}</>;
+  }
 
   const explorer = path === "/" || path.startsWith("/files") || /^\/schemes\/[^/]+$/.test(path);
   const wide = path.includes("/build/") || path.startsWith("/skins/"); // skin editor needs room for two columns

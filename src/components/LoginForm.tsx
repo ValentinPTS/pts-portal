@@ -7,6 +7,15 @@ import { useLang } from "@/components/LangProvider";
 const input = "w-full rounded px-3 py-2 mt-1";
 const inputStyle = { border: "1px solid var(--line)", background: "#fff" } as const;
 
+// A prominent secondary action (outlined green "button"-styled link) + a clear
+// muted secondary link — used for the cross-door links under the sign-in form.
+const outlinedBtn = {
+  display: "block", textAlign: "center", padding: "11px 14px", borderRadius: 8,
+  border: "2px solid var(--green-dark)", color: "var(--green-dark)", fontWeight: 700,
+  fontSize: 14, textDecoration: "none", background: "#fff",
+} as const;
+const mutedLink = { color: "var(--muted)", fontSize: 13.5, fontWeight: 700, textDecoration: "underline" } as const;
+
 export default function LoginForm({ next, denied, audience = "owner" }: { next: string; denied?: boolean; audience?: "owner" | "lab" }) {
   const { t, lang } = useLang();
   const [signIn, signInFn] = useActionState<AuthState, FormData>(signInAction, {});
@@ -67,32 +76,35 @@ export default function LoginForm({ next, denied, audience = "owner" }: { next: 
           person lands on, the sign-in itself resolves their role and routes them —
           these just help a human reach the right starting point. */}
       {!showTotp && (
-        <div className="text-xs mt-5 pt-4" style={{ borderTop: "1px solid var(--line)", color: "var(--muted)" }}>
+        <div className="mt-5 pt-4" style={{ borderTop: "1px solid var(--line)" }}>
           {isLab ? (
             <>
-              <p>
-                {lang === "bg" ? "Нямате акаунт? " : "No account yet? "}
-                <a href="/register" style={{ color: "var(--green-dark)", fontWeight: 600 }}>
-                  {lang === "bg" ? "Кандидатствайте тук" : "Apply for a lab account"}
-                </a>
+              <p className="text-sm text-center" style={{ color: "var(--muted)", marginBottom: 8 }}>
+                {lang === "bg" ? "Нямате акаунт?" : "No account yet?"}
               </p>
-              <p className="mt-1">
-                <a href="/login" style={{ color: "var(--muted)", textDecoration: "underline" }}>
+              <a href="/register" style={outlinedBtn}>
+                {lang === "bg" ? "Кандидатствайте тук" : "Apply for a lab account"}
+              </a>
+              <p className="text-center" style={{ marginTop: 12 }}>
+                <a href="/login" style={mutedLink}>
                   {lang === "bg" ? "Вход за екипа на PTS" : "PTS team sign-in"}
                 </a>
               </p>
             </>
           ) : (
-            <p>
-              {lang === "bg" ? "Лаборатория? " : "Are you a laboratory? "}
-              <a href="/lab/login" style={{ color: "var(--green-dark)", fontWeight: 600 }}>
-                {lang === "bg" ? "Вход за лаборатории" : "Laboratory sign-in"}
-              </a>
-              {" · "}
-              <a href="/register" style={{ color: "var(--green-dark)", fontWeight: 600 }}>
-                {lang === "bg" ? "Кандидатстване" : "Apply"}
-              </a>
-            </p>
+            <>
+              <p className="text-sm text-center" style={{ color: "var(--muted)", marginBottom: 8 }}>
+                {lang === "bg" ? "Лаборатория?" : "Are you a laboratory?"}
+              </p>
+              <div style={{ display: "flex", gap: 10 }}>
+                <a href="/lab/login" style={{ ...outlinedBtn, flex: 1, marginTop: 0 }}>
+                  {lang === "bg" ? "Вход за лаборатории" : "Laboratory sign-in"}
+                </a>
+                <a href="/register" style={{ ...outlinedBtn, flex: 1, marginTop: 0 }}>
+                  {lang === "bg" ? "Кандидатстване" : "Apply"}
+                </a>
+              </div>
+            </>
           )}
         </div>
       )}
