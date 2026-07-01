@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { submitApplicationAction } from "@/lib/actions";
 import { useLang } from "@/components/LangProvider";
 
@@ -53,41 +53,54 @@ export default function ApplyWizard({
   const formRef = useRef<HTMLFormElement>(null);
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
 
-  // required field names per step (step 3 needs ≥1 selection)
-  const required: Record<number, string[]> = {
-    1: ["labName", "manager", "contactPerson", "email", "phone"],
-    2: ["deliveryAddress", "postalCode"],
-    3: [],
-  };
-
-  function valuesOk(stepNo: number): boolean {
-    const f = formRef.current;
-    if (!f) return true;
-    for (const name of required[stepNo]) {
-      const el = f.elements.namedItem(name) as HTMLInputElement | null;
-      if (!el || !el.value.trim()) return false;
+  // Per-step validation → a specific, translated message (or null when the step is
+  // OK). We do NOT rely on the browser's native HTML5 validation: the hidden
+  // (display:none) steps make an invalid field "not focusable", which silently blocks
+  // the whole submit (the reason "Изпрати" appeared to do nothing). The form carries
+  // `noValidate`, and this runs on both Next and the final Submit.
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  function fieldVal(name: string): string {
+    const el = formRef.current?.elements.namedItem(name) as HTMLInputElement | null;
+    return el?.value.trim() ?? "";
+  }
+  function validateStep(stepNo: number): string | null {
+    if (stepNo === 1) {
+      if (fieldVal("labName").length < 2) return L("Въведете име на лабораторията (поне 2 символа).", "Enter the laboratory name (at least 2 characters).");
+      if (fieldVal("manager").length < 2) return L("Въведете ръководител.", "Enter the manager’s name.");
+      if (fieldVal("contactPerson").length < 2) return L("Въведете лице за контакт.", "Enter a contact person.");
+      if (!EMAIL_RE.test(fieldVal("email"))) return L("Въведете валиден имейл адрес.", "Enter a valid e-mail address.");
+      if (fieldVal("phone").length < 3) return L("Въведете телефон за връзка.", "Enter a contact phone number.");
+    }
+    if (stepNo === 2) {
+      if (fieldVal("deliveryAddress").length < 2) return L("Въведете адрес за доставка на пробите.", "Enter the delivery address for the samples.");
+      if (fieldVal("postalCode").length < 2) return L("Въведете пощенски код.", "Enter the postal code.");
     }
     if (stepNo === 3) {
-      const any = params.some((_, i) => {
-        const el = f.elements.namedItem(`sel_${i}`) as HTMLInputElement | null;
-        return el && parseInt(el.value || "0", 10) > 0;
-      });
-      if (!any) return false;
+      const any = params.some((_, i) => parseInt(fieldVal(`sel_${i}`) || "0", 10) > 0);
+      if (!any) return L("Изберете поне един обект (брой участия > 0).", "Select at least one item (participations > 0).");
     }
-    return true;
+    return null;
   }
 
   function next() {
-    if (!valuesOk(step)) {
-      setError(L("Моля, попълнете задължителните полета (*).", "Please fill in the required fields (*)."));
-      return;
-    }
+    const err = validateStep(step);
+    if (err) { setError(err); return; }
     setError("");
     setStep((s) => Math.min(3, s + 1));
   }
   function back() {
     setError("");
     setStep((s) => Math.max(1, s - 1));
+  }
+
+  // Final submit — validate EVERY step; on the first problem, jump to that step and
+  // show the message instead of dispatching the server action.
+  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    for (const s of [1, 2, 3]) {
+      const err = validateStep(s);
+      if (err) { e.preventDefault(); setStep(s); setError(err); return; }
+    }
+    // all steps valid → let the form dispatch submitApplicationAction
   }
 
   const steps = [
@@ -149,7 +162,7 @@ export default function ApplyWizard({
         })}
       </div>
 
-      <form ref={formRef} action={submitApplicationAction} className="mt-8">
+      <form ref={formRef} action={submitApplicationAction} onSubmit={handleSubmit} noValidate className="mt-8">
         <input type="hidden" name="schemeId" value={schemeId} />
         {/* honeypot — hidden from humans; bots fill it and get silently dropped */}
         <input
