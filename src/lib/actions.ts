@@ -416,11 +416,13 @@ export async function approveApplicationAction(formData: FormData) {
 
   const total = Object.values(app.selections).reduce((a, b) => a + b, 0) || 1;
 
-  // Phase 2b: resolve (or create) the lab's PERMANENT account from the application,
-  // then link this participation to it so it shows up in the lab's portal. The
-  // account is created here; the owner sends the portal invite separately.
-  let labId: string | undefined;
-  if (app.email) {
+  // Link this participation to a lab account so it shows up in that lab's portal.
+  //  1) If a LOGGED-IN lab submitted the заявка, it carries app.labId — trust that
+  //     (the authenticated identity), whatever e-mail was typed in the form.
+  //  2) Otherwise (public applicant) resolve by e-mail, creating a permanent lab
+  //     account keyed to that e-mail if none exists yet (owner onboards it later).
+  let labId: string | undefined = app.labId;
+  if (!labId && app.email) {
     const existing = await getLabByEmail(app.email);
     const lab = existing ?? (await addLab({
       email: app.email, name: app.labName, accreditationCert: app.accreditationCert,
