@@ -18,6 +18,10 @@ import { createServerClient } from "@supabase/ssr";
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const AUTH_ENABLED = process.env.AUTH_ENABLED === "true";
+// Two-factor (TOTP) is required for the owner area by default. Set REQUIRE_2FA=false
+// (e.g. in local/test) to sign in with just email + password — useful when hopping
+// between Manager/Staff/Auditor accounts. Keep it ON (unset/true) for real use.
+export const REQUIRE_2FA = process.env.REQUIRE_2FA !== "false";
 
 export function ownerEmails(): string[] {
   return (process.env.OWNER_EMAILS ?? "")
@@ -84,6 +88,6 @@ export async function requireOwner(): Promise<OwnerSession | void> {
   const session = await getSessionUser();
   if (!session) redirect("/login");
   if (!isOwnerEmail(session.email)) redirect("/login?denied=1");
-  if (!session.aal2) redirect("/account?enroll=1"); // sign-in ok, but 2FA not satisfied
+  if (REQUIRE_2FA && !session.aal2) redirect("/account?enroll=1"); // sign-in ok, but 2FA not satisfied
   return session;
 }

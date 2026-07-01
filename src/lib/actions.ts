@@ -1,6 +1,6 @@
 "use server";
 
-import { randomInt, randomUUID } from "crypto";
+import { randomInt, randomUUID, randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
@@ -21,6 +21,12 @@ import {
 } from "./custom-skins";
 import { getDb } from "./supabase";
 import { getLabByEmail, addLab, getLab, updateLab } from "./labs";
+import {
+  addLabApplication, listLabApplications, getLabApplication, setLabApplicationReview,
+  countPendingByEmail,
+} from "./lab-applications";
+import { validateEik } from "./verify-eik";
+import { checkVies } from "./verify-vies";
 import { getLabSession } from "./lab-auth";
 import { addStaff, updateStaff, getStaffByEmail, getStaff } from "./staff";
 import { requireManager, requireWriter, getRoleContext } from "./roles";
@@ -30,7 +36,7 @@ import { addRevision, getRevision, approveRevision } from "./doc-revisions";
 import { createFolder, renameFolder, deleteFolder, getFolder, listChildFolders } from "./folder-tree";
 import { SAMPLE_SCHEMES } from "./sample-schemes";
 import { TYPE_SLUG, type FolderType } from "./folders";
-import type { Block, Scheme, StaffRole, StaffStatus, LabStatus, CaseEventKind } from "./types";
+import type { Block, Scheme, StaffRole, StaffStatus, LabStatus, CaseEventKind, LabRegion, VatStatus } from "./types";
 
 const STAFF_ROLES: StaffRole[] = ["manager", "staff", "auditor"];
 
@@ -574,6 +580,175 @@ export async function inviteLabByIdAction(labId: string): Promise<{ ok?: boolean
   if (inv.userId) await updateLab(lab.id, { authUserId: inv.userId });
   await logActivity("lab.invited", { targetCode: lab.id, summary: "Lab portal invite sent" });
   return { ok: true };
+}
+
+// ── Lab onboarding: public account application + manager review ────────────────
+// SECURITY: the public submit is unauthenticated, so it carries the same defences
+// as the scheme application (honeypot + per-IP rate limit, silent drop) plus strict
+// file validation (type + size + count) with random keys in a PRIVATE bucket, a
+// per-email pending cap, and — crucially — it creates NO login. Only a manager's
+// approval mints the Supabase account, so a pending/rejected applicant can't sign in.
+
+const DOC_BUCKET = "lab-docs";
+const DOC_EXT: Record<string, string> = {
+  "application/pdf": "pdf", "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp",
+};
+async function ensureLabDocsBucket(db: NonNullable<ReturnType<typeof getDb>>): Promise<void> {
+  const { data: bucket } = await db.storage.getBucket(DOC_BUCKET);
+  if (!bucket) {
+    const { error: be } = await db.storage.createBucket(DOC_BUCKET, {
+      public: false, fileSizeLimit: "6MB", allowedMimeTypes: Object.keys(DOC_EXT),
+    });
+    if (be && !/exist/i.test(be.message)) throw be;
+  }
+}
+
+export async function submitLabApplicationAction(formData: FormData) {
+  const get = (k: string) => String(formData.get(k) ?? "").trim();
+  const cut = (s: string, n = 200) => s.slice(0, n);
+
+  if (get("website")) redirect("/register/thanks"); // honeypot → drop quietly
+  const h = await headers();
+  const ip = (h.get("x-forwarded-for") ?? "local").split(",")[0].trim();
+  if (!allowSubmission(ip)) redirect("/register/thanks"); // rate-limited → drop quietly
+
+  const region: LabRegion = get("region") === "non_eu" ? "non_eu" : "eu";
+  const email = cut(get("email").toLowerCase(), 200);
+  const orgName = cut(get("orgName"), 200);
+  const country = cut(get("country"), 80);
+  const contactPerson = cut(get("contactPerson"), 160);
+
+  // Server-side required-field check (the client validates too).
+  if (!orgName || !country || !contactPerson || !email || !email.includes("@")) {
+    redirect("/register?e=missing");
+  }
+  // Anti-spam: at most 3 pending applications per e-mail.
+  if ((await countPendingByEmail(email)) >= 3) redirect("/register/thanks");
+
+  const phone = cut(get("phone"), 60);
+  const address = cut(get("address"), 300);
+  const accreditationBody = cut(get("accreditationBody"), 160);
+  const accreditationNo = cut(get("accreditationNo"), 120);
+
+  // EU path — instant EIK checksum + best-effort VIES VAT check.
+  let eik = "", vat = "";
+  let eikValid: boolean | undefined, vatStatus: VatStatus | undefined, vatName: string | undefined;
+  if (region === "eu") {
+    eik = cut(get("eik"), 20);
+    vat = cut(get("vat"), 20);
+    if (eik) { const v = validateEik(eik); eik = v.normalized; eikValid = v.ok; }
+    if (vat) { const r = await checkVies(vat, country.length === 2 ? country : ""); vatStatus = r.status; vatName = r.name ? cut(r.name, 200) : undefined; }
+  }
+
+  // non-EU path — validate + store supporting documents in the private bucket.
+  const docPaths: string[] = [];
+  if (region === "non_eu") {
+    const files = formData.getAll("documents").filter((f): f is File => f instanceof File && f.size > 0).slice(0, 3);
+    for (const f of files) {
+      if (!DOC_EXT[f.type]) redirect("/register?e=filetype");
+      if (f.size > 5_000_000) redirect("/register?e=filesize");
+    }
+    const db = getDb();
+    if (db && files.length) {
+      try {
+        await ensureLabDocsBucket(db);
+        const folder = randomUUID();
+        for (const f of files) {
+          const path = `${folder}/${randomUUID()}.${DOC_EXT[f.type]}`;
+          const bytes = new Uint8Array(await f.arrayBuffer());
+          const { error } = await db.storage.from(DOC_BUCKET).upload(path, bytes, { contentType: f.type, upsert: false });
+          if (error) throw error;
+          docPaths.push(path);
+        }
+      } catch (e) {
+        console.warn("[lab-apply] document upload failed:", (e as Error)?.message ?? e);
+      }
+    }
+    if (db && !docPaths.length) redirect("/register?e=docs"); // non-EU must attach at least one document
+  }
+
+  await addLabApplication({
+    region, orgName, country, contactPerson, email, phone, address,
+    accreditationBody, accreditationNo, eik, vat, eikValid, vatStatus, vatName, docPaths,
+  });
+  await logActivity("lab_application.submitted", { summary: `Lab account application received (${region})` });
+  redirect("/register/thanks");
+}
+
+// Manager approves a pending application → mints the permanent lab account + a login
+// with a one-time temporary password (returned once for the manager to share, since
+// e-mail delivery isn't set up yet). Activates the lab so it can sign in immediately.
+export async function approveLabApplicationAction(
+  formData: FormData,
+): Promise<{ ok?: boolean; email?: string; tempPassword?: string; error?: string }> {
+  await requireManager();
+  const id = String(formData.get("id") ?? "");
+  const app = await getLabApplication(id);
+  if (!app || app.status !== "pending") return { error: "Application not found or already handled." };
+  const db = getDb();
+  if (!db) return { error: "Approving needs Supabase configured." };
+
+  // 1) create (or reuse) the permanent lab account, active.
+  const existing = await getLabByEmail(app.email);
+  const lab = existing ?? (await addLab({
+    email: app.email, name: app.orgName, contactPerson: app.contactPerson, phone: app.phone,
+    registeredAddress: app.address, eik: app.eik, vat: app.vat, accreditationCert: app.accreditationNo,
+  }));
+
+  // 2) mint the Supabase login with a ONE-TIME temp password (email_confirm so they
+  //    can sign in at once). The lab should change it after first sign-in.
+  const tempPassword = randomBytes(12).toString("base64url");
+  let authUserId = lab.authUserId;
+  try {
+    const { data, error } = await db.auth.admin.createUser({ email: app.email, password: tempPassword, email_confirm: true });
+    if (error) throw error;
+    authUserId = data.user?.id ?? authUserId;
+  } catch (e) {
+    if (authUserId) {
+      const { error } = await db.auth.admin.updateUserById(authUserId, { password: tempPassword });
+      if (error) return { error: `Account exists but password reset failed: ${error.message}` };
+    } else {
+      return { error: `This e-mail already has a login (${(e as Error)?.message ?? "exists"}). Reset it in Supabase, then approve.` };
+    }
+  }
+  await updateLab(lab.id, { status: "active", ...(authUserId ? { authUserId } : {}) });
+
+  const me = (await getRoleContext()).email ?? "manager";
+  await setLabApplicationReview(id, { status: "approved", reviewedBy: me });
+  await logActivity("lab_application.approved", { targetCode: lab.id, summary: `Lab application approved for ${app.email}` });
+  // NOTE: no revalidatePath here on purpose — the one-time temp password is returned
+  // to the manager's screen and must stay visible until they navigate away. The row
+  // is already marked approved in the DB, so it won't reappear after a manual reload.
+  return { ok: true, email: app.email, tempPassword };
+}
+
+export async function rejectLabApplicationAction(formData: FormData): Promise<{ ok?: boolean; error?: string }> {
+  await requireManager();
+  const id = String(formData.get("id") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim().slice(0, 500);
+  const app = await getLabApplication(id);
+  if (!app || app.status !== "pending") return { error: "Application not found or already handled." };
+  const me = (await getRoleContext()).email ?? "manager";
+  await setLabApplicationReview(id, { status: "rejected", rejectReason: reason, reviewedBy: me });
+  await logActivity("lab_application.rejected", { summary: `Lab application rejected for ${app.email}` });
+  revalidatePath("/users");
+  return { ok: true };
+}
+
+// Short-lived signed URL for a stored non-EU document (manager review only). The key
+// is confined to the private bucket namespace — no traversal / arbitrary object keys.
+export async function labDocUrlAction(path: string): Promise<{ url?: string; error?: string }> {
+  await requireManager();
+  const db = getDb();
+  if (!db) return { error: "Not configured." };
+  if (!path || path.includes("..") || path.startsWith("/")) return { error: "Bad path." };
+  try {
+    const { data, error } = await db.storage.from(DOC_BUCKET).createSignedUrl(path, 300);
+    if (error || !data) throw error ?? new Error("no url");
+    return { url: data.signedUrl };
+  } catch (e) {
+    return { error: (e as Error)?.message || "Could not sign URL." };
+  }
 }
 
 export async function setStaffRoleAction(id: string, role: StaffRole): Promise<{ ok?: boolean; error?: string }> {

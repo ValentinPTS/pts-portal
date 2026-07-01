@@ -1,31 +1,81 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { createServerSupabase } from "./auth";
+import { createServerSupabase, REQUIRE_2FA, isOwnerEmail } from "./auth";
+import { getStaffByEmail } from "./staff";
+import { getLabByEmail } from "./labs";
 
 export type AuthState = { error?: string; needsTotp?: boolean };
 
-// Step 1 of login: email + password. If the account already has an authenticator,
-// we return needsTotp (the form then asks for the 6-digit code). If it has no 2FA
-// yet, we send the owner to /account to enrol one. No 2FA → no admin access.
+// ── Smart login ───────────────────────────────────────────────────────────────
+// SECURITY PRINCIPLE: privileges are decided by the ACCOUNT (its row in the DB),
+// never by which page/URL the person used to sign in. A "team" door and a "lab"
+// door may exist for humans, but the server always re-resolves the role from the
+// e-mail and routes/enforces 2FA on that basis — so a staff member can never skip
+// 2FA by signing in through the lab page, and a lab can never reach the owner app.
+type LoginRole = "internal" | "lab";
+
+async function resolveLoginRole(email: string): Promise<LoginRole | null> {
+  if (isOwnerEmail(email)) return "internal";            // founders — always internal
+  const staff = await getStaffByEmail(email);
+  if (staff && staff.status === "active") return "internal"; // manager/staff/auditor
+  const lab = await getLabByEmail(email);
+  if (lab && lab.status === "active") return "lab";
+  return null;                                            // signed in, but no profile
+}
+
+// Where to land after a successful sign-in. `next` is only honoured when it stays
+// inside the area the account is actually allowed in (defence against an open
+// redirect / cross-area jump via a crafted ?next=).
+function safeDest(role: LoginRole, next: string): string {
+  if (role === "lab") return next.startsWith("/lab") && !next.startsWith("/lab/login") ? next : "/lab";
+  const ok = next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/lab") && !next.startsWith("/login");
+  return ok ? next : "/";
+}
+
+// Step 1 of login: email + password. On success we resolve the account's role and
+// route by it. Internal accounts must satisfy 2FA (unless REQUIRE_2FA=false); labs
+// sign straight in (2FA optional — verified only if they enrolled one). An account
+// with no team/lab profile is signed back out with a clear message (never left in a
+// half-authenticated state that the proxy would silently bounce).
 export async function signInAction(_prev: AuthState, formData: FormData): Promise<AuthState> {
-  const email = String(formData.get("email") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
   const next = String(formData.get("next") ?? "/") || "/";
   if (!email || !password) return { error: "Enter your email and password." };
 
   const supabase = await createServerSupabase();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
+  // Supabase returns one generic message whether the e-mail is unknown or the
+  // password is wrong — no account enumeration. Keep it as-is.
   if (error) return { error: error.message };
 
+  const role = await resolveLoginRole(email);
+  if (!role) {
+    await supabase.auth.signOut(); // don't leave a dangling session with no role
+    return { error: "This account isn't linked to a team member or laboratory profile yet. Please contact PTS." };
+  }
+  const dest = safeDest(role, next);
+
+  // Labs: 2FA is optional. Verify it only if the lab actually enrolled a factor.
+  if (role === "lab") {
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aal?.currentLevel === "aal2") redirect(dest);
+    if (aal?.nextLevel === "aal2") return { needsTotp: true };
+    redirect(dest);
+  }
+
+  // Internal: 2FA required by default.
+  if (!REQUIRE_2FA) redirect(dest);
   const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-  if (aal?.currentLevel === "aal2") redirect(next);
+  if (aal?.currentLevel === "aal2") redirect(dest);
   if (aal?.nextLevel === "aal2") return { needsTotp: true }; // has a factor → must verify
-  // No 2FA yet: owners MUST enrol; labs may sign in without it (2FA optional).
-  redirect(next.startsWith("/lab") ? next : "/account?enroll=1");
+  redirect("/account?enroll=1"); // signed in, but must enrol an authenticator first
 }
 
 // Step 2 of login: verify the authenticator's 6-digit code → raises session to aal2.
+// After verifying we re-resolve the role and route by it (again, never trust the
+// door / a crafted `next`).
 export async function verifyTotpAction(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const code = String(formData.get("code") ?? "").replace(/\s/g, "");
   const next = String(formData.get("next") ?? "/") || "/";
@@ -39,7 +89,11 @@ export async function verifyTotpAction(_prev: AuthState, formData: FormData): Pr
   if (ce || !ch) return { needsTotp: true, error: ce?.message ?? "Could not start the challenge." };
   const { error: ve } = await supabase.auth.mfa.verify({ factorId: totp.id, challengeId: ch.id, code });
   if (ve) return { needsTotp: true, error: ve.message };
-  redirect(next);
+
+  const { data: { user } } = await supabase.auth.getUser();
+  const role = await resolveLoginRole((user?.email ?? "").toLowerCase());
+  if (!role) { await supabase.auth.signOut(); return { error: "This account isn't linked to a profile. Please contact PTS." }; }
+  redirect(safeDest(role, next));
 }
 
 export async function signOutAction() {

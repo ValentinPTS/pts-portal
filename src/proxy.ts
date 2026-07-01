@@ -15,6 +15,8 @@ import { getDb } from "./lib/supabase";
 // We read AUTH_ENABLED + OWNER_EMAILS straight from env here (the proxy must not
 // import next/headers). While auth is off, this is a pass-through.
 const AUTH_ENABLED = process.env.AUTH_ENABLED === "true";
+// 2FA required for the owner area by default; REQUIRE_2FA=false relaxes it (test).
+const REQUIRE_2FA = process.env.REQUIRE_2FA !== "false";
 
 function ownerEmails(): string[] {
   return (process.env.OWNER_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
@@ -36,6 +38,24 @@ async function isInternalUser(email: string | undefined | null): Promise<boolean
   if (!db) return false;
   try {
     const { data, error } = await db.from("staff_users").select("status").eq("email", e).maybeSingle();
+    if (error) return false;
+    return !!data && data.status === "active";
+  } catch {
+    return false;
+  }
+}
+
+// Is this signed-in user an ACTIVE laboratory account? Used only to decide where to
+// send a non-internal user: a real lab → its portal; anything else (a login with no
+// role yet) → back to /login with a clear "not authorized" message, instead of an
+// invisible bounce loop to /lab/login.
+async function isActiveLab(email: string | undefined | null): Promise<boolean> {
+  const e = (email ?? "").toLowerCase();
+  if (!e) return false;
+  const db = getDb();
+  if (!db) return false;
+  try {
+    const { data, error } = await db.from("labs").select("status").eq("email", e).maybeSingle();
     if (error) return false;
     return !!data && data.status === "active";
   } catch {
@@ -102,13 +122,15 @@ export async function proxy(request: NextRequest) {
   if (ownerArea) {
     if (!(await isInternalUser(user.email))) {
       const to = request.nextUrl.clone();
-      to.pathname = "/lab";
-      to.search = "";
+      // A real lab → its portal; a signed-in account with NO role yet → back to the
+      // owner login with a clear "not authorized" message (no silent /lab bounce).
+      if (await isActiveLab(user.email)) { to.pathname = "/lab"; to.search = ""; }
+      else { to.pathname = "/login"; to.search = "?denied=1"; }
       return NextResponse.redirect(to);
     }
     // /account is exempt (that's where 2FA is enrolled — gating it would loop).
     const isAccount = path === "/account" || path.startsWith("/account/");
-    if (!isAccount) {
+    if (REQUIRE_2FA && !isAccount) {
       const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
       if (aal?.currentLevel !== "aal2") {
         const to = request.nextUrl.clone();
@@ -124,7 +146,8 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // run on everything except static assets, public brand images, the public
-  // application flow, and API routes (which self-guard). Role checks live above
-  // (owner area vs lab) and in requireOwner()/requireLab() for mutations.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|brand|apply|api).*)"],
+  // application flow (/apply = scheme заявка, /register = lab-account request), and
+  // API routes (which self-guard). Role checks live above (owner area vs lab) and in
+  // requireOwner()/requireLab() for mutations.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|brand|apply|register|api).*)"],
 };

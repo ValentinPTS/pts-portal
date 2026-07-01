@@ -1,6 +1,6 @@
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import { AUTH_ENABLED, getSessionUser, isOwnerEmail } from "./auth";
+import { AUTH_ENABLED, REQUIRE_2FA, getSessionUser, isOwnerEmail } from "./auth";
 import { getStaffByEmail } from "./staff";
 import { getLabByEmail } from "./labs";
 import type { StaffRole } from "./types";
@@ -70,7 +70,7 @@ export async function requireManager(): Promise<void> {
   const ctx = await getRoleContext();
   if (!ctx.email) redirect("/login");
   if (ctx.role !== "manager") redirect("/login?denied=1");
-  if (!ctx.aal2) redirect("/account?enroll=1");
+  if (REQUIRE_2FA && !ctx.aal2) redirect("/account?enroll=1");
 }
 
 // Gate for READING the provider work area — manager, staff or auditor. Labs use
@@ -81,7 +81,7 @@ export async function requireStaff(): Promise<void> {
   const ctx = await getRoleContext();
   if (!ctx.email) redirect("/login");
   if (!ctx.role || ctx.role === "lab") redirect("/login?denied=1");
-  if (!ctx.aal2) redirect("/account?enroll=1");
+  if (REQUIRE_2FA && !ctx.aal2) redirect("/account?enroll=1");
 }
 
 // Gate for WRITE actions — manager or staff only. Auditors are strictly read-only
@@ -93,5 +93,5 @@ export async function requireWriter(): Promise<void> {
   const ctx = await getRoleContext();
   if (!ctx.email) redirect("/login");
   if (ctx.role !== "manager" && ctx.role !== "staff") redirect("/login?denied=1");
-  if (!ctx.aal2) redirect("/account?enroll=1");
+  if (REQUIRE_2FA && !ctx.aal2) redirect("/account?enroll=1");
 }

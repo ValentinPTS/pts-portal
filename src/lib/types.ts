@@ -194,6 +194,37 @@ export interface Application {
   labId?: string;
 }
 
+// A public "apply for a laboratory account" request (lab onboarding). Distinct from
+// Application above (which is a lab applying to a specific scheme). Pending until a
+// manager approves — only then is a real Lab + Supabase login created. See
+// migrations/0013_lab_applications.sql and lib/lab-applications.ts.
+export type LabApplicationStatus = "pending" | "approved" | "rejected";
+export type LabRegion = "eu" | "non_eu";
+export type VatStatus = "valid" | "invalid" | "unavailable";
+export interface LabApplication {
+  id: string;
+  status: LabApplicationStatus;
+  region: LabRegion;
+  orgName: string;
+  country: string;
+  contactPerson: string;
+  email: string;
+  phone: string;
+  address: string;
+  accreditationBody: string;
+  accreditationNo: string;
+  eik: string; // ЕИК / company id (EU path)
+  vat: string; // VAT / ДДС № (EU path)
+  eikValid?: boolean; // checksum result (undefined = not provided / N/A)
+  vatStatus?: VatStatus; // VIES result (undefined = not provided)
+  vatName?: string; // company name from VIES (staff cross-check)
+  docPaths: string[]; // private storage keys for non-EU documents
+  rejectReason?: string;
+  reviewedBy?: string;
+  reviewedAt?: string; // ISO
+  createdAt: string; // ISO
+}
+
 export interface TeamMember {
   roleEn: string;
   roleBg: string;
