@@ -23,8 +23,15 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
 
   // Data-driven documents (the lists) need the live participants in their shell.
   // Name guard (§4.2): only a manager sees real names on the two lists; everyone
-  // else gets codes + a "confidential" placeholder — same as the auto print route.
-  const reveal = await canRevealNamesNow();
+  // else gets codes + a "confidential" placeholder. The headless PDF has no session,
+  // so /api/pdf forwards the caller's already-checked permission via `?reveal=1`,
+  // trusted ONLY with the valid internal token; a direct navigation falls back to the
+  // viewer's own session role (an auditor/staff can never coax names out this way).
+  const internalToken = process.env.INTERNAL_TOKEN;
+  const isInternal = !!internalToken && req.nextUrl.searchParams.get("_internal") === internalToken;
+  const reveal = isInternal
+    ? req.nextUrl.searchParams.get("reveal") === "1"
+    : await canRevealNamesNow();
   const ps = await listParticipants(id);
   const opts: DocOptions = {
     revealNames: reveal,

@@ -11,7 +11,10 @@ export interface LibraryItem {
   en: string;
 }
 
-const mem: LibraryItem[] = [];
+// Shared across all server entry points + HMR (see store.ts) so a client that just
+// added an item and reloads still sees it in the no-DB dev fallback. Prod uses the DB.
+const memStore = globalThis as unknown as { __ptsLibraryMem?: LibraryItem[] };
+const mem: LibraryItem[] = memStore.__ptsLibraryMem ?? (memStore.__ptsLibraryMem = []);
 let warned = false;
 function warn(e: unknown) {
   if (warned) return;

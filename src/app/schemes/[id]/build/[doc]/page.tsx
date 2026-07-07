@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getScheme, listSchemes } from "@/lib/store";
+import { getScheme, getSchemesByIds, listSchemeSummaries } from "@/lib/store";
 import { getDoc, isFormDoc } from "@/lib/documents";
 import { listParticipants } from "@/lib/participants";
 import { listLibraryItems } from "@/lib/library-store";
@@ -42,15 +42,24 @@ export default async function BuildDocPage({
     bg: `<p>${esc(c.bg)}</p>`,
     en: `<p>${esc(c.en || c.bg)}</p>`,
   }));
+  // a built-in snippet the owner has customized (a same-name library item exists) shows
+  // as their editable "My item" instead — so drop it from the built-in Snippets group.
+  const customNames = new Set(custom.map((c) => c.name.trim().toLowerCase()));
+  const snippets = insertableSnippets().filter((sn) => !customNames.has(sn.name.trim().toLowerCase()));
 
   // saved whole-document templates for THIS document + scheme type
   const savedTemplates = (await listSavedTemplates(doc, s.type)).map((t) => ({
     id: t.id, name: t.name, bg: t.bg, en: t.en,
   }));
 
-  // other schemes (same type) that already have THIS document built → copy from
-  const copyFrom = (await listSchemes())
-    .filter((o) => o.id !== s.id && o.type === s.type && (o.docs?.[doc]?.bg || o.docs?.[doc]?.en))
+  // other schemes (same type) that already have THIS document built → copy from.
+  // Narrow to same-type ids via the cheap scalar-column summary first, then batch-load
+  // only those full rows (not every scheme's JSONB) to check which built the doc.
+  const sameTypeIds = (await listSchemeSummaries())
+    .filter((o) => o.id !== s.id && o.type === s.type)
+    .map((o) => o.id);
+  const copyFrom = (await getSchemesByIds(sameTypeIds))
+    .filter((o) => o.docs?.[doc]?.bg || o.docs?.[doc]?.en)
     .slice(0, 25)
     .map((o) => ({
       id: o.id, number: o.number, title: o.titleEn || o.titleBg || o.number,
@@ -83,7 +92,7 @@ export default async function BuildDocPage({
         hasDefault={hasDocTemplate(doc)}
         schemeType={s.type}
         isForm={isFormDoc(doc)}
-        snippets={insertableSnippets()}
+        snippets={snippets}
         fields={insertableFields(s, participants)}
         formElements={insertableFormElements()}
         customItems={custom}

@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { saveDocHtmlAction, translateDocHtmlAction, translateAction, addLibraryItemAction, saveDocTemplateAction, deleteDocTemplateAction } from "@/lib/actions";
+import { saveDocHtmlAction, translateDocHtmlAction, translateAction, addLibraryItemAction, saveDocTemplateAction, deleteDocTemplateAction, uploadCoverImageAction } from "@/lib/actions";
 import { useLang } from "@/components/LangProvider";
 import { FONTS_HREF } from "@/lib/doc-css";
+import { sanitizeDocHtml } from "@/lib/sanitize-html";
 
 type Snippet = { id: string; name: string; bg: string; en: string };
 type Field = { key: string; label: string; bg: string; en: string };
@@ -111,12 +112,17 @@ const EDITOR_CSS = `
   .we-page table th{background:var(--green-soft);color:var(--green-dark);}
   .we-docbody:empty:before{content:"${"Start typing, or insert an item from the panel →"}";color:var(--muted);}
 
-  /* page break: the block is still pushed to the next page (white fills the rest),
-     but the visible separation is only a thin ~18px grey strip with the label */
-  /* the empty space before an A4 break — tinted so the gap between pages is clearly visible */
-  .we-gap{position:relative;user-select:none;pointer-events:none;background:repeating-linear-gradient(135deg,#e9ede3,#e9ede3 8px,#dfe5d4 8px,#dfe5d4 16px);}
-  .we-gapsep{position:absolute;left:-52px;right:-32px;bottom:0;height:22px;background:#c9d4bd;border-top:1px solid #8fa97e;border-bottom:2px solid #111;display:flex;align-items:center;justify-content:center;z-index:3;}
-  .we-gaplabel{font-size:10px;font-weight:700;color:#2f5d2a;background:#fff;border:1.5px solid #8fa97e;border-radius:999px;padding:2px 14px;letter-spacing:.04em;}
+  /* page break: the overflowing block is pushed to the next page; the rest of the
+     current page stays WHITE like a real sheet, and only a thin neutral seam marks
+     where one page ends and the next begins — a clean, document-viewer-like gutter
+     (no loud stripes). The seam fades in gently so pagination doesn't "pop". */
+  .we-gap{position:relative;user-select:none;pointer-events:none;background:transparent;}
+  .we-gapsep{position:absolute;left:-52px;right:-32px;bottom:0;height:18px;
+    background:linear-gradient(#eef1ea,#e3e8dd);
+    box-shadow:inset 0 3px 5px -3px rgba(31,45,33,.20),inset 0 -1px 0 rgba(0,0,0,.05);
+    display:flex;align-items:center;justify-content:center;z-index:3;animation:we-seam-in .18s ease-out;}
+  .we-gaplabel{font-size:9px;font-weight:700;color:#8a9880;background:#fff;border:1px solid #dde4d6;border-radius:999px;padding:1px 11px;letter-spacing:.06em;box-shadow:0 1px 2px rgba(0,0,0,.05);}
+  @keyframes we-seam-in{from{opacity:0}to{opacity:1}}
   /* image selection handles overlay */
   .we-ov{position:absolute;inset:0;pointer-events:none;z-index:6;}
   /* inline PDF preview */
@@ -268,8 +274,11 @@ export default function WordEditor({
   const fileRef = useRef<HTMLInputElement>(null);
   const replaceRef = useRef<HTMLInputElement>(null);
   const [lang, setLang] = useState<"bg" | "en">("bg");
-  const [bg, setBg] = useState(initialBg);
-  const [en, setEn] = useState(initialEn);
+  // Sanitize any HTML that enters the editor from outside this session (saved docs,
+  // templates, copied-from-scheme content) so a document authored by one staff member
+  // can never run script/handlers in the app origin when another opens it.
+  const [bg, setBg] = useState(() => sanitizeDocHtml(initialBg));
+  const [en, setEn] = useState(() => sanitizeDocHtml(initialEn));
   const [started, setStarted] = useState(initialBg !== "" || initialEn !== "");
   const [coverIn, setCoverIn] = useState(hasCover(initialBg) || hasCover(initialEn));
   const [saved, setSaved] = useState(true);
@@ -304,10 +313,18 @@ export default function WordEditor({
   const hiliteRef = useRef<HTMLSpanElement>(null);
   const lockRef = useRef(lockAspect);
   lockRef.current = lockAspect;
+  // Refs mirror the latest saved/busy state so the debounced autosave timer and the
+  // beforeunload guard can read current values without being re-created each render.
+  // Updated in effects (not during render) so they stay correct after commit.
+  const savedRef = useRef(saved);
+  const busyRef = useRef(busy);
+  useEffect(() => { savedRef.current = saved; }, [saved]);
+  useEffect(() => { busyRef.current = busy; }, [busy]);
+  const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const drag = useRef<null | { mode: "resize" | "move"; handle: string; px: number; py: number; w: number; h: number; left: number; top: number; ratio: number }>(null);
 
   useEffect(() => {
-    if (started && ref.current) ref.current.innerHTML = lang === "bg" ? bg : en;
+    if (started && ref.current) ref.current.innerHTML = sanitizeDocHtml(lang === "bg" ? bg : en);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started]);
 
@@ -398,58 +415,95 @@ export default function WordEditor({
   // page-break-inside:avoid) — so text never sits on the break and pages 1/2 are
   // clearly separated. Spacers (.we-gap) are presentation only (stripped on save).
   const GAP_PX = 18; // small grey page-break separation (10–20px); the rest stays white
+  const makeGap = (n: number, heightPx: number) => {
+    const gap = document.createElement("div");
+    gap.className = "we-gap";
+    gap.contentEditable = "false";
+    gap.style.height = heightPx + "px";
+    const sep = document.createElement("div");
+    sep.className = "we-gapsep";
+    const span = document.createElement("span");
+    span.className = "we-gaplabel";
+    span.textContent = uiLang === "bg" ? `стр. ${n} / ${n + 1}` : `page ${n} / ${n + 1}`;
+    sep.appendChild(span);
+    gap.appendChild(sep);
+    return gap;
+  };
+  const isCoverEl = (el: HTMLElement) =>
+    el.classList && (el.classList.contains("cover") || el.classList.contains("mcover") || el.classList.contains("mincover"));
+  // Insert the page-break spacers. Split into READ → COMPUTE → WRITE phases so we
+  // never read layout (offsetTop/offsetHeight) after a write in the same pass — that
+  // interleaving is what forced a reflow per block and thrashed on long documents.
+  // The cumulative downward shift from inserted gaps is simulated in JS instead of
+  // re-measured from the DOM. (`.style.position` avoids a getComputedStyle per child.)
   function refreshGuides() {
     const body = ref.current;
     if (!body) return;
     body.querySelectorAll(":scope > .we-gap").forEach((n) => n.remove());
     const pageH = mmToPx(PAGE_BREAK_MM);
+    // READ: one geometry pass over the top-level, in-flow blocks.
+    const measured = (Array.from(body.children) as HTMLElement[])
+      .filter((c) => c instanceof HTMLElement && c.style.position !== "absolute" && !c.classList.contains("free"))
+      .map((el) => ({ el, top: el.offsetTop, h: el.offsetHeight }));
+    // COMPUTE: decide every gap using pure math (no DOM reads/writes here).
+    const inserts: { before: Node | null; height: number; page: number }[] = [];
     let pageNum = 1;
-    let boundary = pageH; // docbody y where the current page's content ends
-    const makeGap = (n: number, heightPx: number) => {
-      const gap = document.createElement("div");
-      gap.className = "we-gap";
-      gap.contentEditable = "false";
-      gap.style.height = heightPx + "px";
-      const sep = document.createElement("div");
-      sep.className = "we-gapsep";
-      const span = document.createElement("span");
-      span.className = "we-gaplabel";
-      span.textContent = uiLang === "bg" ? `стр. ${n} / ${n + 1}` : `page ${n} / ${n + 1}`;
-      sep.appendChild(span);
-      gap.appendChild(sep);
-      return gap;
-    };
-    const isCover = (el: HTMLElement) =>
-      el.classList && (el.classList.contains("cover") || el.classList.contains("mcover") || el.classList.contains("mincover"));
-    const blocks = Array.from(body.children).filter(
-      (c) => c instanceof HTMLElement && getComputedStyle(c).position !== "absolute"
-    ) as HTMLElement[];
-    for (const el of blocks) {
-      const top = el.offsetTop;
-      const h = el.offsetHeight;
-      // the title page always gets its own page — push everything after it to page 2
-      if (isCover(el)) {
+    let shift = 0;        // total px added by gaps inserted before this point
+    let boundary = pageH; // bottom of the current page in the shifted layout
+    for (const { el, top: rawTop, h } of measured) {
+      const top = rawTop + shift; // where this block will sit after prior gaps
+      if (isCoverEl(el)) {
+        // the title page always gets its own page — push everything after it to page 2
         const bottom = top + h;
         const remaining = Math.max(0, boundary - bottom);
-        const gap = makeGap(pageNum, remaining + GAP_PX);
-        if (el.nextSibling) body.insertBefore(gap, el.nextSibling); else body.appendChild(gap);
+        inserts.push({ before: el.nextElementSibling, height: remaining + GAP_PX, page: pageNum });
+        shift += remaining + GAP_PX;
         pageNum++;
         boundary = bottom + remaining + GAP_PX + pageH;
         continue;
       }
       if (h >= pageH) { boundary = top + Math.ceil(h / pageH) * pageH; continue; } // too tall to push
       if (top + h > boundary) {
-        const remaining = Math.max(0, boundary - top); // white space that fills the rest of the page
-        body.insertBefore(makeGap(pageNum, remaining + GAP_PX), el);
+        const remaining = Math.max(0, boundary - top); // white space filling the rest of the page
+        inserts.push({ before: el, height: remaining + GAP_PX, page: pageNum });
+        shift += remaining + GAP_PX;
         pageNum++;
-        boundary = el.offsetTop + pageH; // the next page starts at this block's new top
+        boundary = top + remaining + GAP_PX + pageH; // next page starts at this block's shifted top
       }
+    }
+    // WRITE: apply all insertions together.
+    for (const ins of inserts) {
+      const gap = makeGap(ins.page, ins.height);
+      if (ins.before) body.insertBefore(gap, ins.before); else body.appendChild(gap);
     }
   }
   // Debounced reflow for typing (programmatic DOM edits don't fire onInput, so no loop).
   function schedulePaginate() {
     if (pgTimer.current) clearTimeout(pgTimer.current);
     pgTimer.current = setTimeout(() => refreshGuides(), 400);
+  }
+  // Debounced autosave: persist a few seconds after edits stop, so work is never lost
+  // and the owner doesn't have to remember to save. Skips when already saved or while
+  // another action is running (the refs hold the latest values, not this closure's).
+  function scheduleAutosave() {
+    if (autoTimer.current) clearTimeout(autoTimer.current);
+    autoTimer.current = setTimeout(() => {
+      if (!savedRef.current && !busyRef.current) save();
+    }, 2500);
+  }
+  // The editable body's input handler: mark unsaved (only when it flips), reflow the
+  // page gaps, and arm the autosave. Guarding setSaved avoids a redundant re-render on
+  // every keystroke after the first.
+  function onBodyInput() {
+    if (savedRef.current) setSaved(false);
+    schedulePaginate();
+    scheduleAutosave();
+  }
+  function onEditorKeyDown(e: React.KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+      e.preventDefault(); // Ctrl/⌘+S saves (Ctrl+B/I/U are native in contentEditable)
+      if (!savedRef.current && !busyRef.current) save();
+    }
   }
   useEffect(() => { place(); /* eslint-disable-next-line */ }, [imgSel, imgW, imgH, wrap]);
   // close the text-colour palette when clicking outside it
@@ -467,7 +521,14 @@ export default function WordEditor({
   }, [hiliteOpen]);
   // free the preview object URL when it changes / on unmount
   useEffect(() => () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl); }, [pdfUrl]);
-  useEffect(() => () => { if (pgTimer.current) clearTimeout(pgTimer.current); }, []);
+  useEffect(() => () => { if (pgTimer.current) clearTimeout(pgTimer.current); if (autoTimer.current) clearTimeout(autoTimer.current); }, []);
+  // Warn before leaving with unsaved changes (covers the brief window before autosave
+  // fires, and any save that's still in flight).
+  useEffect(() => {
+    const h = (e: BeforeUnloadEvent) => { if (!savedRef.current) { e.preventDefault(); e.returnValue = ""; } };
+    window.addEventListener("beforeunload", h);
+    return () => window.removeEventListener("beforeunload", h);
+  }, []);
   useEffect(() => {
     if (!started) return;
     refreshGuides();
@@ -699,7 +760,7 @@ export default function WordEditor({
     if (l === lang) return;
     const { nb, ne } = fold();
     setLang(l);
-    if (ref.current) ref.current.innerHTML = l === "bg" ? nb : ne;
+    if (ref.current) ref.current.innerHTML = sanitizeDocHtml(l === "bg" ? nb : ne);
     setTimeout(refreshGuides, 0);
   }
   async function save() {
@@ -714,8 +775,9 @@ export default function WordEditor({
     const r = await translateDocHtmlAction(nb);
     setBusy("");
     if (r.error) return alert(L("Превод: ", "Translation: ") + r.error);
-    setEn(r.html ?? ""); setSaved(false);
-    if (lang === "en" && ref.current) ref.current.innerHTML = r.html ?? "";
+    const clean = sanitizeDocHtml(r.html ?? "");
+    setEn(clean); setSaved(false);
+    if (lang === "en" && ref.current) ref.current.innerHTML = clean;
     else alert(L("Английската чернова е готова — превключете към EN, за да я прегледате/редактирате.", "English draft ready — switch to EN to review/edit it."));
   }
   // Render the current document to a PDF blob (saving first) → object URL.
@@ -765,41 +827,65 @@ export default function WordEditor({
     setPdfUrl((old) => { if (old) URL.revokeObjectURL(old); return null; });
     setTimeout(refreshGuides, 0);
   }
-  function onImage(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const rd = new FileReader();
-    rd.onload = () => {
-      const src = String(rd.result);
-      const probe = new Image();
-      probe.onload = () => {
-        const wmm = 60; // sensible default width
-        const hmm = roundMm(wmm * (probe.naturalHeight / Math.max(1, probe.naturalWidth)));
-        insertHtml(`<img src="${src}" alt="" style="width:${wmm}mm;height:${hmm}mm">`);
-      };
-      probe.onerror = () => insertHtml(`<img src="${src}" alt="" style="width:60mm">`);
-      probe.src = src;
+  // Get a usable image src for insertion: upload the file to storage (so the saved
+  // document stays small — a URL, not a multi-MB base64 blob that also duplicates
+  // into every revision), falling back to an inline data URL only when storage isn't
+  // available (e.g. local dev with no Supabase configured).
+  async function uploadOrDataUrl(f: File): Promise<string> {
+    try {
+      const fd = new FormData();
+      fd.append("file", f);
+      const r = await uploadCoverImageAction(fd);
+      if (r.url) return r.url;
+    } catch { /* fall through to a data URL */ }
+    return new Promise<string>((resolve) => {
+      const rd = new FileReader();
+      rd.onload = () => resolve(String(rd.result));
+      rd.onerror = () => resolve("");
+      rd.readAsDataURL(f);
+    });
+  }
+  function insertImageAt(src: string) {
+    if (!src) return;
+    const probe = new Image();
+    probe.onload = () => {
+      const wmm = 60; // sensible default width
+      const hmm = roundMm(wmm * (probe.naturalHeight / Math.max(1, probe.naturalWidth)));
+      insertHtml(`<img src="${src}" alt="" style="width:${wmm}mm;height:${hmm}mm">`);
     };
-    rd.readAsDataURL(f);
+    probe.onerror = () => insertHtml(`<img src="${src}" alt="" style="width:60mm">`);
+    probe.src = src;
+  }
+  async function onImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
     e.target.value = "";
+    if (!f) return;
+    setBusy("img");
+    const src = await uploadOrDataUrl(f);
+    setBusy("");
+    if (!src) return alert(L("Неуспешно добавяне на изображението.", "Could not add the image."));
+    insertImageAt(src);
   }
   // Replace the selected image (e.g. swap the cover photo) in place, keeping its
   // size/placement; clears the placeholder look once a real photo is dropped in.
-  function onReplaceImage(e: React.ChangeEvent<HTMLInputElement>) {
+  async function onReplaceImage(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
-    if (!f || !imgSel) { e.target.value = ""; return; }
-    const rd = new FileReader();
-    rd.onload = () => {
-      imgSel.src = String(rd.result);
-      imgSel.classList.remove("coverimg-empty");
-      setSaved(false); place(); refreshGuides();
-    };
-    rd.readAsDataURL(f);
+    const target = imgSel; // capture NOW — the selection may change during the async upload
     e.target.value = "";
+    if (!f || !target) return;
+    setBusy("img");
+    const src = await uploadOrDataUrl(f);
+    setBusy("");
+    if (!src) return alert(L("Неуспешна смяна на изображението.", "Could not replace the image."));
+    target.src = src;
+    target.classList.remove("coverimg-empty");
+    setSaved(false); place(); refreshGuides();
   }
   function startWith(b: string, e: string) {
-    setBg(b); setEn(e); setLang("bg"); setStarted(true); setSaved(false);
-    setCoverIn(hasCover(b) || hasCover(e));
+    // b/e may come from a saved template or another scheme's document — sanitize.
+    const cb = sanitizeDocHtml(b), ce = sanitizeDocHtml(e);
+    setBg(cb); setEn(ce); setLang("bg"); setStarted(true); setSaved(false);
+    setCoverIn(hasCover(cb) || hasCover(ce));
   }
   // Prepend the document's title page (cover) to an already-started document that
   // doesn't have one yet — so existing docs gain the editable cover without losing
@@ -943,8 +1029,16 @@ export default function WordEditor({
 
       {/* action bar */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <button className="btn btn-primary" onClick={save} disabled={busy === "save"}>{busy === "save" ? L("Запазване…", "Saving…") : saved ? L("Запазено ✓", "Saved ✓") : L("Запази", "Save")}</button>
-        <span className="text-sm" style={{ color: "var(--muted)", marginLeft: 6 }}>{L("Преглед:", "Preview:")}</span>
+        <button className="btn btn-primary" onClick={save} disabled={busy === "save" || saved} title={L("Запази (Ctrl+S)", "Save (Ctrl+S)")}>{busy === "save" ? L("Запазване…", "Saving…") : saved ? L("Запазено ✓", "Saved ✓") : L("Запази", "Save")}</button>
+        {/* live save status — the document autosaves a few seconds after you stop editing */}
+        <span className="text-sm" style={{ color: saved ? "var(--green-dark)" : "var(--muted)", minWidth: 116, display: "inline-flex", alignItems: "center", gap: 5 }} title={L("Документът се запазва автоматично", "The document autosaves as you work")}>
+          {busy === "save" ? L("Запазване…", "Saving…")
+            : busy === "img" ? L("Качване на изображение…", "Uploading image…")
+            : saved ? L("Всичко е запазено", "All changes saved")
+            : L("Незапазени промени", "Unsaved changes")}
+        </span>
+        <span className="we-sep" style={{ height: 20 }} />
+        <span className="text-sm" style={{ color: "var(--muted)" }}>{L("Преглед:", "Preview:")}</span>
         {(["bg", "en"] as const).map((l) => (
           <button key={l} className="btn" onClick={() => switchLang(l)} style={lang === l ? { background: "var(--green-soft)", color: "var(--green-dark)", borderColor: "var(--green-line)" } : {}}>{l === "bg" ? "БГ" : "EN"}</button>
         ))}
@@ -1133,7 +1227,8 @@ export default function WordEditor({
               className="we-docbody"
               contentEditable
               suppressContentEditableWarning
-              onInput={() => { setSaved(false); schedulePaginate(); }}
+              onInput={onBodyInput}
+              onKeyDown={onEditorKeyDown}
               onKeyUp={syncCell}
             />
             {/* selection handles */}

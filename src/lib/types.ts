@@ -225,6 +225,18 @@ export interface LabApplication {
   createdAt: string; // ISO
 }
 
+// A ready-made file uploaded into a document's slot (PDF / image scan), instead of
+// or alongside the app-built version. Stored in the private "scheme-docs" bucket
+// (path = the storage key, or a data: URL in the no-DB dev fallback). Confidential.
+export interface UploadedDoc {
+  path: string; // private storage key, or "data:<mime>;base64,…" (dev fallback)
+  name: string; // original filename — display only (never used as a path)
+  mime: string; // "application/pdf" | "image/png" | "image/jpeg"
+  size: number; // bytes
+  uploadedAt: string; // ISO
+  uploadedBy: string; // actor email
+}
+
 export interface TeamMember {
   roleEn: string;
   roleBg: string;
@@ -380,6 +392,14 @@ export interface Scheme {
   // owner-filled values for fillable document form fields (checkboxes, options,
   // ratings, blanks). Keyed by document key → field id → value. JSONB, no migration.
   formData?: Record<string, Record<string, string>>;
+  // ready-made files uploaded per document key (see UploadedDoc). Lets ANY of the 14
+  // documents be filled by an external PDF/image instead of / alongside the app-built
+  // version. JSONB, no migration.
+  uploads?: Record<string, UploadedDoc>;
+  // when both an uploaded file AND an app-built version exist for a document, which
+  // one is active/official. Absent → the uploaded file wins when present (the chosen
+  // default). Set to "built" to switch back to the app-built version. JSONB.
+  docActive?: Record<string, "built" | "uploaded">;
   // chosen document skin (visual theme) id; absent → the built-in "Classic" skin.
   skin?: string;
   // friendly folder name shown in the explorer; absent → falls back to the title/number.

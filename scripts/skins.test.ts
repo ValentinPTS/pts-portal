@@ -23,8 +23,8 @@ ok("BODY identical: classic vs modern", body(classic) === body(modern));
 ok("BODY identical: classic vs minimal", body(classic) === body(minimal));
 ok("body markers present", classic.includes(BODY_START) && classic.includes(BODY_END));
 ok("unknown skin falls back to classic", getSkin("nope").meta.id === "classic");
-ok("testing offers 2 skins (classic+modern+minimal)", skinsForType("T").length === 3);
-ok("calibration excludes testing-only modern", skinsForType("C").map(s=>s.meta.id).sort().join(",") === "classic,minimal");
+ok("testing offers 3 skins (classic+modern+minimal)", skinsForType("T").length === 3);
+ok("calibration offers all 3 skins (modern opened to C in 927cc34)", skinsForType("C").map(s=>s.meta.id).sort().join(",") === "classic,minimal,modern");
 
 console.log(`\nskins.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exitCode = 1;

@@ -14,7 +14,8 @@ const nextConfig: NextConfig = {
   },
 
   // Baseline security headers applied to every response. (A full
-  // Content-Security-Policy with nonces is added in Phase 2 — see SECURITY.md.)
+  // Content-Security-Policy with per-request nonces for scripts is Phase 2 — see
+  // SECURITY.md. The document RENDER routes already send a strict no-script CSP.)
   async headers() {
     return [
       {
@@ -31,6 +32,14 @@ const nextConfig: NextConfig = {
           {
             key: "Strict-Transport-Security",
             value: "max-age=63072000; includeSubDomains; preload",
+          },
+          // App-wide CSP: only the directives that don't require nonces and so are
+          // safe with Next's hydration scripts. Blocks plugins (<object>/<embed>),
+          // <base> hijacking, cross-origin form posts, and framing. A full script-src
+          // with nonces comes with the Phase-2 CSP.
+          {
+            key: "Content-Security-Policy",
+            value: "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'",
           },
         ],
       },

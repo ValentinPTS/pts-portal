@@ -9,7 +9,12 @@ const SEEDS: Scheme[] = [pavingBlocks, forceCalibration];
 // otherwise — or if the DB is unreachable / not yet migrated — it falls back to an
 // in-memory list so the app never crashes. Same async interface either way.
 
-const mem: Scheme[] = [...SEEDS];
+// The in-memory fallback lives on globalThis so it's a true singleton across every
+// server entry point (RSC pages, route handlers, server actions) and survives HMR in
+// dev — otherwise a route handler would get its own empty copy and not see writes made
+// during a page render. (Only used when Supabase isn't configured / is unreachable.)
+const memStore = globalThis as unknown as { __ptsSchemeMem?: Scheme[] };
+const mem: Scheme[] = memStore.__ptsSchemeMem ?? (memStore.__ptsSchemeMem = [...SEEDS]);
 
 function yearOf(number: string): string {
   const m = number.match(/(\d{2})\/\d{2}-/);
@@ -24,6 +29,23 @@ function warn(e: unknown) {
   if (warned) return;
   warned = true;
   console.warn("[store] Supabase unavailable — using in-memory fallback:", (e as Error)?.message ?? e);
+}
+
+// Per-scheme write serialization. updateScheme is a read-modify-write on the whole
+// JSONB row, so two overlapping updates to the SAME scheme could each read the old
+// row and the second write would clobber the first (lost update). Chaining writes
+// per scheme id makes them run one-after-another within this instance, which closes
+// the window in the common low-concurrency deployment (a warm instance handling the
+// owner's edits). Cross-instance safety would need an optimistic-lock column
+// (updated_at check) — a future migration; noted in SECURITY-SCALABILITY-AUDIT.
+const writeLocks = new Map<string, Promise<unknown>>();
+function withSchemeLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
+  const prev = writeLocks.get(id) ?? Promise.resolve();
+  const result = prev.then(fn, fn); // run after the previous write, whatever its outcome
+  const tail = result.then(() => {}, () => {});
+  writeLocks.set(id, tail);
+  tail.finally(() => { if (writeLocks.get(id) === tail) writeLocks.delete(id); });
+  return result;
 }
 
 let seeded = false;
@@ -206,22 +228,31 @@ export async function deleteScheme(id: string): Promise<void> {
 }
 
 export async function updateScheme(id: string, patch: Partial<Scheme>): Promise<void> {
-  const db = getDb();
-  if (db) {
-    try {
-      const current = await getScheme(id);
-      if (!current) return;
-      const next = { ...current, ...patch };
-      const { error } = await db
-        .from("schemes")
-        .update({ ...toRow(next), updated_at: new Date().toISOString() })
-        .eq("id", id);
-      if (error) throw error;
-      return;
-    } catch (e) {
-      warn(e);
+  return withSchemeLock(id, async () => {
+    const db = getDb();
+    if (db) {
+      try {
+        const current = await getScheme(id);
+        if (!current) return;
+        const next = { ...current, ...patch };
+        const { error } = await db
+          .from("schemes")
+          .update({ ...toRow(next), updated_at: new Date().toISOString() })
+          .eq("id", id);
+        if (error) throw error;
+        // Keep the in-memory mirror coherent with the DB so a later DB-unavailable
+        // read doesn't serve a stale scheme (the mirror is only consulted on failure,
+        // but it must not drift when it IS consulted).
+        const mi = mem.findIndex((s) => s.id === id);
+        if (mi !== -1) mem[mi] = next;
+        return;
+      } catch (e) {
+        warn(e);
+        // fall through: persist the change in the in-memory mirror so it isn't lost
+        // within this instance while the DB is unreachable.
+      }
     }
-  }
-  const i = mem.findIndex((s) => s.id === id);
-  if (i !== -1) mem[i] = { ...mem[i], ...patch };
+    const i = mem.findIndex((s) => s.id === id);
+    if (i !== -1) mem[i] = { ...mem[i], ...patch };
+  });
 }

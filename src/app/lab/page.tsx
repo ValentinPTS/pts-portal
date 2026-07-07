@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireLab } from "@/lib/lab-auth";
 import { listParticipationsForLab } from "@/lib/participants";
-import { getSchemesByIds, listSchemes } from "@/lib/store";
+import { listSchemes } from "@/lib/store";
 import { metricsForScheme, scoreMetric } from "@/lib/scoring";
 import { statusChip } from "@/lib/folders";
 import { signOutLabAction } from "@/lib/auth-actions";
@@ -44,13 +44,14 @@ export default async function LabDashboard() {
   const { lab } = await requireLab();
   const { lang, tr } = await getServerT();
   const parts = await listParticipationsForLab(lab.id);
-  const schemes = await getSchemesByIds(parts.map((p) => p.schemeId));
-  const byId = new Map(schemes.map((s) => [s.id, s] as const));
   const myIds = new Set(parts.map((p) => p.schemeId));
-  // One fetch → the public buckets a lab may browse. Drafts are internal WIP and are
-  // never shown to labs (confidentiality); running/report rounds a lab isn't in are
-  // in progress and closed to new applicants, so they're not listed either.
+  // One fetch of all schemes serves BOTH the lab's own rounds (for its scores/docs)
+  // and the public buckets it may browse — avoids a second targeted query for rows we
+  // already have. Drafts are internal WIP and never shown to labs (confidentiality);
+  // running/report rounds a lab isn't in are closed to new applicants, so not listed.
   const allSchemes = await listSchemes();
+  const schemes = allSchemes.filter((s) => myIds.has(s.id));
+  const byId = new Map(schemes.map((s) => [s.id, s] as const));
   const openToJoin = allSchemes.filter((s) => s.status === "open" && !myIds.has(s.id));
   // Upcoming = a scheme the provider has explicitly ANNOUNCED to labs but not yet
   // opened (still draft). Only announced drafts appear — unannounced drafts stay

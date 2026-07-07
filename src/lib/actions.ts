@@ -30,6 +30,10 @@ import { checkVies } from "./verify-vies";
 import { getLabSession } from "./lab-auth";
 import { addStaff, updateStaff, getStaffByEmail, getStaff } from "./staff";
 import { requireManager, requireWriter, getRoleContext } from "./roles";
+import { sanitizeDocHtml } from "./sanitize-html";
+import { SCHEME_DOC_BUCKET, SCHEME_DOC_EXT, MAX_SCHEME_DOC_BYTES, ensureSchemeDocsBucket } from "./scheme-uploads";
+import { isDocKey } from "./doc-stages";
+import type { UploadedDoc } from "./types";
 import { logActivity } from "./activity";
 import { addCaseEvent, getCaseEvent, deleteCaseEvent } from "./case-events";
 import { addRevision, getRevision, approveRevision } from "./doc-revisions";
@@ -104,7 +108,9 @@ export async function translateAction(
     const out: string[] = [];
     for (const chunk of chunkText(t, 480)) {
       const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=${from}|${to}`;
-      const res = await fetch(url, { headers: { "User-Agent": "PTS-Portal" } });
+      // Hard timeout so a slow/hung translator can never block the action (same
+      // pattern as checkVies). Fails soft to an "unavailable" error the UI shows.
+      const res = await fetch(url, { headers: { "User-Agent": "PTS-Portal" }, signal: AbortSignal.timeout(8000) });
       if (!res.ok) return { error: `Translator unavailable (${res.status}).` };
       const data = await res.json();
       const piece = data?.responseData?.translatedText;
@@ -207,6 +213,26 @@ export async function deleteCustomSkinAction(id: string): Promise<{ ok?: boolean
 // filename, so there's no SVG-XSS, no path control, and no oversized uploads.
 const LOGO_BUCKET = "skin-assets";
 const LOGO_EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
+
+// Verify the file's REAL bytes match its declared type — the browser-reported MIME
+// (file.type) is client-controlled and could be spoofed to smuggle a non-image (e.g.
+// an HTML/SVG payload) past the allow-list. Cheap magic-number check; the buckets
+// only ever store/serve these formats.
+function magicMatches(bytes: Uint8Array, mime: string): boolean {
+  const b = bytes;
+  switch (mime) {
+    case "image/png":
+      return b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47;
+    case "image/jpeg":
+      return b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
+    case "image/webp": // "RIFF"…"WEBP"
+      return b.length > 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50;
+    case "application/pdf": // "%PDF"
+      return b.length > 4 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46;
+    default:
+      return false;
+  }
+}
 export async function uploadSkinLogoAction(formData: FormData): Promise<{ url?: string; error?: string }> {
   await requireManager();
   const file = formData.get("file");
@@ -226,6 +252,7 @@ export async function uploadSkinLogoAction(formData: FormData): Promise<{ url?: 
     }
     const path = `logos/${randomUUID()}.${ext}`;
     const bytes = new Uint8Array(await file.arrayBuffer());
+    if (!magicMatches(bytes, file.type)) return { error: "That file isn't a real PNG, JPG or WEBP image." };
     const { error } = await db.storage.from(LOGO_BUCKET).upload(path, bytes, { contentType: file.type, upsert: false });
     if (error) throw error;
     return { url: db.storage.from(LOGO_BUCKET).getPublicUrl(path).data.publicUrl };
@@ -255,6 +282,7 @@ export async function uploadCoverImageAction(formData: FormData): Promise<{ url?
     }
     const path = `covers/${randomUUID()}.${ext}`;
     const bytes = new Uint8Array(await file.arrayBuffer());
+    if (!magicMatches(bytes, file.type)) return { error: "That file isn't a real PNG, JPG or WEBP image." };
     const { error } = await db.storage.from(LOGO_BUCKET).upload(path, bytes, { contentType: file.type, upsert: false });
     if (error) throw error;
     return { url: db.storage.from(LOGO_BUCKET).getPublicUrl(path).data.publicUrl };
@@ -286,16 +314,114 @@ export async function clearDefaultCoverAction(): Promise<{ ok?: boolean }> {
   return { ok: true };
 }
 
-// Save the Word-like editor's HTML for a document (both languages).
+// ── Upload a ready-made file into a document's slot ──────────────────────────
+// Any of the 14 documents can be filled by an external PDF/image scan instead of /
+// alongside the app-built version. Staff-only, private storage, strict validation
+// (declared type ∈ allow-list, size cap, and the REAL bytes must match — same magic-
+// byte check as the image uploads). When Supabase isn't configured (local dev) the
+// bytes are kept as a data: URL on the in-memory scheme so the flow still works.
+export async function uploadSchemeDocAction(formData: FormData): Promise<{ ok?: boolean; error?: string }> {
+  await requireWriter();
+  const schemeId = String(formData.get("schemeId") ?? "");
+  const docKey = String(formData.get("docKey") ?? "");
+  if (!isDocKey(docKey)) return { error: "Unknown document." };
+  const scheme = await getScheme(schemeId);
+  if (!scheme) return { error: "Scheme not found." };
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return { error: "No file received." };
+  const ext = SCHEME_DOC_EXT[file.type];
+  if (!ext) return { error: "Use a PDF, JPG or PNG file." };
+  if (file.size > MAX_SCHEME_DOC_BYTES) return { error: "File too large (max 15 MB)." };
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (!magicMatches(bytes, file.type)) return { error: "That file isn't a real PDF/JPG/PNG." };
+
+  const actor = (await getRoleContext()).email ?? "";
+  const name = String(file.name || `document.${ext}`).slice(0, 160);
+  const prev = scheme.uploads?.[docKey];
+
+  let path: string;
+  const db = getDb();
+  if (db) {
+    try {
+      await ensureSchemeDocsBucket(db);
+      path = `${schemeId}/${docKey}/${randomUUID()}.${ext}`;
+      const { error } = await db.storage.from(SCHEME_DOC_BUCKET).upload(path, bytes, { contentType: file.type, upsert: false });
+      if (error) throw error;
+      // best-effort cleanup of the replaced file (ignore failures)
+      if (prev && !prev.path.startsWith("data:")) await db.storage.from(SCHEME_DOC_BUCKET).remove([prev.path]).catch(() => {});
+    } catch (e) {
+      return { error: (e as Error)?.message || "Upload failed." };
+    }
+  } else {
+    // no Supabase (dev) → keep the bytes inline so the viewer still works locally
+    path = `data:${file.type};base64,${Buffer.from(bytes).toString("base64")}`;
+  }
+
+  const upload: UploadedDoc = { path, name, mime: file.type, size: file.size, uploadedAt: new Date().toISOString(), uploadedBy: actor };
+  const uploads = { ...(scheme.uploads ?? {}), [docKey]: upload };
+  const docActive = { ...(scheme.docActive ?? {}), [docKey]: "uploaded" as const };
+  await updateScheme(schemeId, { uploads, docActive });
+  await logActivity("doc.uploaded", { schemeId, summary: `File uploaded for document “${docKey}” (${name})` });
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  return { ok: true };
+}
+
+// Remove an uploaded file from a document's slot (deletes the stored file). The
+// app-built version, if any, becomes active again.
+export async function removeSchemeDocUploadAction(formData: FormData): Promise<{ ok?: boolean; error?: string }> {
+  await requireWriter();
+  const schemeId = String(formData.get("schemeId") ?? "");
+  const docKey = String(formData.get("docKey") ?? "");
+  const scheme = await getScheme(schemeId);
+  if (!scheme) return { error: "Scheme not found." };
+  const up = scheme.uploads?.[docKey];
+  if (up && !up.path.startsWith("data:")) {
+    const db = getDb();
+    if (db) await db.storage.from(SCHEME_DOC_BUCKET).remove([up.path]).catch(() => {});
+  }
+  const uploads = { ...(scheme.uploads ?? {}) };
+  delete uploads[docKey];
+  const docActive = { ...(scheme.docActive ?? {}) };
+  docActive[docKey] = "built";
+  await updateScheme(schemeId, { uploads, docActive });
+  await logActivity("doc.upload_removed", { schemeId, summary: `Uploaded file removed for document “${docKey}”` });
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  return { ok: true };
+}
+
+// Switch which version of a document is active/official when both an uploaded file
+// and an app-built version exist ("uploaded" | "built").
+export async function setDocSourceAction(schemeId: string, docKey: string, source: "built" | "uploaded"): Promise<{ ok?: boolean; error?: string }> {
+  await requireWriter();
+  if (!isDocKey(docKey)) return { error: "Unknown document." };
+  const scheme = await getScheme(schemeId);
+  if (!scheme) return { error: "Scheme not found." };
+  const docActive = { ...(scheme.docActive ?? {}), [docKey]: source };
+  await updateScheme(schemeId, { docActive });
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  return { ok: true };
+}
+
+// Save the Word-like editor's HTML for a document (both languages). The body is
+// user-authored rich HTML, so it is SANITIZED here (the server trust boundary) —
+// stripping any <script>/event-handler/js: URL — and size-capped so a document
+// can't run script in the app origin or bloat the scheme row unbounded.
+const MAX_DOC_HTML = 3_000_000; // 3 MB per language (images now go to storage, not base64)
 export async function saveDocHtmlAction(schemeId: string, docKey: string, bg: string, en: string) {
   await requireWriter();
   const scheme = await getScheme(schemeId);
   if (!scheme) throw new Error("Scheme not found");
-  const docs = { ...(scheme.docs ?? {}), [docKey]: { bg: String(bg ?? ""), en: String(en ?? "") } };
+  const cleanBg = sanitizeDocHtml(bg);
+  const cleanEn = sanitizeDocHtml(en);
+  if (cleanBg.length > MAX_DOC_HTML || cleanEn.length > MAX_DOC_HTML) {
+    throw new Error("Document is too large. Insert images as photos (they upload automatically) rather than pasting them inline.");
+  }
+  const docs = { ...(scheme.docs ?? {}), [docKey]: { bg: cleanBg, en: cleanEn } };
   await updateScheme(schemeId, { docs });
   // §8.3 — snapshot a revision (skips if unchanged). Records who saved it.
   const actor = (await getRoleContext()).email ?? "";
-  await addRevision({ schemeId, docKey, bg: String(bg ?? ""), en: String(en ?? ""), savedBy: actor });
+  await addRevision({ schemeId, docKey, bg: cleanBg, en: cleanEn, savedBy: actor });
   await logActivity("doc.saved", { schemeId, summary: `Document “${docKey}” edited` });
   revalidatePath(`/schemes/${schemeId}/build/${docKey}`, "page");
 }
@@ -305,12 +431,19 @@ export async function saveDocHtmlAction(schemeId: string, docKey: string, bg: st
 export async function translateDocHtmlAction(html: string): Promise<{ html?: string; error?: string }> {
   await requireWriter();
   const parts = String(html ?? "").split(/(<[^>]+>)/);
+  // Bound the number of outbound translation calls: only the first N text runs are
+  // translated (each is one fetch); the rest pass through untranslated. Prevents a
+  // pathological document (thousands of tiny text runs) from firing thousands of
+  // requests. Real documents have well under this many runs.
+  const MAX_TEXT_RUNS = 400;
+  let runs = 0;
   const out: string[] = [];
   for (const part of parts) {
-    if (part.startsWith("<") || !part.trim()) {
+    if (part.startsWith("<") || !part.trim() || runs >= MAX_TEXT_RUNS) {
       out.push(part);
       continue;
     }
+    runs++;
     const r = await translateAction(part, "bg", "en");
     out.push(r.error ? part : r.text ?? part);
   }
@@ -647,18 +780,25 @@ export async function submitLabApplicationAction(formData: FormData) {
   const docPaths: string[] = [];
   if (region === "non_eu") {
     const files = formData.getAll("documents").filter((f): f is File => f instanceof File && f.size > 0).slice(0, 3);
+    // Validate ALL files up front (outside the upload try/catch, so these redirects
+    // aren't swallowed by it): declared type ∈ allow-list, size cap, and the REAL
+    // bytes match the declared type (not just the client-reported MIME). Read each
+    // file's bytes once here and reuse them for the upload.
+    const prepared: { file: File; bytes: Uint8Array }[] = [];
     for (const f of files) {
       if (!DOC_EXT[f.type]) redirect("/register?e=filetype");
       if (f.size > 5_000_000) redirect("/register?e=filesize");
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      if (!magicMatches(bytes, f.type)) redirect("/register?e=filetype");
+      prepared.push({ file: f, bytes });
     }
     const db = getDb();
-    if (db && files.length) {
+    if (db && prepared.length) {
       try {
         await ensureLabDocsBucket(db);
         const folder = randomUUID();
-        for (const f of files) {
+        for (const { file: f, bytes } of prepared) {
           const path = `${folder}/${randomUUID()}.${DOC_EXT[f.type]}`;
-          const bytes = new Uint8Array(await f.arrayBuffer());
           const { error } = await db.storage.from(DOC_BUCKET).upload(path, bytes, { contentType: f.type, upsert: false });
           if (error) throw error;
           docPaths.push(path);

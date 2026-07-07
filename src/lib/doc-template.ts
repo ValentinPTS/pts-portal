@@ -5,6 +5,7 @@ import { BODY_START, BODY_END, stripBodyMarkers, withSkin } from "./doc-shell";
 import { COVER_MARK, stripCoverMark } from "./doc-css";
 import { withFormCtx } from "./form-fields";
 import { resolveSkin } from "../skins";
+import { sanitizeDocHtml } from "./sanitize-html";
 
 // Bridges the faithful document renderers and the Word-like builder.
 //
@@ -93,7 +94,9 @@ export function docPrintHtml(
   }
   // Wrap the edited body in a position:relative container — the same anchor the
   // Word editor uses for free/overlapping images — so absolutely-positioned photos
-  // (placed in mm) land in the exact same spot in the PDF as in the editor.
-  const wrapped = `<div class="pts-docbody" style="position:relative">\n${stripCoverMark(editedBody)}\n</div>`;
+  // (placed in mm) land in the exact same spot in the PDF as in the editor. The body
+  // is user-authored HTML, so it's sanitized here too (defense in depth alongside the
+  // save-time sanitize + the render route's no-script CSP).
+  const wrapped = `<div class="pts-docbody" style="position:relative">\n${sanitizeDocHtml(stripCoverMark(editedBody))}\n</div>`;
   return stripBodyMarkers(full.slice(0, start) + "\n" + wrapped + "\n" + full.slice(b.end));
 }

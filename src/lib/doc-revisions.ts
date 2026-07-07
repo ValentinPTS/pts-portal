@@ -63,8 +63,27 @@ export async function getRevision(id: string): Promise<DocRevision | null> {
   }
 }
 
-async function latest(schemeId: string, docKey: string): Promise<DocRevision | null> {
-  return (await listRevisions(schemeId, docKey))[0] ?? null;
+// The latest revision only — used by addRevision to compute the next version number
+// and to skip identical saves. Selects a SINGLE row (not the whole history), and only
+// the columns needed, so a save doesn't pull every prior revision's full bg+en body
+// (which can be large once documents carry images). Returns just version+bg+en.
+async function latest(schemeId: string, docKey: string): Promise<{ version: number; bg: string; en: string } | null> {
+  const db = getDb();
+  if (!db) {
+    const m = mem.filter((r) => r.schemeId === schemeId && r.docKey === docKey).sort((a, b) => b.version - a.version)[0];
+    return m ? { version: m.version, bg: m.bg, en: m.en } : null;
+  }
+  try {
+    const { data, error } = await db.from("doc_revisions").select("version,bg,en")
+      .eq("scheme_id", schemeId).eq("doc_key", docKey)
+      .order("version", { ascending: false }).limit(1).maybeSingle();
+    if (error) throw error;
+    return data ? { version: (data as { version: number }).version ?? 0, bg: (data as { bg: string }).bg ?? "", en: (data as { en: string }).en ?? "" } : null;
+  } catch (e) {
+    warn(e);
+    const m = mem.filter((r) => r.schemeId === schemeId && r.docKey === docKey).sort((a, b) => b.version - a.version)[0];
+    return m ? { version: m.version, bg: m.bg, en: m.en } : null;
+  }
 }
 
 // Snapshot a save. Returns the (new or unchanged) latest revision. Skips creating a
@@ -75,7 +94,7 @@ export async function addRevision(input: {
 }): Promise<DocRevision | null> {
   try {
     const prev = await latest(input.schemeId, input.docKey);
-    if (prev && prev.bg === input.bg && prev.en === input.en) return prev; // no real change
+    if (prev && prev.bg === input.bg && prev.en === input.en) return null; // no real change → no new revision
     const rev: DocRevision = {
       id: randomUUID(),
       schemeId: input.schemeId,

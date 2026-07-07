@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import type { Browser } from "playwright";
 import { getScheme } from "@/lib/store";
 import { getDoc } from "@/lib/documents";
-import { requireStaff } from "@/lib/roles";
+import { requireStaff, canRevealNamesNow } from "@/lib/roles";
 
 // Generates any document's PDF with Playwright (loads the generic /doc/[doc]/print
 // route), adding A4 page numbers in the footer. Node runtime (Playwright needs Node).
@@ -54,16 +54,24 @@ export async function POST(req: NextRequest) {
   // internal render token so the headless browser's same-origin navigation is not
   // blocked by the owner-area gate in proxy.ts (set INTERNAL_TOKEN in prod with auth on).
   const internal = process.env.INTERNAL_TOKEN ? `&_internal=${encodeURIComponent(process.env.INTERNAL_TOKEN)}` : "";
+  // Forward THIS caller's name-reveal permission (§4.2): the headless render has no
+  // session, so we tell the print route whether the requester (checked here, with a
+  // session) may see real lab names/certificate identities. Trusted only alongside
+  // the internal token, so it can't be spoofed by a direct navigation.
+  const reveal = (await canRevealNamesNow()) ? "&reveal=1" : "";
   // composed = the owner-built (builder) version; else the auto-generated template
   const url = (body.composed
     ? `${origin}/schemes/${encodeURIComponent(id)}/build/${encodeURIComponent(def.key)}/print?lang=${lang}`
-    : `${origin}/schemes/${encodeURIComponent(id)}/doc/${encodeURIComponent(def.key)}/print?lang=${lang}${part}`) + internal;
+    : `${origin}/schemes/${encodeURIComponent(id)}/doc/${encodeURIComponent(def.key)}/print?lang=${lang}${part}`) + internal + reveal;
 
   const browser = await getBrowser();
   const context = await browser.newContext();
   try {
     const page = await context.newPage();
-    await page.goto(url, { waitUntil: "networkidle" });
+    // Bounded navigation: a render route that stalls must never hang the shared
+    // browser indefinitely (it would starve concurrent PDF requests).
+    page.setDefaultTimeout(20000);
+    await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
     // wait for web fonts (string eval runs in the browser context, no DOM types needed here)
     await page.evaluate("document.fonts ? document.fonts.ready : Promise.resolve()").catch(() => {});
     // Footer: document metadata on the left, the page number centred on the page

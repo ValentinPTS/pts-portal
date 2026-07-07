@@ -23,14 +23,25 @@ export async function GET(
 
   const lang = req.nextUrl.searchParams.get("lang") === "bg" ? "bg" : "en";
 
+  // Name-reveal decision (§4.2): only a manager may see real lab names/identities.
+  // The headless PDF generator carries no session, so /api/pdf forwards the caller's
+  // already-checked reveal permission via `?reveal=1`, trusted ONLY when the request
+  // also carries the valid internal token (proving it came from our server). A direct
+  // browser navigation has no token → we fall back to the viewer's own session role,
+  // so an auditor/staff can never coax a named document out of this route.
+  const internalToken = process.env.INTERNAL_TOKEN;
+  const isInternal = !!internalToken && req.nextUrl.searchParams.get("_internal") === internalToken;
+  const reveal = isInternal
+    ? req.nextUrl.searchParams.get("reveal") === "1"
+    : await canRevealNamesNow();
+
   // Per-document participant context.
   let opts: DocOptions | undefined;
   if (def.key === "registered" || def.key === "registered-coded") {
-    // The participant lists (PTS-L 4.4-1 / 4.4-2) need the full list. RT1: real
-    // names are revealed only to a manager (§4.2); staff/auditors get codes only.
+    // The participant lists (PTS-L 4.4-1 / 4.4-2) need the full list, masked per role.
     const ps = await listParticipants(id);
     opts = {
-      revealNames: await canRevealNamesNow(),
+      revealNames: reveal,
       participants: ps.map((p) => ({
         code: p.code, labName: p.labName, country: p.country, contact: p.contact,
         email: p.email, phone: p.phone, deliveryAddress: p.deliveryAddress, participations: p.participations,
@@ -39,9 +50,11 @@ export async function GET(
   } else {
     // Certificate: resolve ?p against THIS scheme's participants only — an
     // unknown/foreign code falls back to a blank certificate, never rendering
-    // arbitrary input.
+    // arbitrary input. The real lab NAME is attached only when the viewer may reveal
+    // names (a manager); otherwise it renders as the blank template (no identity),
+    // so an auditor/staff can't harvest identities via a certificate PDF.
     const code = req.nextUrl.searchParams.get("p");
-    if (code) {
+    if (code && reveal) {
       const p = (await listParticipants(id)).find((x) => x.code === code);
       if (p) {
         const cert = scheme.certificates?.[code];
