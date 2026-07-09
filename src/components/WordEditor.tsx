@@ -5,6 +5,7 @@ import { saveDocHtmlAction, translateDocHtmlAction, translateAction, addLibraryI
 import { useLang } from "@/components/LangProvider";
 import { FONTS_HREF } from "@/lib/doc-css";
 import { sanitizeDocHtml } from "@/lib/sanitize-html";
+import { formulaToMathML, PT_FORMULAS } from "@/lib/formula";
 
 type Snippet = { id: string; name: string; bg: string; en: string };
 type Field = { key: string; label: string; bg: string; en: string };
@@ -29,6 +30,21 @@ const TEXT_COLORS = ["#456b2c", "#57823c", "#6e925a", "#8fa97e", "#9e2b2b", "#cf
 const TEXT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28];
 // Highlight (text background) + table-cell fill swatches — soft Word-like tints.
 const HILITE_COLORS = ["#fff3a3", "#ffd9a0", "#c9f2c7", "#bfe3ff", "#ffc9de", "#e9d8fd", "#e6e6e6"];
+// The Ω symbol palette — measurement/PT characters the documents actually use.
+const SYMBOLS = [
+  "±", "×", "·", "÷", "≤", "≥", "≠", "≈",
+  "‰", "°", "℃", "µ", "Ω", "π", "σ", "ζ",
+  "α", "β", "λ", "θ", "Δ", "√", "∞", "x̄",
+  "²", "³", "½", "¼", "¾", "→", "№", "§",
+];
+// mini alignment icon (three bars) for the toolbar buttons
+const alignIcon = (k: "left" | "center" | "right" | "full") => (
+  <span style={{ display: "inline-flex", flexDirection: "column", gap: 2.5, alignItems: k === "left" ? "flex-start" : k === "center" ? "center" : k === "right" ? "flex-end" : "stretch", width: 14 }}>
+    {[10, 14, 8].map((w, i) => (
+      <span key={i} style={{ height: 1.6, background: "currentColor", width: k === "full" ? 14 : w, borderRadius: 1 }} />
+    ))}
+  </span>
+);
 const CELL_COLORS = ["#eef3ea", "#fdeaea", "#fff7d6", "#e7f0fb", "#f1ece1", "#f0f0f0", "#ffffff"];
 // Must match COVER_MARK in lib/doc-css.ts — flags content that already carries its
 // own title page (so the editor shows the cover and the export doesn't re-add it).
@@ -204,6 +220,12 @@ const EDITOR_CSS = `
   .we-page .ff-line{display:inline-block;border-bottom:1px solid var(--ink);min-width:220px;padding:0 3px 1px;font-family:'Sofia Sans Condensed',sans-serif;font-size:10pt;line-height:1.4;}
   .we-page .ff-line[data-empty="1"]{border-bottom-color:var(--line);min-height:14px;}
   .we-page .ff-select{font-family:'Sofia Sans Condensed',sans-serif;font-size:10pt;border:1px solid var(--green-dark);border-radius:5px;padding:2px 8px;color:var(--green-dark);background:#fff;cursor:pointer;}
+  .we-page .ff-box,.we-page .ff-rb{cursor:pointer;}
+  .we-page .ff-box:hover,.we-page .ff-rb:hover{background:var(--green-soft);}
+  /* inserted formulas (MathML) — hover shows they're editable; double-click opens */
+  .we-page .we-f{display:inline-block;padding:0 2px;border-radius:4px;cursor:pointer;}
+  .we-page .we-f:hover{background:var(--green-soft);outline:1px dashed var(--green-line);}
+  .we-page math{font-size:1.06em;}
 
   /* text-size selector + text-colour palette */
   .we-size{height:36px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:0 8px;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;}
@@ -311,6 +333,14 @@ export default function WordEditor({
   const colorRef = useRef<HTMLSpanElement>(null);
   const [hiliteOpen, setHiliteOpen] = useState(false);        // highlight (text background) palette open
   const hiliteRef = useRef<HTMLSpanElement>(null);
+  const [symOpen, setSymOpen] = useState(false);              // symbol palette (Ω) open
+  const symRef = useRef<HTMLSpanElement>(null);
+  const [formOpen, setFormOpen] = useState(false);            // formula (√x) popover open
+  const [formSrc, setFormSrc] = useState("");                 // linear formula source being edited
+  const [formErr, setFormErr] = useState(false);
+  const [formEl, setFormEl] = useState<HTMLElement | null>(null); // existing .we-f being re-edited
+  const formRef = useRef<HTMLSpanElement>(null);
+  const savedRange = useRef<Range | null>(null);              // caret to restore after popover typing
   const lockRef = useRef(lockAspect);
   lockRef.current = lockAspect;
   // Refs mirror the latest saved/busy state so the debounced autosave timer and the
@@ -519,6 +549,18 @@ export default function WordEditor({
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, [hiliteOpen]);
+  useEffect(() => {
+    if (!symOpen) return;
+    const h = (e: MouseEvent) => { if (symRef.current && !symRef.current.contains(e.target as Node)) setSymOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [symOpen]);
+  useEffect(() => {
+    if (!formOpen) return;
+    const h = (e: MouseEvent) => { if (formRef.current && !formRef.current.contains(e.target as Node)) { setFormOpen(false); setFormEl(null); setFormErr(false); } };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [formOpen]);
   // free the preview object URL when it changes / on unmount
   useEffect(() => () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl); }, [pdfUrl]);
   useEffect(() => () => { if (pgTimer.current) clearTimeout(pgTimer.current); if (autoTimer.current) clearTimeout(autoTimer.current); }, []);
@@ -609,8 +651,75 @@ export default function WordEditor({
       setSelEl(dd); setSelOpts(dd.options.length); setImgSel(null); setBox(null); setCell(null);
       return;
     }
+    // Tickboxes & radio marks: click toggles them right in the editor (mirrors how
+    // the print/fill side renders them — ✓ for a box, ● for a round mark). A radio
+    // click clears its siblings in the same paragraph/cell (one choice per group).
+    const mark = tgt.closest ? (tgt.closest(".ff-box, .ff-rb") as HTMLElement | null) : null;
+    if (mark && ref.current?.contains(mark)) {
+      e.preventDefault();
+      if (mark.classList.contains("ff-box")) {
+        const on = mark.classList.toggle("on");
+        mark.textContent = on ? "✓" : "";
+      } else {
+        const group = (mark.closest("p, li, td, th") ?? ref.current) as HTMLElement;
+        const was = mark.classList.contains("on");
+        group.querySelectorAll(".ff-rb").forEach((rb) => { rb.classList.remove("on"); rb.textContent = ""; });
+        if (!was) { mark.classList.add("on"); mark.textContent = "●"; } // click again = clear
+      }
+      setSaved(false);
+      return;
+    }
     if (!tgt.classList.contains("we-h")) deselect();
     setCell(cellOf(tgt));
+  }
+
+  // Double-click an inserted formula → reopen the editor with its source.
+  function onEditorDoubleClick(e: React.MouseEvent) {
+    const f = (e.target as HTMLElement).closest?.(".we-f") as HTMLElement | null;
+    if (f && ref.current?.contains(f)) {
+      e.preventDefault();
+      setFormEl(f); setFormSrc(f.getAttribute("data-f") ?? ""); setFormErr(false); setFormOpen(true);
+    }
+  }
+
+  // ── formulas (√x) — capture the caret, build MathML, insert / replace ──
+  function openFormula() {
+    const sel = window.getSelection();
+    savedRange.current = sel && sel.rangeCount && ref.current?.contains(sel.anchorNode) ? sel.getRangeAt(0).cloneRange() : null;
+    setFormEl(null); setFormSrc(""); setFormErr(false); setFormOpen(true);
+  }
+  function insertFormula(srcOverride?: string) {
+    const src = (srcOverride ?? formSrc).trim();
+    const ml = formulaToMathML(src);
+    if (!ml) { setFormErr(true); return; }
+    const attr = src.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    const html = `<span class="we-f" contenteditable="false" data-f="${attr}">${ml}</span>`;
+    if (formEl) {
+      formEl.outerHTML = html;
+      setSaved(false); refreshGuides();
+    } else {
+      ref.current?.focus();
+      if (savedRange.current) {
+        const sel = window.getSelection();
+        sel?.removeAllRanges(); sel?.addRange(savedRange.current);
+      }
+      insertHtml(html + "&nbsp;");
+    }
+    setFormOpen(false); setFormEl(null); setFormSrc(""); setFormErr(false);
+  }
+  function insertSymbol(ch: string) {
+    exec("insertText", ch);
+  }
+  // Line spacing for every block the selection touches (1 / 1.15 / 1.5 / 2).
+  function applyLineSpacing(v: string) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !ref.current) return;
+    const r = sel.getRangeAt(0);
+    ref.current.querySelectorAll<HTMLElement>("p, h1, h2, h3, li").forEach((b) => {
+      try { if (r.intersectsNode(b)) b.style.lineHeight = v; } catch { /* detached */ }
+    });
+    setSaved(false);
+    if (pageRef.current) refreshGuides();
   }
 
   // ── table editing: insert + add/remove rows & columns ──
@@ -1066,6 +1175,9 @@ export default function WordEditor({
         {tool("B", L("Получер", "Bold"), () => exec("bold"))}
         {tool(<span style={{ fontStyle: "italic" }}>I</span>, L("Курсив", "Italic"), () => exec("italic"))}
         {tool(<span style={{ textDecoration: "underline" }}>U</span>, L("Подчертан", "Underline"), () => exec("underline"))}
+        {tool(<span style={{ textDecoration: "line-through" }}>S</span>, L("Зачертан", "Strikethrough"), () => exec("strikeThrough"))}
+        {tool(<span>x<sup style={{ fontSize: 9 }}>2</sup></span>, L("Горен индекс", "Superscript"), () => exec("superscript"))}
+        {tool(<span>x<sub style={{ fontSize: 9 }}>2</sub></span>, L("Долен индекс", "Subscript"), () => exec("subscript"))}
         <span className="we-sep" />
         {tool("H2", L("Заглавие", "Heading"), () => exec("formatBlock", "h2"))}
         {tool("¶", L("Нормален текст", "Normal text"), () => exec("formatBlock", "p"))}
@@ -1074,6 +1186,21 @@ export default function WordEditor({
         {tool(L("1.  Списък", "1.  List"), L("Номериран списък", "Numbered list"), () => exec("insertOrderedList"))}
         {tool("⇤", L("Намали отстъпа", "Decrease indent"), () => exec("outdent"))}
         {tool("⇥", L("Увеличи отстъпа", "Increase indent"), () => exec("indent"))}
+        <span className="we-sep" />
+        {tool(alignIcon("left"), L("Подравняване вляво", "Align left"), () => exec("justifyLeft"))}
+        {tool(alignIcon("center"), L("Центрирано", "Align centre"), () => exec("justifyCenter"))}
+        {tool(alignIcon("right"), L("Подравняване вдясно", "Align right"), () => exec("justifyRight"))}
+        {tool(alignIcon("full"), L("Двустранно подравняване", "Justify"), () => exec("justifyFull"))}
+        <select
+          className="we-size"
+          title={L("Междуредие", "Line spacing")}
+          defaultValue=""
+          onMouseDown={(e) => e.stopPropagation()}
+          onChange={(e) => { if (e.target.value) applyLineSpacing(e.target.value); e.currentTarget.selectedIndex = 0; }}
+        >
+          <option value="" disabled>{L("Междуредие", "Spacing")}</option>
+          {["1", "1.15", "1.5", "2"].map((n) => (<option key={n} value={n}>{n}</option>))}
+        </select>
         <span className="we-sep" />
         {tool("A−", L("По-малък текст", "Smaller text"), () => bumpFont(-1))}
         {tool("A+", L("По-голям текст", "Bigger text"), () => bumpFont(1))}
@@ -1135,6 +1262,66 @@ export default function WordEditor({
           )}
         </span>
         <span className="we-sep" />
+        {/* symbol palette */}
+        <span ref={symRef} style={{ position: "relative", display: "inline-flex" }}>
+          <button type="button" className="we-tool" title={L("Символи", "Symbols")} style={{ gap: 3 }} onMouseDown={(e) => e.preventDefault()} onClick={() => setSymOpen((o) => !o)}>
+            Ω <span style={{ fontSize: 11, color: "var(--muted)" }}>▾</span>
+          </button>
+          {symOpen && (
+            <div className="we-colorpop" style={{ width: 250 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: "var(--ink)", marginBottom: 8 }}>{L("Символи", "Symbols")}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(8,1fr)", gap: 4 }}>
+                {SYMBOLS.map((ch) => (
+                  <button key={ch} type="button" className="we-tool" style={{ justifyContent: "center", padding: "3px 0", fontSize: 14 }}
+                    onMouseDown={(e) => e.preventDefault()} onClick={() => insertSymbol(ch)}>{ch}</button>
+                ))}
+              </div>
+            </div>
+          )}
+        </span>
+        {/* formula (equation) */}
+        <span ref={formRef} style={{ position: "relative", display: "inline-flex" }}>
+          <button type="button" className="we-tool" title={L("Формула", "Formula")} style={{ gap: 3 }} onMouseDown={(e) => e.preventDefault()} onClick={() => (formOpen ? setFormOpen(false) : openFormula())}>
+            √x <span style={{ fontSize: 11, color: "var(--muted)" }}>▾</span>
+          </button>
+          {formOpen && (
+            <div className="we-colorpop" style={{ width: 360 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: "var(--ink)", marginBottom: 6 }}>
+                {formEl ? L("Редакция на формула", "Edit formula") : L("Формула", "Formula")}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 8, maxHeight: 168, overflowY: "auto" }}>
+                {PT_FORMULAS.map((f) => (
+                  <button key={f.id} type="button" className="we-pill" style={{ justifyContent: "space-between", width: "100%", gap: 10 }}
+                    onMouseDown={(e) => e.preventDefault()} onClick={() => { setFormSrc(f.src); setFormErr(false); }}>
+                    <span style={{ fontSize: 11.5, textAlign: "left" }}>{L(f.nameBg, f.nameEn)}</span>
+                    <span style={{ fontSize: 13 }} dangerouslySetInnerHTML={{ __html: formulaToMathML(f.src) ?? "" }} />
+                  </button>
+                ))}
+              </div>
+              <input
+                value={formSrc}
+                onChange={(e) => { setFormSrc(e.target.value); setFormErr(false); }}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); insertFormula(); } }}
+                placeholder="z = (x_i − x_pt) / σ_pt"
+                style={{ width: "100%", border: "1px solid var(--line)", borderRadius: 7, padding: "5px 8px", fontSize: 13, fontFamily: "ui-monospace, monospace" }}
+              />
+              <div style={{ minHeight: 34, display: "flex", alignItems: "center", justifyContent: "center", margin: "8px 0", padding: "4px 8px", background: "#fff", border: "1px dashed var(--line)", borderRadius: 7, fontSize: 16 }}>
+                {formSrc.trim()
+                  ? (formulaToMathML(formSrc)
+                      ? <span dangerouslySetInnerHTML={{ __html: formulaToMathML(formSrc)! }} />
+                      : <span style={{ fontSize: 12, color: "var(--red, #a04545)" }}>{L("Непълна формула — проверете скобите", "Incomplete formula — check the brackets")}</span>)
+                  : <span style={{ fontSize: 12, color: "var(--muted)" }}>{L("Преглед на формулата", "Formula preview")}</span>}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 8 }}>
+                {L("Синтаксис: / дроб · sqrt( ) корен · x_1 индекс · x^2 степен · гръцки от Ω", "Syntax: / fraction · sqrt( ) root · x_1 subscript · x^2 power · greek via Ω")}
+              </div>
+              <button type="button" className="btn btn-primary btn-sm" style={{ width: "100%" }}
+                onMouseDown={(e) => e.preventDefault()} onClick={() => insertFormula()} disabled={!formSrc.trim()}>
+                {formEl ? L("Запази формулата", "Save formula") : L("Вмъкни формулата", "Insert formula")}
+              </button>
+            </div>
+          )}
+        </span>
         {tool(L("Изображение", "Image"), L("Вмъкни изображение / лого", "Insert image / logo"), () => fileRef.current?.click())}
         {tool(L("▦ Таблица", "▦ Table"), L("Вмъкни таблица", "Insert table"), insertTable)}
         <span className="we-sep" />
@@ -1221,7 +1408,7 @@ export default function WordEditor({
       ) : (
       <div className="we-body">
         <div className="we-col">
-          <div ref={pageRef} className="we-page" onMouseDown={onEditorMouseDown}>
+          <div ref={pageRef} className="we-page" onMouseDown={onEditorMouseDown} onDoubleClick={onEditorDoubleClick}>
             <div
               ref={ref}
               className="we-docbody"

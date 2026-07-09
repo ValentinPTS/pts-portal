@@ -96,6 +96,9 @@ export const DOC_CSS = `
   .sig{display:flex;justify-content:space-between;gap:24px;margin-top:22px;}
   .sig .col{flex:1;border-top:1px solid #999;padding-top:3px;font-size:9pt;color:var(--muted);text-align:center;}
   .docfooter{margin-top:22px;border-top:1px solid var(--line);padding-top:6px;font-family:var(--sans);font-size:8.5pt;color:var(--muted);text-align:center;}
+  /* editor-inserted formulas (native MathML — renders in Chromium incl. the PDF pass) */
+  .we-f{display:inline-block;padding:0 1px;}
+  math{font-size:1.06em;}
   /* fillable form fields (see lib/form-fields.ts) */
   .ff-opt{display:inline-flex;align-items:center;gap:7px;font-family:var(--sans);font-size:10pt;margin:4px 14px 4px 0;}
   .ff-box{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.6px solid var(--green-dark);border-radius:3px;color:var(--green-dark);font-size:11px;line-height:1;font-weight:700;flex:0 0 auto;}

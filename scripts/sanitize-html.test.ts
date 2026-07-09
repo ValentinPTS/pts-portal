@@ -50,6 +50,12 @@ ok("keeps https image URLs (uploaded photos)",
 ok("preserves HTML comment markers (BODY/COVER)",
   has(sanitizeDocHtml(`<!--PTS:CV-->\n<p>x</p>`), "<!--PTS:CV-->"));
 
+// ── editor formulas (MathML) + tick marks must round-trip untouched ─────────────
+const formula = `<span class="we-f" contenteditable="false" data-f="z = (x_i − x_pt) / σ_pt"><math xmlns="http://www.w3.org/1998/Math/MathML"><mrow><mi>z</mi><mo>=</mo><mfrac><mrow><mi>x</mi></mrow><mrow><mi>σ</mi></mrow></mfrac></mrow></math></span>`;
+ok("keeps inserted formulas (MathML) verbatim", sanitizeDocHtml(formula) === formula);
+const ticks = `<p><span class="ff-opt"><span class="ff-box on">✓</span><span>Опция</span></span> <span class="ff-opt"><span class="ff-rb on">●</span><span>Да</span></span></p>`;
+ok("keeps toggled tickboxes/radios verbatim", sanitizeDocHtml(ticks) === ticks);
+
 // ── the property that matters: sanitize is idempotent + flags unsafe input ──────
 const dirty = `<p>ok</p><img src=x onerror=alert(1)><script>bad()</script>`;
 const once = sanitizeDocHtml(dirty);
