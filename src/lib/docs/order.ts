@@ -11,7 +11,8 @@ const FORM = "internal";
 const EXTRA_CSS = `
   .ohead{display:flex;align-items:center;gap:14px;border-bottom:2px solid var(--red);padding-bottom:8px;}
   .ohead .logo{height:54px;}
-  .ohead .who{font-family:var(--sans);font-size:9.5pt;color:var(--muted);margin-left:auto;text-align:right;}
+  .ohead .tag{height:26px;margin-left:auto;}
+  .ohead .who{font-family:var(--sans);font-size:9.5pt;color:var(--muted);text-align:right;}
   .otitle{font-family:var(--sans);font-weight:800;color:var(--green-dark);font-size:21pt;text-align:center;letter-spacing:3px;margin:22px 0 0;}
   .odate{text-align:center;color:var(--muted);font-family:var(--sans);margin:2px 0 14px;}
   .orel{font-style:italic;margin:10px 0 4px;}
@@ -20,7 +21,7 @@ const EXTRA_CSS = `
   .oitem ul{margin:4px 0 0;padding-left:20px;} .oitem li{margin:2px 0;}
   .oteam{margin:5px 0 0;padding-left:0;list-style:none;}
   .oteam li{margin:4px 0;} .oteam .role{font-family:var(--sans);font-weight:700;color:var(--green-dark);}
-  .osign{margin-top:40px;} .osign .ln{width:260px;border-top:1px solid #999;padding-top:3px;}
+  .osign{margin-top:44px;margin-left:auto;width:300px;text-align:center;} .osign .ln{border-top:2px solid var(--green-dark);padding-top:4px;}
   .osign .nm{font-family:var(--sans);font-weight:700;} .osign .rl{color:var(--muted);font-size:9.5pt;}
 `;
 
@@ -80,6 +81,7 @@ export function renderOrder(s: Scheme, lang: Lang): string {
 
   const body = `<div class="ohead">
       <img class="logo" src="/brand/logo.png" alt="PTS Bulgaria">
+      <img class="tag" src="/brand/tagline.png" alt="When quality matters">
       <div class="who">Proficiency Testing Solutions Bulgaria Ltd<br>office@ptsbg.eu · www.ptsbg.eu</div>
     </div>
     <div class="otitle">${L("ORDER", "ЗАПОВЕД")}</div>

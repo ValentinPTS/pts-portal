@@ -83,6 +83,8 @@ export function renderPlanC(s: Scheme, lang: Lang): string {
     sec(20, "Applying for participation", "Заявяване на участие", lang, C("applying")),
     sec(21, "Financial conditions", "Финансови условия", lang, C("financial")),
     sec(22, "Contacts", "Контакти", lang, C("contacts")),
+    // closing signature block, as on the real template's last page
+    `<div class="sig" style="margin-top:44px;gap:60px"><div class="col" style="max-width:190px">${pick(lang, "Date", "Дата")}</div><div class="col" style="max-width:360px">${pick(lang, "Head of the proficiency testing scheme", "Ръководител на схемата за изпитване за пригодност")}</div></div>`,
     footer(s, FORM),
   ].join("\n");
 

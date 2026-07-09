@@ -67,3 +67,23 @@ export function getDoc(key: string): DocDef | undefined {
 // and persist their values to scheme.formData. Grows as renderers are converted.
 export const FORM_DOCS = new Set<string>(["feedback", "declaration", "application", "protocol", "results"]);
 export const isFormDoc = (key: string): boolean => FORM_DOCS.has(key);
+
+// Has this document got any content yet (started)?
+export function hasDocContent(s: Scheme, key: string): boolean {
+  return isFormDoc(key)
+    ? !!s.formData?.[key] && Object.values(s.formData[key]).some(Boolean)
+    : !!(s.docs?.[key]?.bg || s.docs?.[key]?.en);
+}
+
+// Is this document DONE for progress purposes? One rule everywhere (scheme tiles,
+// the documents page, stage progress): an active uploaded file is done (it's a
+// final external document); an editor-built document counts only when the owner
+// explicitly marked it ready (scheme.docReady — the editor's "Готов" button);
+// fillable form documents keep the older rule (filled = done, no editor button).
+export function isDocDone(s: Scheme, key: string): boolean {
+  const hasUpload = !!s.uploads?.[key];
+  const started = hasDocContent(s, key);
+  if (hasUpload && (s.docActive?.[key] !== "built" || !started)) return true;
+  if (!started) return false;
+  return isFormDoc(key) ? true : !!s.docReady?.[key];
+}

@@ -1,15 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { saveDocHtmlAction, translateDocHtmlAction, translateAction, addLibraryItemAction, saveDocTemplateAction, deleteDocTemplateAction, uploadCoverImageAction } from "@/lib/actions";
+import { saveDocHtmlAction, translateDocHtmlAction, translateAction, addLibraryItemAction, saveDocTemplateAction, deleteDocTemplateAction, uploadCoverImageAction, setDocReadyAction } from "@/lib/actions";
 import { useLang } from "@/components/LangProvider";
 import { FONTS_HREF } from "@/lib/doc-css";
 import { sanitizeDocHtml } from "@/lib/sanitize-html";
 import { formulaToMathML, PT_FORMULAS } from "@/lib/formula";
+import { categoryLabel, groupByCategory } from "@/lib/element-categories";
 
-type Snippet = { id: string; name: string; bg: string; en: string };
+type Snippet = { id: string; name: string; category?: string; bg: string; en: string };
 type Field = { key: string; label: string; bg: string; en: string };
-type FormEl = { id: string; nameBg: string; nameEn: string; bg: string; en: string };
+type FormEl = { id: string; nameBg: string; nameEn: string; category?: string; bg: string; en: string };
 type Tmpl = { id: string; name: string; bg: string; en: string };
 type CopyItem = { id: string; number: string; title: string; bg: string; en: string };
 
@@ -169,6 +170,8 @@ const EDITOR_CSS = `
   .we-panelhdr .ttl{font-weight:700;font-size:16px;color:var(--ink);}
   .we-collapse{margin-left:auto;border:0;background:none;cursor:pointer;color:var(--muted);font-size:14px;line-height:1;padding:4px;}
   .we-seclabel{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);}
+  .we-subsec{font-size:10.5px;font-weight:700;letter-spacing:.05em;color:var(--green-dark);margin:8px 0 2px;display:flex;align-items:center;gap:6px;}
+  .we-subsec::after{content:"";flex:1;height:1px;background:var(--green-line);opacity:.6;}
   .we-item{border:1px solid transparent;border-radius:10px;margin-bottom:2px;overflow:hidden;}
   .we-item>button{width:100%;text-align:left;background:none;border:0;padding:12px;cursor:pointer;font-size:15px;font-weight:600;color:var(--ink);display:flex;gap:10px;align-items:center;border-radius:9px;}
   .we-item>button:hover{background:var(--green-soft);}
@@ -202,7 +205,7 @@ const EDITOR_CSS = `
   .we-page .blank{display:inline-block;min-width:220px;border-bottom:1px solid var(--line);height:15px;vertical-align:bottom;}
   .we-page .selbox{display:inline-block;border:1px solid var(--green-dark);border-radius:5px;padding:1px 10px;font-family:'Sofia Sans Condensed',sans-serif;font-weight:700;color:var(--green-dark);font-size:.9em;}
   .we-page .sig{display:flex;justify-content:space-between;gap:24px;margin-top:22px;}
-  .we-page .sig .col{flex:1;border-top:1px solid #999;padding-top:3px;font-size:.82em;color:var(--muted);text-align:center;}
+  .we-page .sig .col{flex:1;border-top:2px solid var(--green-dark);padding-top:4px;font-size:.82em;color:var(--ink);text-align:center;}
   .we-page .formula{background:var(--green-soft);border-left:3px solid var(--green-dark);padding:7px 12px;font-family:'Sofia Sans Condensed',sans-serif;margin:7px 0;}
   .we-page .internal{border:1px dashed var(--green-dark);background:var(--green-soft);border-radius:6px;padding:9px 12px;margin:8px 0 4px;color:var(--green-dark);font-family:'Sofia Sans Condensed',sans-serif;font-size:.9em;}
   .we-page ul.tight{margin:4px 0;padding-left:20px;} .we-page ul.tight li{margin:3px 0;}
@@ -269,10 +272,12 @@ export default function WordEditor({
   customItems = [],
   savedTemplates = [],
   copyFrom = [],
+  initialReady = false,
 }: {
   schemeId: string;
   docKey: string;
   docNameEn: string;
+  initialReady?: boolean;
   initialBg: string;
   initialEn: string;
   defaultBg: string;
@@ -305,6 +310,7 @@ export default function WordEditor({
   const [coverIn, setCoverIn] = useState(hasCover(initialBg) || hasCover(initialEn));
   const [saved, setSaved] = useState(true);
   const [busy, setBusy] = useState("");
+  const [ready, setReady] = useState(initialReady); // "Готов" — the owner's explicit call
   const [panel, setPanel] = useState(true);
   const [expanded, setExpanded] = useState("");
   const [custom, setCustom] = useState<Snippet[]>(customItems);
@@ -339,6 +345,8 @@ export default function WordEditor({
   const [formSrc, setFormSrc] = useState("");                 // linear formula source being edited
   const [formErr, setFormErr] = useState(false);
   const [formEl, setFormEl] = useState<HTMLElement | null>(null); // existing .we-f being re-edited
+  // what the text AT THE CARET looks like (font + size) — live, like Word's toolbar
+  const [curFmt, setCurFmt] = useState<{ font: string; pt: string } | null>(null);
   const formRef = useRef<HTMLSpanElement>(null);
   const savedRange = useRef<Range | null>(null);              // caret to restore after popover typing
   const lockRef = useRef(lockAspect);
@@ -561,6 +569,22 @@ export default function WordEditor({
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, [formOpen]);
+  // Track the font family + size at the caret/selection so the toolbar always
+  // shows what the current text IS — makes keeping sizes consistent easy.
+  useEffect(() => {
+    const h = () => {
+      const sel = window.getSelection();
+      const n = sel?.anchorNode ?? null;
+      const el = (n && (n.nodeType === 1 ? (n as HTMLElement) : n.parentElement)) ?? null;
+      if (!el || !ref.current || !ref.current.contains(el)) { setCurFmt(null); return; }
+      const cs = window.getComputedStyle(el);
+      const font = (cs.fontFamily.split(",")[0] ?? "").replace(/["']/g, "").trim();
+      const pt = Math.round(((parseFloat(cs.fontSize) * 72) / 96) * 10) / 10;
+      setCurFmt({ font, pt: String(pt) });
+    };
+    document.addEventListener("selectionchange", h);
+    return () => document.removeEventListener("selectionchange", h);
+  }, []);
   // free the preview object URL when it changes / on unmount
   useEffect(() => () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl); }, [pdfUrl]);
   useEffect(() => () => { if (pgTimer.current) clearTimeout(pgTimer.current); if (autoTimer.current) clearTimeout(autoTimer.current); }, []);
@@ -872,6 +896,35 @@ export default function WordEditor({
     if (ref.current) ref.current.innerHTML = sanitizeDocHtml(l === "bg" ? nb : ne);
     setTimeout(refreshGuides, 0);
   }
+  // "Готов" toggle — the document only shows as Ready on the scheme page when the
+  // owner says so. Any unsaved edits are saved first so the flag matches the content.
+  async function toggleReady() {
+    setBusy("ready");
+    if (!savedRef.current) await save();
+    const next = !ready;
+    const r = await setDocReadyAction(schemeId, docKey, next);
+    setBusy("");
+    if (!r?.error) setReady(next);
+  }
+
+  // Paste keeps the source formatting: take the clipboard's HTML flavour (another
+  // portal document, the print view, Word, the web), unwrap the OS fragment
+  // markers, SANITIZE it (same trust boundary as save/load) and insert. Plain-text
+  // pastes fall through to the browser default.
+  function onEditorPaste(e: React.ClipboardEvent) {
+    const html = e.clipboardData?.getData("text/html");
+    if (!html) return;
+    e.preventDefault();
+    let frag = html;
+    const m = /<!--StartFragment-->([\s\S]*?)<!--EndFragment-->/i.exec(frag);
+    if (m) frag = m[1];
+    else {
+      const b = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(frag);
+      if (b) frag = b[1];
+    }
+    insertHtml(sanitizeDocHtml(frag));
+  }
+
   async function save() {
     const { nb, ne } = fold();
     setBusy("save");
@@ -1146,6 +1199,22 @@ export default function WordEditor({
             : saved ? L("Всичко е запазено", "All changes saved")
             : L("Незапазени промени", "Unsaved changes")}
         </span>
+        {/* the document is only "Готов" on the scheme page when the owner says so */}
+        {!isForm && (
+          <button
+            className="btn"
+            onClick={toggleReady}
+            disabled={busy === "ready"}
+            title={ready
+              ? L("Документът е отбелязан като готов — кликнете, за да го върнете в процес", "Marked as ready — click to reopen as in-progress")
+              : L("Отбележи документа като готов (показва се като „Готов“ на страницата на схемата)", "Mark the document as ready (shows as “Ready” on the scheme page)")}
+            style={ready
+              ? { fontSize: 13, background: "#e3eeda", borderColor: "#cbd9be", color: "#456b2c", fontWeight: 700 }
+              : { fontSize: 13, borderColor: "var(--green-dark)", color: "var(--green-dark)", fontWeight: 700 }}
+          >
+            {busy === "ready" ? "…" : ready ? L("Готов ✓", "Ready ✓") : L("✓ Маркирай като готов", "✓ Mark as ready")}
+          </button>
+        )}
         <span className="we-sep" style={{ height: 20 }} />
         <span className="text-sm" style={{ color: "var(--muted)" }}>{L("Преглед:", "Preview:")}</span>
         {(["bg", "en"] as const).map((l) => (
@@ -1214,6 +1283,15 @@ export default function WordEditor({
           <option value="" disabled>{L("Размер", "Size")}</option>
           {TEXT_SIZES.map((n) => (<option key={n} value={n}>{n} pt</option>))}
         </select>
+        {/* live indicator: the font + size of the text at the caret (like Word) */}
+        {curFmt && (
+          <span
+            title={L("Шрифт и размер на текста при курсора", "Font and size of the text at the caret")}
+            style={{ fontSize: 11.5, fontWeight: 700, color: "var(--green-dark)", background: "#fff", border: "1px solid var(--green-line)", borderRadius: 999, padding: "3px 10px", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}
+          >
+            {curFmt.font} · {curFmt.pt} pt
+          </span>
+        )}
         {/* text colour palette */}
         <span ref={colorRef} style={{ position: "relative", display: "inline-flex" }}>
           <button type="button" className="we-tool" title={L("Цвят на текста", "Text colour")} style={{ gap: 3 }} onMouseDown={(e) => e.preventDefault()} onClick={() => setColorOpen((o) => !o)}>
@@ -1417,6 +1495,7 @@ export default function WordEditor({
               onInput={onBodyInput}
               onKeyDown={onEditorKeyDown}
               onKeyUp={syncCell}
+              onPaste={onEditorPaste}
             />
             {/* selection handles */}
             {imgSel && box && (
@@ -1445,14 +1524,32 @@ export default function WordEditor({
             <div className="we-seclabel" style={{ margin: "8px 0 4px" }}>{L("АВТО-ПОЛЕТА", "AUTO-FIELDS")}</div>
             {fields.map((f) => itemCard(`f:${f.key}`, f.label, lang === "bg" ? f.bg : f.en))}
 
+            {/* snippets, form elements and own items grouped by the document they
+                serve (Общи · План · Заявка · Лист с резултати · Доклад …) so it's
+                obvious at a glance which element belongs where. */}
             <div className="we-seclabel" style={{ margin: "14px 0 4px" }}>{L("ФРАГМЕНТИ", "SNIPPETS")}</div>
-            {snippets.map((s) => itemCard(`s:${s.id}`, s.name, lang === "bg" ? s.bg : s.en))}
+            {groupByCategory(snippets, (s) => s.category || "General", (s) => s.name).map(([cat, list]) => (
+              <div key={cat}>
+                <div className="we-subsec">{categoryLabel(cat, uiLang)}</div>
+                {list.map((s) => itemCard(`s:${s.id}`, s.name, lang === "bg" ? s.bg : s.en))}
+              </div>
+            ))}
 
             {formElements.length > 0 && <div className="we-seclabel" style={{ margin: "14px 0 4px" }}>{L("ЕЛЕМЕНТИ ЗА ФОРМУЛЯР", "FORM ELEMENTS")}</div>}
-            {formElements.map((e) => itemCard(`fe:${e.id}`, uiLang === "bg" ? e.nameBg : e.nameEn, lang === "bg" ? e.bg : e.en))}
+            {groupByCategory(formElements, (e) => e.category || "Form", (e) => (uiLang === "bg" ? e.nameBg : e.nameEn)).map(([cat, list]) => (
+              <div key={cat}>
+                <div className="we-subsec">{categoryLabel(cat, uiLang)}</div>
+                {list.map((e) => itemCard(`fe:${e.id}`, uiLang === "bg" ? e.nameBg : e.nameEn, lang === "bg" ? e.bg : e.en))}
+              </div>
+            ))}
 
             {custom.length > 0 && <div className="we-seclabel" style={{ margin: "14px 0 4px", color: "var(--gold)" }}>{L("МОИ ЕЛЕМЕНТИ", "MY ITEMS")}</div>}
-            {custom.map((c) => itemCard(`c:${c.id}`, c.name, lang === "bg" ? c.bg : c.en))}
+            {groupByCategory(custom, (c) => c.category, (c) => c.name).map(([cat, list]) => (
+              <div key={cat}>
+                {custom.length > list.length || cat !== "My items" ? <div className="we-subsec">{categoryLabel(cat, uiLang)}</div> : null}
+                {list.map((c) => itemCard(`c:${c.id}`, c.name, lang === "bg" ? c.bg : c.en))}
+              </div>
+            ))}
 
             <div className="mt-3">
               {adding ? (

@@ -392,6 +392,22 @@ export async function removeSchemeDocUploadAction(formData: FormData): Promise<{
   return { ok: true };
 }
 
+// Mark a started (editor-built) document as READY / back to in-progress. A doc
+// with content is only "Готов" on the scheme page when this flag is set — the
+// owner decides, not the mere existence of text (button in the editor's action bar).
+export async function setDocReadyAction(schemeId: string, docKey: string, ready: boolean): Promise<{ ok?: boolean; error?: string }> {
+  await requireWriter();
+  if (!isDocKey(docKey)) return { error: "Unknown document." };
+  const scheme = await getScheme(schemeId);
+  if (!scheme) return { error: "Scheme not found." };
+  const docReady = { ...(scheme.docReady ?? {}) };
+  if (ready) docReady[docKey] = true; else delete docReady[docKey];
+  await updateScheme(schemeId, { docReady });
+  await logActivity(ready ? "doc.ready" : "doc.reopened", { schemeId, summary: `Document “${docKey}” marked ${ready ? "ready" : "in progress"}` });
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  return { ok: true };
+}
+
 // Switch which version of a document is active/official when both an uploaded file
 // and an app-built version exist ("uploaded" | "built").
 export async function setDocSourceAction(schemeId: string, docKey: string, source: "built" | "uploaded"): Promise<{ ok?: boolean; error?: string }> {

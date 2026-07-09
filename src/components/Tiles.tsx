@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { FolderIcon, FileIcon } from "@/components/FileIcons";
 import { ACCENT, statusChip, schemeName, type FolderType } from "@/lib/folders";
-import { DOCUMENTS } from "@/lib/documents";
+import { DOCUMENTS, isDocDone } from "@/lib/documents";
 import { t, DEFAULT_LANG, type UiLang } from "@/lib/i18n";
 import type { Scheme } from "@/lib/types";
 
@@ -25,7 +25,9 @@ export function FolderTile({ href, label, sub, type }: { href: string; label: st
 export function SchemeTile({ s, lang = DEFAULT_LANG }: { s: Scheme; lang?: UiLang }) {
   const ac = ACCENT[s.type];
   const st = statusChip(s.status, lang);
-  const built = Object.values(s.docs ?? {}).filter((d) => d?.bg || d?.en).length;
+  // "готови" = the same rule as the scheme page: uploaded final files + editor
+  // documents the owner explicitly marked ready (not merely started).
+  const built = DOCUMENTS.filter((d) => isDocDone(s, d.key)).length;
   const date = s.orderDate || s.revisionDate || "";
   return (
     <Link href={`/schemes/${s.id}`} className="card no-underline" style={{ overflow: "hidden", display: "flex", flexDirection: "column", padding: 0 }}>

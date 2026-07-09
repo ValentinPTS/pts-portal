@@ -39,6 +39,7 @@ export default async function BuildDocPage({
   const custom = (await listLibraryItems()).map((c) => ({
     id: c.id,
     name: c.name,
+    category: c.category,
     bg: `<p>${esc(c.bg)}</p>`,
     en: `<p>${esc(c.en || c.bg)}</p>`,
   }));
@@ -83,6 +84,7 @@ export default async function BuildDocPage({
         schemeId={s.id}
         docKey={doc}
         docNameEn={def?.nameEn ?? "Document"}
+        initialReady={!!s.docReady?.[doc]}
         initialBg={saved.bg}
         initialEn={saved.en}
         defaultBg={dft.bg}

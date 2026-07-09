@@ -415,6 +415,9 @@ export interface Scheme {
   // one is active/official. Absent → the uploaded file wins when present (the chosen
   // default). Set to "built" to switch back to the app-built version. JSONB.
   docActive?: Record<string, "built" | "uploaded">;
+  // a started (editor-built) document is only "Готов" when the owner explicitly
+  // marks it so (button in the editor). Absent/false = still in progress. JSONB.
+  docReady?: Record<string, boolean>;
   // files uploaded BY LABS from the lab portal, keyed by participant code → slot
   // ("protocol" = signed receipt protocol, "results" = completed results sheet).
   // Upload auto-stamps the case file + advances the status; locked once scored.

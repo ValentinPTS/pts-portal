@@ -49,8 +49,8 @@ export function wrapForPrint(s: Scheme, bodyHtml: string, lang: Lang, titleEn: s
 }
 
 // Items for the right-hand insert panel — HTML ready to drop at the cursor (both langs).
-export function insertableSnippets(): { id: string; name: string; bg: string; en: string }[] {
-  return LIBRARY.map((e) => ({ id: e.id, name: e.name, bg: `<p>${esc(e.bg)}</p>`, en: `<p>${esc(e.en)}</p>` }));
+export function insertableSnippets(): { id: string; name: string; category?: string; bg: string; en: string }[] {
+  return LIBRARY.map((e) => ({ id: e.id, name: e.name, category: e.category, bg: `<p>${esc(e.bg)}</p>`, en: `<p>${esc(e.en)}</p>` }));
 }
 export function insertableFields(s: Scheme, participants: Participant[] = []): { key: string; label: string; bg: string; en: string }[] {
   return FIELDS.map((f) => ({
@@ -61,6 +61,6 @@ export function insertableFields(s: Scheme, participants: Participant[] = []): {
   }));
 }
 // Fillable-form building blocks for the "Form elements" panel group (bilingual label + HTML).
-export function insertableFormElements(): { id: string; nameBg: string; nameEn: string; bg: string; en: string }[] {
+export function insertableFormElements(): { id: string; nameBg: string; nameEn: string; category?: string; bg: string; en: string }[] {
   return FORM_ELEMENTS;
 }

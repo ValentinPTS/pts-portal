@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getScheme } from "@/lib/store";
-import { getDoc, isFormDoc } from "@/lib/documents";
+import { getDoc, isFormDoc, isDocDone } from "@/lib/documents";
 import { DOC_STAGES } from "@/lib/doc-stages";
 import ExplorerShell from "@/components/ExplorerShell";
 import SchemeDocuments, { type DocStageView, type DocSource } from "@/components/SchemeDocuments";
@@ -56,6 +56,8 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
         hasBuilt,
         hasUpload,
         active,
+        // a started editor-doc is only "Готов" when explicitly marked (lib/documents isDocDone)
+        done: isDocDone(s, key),
         uploadName: s.uploads?.[key]?.name,
         buildHref: isForm ? `/schemes/${id}/fill/${key}` : `/schemes/${id}/build/${key}`,
       };
@@ -63,7 +65,7 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
   }));
 
   const allDocs = stages.flatMap((x) => x.docs);
-  const ready = allDocs.filter((d) => d.active !== "none").length;
+  const ready = allDocs.filter((d) => d.done).length;
   const uploaded = allDocs.filter((d) => d.active === "uploaded").length;
   const built = allDocs.filter((d) => d.active === "built").length;
   const total = allDocs.length;

@@ -94,7 +94,7 @@ export const DOC_CSS = `
   .blank{display:inline-block;min-width:220px;border-bottom:1px solid var(--line);height:15px;vertical-align:bottom;}
   .selbox{display:inline-block;border:1px solid var(--green-dark);border-radius:5px;padding:1px 10px;font-family:var(--sans);font-weight:700;color:var(--green-dark);font-size:10pt;}
   .sig{display:flex;justify-content:space-between;gap:24px;margin-top:22px;}
-  .sig .col{flex:1;border-top:1px solid #999;padding-top:3px;font-size:9pt;color:var(--muted);text-align:center;}
+  .sig .col{flex:1;border-top:2px solid var(--green-dark);padding-top:4px;font-size:9pt;color:var(--ink);text-align:center;}
   .docfooter{margin-top:22px;border-top:1px solid var(--line);padding-top:6px;font-family:var(--sans);font-size:8.5pt;color:var(--muted);text-align:center;}
   /* editor-inserted formulas (native MathML — renders in Chromium incl. the PDF pass) */
   .we-f{display:inline-block;padding:0 1px;}

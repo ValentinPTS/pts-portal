@@ -61,45 +61,54 @@ export const FIELDS: { key: string; en: string; bg: string }[] = [
 // choices, a signature block, and the form tables — so the owner can drop them into
 // any document and adjust how they look. They use the same .ff-* / .ptable / .sig
 // markup the forms use, so they render identically in the editor and the PDF.
-export const FORM_ELEMENTS: { id: string; nameEn: string; nameBg: string; bg: string; en: string }[] = [
+// `category` groups them in the insert panel + /items by the document they serve:
+// "Form" = generic pieces, "Results" = Results sheet, "Application" = Application.
+export const FORM_ELEMENTS: { id: string; nameEn: string; nameBg: string; category: string; bg: string; en: string }[] = [
   {
-    id: "fe_line", nameEn: "Text blank", nameBg: "Поле за текст",
+    id: "fe_line", nameEn: "Text blank", nameBg: "Поле за текст", category: "Form",
     en: `<p><b>Label:</b> <span class="ff-line" data-empty="1" style="min-width:240px"></span></p>`,
     bg: `<p><b>Етикет:</b> <span class="ff-line" data-empty="1" style="min-width:240px"></span></p>`,
   },
   {
-    id: "fe_check", nameEn: "Checkbox option", nameBg: "Поле за отметка",
+    id: "fe_check", nameEn: "Checkbox option", nameBg: "Поле за отметка", category: "Form",
     en: `<p><span class="ff-opt"><span class="ff-box"></span><span>Option</span></span></p>`,
     bg: `<p><span class="ff-opt"><span class="ff-box"></span><span>Опция</span></span></p>`,
   },
   {
-    id: "fe_choice", nameEn: "Yes / No / Other", nameBg: "Да / Не / Друго",
+    id: "fe_choice", nameEn: "Yes / No / Other", nameBg: "Да / Не / Друго", category: "Form",
     en: `<p><span class="ff-opt"><span class="ff-rb"></span><span>Yes</span></span> &nbsp; <span class="ff-opt"><span class="ff-rb"></span><span>No</span></span> &nbsp; <span class="ff-opt"><span class="ff-rb"></span><span>Other</span></span></p>`,
     bg: `<p><span class="ff-opt"><span class="ff-rb"></span><span>Да</span></span> &nbsp; <span class="ff-opt"><span class="ff-rb"></span><span>Не</span></span> &nbsp; <span class="ff-opt"><span class="ff-rb"></span><span>Друго</span></span></p>`,
   },
   {
     // A real dropdown the owner can extend in the editor (select it → "Add option").
-    id: "fe_select", nameEn: "Dropdown (1 / 2 / 3)", nameBg: "Падащо меню (1 / 2 / 3)",
+    id: "fe_select", nameEn: "Dropdown (1 / 2 / 3)", nameBg: "Падащо меню (1 / 2 / 3)", category: "Form",
     en: `<select class="ff-select" contenteditable="false"><option>1</option><option>2</option><option>3</option></select>`,
     bg: `<select class="ff-select" contenteditable="false"><option>1</option><option>2</option><option>3</option></select>`,
   },
   {
-    id: "fe_sig", nameEn: "Signature block", nameBg: "Поле за подпис",
-    en: `<div class="sig"><div class="col"><span class="ff-line" style="min-width:140px"></span><br>Date</div><div class="col"><span class="ff-line" style="min-width:200px"></span><br>Name and Surname</div></div>`,
-    bg: `<div class="sig"><div class="col"><span class="ff-line" style="min-width:140px"></span><br>Дата</div><div class="col"><span class="ff-line" style="min-width:200px"></span><br>Име и Фамилия</div></div>`,
+    // date + name over green lines — exactly like the real Declaration/Plan endings
+    id: "fe_sig", nameEn: "Signature block (date + name)", nameBg: "Поле за подпис (дата + име)", category: "Form",
+    en: `<div class="sig" style="margin-top:36px;gap:60px"><div class="col" style="max-width:190px">date</div><div class="col" style="max-width:340px">/name, surname/</div></div>`,
+    bg: `<div class="sig" style="margin-top:36px;gap:60px"><div class="col" style="max-width:190px">дата</div><div class="col" style="max-width:340px">/име, презиме, фамилия/</div></div>`,
   },
   {
-    id: "fe_table", nameEn: "Blank table (3 columns)", nameBg: "Празна таблица (3 колони)",
+    // centered role signature — like the Order's "Ръководител на организатора…"
+    id: "fe_sig_role", nameEn: "Manager signature (role)", nameBg: "Подпис на ръководител (длъжност)", category: "Form",
+    en: `<div class="sig" style="margin-top:36px;justify-content:center"><div class="col" style="max-width:360px">Head of the proficiency testing scheme</div></div>`,
+    bg: `<div class="sig" style="margin-top:36px;justify-content:center"><div class="col" style="max-width:360px">Ръководител на схемата за изпитване за пригодност</div></div>`,
+  },
+  {
+    id: "fe_table", nameEn: "Blank table (3 columns)", nameBg: "Празна таблица (3 колони)", category: "Form",
     en: `<table class="ptable"><thead><tr><th>Column 1</th><th>Column 2</th><th>Column 3</th></tr></thead><tbody><tr><td></td><td></td><td></td></tr><tr><td></td><td></td><td></td></tr></tbody></table>`,
     bg: `<table class="ptable"><thead><tr><th>Колона 1</th><th>Колона 2</th><th>Колона 3</th></tr></thead><tbody><tr><td></td><td></td><td></td></tr><tr><td></td><td></td><td></td></tr></tbody></table>`,
   },
   {
-    id: "fe_results", nameEn: "Results table", nameBg: "Таблица с резултати",
+    id: "fe_results", nameEn: "Results table", nameBg: "Таблица с резултати", category: "Results",
     en: `<table class="ptable"><thead><tr><th>Specimen / Determination</th><th>Reported result</th><th>Expanded uncertainty U (k=2, P≈95%)</th></tr></thead><tbody><tr><td></td><td><span class="ff-line" style="min-width:120px"></span></td><td><span class="ff-line" style="min-width:120px"></span></td></tr></tbody></table>`,
     bg: `<table class="ptable"><thead><tr><th>Проба / Определяне</th><th>Докладван резултат</th><th>Разширена неопределеност U (k=2, P≈95%)</th></tr></thead><tbody><tr><td></td><td><span class="ff-line" style="min-width:120px"></span></td><td><span class="ff-line" style="min-width:120px"></span></td></tr></tbody></table>`,
   },
   {
-    id: "fe_participation", nameEn: "Participation table", nameBg: "Таблица за участие",
+    id: "fe_participation", nameEn: "Participation table", nameBg: "Таблица за участие", category: "Application",
     en: `<table class="ptable"><thead><tr><th>Test item / Method</th><th>Characteristic</th><th>Participation</th></tr></thead><tbody><tr><td></td><td></td><td><span class="ff-opt"><span class="ff-box"></span></span></td></tr></tbody></table>`,
     bg: `<table class="ptable"><thead><tr><th>Обект / Метод</th><th>Характеристика</th><th>Участие</th></tr></thead><tbody><tr><td></td><td></td><td><span class="ff-opt"><span class="ff-box"></span></span></td></tr></tbody></table>`,
   },

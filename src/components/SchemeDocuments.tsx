@@ -14,6 +14,7 @@ export interface DocRow {
   hasBuilt: boolean;
   hasUpload: boolean;
   active: DocSource;      // which version is shown/official
+  done: boolean;          // counts as ready (isDocDone — editor docs need the explicit flag)
   uploadName?: string;
   buildHref: string;      // open/create in the app editor (or fill view)
 }
@@ -74,10 +75,15 @@ export default function SchemeDocuments({ schemeId, lang, stages }: { schemeId: 
     });
   }
 
-  // status pill per active source
+  // status pill per active source. A built document with content shows "Готов"
+  // only when the owner marked it so in the editor; until then it's "Започнат".
   function pill(d: DocRow) {
     if (d.active === "uploaded") return <span style={{ ...pillBase, background: "#e4eef3", color: "#2f6f8f" }}>{L("Качен", "Uploaded")}</span>;
-    if (d.active === "built") return <span style={{ ...pillBase, background: "#e3eeda", color: "#456b2c" }}>{L("Готов", "Ready")}</span>;
+    if (d.active === "built") {
+      return d.done
+        ? <span style={{ ...pillBase, background: "#e3eeda", color: "#456b2c" }}>{L("Готов ✓", "Ready ✓")}</span>
+        : <span style={{ ...pillBase, background: "#faf2e0", color: "#9a6b22" }}>{L("Започнат", "Started")}</span>;
+    }
     return <span style={{ ...pillBase, background: "#eef1ee", color: "#666" }}>{L("Незапочнат", "Not started")}</span>;
   }
 

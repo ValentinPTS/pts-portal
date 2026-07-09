@@ -6,11 +6,10 @@ import { addLibraryItemAction, updateLibraryItemAction, deleteLibraryItemAction,
 import { useLang } from "@/components/LangProvider";
 import { esc } from "@/lib/doc-css";
 import { sanitizeDocHtml } from "@/lib/sanitize-html";
+import { DEFAULT_CAT, categoryLabel, cmpCategory } from "@/lib/element-categories";
 
 type Editing = { id: string | "new"; name: string; category: string; bg: string; en: string } | null;
 type Builtin = { id: string; name: string; category: string; bg: string; en: string };
-
-const DEFAULT_CAT = "My items";
 const inputStyle: React.CSSProperties = { width: "100%", border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontSize: 14, background: "#fff" };
 
 // "My items" management — the owner's reusable snippets (the MY ITEMS group in the
@@ -26,16 +25,16 @@ export default function ItemsManager({ initial, builtins = [] }: { initial: Libr
   const [err, setErr] = useState("");
   const [filter, setFilter] = useState<string>(""); // "" = show all categories
 
-  // Tidy ordering: "My items" (the catch-all) first, then categories A→Z; items A→Z
-  // within each category.
-  const cmpCat = (a: string, b: string) => (a === b ? 0 : a === DEFAULT_CAT ? -1 : b === DEFAULT_CAT ? 1 : a.localeCompare(b));
-  const categories = useMemo(() => [...new Set(items.map((i) => i.category || DEFAULT_CAT))].sort(cmpCat), [items]);
+  // Tidy ordering — shared with the editor's insert panel (lib/element-categories):
+  // "My items" first, then the document-flow order (Общи → План → Заявка → Лист с
+  // резултати → Доклад …), custom categories after; items A→Z within each.
+  const categories = useMemo(() => [...new Set(items.map((i) => i.category || DEFAULT_CAT))].sort(cmpCategory), [items]);
   // Built-in starter elements the owner hasn't customized yet (matched by name — once
   // a built-in is added it becomes an editable item and drops out of this list). Ordered
   // by category then name so related clauses sit together.
   const customNames = useMemo(() => new Set(items.map((i) => i.name.trim().toLowerCase())), [items]);
   const availableBuiltins = useMemo(
-    () => builtins.filter((b) => !customNames.has(b.name.trim().toLowerCase())).sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name)),
+    () => builtins.filter((b) => !customNames.has(b.name.trim().toLowerCase())).sort((a, b) => cmpCategory(a.category, b.category) || a.name.localeCompare(b.name)),
     [builtins, customNames],
   );
   const countIn = (cat: string) => items.filter((i) => (i.category || DEFAULT_CAT) === cat).length;
@@ -47,10 +46,9 @@ export default function ItemsManager({ initial, builtins = [] }: { initial: Libr
       if (!m.has(c)) m.set(c, []);
       m.get(c)!.push(it);
     }
-    const entries = [...m.entries()].sort((a, b) => cmpCat(a[0], b[0]));
+    const entries = [...m.entries()].sort((a, b) => cmpCategory(a[0], b[0]));
     for (const [, list] of entries) list.sort((x, y) => x.name.localeCompare(y.name));
     return entries;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shown]);
 
   // A faithful preview of what gets inserted into a document: the snippet text wrapped
@@ -146,7 +144,7 @@ export default function ItemsManager({ initial, builtins = [] }: { initial: Libr
         <button style={chip(!filter)} onClick={() => setFilter("")}>{L("Всички", "All")} <span style={{ opacity: .6 }}>({items.length})</span></button>
         {categories.map((c) => (
           <span key={c} style={chip(filter === c)}>
-            <span onClick={() => setFilter(filter === c ? "" : c)} style={{ cursor: "pointer" }}>{c} <span style={{ opacity: .6 }}>({countIn(c)})</span></span>
+            <span onClick={() => setFilter(filter === c ? "" : c)} style={{ cursor: "pointer" }}>{categoryLabel(c, lang)} <span style={{ opacity: .6 }}>({countIn(c)})</span></span>
             {c !== DEFAULT_CAT && (
               <button
                 title={L("Премахни категорията", "Remove category")}
@@ -197,7 +195,7 @@ export default function ItemsManager({ initial, builtins = [] }: { initial: Libr
       {groups.map(([cat, list]) => (
         <div key={cat} className="mb-5">
           <div className="flex items-center gap-2 mb-2">
-            <div className="text-xs font-bold" style={{ letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted)" }}>{cat}</div>
+            <div className="text-xs font-bold" style={{ letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted)" }}>{categoryLabel(cat, lang)}</div>
             <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
             <div className="text-xs" style={{ color: "var(--muted)" }}>{list.length}</div>
           </div>
@@ -230,7 +228,7 @@ export default function ItemsManager({ initial, builtins = [] }: { initial: Libr
           <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))" }}>
             {availableBuiltins.map((b) => (
               <div key={b.id} className="card p-3" style={{ display: "flex", flexDirection: "column", gap: 8, borderStyle: "dashed" }}>
-                <div className="font-bold" style={{ fontSize: 14 }}>{b.name} <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>· {b.category}</span></div>
+                <div className="font-bold" style={{ fontSize: 14 }}>{b.name} <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>· {categoryLabel(b.category, lang)}</span></div>
                 <div style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "8px 10px", background: "#fff", fontFamily: "'PT Serif',Georgia,serif", fontSize: 12.5, lineHeight: 1.5, maxHeight: 108, overflow: "auto" }}
                   dangerouslySetInnerHTML={{ __html: sanitizeDocHtml(`<p>${esc((lang === "bg" ? b.bg : b.en) || "")}</p>`) }} />
                 <button className="btn btn-primary" style={{ fontSize: 12.5, padding: "5px 12px", marginTop: "auto" }} disabled={busy === "bi:" + b.id} onClick={() => addBuiltin(b)}>{busy === "bi:" + b.id ? "…" : L("＋ Добави за редакция", "＋ Add for editing")}</button>
