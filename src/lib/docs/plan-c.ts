@@ -46,8 +46,8 @@ export function renderPlanC(s: Scheme, lang: Lang): string {
   // §10 — green calendars from the schedule (same as plan.ts).
   const s10 = `<div class="cals">${s.schedule
     .map((it) => {
-      const [d, m] = it.date.split(".");
-      return `<div class="cal"><span class="bar"></span><div class="d">${d}.${m}</div><div class="lbl">${L(it.labelEn, it.labelBg)}</div></div>`;
+      const dm = it.date.includes(".") ? it.date.split(".").slice(0, 2).join(".") : it.date || "—";
+      return `<div class="cal"><span class="bar"></span><div class="d">${dm}</div><div class="lbl">${L(it.labelEn, it.labelBg)}</div></div>`;
     })
     .join("")}</div>`;
 
@@ -84,7 +84,7 @@ export function renderPlanC(s: Scheme, lang: Lang): string {
     sec(21, "Financial conditions", "Финансови условия", lang, C("financial")),
     sec(22, "Contacts", "Контакти", lang, C("contacts")),
     // closing signature block, as on the real template's last page
-    `<div class="sig" style="margin-top:44px;gap:60px"><div class="col" style="max-width:190px">${pick(lang, "Date", "Дата")}</div><div class="col" style="max-width:360px">${pick(lang, "Head of the proficiency testing scheme", "Ръководител на схемата за изпитване за пригодност")}</div></div>`,
+    `<div class="sig" style="margin-top:44px;gap:60px"><div class="col" style="max-width:190px;border-top:none"><p style="margin:0;min-height:17px;border-bottom:2px solid var(--green-dark)"><br></p>${pick(lang, "Date", "Дата")}</div><div class="col" style="max-width:360px;border-top:none"><p style="margin:0;min-height:17px;border-bottom:2px solid var(--green-dark)"><br></p>${pick(lang, "Head of the proficiency testing scheme", "Ръководител на схемата за изпитване за пригодност")}</div></div>`,
     footer(s, FORM),
   ].join("\n");
 

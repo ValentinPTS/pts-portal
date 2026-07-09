@@ -71,13 +71,20 @@ export const FORM_ELEMENTS: { id: string; nameEn: string; nameBg: string; catego
   },
   {
     id: "fe_check", nameEn: "Checkbox option", nameBg: "Поле за отметка", category: "Form",
-    en: `<p><span class="ff-opt"><span class="ff-box"></span><span>Option</span></span></p>`,
-    bg: `<p><span class="ff-opt"><span class="ff-box"></span><span>Опция</span></span></p>`,
+    // INLINE (no <p>) — lands at the caret inside the current line, so text can
+    // sit right next to it and several boxes fit on one line.
+    en: `<span class="ff-opt"><span class="ff-box"></span><span>Option</span></span>&nbsp;`,
+    bg: `<span class="ff-opt"><span class="ff-box"></span><span>Опция</span></span>&nbsp;`,
+  },
+  {
+    id: "fe_check_pair", nameEn: "Yes / No checkboxes (one line)", nameBg: "Да / Не отметки (на един ред)", category: "Form",
+    en: `<span class="ff-opt"><span class="ff-box"></span><span>Yes</span></span>&nbsp;&nbsp;<span class="ff-opt"><span class="ff-box"></span><span>No</span></span>&nbsp;`,
+    bg: `<span class="ff-opt"><span class="ff-box"></span><span>Да</span></span>&nbsp;&nbsp;<span class="ff-opt"><span class="ff-box"></span><span>Не</span></span>&nbsp;`,
   },
   {
     id: "fe_choice", nameEn: "Yes / No / Other", nameBg: "Да / Не / Друго", category: "Form",
-    en: `<p><span class="ff-opt"><span class="ff-rb"></span><span>Yes</span></span> &nbsp; <span class="ff-opt"><span class="ff-rb"></span><span>No</span></span> &nbsp; <span class="ff-opt"><span class="ff-rb"></span><span>Other</span></span></p>`,
-    bg: `<p><span class="ff-opt"><span class="ff-rb"></span><span>Да</span></span> &nbsp; <span class="ff-opt"><span class="ff-rb"></span><span>Не</span></span> &nbsp; <span class="ff-opt"><span class="ff-rb"></span><span>Друго</span></span></p>`,
+    en: `<span class="ff-opt"><span class="ff-rb"></span><span>Yes</span></span>&nbsp;&nbsp;<span class="ff-opt"><span class="ff-rb"></span><span>No</span></span>&nbsp;&nbsp;<span class="ff-opt"><span class="ff-rb"></span><span>Other</span></span>&nbsp;`,
+    bg: `<span class="ff-opt"><span class="ff-rb"></span><span>Да</span></span>&nbsp;&nbsp;<span class="ff-opt"><span class="ff-rb"></span><span>Не</span></span>&nbsp;&nbsp;<span class="ff-opt"><span class="ff-rb"></span><span>Друго</span></span>&nbsp;`,
   },
   {
     // A real dropdown the owner can extend in the editor (select it → "Add option").
@@ -88,14 +95,35 @@ export const FORM_ELEMENTS: { id: string; nameEn: string; nameBg: string; catego
   {
     // date + name over green lines — exactly like the real Declaration/Plan endings
     id: "fe_sig", nameEn: "Signature block (date + name)", nameBg: "Поле за подпис (дата + име)", category: "Form",
-    en: `<div class="sig" style="margin-top:36px;gap:60px"><div class="col" style="max-width:190px">date</div><div class="col" style="max-width:340px">/name, surname/</div></div>`,
-    bg: `<div class="sig" style="margin-top:36px;gap:60px"><div class="col" style="max-width:190px">дата</div><div class="col" style="max-width:340px">/име, презиме, фамилия/</div></div>`,
+    en: `<div class="sig" style="margin-top:36px;gap:60px"><div class="col" style="max-width:190px;border-top:none"><p style="margin:0;min-height:17px;border-bottom:2px solid var(--green-dark)"><br></p>date</div><div class="col" style="max-width:340px;border-top:none"><p style="margin:0;min-height:17px;border-bottom:2px solid var(--green-dark)"><br></p>/name, surname/</div></div>`,
+    bg: `<div class="sig" style="margin-top:36px;gap:60px"><div class="col" style="max-width:190px;border-top:none"><p style="margin:0;min-height:17px;border-bottom:2px solid var(--green-dark)"><br></p>дата</div><div class="col" style="max-width:340px;border-top:none"><p style="margin:0;min-height:17px;border-bottom:2px solid var(--green-dark)"><br></p>/име, презиме, фамилия/</div></div>`,
   },
   {
     // centered role signature — like the Order's "Ръководител на организатора…"
     id: "fe_sig_role", nameEn: "Manager signature (role)", nameBg: "Подпис на ръководител (длъжност)", category: "Form",
-    en: `<div class="sig" style="margin-top:36px;justify-content:center"><div class="col" style="max-width:360px">Head of the proficiency testing scheme</div></div>`,
-    bg: `<div class="sig" style="margin-top:36px;justify-content:center"><div class="col" style="max-width:360px">Ръководител на схемата за изпитване за пригодност</div></div>`,
+    en: `<div class="sig" style="margin-top:36px;justify-content:center"><div class="col" style="max-width:360px;border-top:none"><p style="margin:0;min-height:17px;border-bottom:2px solid var(--green-dark)"><br></p>Head of the proficiency testing scheme</div></div>`,
+    bg: `<div class="sig" style="margin-top:36px;justify-content:center"><div class="col" style="max-width:360px;border-top:none"><p style="margin:0;min-height:17px;border-bottom:2px solid var(--green-dark)"><br></p>Ръководител на схемата за изпитване за пригодност</div></div>`,
+  },
+  {
+    // 4-column team block (role / icon / name), like the Plan's §2 — a table with
+    // TRANSPARENT borders so every cell is freely editable; swap the emoji for a
+    // photo via the Image button whenever you like. Works for T and C schemes.
+    id: "fe_team_cols", nameEn: "Team columns (role / icon / name)", nameBg: "Екип в колони (роля / икона / име)", category: "Plan",
+    en: `<table style="width:100%;border-collapse:collapse"><tbody><tr><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#9e2b2b;font-weight:700">Head of the PT scheme</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#6b8f71;font-weight:700">Materials engineer</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#2f6f8f;font-weight:700">Statistical expert</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#b08a2e;font-weight:700">Data &amp; coding expert</td></tr><tr><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;font-size:30px">&#128101;</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;font-size:30px">&#128230;</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;font-size:30px">&#128202;</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;font-size:30px">&#128194;</td></tr><tr><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#9e2b2b">eng. Name Surname</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#6b8f71">Name Surname, PhD</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#2f6f8f">eng. Name Surname</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#b08a2e">Name Surname</td></tr></tbody></table>`,
+    bg: `<table style="width:100%;border-collapse:collapse"><tbody><tr><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#9e2b2b;font-weight:700">Ръководител на схемата на изпитване за пригодност</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#6b8f71;font-weight:700">Инженер по материалите</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#2f6f8f;font-weight:700">Експерт статистическа обработка</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#b08a2e;font-weight:700">Експерт събиране и кодиране на данните</td></tr><tr><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;font-size:30px">&#128101;</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;font-size:30px">&#128230;</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;font-size:30px">&#128202;</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;font-size:30px">&#128194;</td></tr><tr><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#9e2b2b">инж. Име Фамилия</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#6b8f71">д-р инж. Име Фамилия</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#2f6f8f">инж. Име Фамилия</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#b08a2e">Име Фамилия</td></tr></tbody></table>`,
+  },
+  {
+    // 2-column external-labs block (logo / name / address / services) — transparent
+    // table; put a logo image in the top cells with the Image button.
+    id: "fe_partner_cols", nameEn: "Partner labs (two columns)", nameBg: "Външни лаборатории (две колони)", category: "Plan",
+    en: `<table style="width:100%;border-collapse:collapse"><tbody><tr><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;font-size:26px">&#127970;</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;font-size:26px">&#127970;</td></tr><tr><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#6b8f71;font-weight:700">LABORATORY NAME</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#6b8f71;font-weight:700">LABORATORY NAME</td></tr><tr><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle">City, address</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle">City, address</td></tr><tr><td style="border:1px solid transparent;padding:6px 8px;vertical-align:top"><ul><li>Service;</li><li>Service;</li></ul></td><td style="border:1px solid transparent;padding:6px 8px;vertical-align:top"><ul><li>Service;</li><li>Service;</li></ul></td></tr></tbody></table>`,
+    bg: `<table style="width:100%;border-collapse:collapse"><tbody><tr><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;font-size:26px">&#127970;</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;font-size:26px">&#127970;</td></tr><tr><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#6b8f71;font-weight:700">ИМЕ НА ЛАБОРАТОРИЯТА</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;color:#6b8f71;font-weight:700">ИМЕ НА ЛАБОРАТОРИЯТА</td></tr><tr><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle">град, адрес</td><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle">град, адрес</td></tr><tr><td style="border:1px solid transparent;padding:6px 8px;vertical-align:top"><ul><li>Дейност;</li><li>Дейност;</li></ul></td><td style="border:1px solid transparent;padding:6px 8px;vertical-align:top"><ul><li>Дейност;</li><li>Дейност;</li></ul></td></tr></tbody></table>`,
+  },
+  {
+    // one green date card (as in the Plan/Invitation schedule) — date + label editable
+    id: "fe_datecard", nameEn: "Date card (schedule)", nameBg: "Дата (картичка от графика)", category: "Plan",
+    en: `<div class="cals"><div class="cal"><span class="bar"></span><div class="d">01.01.2026</div><div class="lbl">Stage</div></div></div>`,
+    bg: `<div class="cals"><div class="cal"><span class="bar"></span><div class="d">01.01.2026</div><div class="lbl">Етап</div></div></div>`,
   },
   {
     id: "fe_table", nameEn: "Blank table (3 columns)", nameBg: "Празна таблица (3 колони)", category: "Form",

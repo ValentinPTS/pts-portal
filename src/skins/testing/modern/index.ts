@@ -18,7 +18,7 @@ const OVERRIDES = `
   .mcover .minfo .mno{font-family:var(--sans);font-weight:800;color:var(--green-dark);font-size:16pt;}
   .mcover .minfo .mname{font-family:var(--sans);font-weight:700;font-size:13pt;margin-top:2px;}
   .mcover .minfo .macc{color:var(--muted);font-size:10.5pt;margin-top:6px;}
-  .mcover .coverimg{max-width:52%;height:auto;border-radius:10px;margin-top:14px;}
+  .mcover .coverimg{width:52%;max-width:100%;height:auto;border-radius:10px;margin-top:14px;}
   h2.sec{border-bottom:none;border-left:4px solid var(--green);padding:2px 0 2px 12px;margin:22px 0 6px;color:var(--green-dark);}
   h2.sec .n{color:var(--green);}
   table.ptable th{background:var(--green-soft);color:var(--green-dark);}

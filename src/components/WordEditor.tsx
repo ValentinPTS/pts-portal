@@ -29,6 +29,18 @@ type Unit = "mm" | "cm" | "px";
 // Text-colour palette for the toolbar "A▾" button: brand greens, accents, neutrals.
 const TEXT_COLORS = ["#456b2c", "#57823c", "#6e925a", "#8fa97e", "#9e2b2b", "#cf4911", "#9a6b22", "#2f6f8f", "#1a1a1a", "#3e3e3e", "#666666", "#ffffff"];
 const TEXT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28];
+// Font choices for the toolbar picker. The two brand webfonts are loaded in the
+// editor AND the print/PDF shell (FONTS_HREF); the rest are system fonts present
+// in every browser incl. the Playwright Chromium that renders the PDFs.
+const FONT_FAMILIES: { label: string; css: string }[] = [
+  { label: "PT Serif", css: "'PT Serif', Georgia, serif" },
+  { label: "Sofia Sans Condensed", css: "'Sofia Sans Condensed', Arial, sans-serif" },
+  { label: "Times New Roman", css: "'Times New Roman', Times, serif" },
+  { label: "Georgia", css: "Georgia, serif" },
+  { label: "Arial", css: "Arial, Helvetica, sans-serif" },
+  { label: "Verdana", css: "Verdana, Geneva, sans-serif" },
+  { label: "Courier New", css: "'Courier New', monospace" },
+];
 // Highlight (text background) + table-cell fill swatches — soft Word-like tints.
 const HILITE_COLORS = ["#fff3a3", "#ffd9a0", "#c9f2c7", "#bfe3ff", "#ffc9de", "#e9d8fd", "#e6e6e6"];
 // The Ω symbol palette — measurement/PT characters the documents actually use.
@@ -63,7 +75,7 @@ const COVER_CSS = `
   .we-page .inacc{color:var(--muted);font-size:10.5pt;}
   .we-page .schemeno{font-family:'Sofia Sans Condensed',sans-serif;font-weight:700;color:var(--red);font-size:14pt;margin-top:10px;}
   .we-page .schemettl{font-family:'Sofia Sans Condensed',sans-serif;font-weight:700;font-size:13pt;margin:2px 0 10px;}
-  .we-page .coverimg{max-width:46%;height:auto;border-radius:8px;margin-top:10px;cursor:pointer;}
+  .we-page .coverimg{width:46%;max-width:100%;height:auto;border-radius:8px;margin-top:10px;cursor:pointer;}
   .we-page .coverimg-empty{opacity:.95;}
   .we-page .contacts{display:flex;gap:14px;justify-content:center;margin-top:22px;flex-wrap:wrap;}
   .we-page .contact{display:flex;align-items:center;gap:10px;border:1px solid #88a77b;border-radius:10px;padding:9px 16px;background:#fff;}
@@ -78,7 +90,7 @@ const COVER_CSS = `
   .we-page .mcover .minfo .mno{font-family:'Sofia Sans Condensed',sans-serif;font-weight:800;color:#2b6744;font-size:16pt;}
   .we-page .mcover .minfo .mname{font-family:'Sofia Sans Condensed',sans-serif;font-weight:700;font-size:13pt;margin-top:2px;}
   .we-page .mcover .minfo .macc{color:var(--muted);font-size:10.5pt;margin-top:6px;}
-  .we-page .mcover .coverimg{max-width:52%;}
+  .we-page .mcover .coverimg{width:52%;max-width:100%;}
   /* Minimal skin cover */
   .we-page .mincover{text-align:left;padding:6px 0 14px;}
   .we-page .mincover .minlogo{height:38px;}
@@ -120,6 +132,9 @@ const EDITOR_CSS = `
   .we-page p{margin:6px 0;}
   .we-page ul,.we-page ol{margin:6px 0 6px 0;padding-left:26px;}
   .we-page ul{list-style:disc;} .we-page ol{list-style:decimal;}
+  /* nested numbered lists: 1. / 1.1. / 1.2. — press ⇥ (indent) inside a list */
+  .we-page ol{counter-reset:item;} .we-page ol>li{counter-increment:item;}
+  .we-page ol>li::marker{content:counters(item,".") ". ";}
   .we-page ul ul,.we-page ol ol,.we-page ul ol,.we-page ol ul{margin:2px 0;}
   .we-page li{margin:3px 0;}
   .we-page img{max-width:100%;height:auto;cursor:pointer;}
@@ -377,8 +392,9 @@ export default function WordEditor({
     return clone.innerHTML;
   };
 
-  // ── text size: A− / A+ apply a font-size to the selection (or the block) ──
-  function applyFontSize(pt: number) {
+  // ── inline styling: apply font-size / font-family to the selection, or to the
+  // enclosing block when the caret is just sitting in text (like Word) ──
+  function applyInlineStyle(prop: "fontSize" | "fontFamily", value: string) {
     const el = ref.current; if (!el) return;
     const sel = window.getSelection(); if (!sel || sel.rangeCount === 0) return;
     const range = sel.getRangeAt(0);
@@ -387,9 +403,9 @@ export default function WordEditor({
       const n = range.startContainer;
       const node = n.nodeType === 1 ? (n as HTMLElement) : n.parentElement;
       const block = node?.closest("p,li,h1,h2,h3,div,td,th") as HTMLElement | null;
-      if (block && el.contains(block)) block.style.fontSize = pt + "pt";
+      if (block && el.contains(block)) block.style[prop] = value;
     } else {
-      const span = document.createElement("span"); span.style.fontSize = pt + "pt";
+      const span = document.createElement("span"); span.style[prop] = value;
       try { range.surroundContents(span); }
       catch {
         span.appendChild(range.extractContents()); range.insertNode(span);
@@ -398,6 +414,9 @@ export default function WordEditor({
     }
     setSaved(false); refreshGuides();
   }
+  // Any size works, including halves like 13.5 pt (the toolbar box accepts "13,5").
+  function applyFontSize(pt: number) { applyInlineStyle("fontSize", pt + "pt"); }
+  function applyFont(family: string) { applyInlineStyle("fontFamily", family); }
   function bumpFont(delta: number) {
     const sel = window.getSelection(); if (!sel || sel.rangeCount === 0) return;
     const n = sel.getRangeAt(0).startContainer;
@@ -819,6 +838,9 @@ export default function WordEditor({
       const corner = h.length === 2;
       if (corner && lockRef.current) hh = w / d.ratio; // keep aspect on corners
       w = Math.max(mmToPx(8), w); hh = Math.max(mmToPx(8), hh);
+      // let the image grow to the full content width — older covers carry a baked
+      // inline max-width (46%), which would silently cancel the resize
+      img.style.maxWidth = "100%";
       img.style.width = roundMm(pxToMm(w)) + "mm";
       img.style.height = roundMm(pxToMm(hh)) + "mm";
     }
@@ -846,6 +868,7 @@ export default function WordEditor({
       const ratio = imgW / imgH;
       if (which === "w") h = roundMm(mm / ratio); else w = roundMm(mm * ratio);
     }
+    imgSel.style.maxWidth = "100%"; // clear an older baked cover cap (see onDragMove)
     imgSel.style.width = w + "mm";
     imgSel.style.height = h + "mm";
     setImgW(w); setImgH(h); setSaved(false); place(); refreshGuides();
@@ -1271,18 +1294,46 @@ export default function WordEditor({
           {["1", "1.15", "1.5", "2"].map((n) => (<option key={n} value={n}>{n}</option>))}
         </select>
         <span className="we-sep" />
-        {tool("A−", L("По-малък текст", "Smaller text"), () => bumpFont(-1))}
-        {tool("A+", L("По-голям текст", "Bigger text"), () => bumpFont(1))}
+        {/* font family — applies to the selection (or the block at the caret) */}
         <select
           className="we-size"
-          title={L("Размер на текста", "Text size")}
+          title={L("Шрифт", "Font")}
           defaultValue=""
+          style={{ maxWidth: 150 }}
           onMouseDown={(e) => e.stopPropagation()}
-          onChange={(e) => { const v = parseInt(e.target.value, 10); if (v) applyFontSize(v); e.currentTarget.selectedIndex = 0; }}
+          onChange={(e) => { if (e.target.value) applyFont(e.target.value); e.currentTarget.selectedIndex = 0; }}
         >
-          <option value="" disabled>{L("Размер", "Size")}</option>
-          {TEXT_SIZES.map((n) => (<option key={n} value={n}>{n} pt</option>))}
+          <option value="" disabled>{L("Шрифт", "Font")}</option>
+          {FONT_FAMILIES.map((f) => (
+            <option key={f.label} value={f.css} style={{ fontFamily: f.css }}>{f.label}</option>
+          ))}
         </select>
+        {tool("A−", L("По-малък текст", "Smaller text"), () => bumpFont(-1))}
+        {tool("A+", L("По-голям текст", "Bigger text"), () => bumpFont(1))}
+        {/* size — type ANY value (13,5 works) and press Enter, or pick a preset */}
+        <input
+          className="we-size"
+          list="we-size-list"
+          inputMode="decimal"
+          placeholder={L("Размер", "Size")}
+          title={L("Размер в pt — напишете стойност (напр. 13,5) и натиснете Enter", "Size in pt — type a value (e.g. 13.5) and press Enter")}
+          style={{ width: 74 }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter") return;
+            e.preventDefault();
+            const v = parseFloat(e.currentTarget.value.replace(",", "."));
+            if (Number.isFinite(v) && v >= 4 && v <= 96) { applyFontSize(Math.round(v * 10) / 10); e.currentTarget.value = ""; }
+          }}
+          onChange={(e) => {
+            // picking a datalist preset applies immediately (typing does not)
+            const v = parseFloat(e.currentTarget.value.replace(",", "."));
+            if (TEXT_SIZES.includes(v)) { applyFontSize(v); e.currentTarget.value = ""; }
+          }}
+        />
+        <datalist id="we-size-list">
+          {TEXT_SIZES.map((n) => (<option key={n} value={n} />))}
+        </datalist>
         {/* live indicator: the font + size of the text at the caret (like Word) */}
         {curFmt && (
           <span

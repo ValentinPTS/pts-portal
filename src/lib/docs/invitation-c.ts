@@ -29,8 +29,8 @@ export function renderInvitationC(s: Scheme, lang: Lang): string {
   // 3 — Time schedule (green calendars, same as plan.ts §10 / invitation.ts §3)
   const s3 = `<div class="cals">${s.schedule
     .map((it) => {
-      const [d, m] = it.date.split(".");
-      return `<div class="cal"><span class="bar"></span><div class="d">${d}.${m}</div><div class="lbl">${L(
+      const dm = it.date.includes(".") ? it.date.split(".").slice(0, 2).join(".") : it.date || "—";
+      return `<div class="cal"><span class="bar"></span><div class="d">${dm}</div><div class="lbl">${L(
         it.labelEn,
         it.labelBg
       )}</div></div>`;

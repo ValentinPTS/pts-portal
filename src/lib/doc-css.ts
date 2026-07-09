@@ -53,7 +53,8 @@ export const DOC_CSS = `
   .inacc{color:var(--muted);font-size:10.5pt;}
   .schemeno{font-family:var(--sans);font-weight:700;color:var(--red);font-size:14pt;margin-top:10px;}
   .schemettl{font-family:var(--sans);font-weight:700;font-size:13pt;margin:2px 0 10px;}
-  .coverimg{max-width:46%;height:auto;border-radius:8px;margin-top:10px;}
+  .coverimg{width:46%;max-width:100%;height:auto;border-radius:8px;margin-top:10px;}
+  img{max-width:100%;}
   /* lighter document header (logo + embroidery band + centred title) for utility
      forms that don't have a full title page; the wrap is a white band that bleeds
      left over the side embroidery so the side strip starts at the first section */
@@ -95,6 +96,10 @@ export const DOC_CSS = `
   .selbox{display:inline-block;border:1px solid var(--green-dark);border-radius:5px;padding:1px 10px;font-family:var(--sans);font-weight:700;color:var(--green-dark);font-size:10pt;}
   .sig{display:flex;justify-content:space-between;gap:24px;margin-top:22px;}
   .sig .col{flex:1;border-top:2px solid var(--green-dark);padding-top:4px;font-size:9pt;color:var(--ink);text-align:center;}
+  /* nested numbered lists: 1. / 1.1. / 1.2. — use the toolbar's indent inside a list */
+  ol{counter-reset:item;}
+  ol>li{counter-increment:item;}
+  ol>li::marker{content:counters(item,".") ". ";}
   .docfooter{margin-top:22px;border-top:1px solid var(--line);padding-top:6px;font-family:var(--sans);font-size:8.5pt;color:var(--muted);text-align:center;}
   /* editor-inserted formulas (native MathML — renders in Chromium incl. the PDF pass) */
   .we-f{display:inline-block;padding:0 1px;}

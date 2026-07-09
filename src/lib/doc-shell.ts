@@ -51,7 +51,9 @@ export function coverImgTag(s: Scheme): string {
   const url = s.coverImage || activeSkin().defaultCover || "";
   const empty = !url;
   const src = empty ? COVER_PLACEHOLDER : esc(url);
-  return `<img class="coverimg${empty ? " coverimg-empty" : ""}" data-cover="1" src="${src}" alt="" style="max-width:${w}%;display:block;margin:${margin};">`;
+  // width (not max-width) so the owner can resize the photo freely in the editor —
+  // up to the full content width (max-width:100% is the only ceiling).
+  return `<img class="coverimg${empty ? " coverimg-empty" : ""}" data-cover="1" src="${src}" alt="" style="width:${w}%;max-width:100%;display:block;margin:${margin};">`;
 }
 
 // ── Skin engine ────────────────────────────────────────────────────────────
