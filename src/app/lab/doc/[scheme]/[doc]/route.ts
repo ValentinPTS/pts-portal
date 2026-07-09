@@ -10,11 +10,14 @@ import type { DocOptions } from "@/lib/types";
 // Lab-scoped document view. A laboratory can fetch ONLY:
 //   • documents for a scheme it actually participates in (verified by lab_id), and
 //   • its OWN certificate (scoped to its own code — never another lab's).
-// Returns print-ready HTML (the lab can save as PDF from the browser). Whitelisted
-// to certificate + final report; everything else is forbidden.
+// Returns print-ready HTML (the lab can save as PDF from the browser). Whitelist:
+// certificate + final report, plus the per-phase participant handouts of the lab
+// timeline (instruction, blank receipt protocol, blank results sheet — generic
+// documents every participant receives; they carry no other lab's identity).
+// The participant LISTS (F 7.2.1-4/-5) stay internal — never lab-visible (§4.2).
 export const dynamic = "force-dynamic";
 
-const ALLOWED = new Set(["certificate", "report"]);
+const ALLOWED = new Set(["certificate", "report", "instruction", "protocol", "results"]);
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ scheme: string; doc: string }> }) {
   const ls = await getLabSession();

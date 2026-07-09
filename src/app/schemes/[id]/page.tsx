@@ -93,6 +93,7 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <Link href={`/schemes/${id}/edit`} className="btn" style={{ fontSize: 13 }}>{tr("scheme.editData")}</Link>
           <Link href={`/schemes/${id}/participants`} className="btn" style={{ fontSize: 13 }}>{tr("scheme.participants")}</Link>
+          <Link href={`/schemes/${id}/traceability`} className="btn" style={{ fontSize: 13 }}>{tr("trace.title")}</Link>
           <Link href={`/schemes/${id}/results`} className="btn" style={{ fontSize: 13 }}>{tr("scheme.results")}</Link>
           <SkinPicker schemeId={id} current={s.skin ?? "classic"} skins={skins.map((k) => ({ id: k.meta.id, name: k.meta.name }))} />
           <ManageMenu label={L("Управление", "Manage")}>

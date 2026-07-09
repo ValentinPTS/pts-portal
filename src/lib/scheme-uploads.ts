@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { UploadedDoc } from "./types";
+import { getDb } from "./supabase";
 
 // Storage for ready-made document files uploaded into a scheme's document slots.
 // PRIVATE bucket — scheme documents can contain confidential participant data, so
@@ -26,4 +28,38 @@ export async function ensureSchemeDocsBucket(db: SupabaseClient): Promise<void> 
     });
     if (error && !/exist/i.test(error.message)) throw error;
   }
+}
+
+// Stream one uploaded file to the caller — shared by the auth-gated viewer routes
+// (owner doc uploads AND lab uploads). Handles both real storage paths and the
+// dev data:-URL fallback. The CALLER does authorization; this only moves bytes.
+export async function uploadedDocResponse(up: UploadedDoc, download: boolean): Promise<Response> {
+  let bytes: Uint8Array;
+  let mime = up.mime || "application/octet-stream";
+  if (up.path.startsWith("data:")) {
+    // dev fallback — the file is stored inline as a data: URL
+    const m = up.path.match(/^data:([^;]+);base64,(.*)$/);
+    if (!m) return new Response("Not found", { status: 404 });
+    mime = m[1];
+    bytes = new Uint8Array(Buffer.from(m[2], "base64"));
+  } else {
+    const db = getDb();
+    if (!db) return new Response("Not found", { status: 404 });
+    const { data, error } = await db.storage.from(SCHEME_DOC_BUCKET).download(up.path);
+    if (error || !data) return new Response("Not found", { status: 404 });
+    bytes = new Uint8Array(await data.arrayBuffer());
+  }
+  const safeName = (up.name || "document").replace(/[^\w.\-]+/g, "_");
+  // copy into a fresh (plain-ArrayBuffer-backed) array so the Response body type is exact
+  const out = new Uint8Array(bytes.byteLength);
+  out.set(bytes);
+  return new Response(out, {
+    headers: {
+      "content-type": mime,
+      "content-disposition": `${download ? "attachment" : "inline"}; filename="${safeName}"`,
+      "content-security-policy": "frame-ancestors 'self'",
+      "x-content-type-options": "nosniff",
+      "cache-control": "private, no-store",
+    },
+  });
 }

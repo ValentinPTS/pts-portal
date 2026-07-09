@@ -38,12 +38,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
     participants: ps.map((p) => ({
       code: p.code, labName: p.labName, country: p.country, contact: p.contact,
       email: p.email, phone: p.phone, deliveryAddress: p.deliveryAddress, participations: p.participations,
+      courier: p.courier, sampleCode: p.sampleCode, characteristics: p.characteristics,
     })),
   };
 
   // ?rev=<id> previews a specific saved revision (the History page); else the
   // current saved body, falling back to the faithful default so it's never blank.
-  const isList = doc === "registered" || doc === "registered-coded";
+  const isList = doc === "registered" || doc === "registered-coded" || doc === "results-coded";
   const revId = req.nextUrl.searchParams.get("rev");
   let saved = scheme.docs?.[doc]?.[lang] ?? "";
   if (revId) {

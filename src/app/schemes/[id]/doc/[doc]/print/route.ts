@@ -37,14 +37,15 @@ export async function GET(
 
   // Per-document participant context.
   let opts: DocOptions | undefined;
-  if (def.key === "registered" || def.key === "registered-coded") {
-    // The participant lists (PTS-L 4.4-1 / 4.4-2) need the full list, masked per role.
+  if (def.key === "registered" || def.key === "registered-coded" || def.key === "results-coded") {
+    // The participant lists (F 7.2.1-4 / -5 / -6) need the full list, masked per role.
     const ps = await listParticipants(id);
     opts = {
       revealNames: reveal,
       participants: ps.map((p) => ({
         code: p.code, labName: p.labName, country: p.country, contact: p.contact,
         email: p.email, phone: p.phone, deliveryAddress: p.deliveryAddress, participations: p.participations,
+        courier: p.courier, sampleCode: p.sampleCode, characteristics: p.characteristics,
       })),
     };
   } else {

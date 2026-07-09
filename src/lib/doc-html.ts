@@ -13,6 +13,7 @@ function toOpts(participants: Participant[], reveal = true): DocOptions {
     participants: participants.map((p) => ({
       code: p.code, labName: p.labName, country: p.country, contact: p.contact,
       email: p.email, phone: p.phone, deliveryAddress: p.deliveryAddress, participations: p.participations,
+      courier: p.courier, sampleCode: p.sampleCode, characteristics: p.characteristics,
     })),
   };
 }

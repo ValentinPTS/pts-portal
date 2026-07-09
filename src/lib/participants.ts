@@ -16,7 +16,10 @@ const pad2 = (n: number) => String(n).padStart(2, "0");
 // Participant store — Supabase when configured, else in-memory (same as the
 // scheme store). Each participant gets a random, unique-per-scheme secret code.
 
-const mem: Participant[] = [];
+// Shared across all server entry points + HMR (see store.ts) so RSC pages, route
+// handlers and server actions see the same list in the no-DB dev fallback.
+const memStore = globalThis as unknown as { __ptsParticipantMem?: Participant[] };
+const mem: Participant[] = memStore.__ptsParticipantMem ?? (memStore.__ptsParticipantMem = []);
 let warned = false;
 function warn(e: unknown) {
   if (warned) return;
@@ -30,6 +33,8 @@ function toRow(p: Participant) {
     contact: p.contact, email: p.email, phone: p.phone, country: p.country,
     delivery_address: p.deliveryAddress, participations: p.participations, status: p.status,
     lab_id: p.labId ?? null,
+    courier: p.courier ?? null, sample_code: p.sampleCode ?? null,
+    characteristics: p.characteristics ?? null,
   };
 }
 type Row = ReturnType<typeof toRow>;
@@ -40,6 +45,8 @@ function fromRow(r: Row): Participant {
     deliveryAddress: r.delivery_address ?? "", participations: r.participations ?? 1,
     status: r.status as ParticipantStatus,
     labId: r.lab_id ?? undefined,
+    courier: r.courier ?? undefined, sampleCode: r.sample_code ?? undefined,
+    characteristics: Array.isArray(r.characteristics) ? (r.characteristics as number[]) : undefined,
   };
 }
 
@@ -101,6 +108,9 @@ export async function addParticipant(input: {
   deliveryAddress?: string;
   participations?: number;
   labId?: string;
+  courier?: string;
+  sampleCode?: string;
+  characteristics?: number[];
 }): Promise<Participant> {
   const [existing, scheme] = await Promise.all([
     listParticipants(input.schemeId),
@@ -120,6 +130,9 @@ export async function addParticipant(input: {
     participations: input.participations && input.participations > 0 ? input.participations : 1,
     status: "applied",
     labId: input.labId,
+    courier: input.courier || undefined,
+    sampleCode: input.sampleCode || undefined,
+    characteristics: input.characteristics?.length ? input.characteristics : undefined,
   };
   const db = getDb();
   if (!db) {
@@ -134,4 +147,44 @@ export async function addParticipant(input: {
     mem.push(p);
   }
   return p;
+}
+
+// Patch one participation (edit form; Phase-4 status transitions). The code and
+// scheme are immutable — the code is the confidential identity everywhere.
+export type ParticipantPatch = Partial<
+  Pick<Participant, "labName" | "contact" | "email" | "phone" | "country" |
+    "deliveryAddress" | "participations" | "courier" | "sampleCode" | "characteristics" | "status">
+>;
+export async function updateParticipant(id: string, patch: ParticipantPatch): Promise<Participant | null> {
+  const apply = (p: Participant): Participant => ({ ...p, ...patch });
+  const db = getDb();
+  if (!db) {
+    const i = mem.findIndex((x) => x.id === id);
+    if (i === -1) return null;
+    mem[i] = apply(mem[i]);
+    return mem[i];
+  }
+  try {
+    const row: Partial<Row> = {};
+    if (patch.labName !== undefined) row.lab_name = patch.labName;
+    if (patch.contact !== undefined) row.contact = patch.contact;
+    if (patch.email !== undefined) row.email = patch.email;
+    if (patch.phone !== undefined) row.phone = patch.phone;
+    if (patch.country !== undefined) row.country = patch.country;
+    if (patch.deliveryAddress !== undefined) row.delivery_address = patch.deliveryAddress;
+    if (patch.participations !== undefined) row.participations = patch.participations;
+    if (patch.courier !== undefined) row.courier = patch.courier || null;
+    if (patch.sampleCode !== undefined) row.sample_code = patch.sampleCode || null;
+    if (patch.characteristics !== undefined) row.characteristics = patch.characteristics?.length ? patch.characteristics : null;
+    if (patch.status !== undefined) row.status = patch.status;
+    const { data, error } = await db.from("participants").update(row).eq("id", id).select("*").maybeSingle();
+    if (error) throw error;
+    return data ? fromRow(data as Row) : null;
+  } catch (e) {
+    warn(e);
+    const i = mem.findIndex((x) => x.id === id);
+    if (i === -1) return null;
+    mem[i] = apply(mem[i]);
+    return mem[i];
+  }
 }

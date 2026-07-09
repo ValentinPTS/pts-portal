@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { getScheme } from "@/lib/store";
 import { listParticipants } from "@/lib/participants";
 import { listCaseEvents } from "@/lib/case-events";
+import { getDoc } from "@/lib/documents";
 import { metricsForScheme } from "@/lib/scoring";
 import { esc, pick } from "@/lib/doc-shell";
 import { requireStaff, canRevealNames, getCurrentRole } from "@/lib/roles";
@@ -41,13 +42,17 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   for (const p of participants) {
     const events = await listCaseEvents(id, p.code);
     const rows = events.length
-      ? events.map((e) => `<tr>
+      ? events.map((e) => {
+          const doc = e.docKey ? getDoc(e.docKey) : undefined;
+          const refCell = [doc ? L(doc.nameEn, doc.nameBg) : "", e.ref ?? ""].filter(Boolean).join(" · ");
+          return `<tr>
           <td class="d">${fmtDate(e.at)}</td>
           <td>${L(kindEn(e.kind), kindBg(e.kind))}</td>
-          <td>${esc(e.ref ?? "")}</td>
+          <td>${esc(refCell)}</td>
           <td>${esc(e.note ?? "")}</td>
           <td class="s">${e.source === "auto" ? L("auto", "авт.") : L("manual", "ръчно")}</td>
-        </tr>`).join("")
+        </tr>`;
+        }).join("")
       : `<tr><td colspan="5" class="muted">${L("No timeline steps recorded.", "Няма записани стъпки.")}</td></tr>`;
 
     const reported = scheme.scoring?.results?.[p.code] ?? {};

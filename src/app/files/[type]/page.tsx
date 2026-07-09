@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import { listSchemeSummaries, listSchemesInFolder } from "@/lib/store";
 import { listChildFolders, listFolders } from "@/lib/folder-tree";
 import ExplorerShell from "@/components/ExplorerShell";
-import { FolderTile, SchemeTile } from "@/components/Tiles";
+import { FolderTile } from "@/components/Tiles";
+import SchemeGroups from "@/components/SchemeGroups";
 import NewProjectDialog from "@/components/NewProjectDialog";
 import NewFolderDialog from "@/components/NewFolderDialog";
 import { typeFromSlug, typeLabel, ACCENT, nextProject } from "@/lib/folders";
@@ -61,13 +62,11 @@ export default async function TypePage({ params, searchParams }: { params: Promi
         <NewFolderDialog variant="tile" type={type} parentId={null} accent={ac.accent} soft={ac.soft} line={ac.line} />
       </div>
 
-      {/* schemes directly under the root */}
+      {/* schemes directly under the root — grouped by lifecycle */}
       {rootSchemes.length > 0 && (
         <>
-          <div style={{ fontWeight: 700, fontSize: 13, color: "var(--muted)", margin: "26px 0 10px", letterSpacing: ".04em", textTransform: "uppercase" }}>{tr("folder.schemes")}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(290px,1fr))", gap: 18 }}>
-            {rootSchemes.map((s) => <SchemeTile key={s.id} s={s} lang={lang} />)}
-          </div>
+          <div style={{ fontWeight: 700, fontSize: 13, color: "var(--muted)", margin: "26px 0 0", letterSpacing: ".04em", textTransform: "uppercase" }}>{tr("folder.schemes")}</div>
+          <SchemeGroups schemes={rootSchemes} lang={lang} />
         </>
       )}
     </ExplorerShell>

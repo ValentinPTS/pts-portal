@@ -41,6 +41,19 @@ export function schemesIn<T extends SchemeRef>(schemes: T[], type: FolderType, y
   return schemes.filter((s) => s.type === type && schemeYear(s) === year);
 }
 
+// Lifecycle buckets for grouping scheme lists (owner explorer + lab portal):
+// coming = being prepared (draft, incl. announced), current = actively worked
+// (enrolment open → reporting), finished = closed/reported.
+export type Lifecycle = "current" | "coming" | "finished";
+export const LIFECYCLE_ORDER: Lifecycle[] = ["current", "coming", "finished"];
+export function lifecycleOf(st: SchemeStatus): Lifecycle {
+  return st === "draft" ? "coming" : st === "closed" ? "finished" : "current";
+}
+export function lifecycleMeta(lc: Lifecycle, lang: UiLang = "en"): { label: string; color: string } {
+  const color = lc === "current" ? "#57823c" : lc === "coming" ? "#9a6b22" : "#666666";
+  return { label: trans(lang, `lifecycle.${lc}`), color };
+}
+
 const STATUS: Record<SchemeStatus, { label: string; tone: keyof typeof TONE }> = {
   draft: { label: "Draft", tone: "gray" },
   open: { label: "Open", tone: "amber" },

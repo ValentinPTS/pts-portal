@@ -25,11 +25,11 @@ export default async function BuildDocPage({
   const participants = await listParticipants(id);
   const { lang, tr } = await getServerT();
 
-  // Name guard (§4.2): only a manager sees real names on the two participant lists.
+  // Name guard (§4.2): only a manager sees real names on the participant lists.
   // Those lists are data-driven, so we always start the editor from the fresh
   // (masked-per-role) default rather than any saved HTML.
   const reveal = canRevealNames(await getCurrentRole());
-  const isList = doc === "registered" || doc === "registered-coded";
+  const isList = doc === "registered" || doc === "registered-coded" || doc === "results-coded";
   const saved = isList ? { bg: "", en: "" } : (s.docs?.[doc] ?? { bg: "", en: "" });
   const dft = defaultDocHtml(s, doc, participants, reveal);
   // the editable title page (cover) for this document in the scheme's skin

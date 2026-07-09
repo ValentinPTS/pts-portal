@@ -6,6 +6,7 @@ import { renderDeclaration } from "./docs/declaration";
 import { renderProtocol } from "./docs/protocol";
 import { renderInstruction } from "./docs/instruction";
 import { renderResults } from "./docs/results";
+import { renderResultsCoded } from "./docs/results-coded";
 import { renderReport } from "./docs/report";
 import { renderCertificate } from "./docs/certificate";
 import { renderRegistered, renderRegisteredCoded } from "./docs/registered";
@@ -45,12 +46,13 @@ export const DOCUMENTS: DocDef[] = [
   { key: "stat-project", nameEn: "Statistical Project", nameBg: "Статистически проект", formNumber: "F 7.2.2-1", render: byType(renderStatProject, renderStatProjectC) },
   { key: "invitation", nameEn: "Invitation", nameBg: "Покана", formNumber: "F 7.2.1-2", render: byType(renderInvitation, renderInvitationC) },
   { key: "application", nameEn: "Application for Participation", nameBg: "Заявка за участие", formNumber: "F 7.2.1-3", render: byType(renderApplication, renderApplicationC) },
-  { key: "registered", nameEn: "List of Applicants", nameBg: "Списък на заявилите участие", formNumber: "PTS-L 4.4-1", render: renderRegistered },
-  { key: "registered-coded", nameEn: "Coordinated List of Participants", nameBg: "Координиран списък на участниците", formNumber: "PTS-L 4.4-2", render: renderRegisteredCoded },
+  { key: "registered", nameEn: "List of Applied Participants", nameBg: "Списък на заявилите участие", formNumber: "F 7.2.1-4", render: renderRegistered },
+  { key: "registered-coded", nameEn: "Encrypted List of Participants", nameBg: "Кодиран списък на участниците", formNumber: "F 7.2.1-5", render: renderRegisteredCoded },
   { key: "declaration", nameEn: "Confidentiality Declaration", nameBg: "Декларация за конфиденциалност", formNumber: "F 4.2-2", render: renderDeclaration },
   { key: "protocol", nameEn: "Protocol for PT Item Receipt", nameBg: "Протокол за получаване на обект", formNumber: "F 7.3.4-1", render: byType(renderProtocol, renderProtocolC) },
   { key: "instruction", nameEn: "Instruction for Participants", nameBg: "Инструкция за участниците", formNumber: "F 7.3.5-1", render: byType(renderInstruction, renderInstructionC) },
   { key: "results", nameEn: "Results Sheet", nameBg: "Лист с резултати", formNumber: "F 7.2.1-7", render: byType(renderResults, renderResultsC) },
+  { key: "results-coded", nameEn: "Encrypted List of Results", nameBg: "Кодиран списък на резултатите", formNumber: "F 7.2.1-6", render: renderResultsCoded },
   { key: "report", nameEn: "Final Report", nameBg: "Окончателен доклад", formNumber: "F 7.4.3-1", render: byType(renderReport, renderReportC) },
   { key: "certificate", nameEn: "Certificate of Participation", nameBg: "Сертификат за участие", formNumber: "proposed", render: byType(renderCertificate, renderCertificateC) },
   { key: "feedback", nameEn: "Feedback Sheet", nameBg: "Лист за обратна връзка", formNumber: "F 8.6-2", render: renderFeedback },

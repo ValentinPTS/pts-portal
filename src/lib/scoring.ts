@@ -83,7 +83,11 @@ export function buildScoring(
     metrics.forEach((m, mi) => {
       const value = num(`r_${mi}_${pi}_value`);
       if (value === null) return; // no result entered for this lab/metric
-      (results[code] ??= {})[m.key] = { value, u: num(`r_${mi}_${pi}_u`) ?? 0 };
+      const entry: ResultEntry = { value, u: num(`r_${mi}_${pi}_u`) ?? 0 };
+      // individual determinations I/II/III (F 7.2.1-6) — positional, blanks = null
+      const det = [0, 1, 2].map((k) => num(`r_${mi}_${pi}_d${k}`));
+      if (det.some((d) => d !== null)) entry.determinations = det;
+      (results[code] ??= {})[m.key] = entry;
     });
   });
   return { assigned, results };

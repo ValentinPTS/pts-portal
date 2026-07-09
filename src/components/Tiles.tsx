@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { FolderIcon, FileIcon } from "@/components/FileIcons";
 import { ACCENT, statusChip, schemeName, type FolderType } from "@/lib/folders";
+import { DOCUMENTS } from "@/lib/documents";
 import { t, DEFAULT_LANG, type UiLang } from "@/lib/i18n";
 import type { Scheme } from "@/lib/types";
 
@@ -37,7 +38,7 @@ export function SchemeTile({ s, lang = DEFAULT_LANG }: { s: Scheme; lang?: UiLan
         <div style={{ fontSize: 13, color: "var(--muted)" }}>{s.number}</div>
       </div>
       <div style={stripStyle}>
-        <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 500 }}>{built}/14 {t(lang, "tile.builtSuffix")}</span>
+        <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 500 }}>{built}/{DOCUMENTS.length} {t(lang, "tile.builtSuffix")}</span>
         <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>{date}</span>
       </div>
     </Link>

@@ -109,6 +109,10 @@ export default async function ResultsPage({
                     <tr style={{ background: "var(--green-soft)", color: "var(--green-dark)" }}>
                       <th className="text-left p-2">{tr("col.code")}</th>
                       <th className="text-left p-2">{tr("col.laboratory")}</th>
+                      {/* individual determinations I/II/III (F 7.2.1-6) — optional */}
+                      <th className="text-left p-2" style={{ width: 76 }}>I</th>
+                      <th className="text-left p-2" style={{ width: 76 }}>II</th>
+                      <th className="text-left p-2" style={{ width: 76 }}>III</th>
                       <th className="text-left p-2" style={{ width: 110 }}>{isCal ? "X_lab" : "Result xᵢ"}</th>
                       <th className="text-left p-2" style={{ width: 110 }}>{isCal ? "U_lab" : "u(xᵢ)"}</th>
                       {isCal ? (
@@ -130,6 +134,9 @@ export default async function ResultsPage({
                         <tr key={p.id} style={{ borderTop: "1px solid var(--line)" }}>
                           <td className="p-2 font-mono font-bold" style={{ color: "var(--green-dark)" }}>{p.code}</td>
                           <td className="p-2" style={{ color: "var(--muted)" }}>{p.labName}</td>
+                          <td className="p-1"><NumCell name={`r_${mi}_${pi}_d0`} def={fv(stored?.determinations?.[0] ?? undefined)} /></td>
+                          <td className="p-1"><NumCell name={`r_${mi}_${pi}_d1`} def={fv(stored?.determinations?.[1] ?? undefined)} /></td>
+                          <td className="p-1"><NumCell name={`r_${mi}_${pi}_d2`} def={fv(stored?.determinations?.[2] ?? undefined)} /></td>
                           <td className="p-1"><NumCell name={`r_${mi}_${pi}_value`} def={fv(stored?.value)} /></td>
                           <td className="p-1"><NumCell name={`r_${mi}_${pi}_u`} def={fv(stored?.u)} /></td>
                           {isCal ? (

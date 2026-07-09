@@ -7,7 +7,10 @@ import { getDb } from "./supabase";
 // participant CODE only; never store a real name here (§4.2). See migration
 // 0010_case_events.sql.
 
-const mem: CaseEvent[] = [];
+// Shared across all server entry points + HMR (see store.ts) so RSC pages, route
+// handlers and server actions see the same timeline in the no-DB dev fallback.
+const memStore = globalThis as unknown as { __ptsCaseEventMem?: CaseEvent[] };
+const mem: CaseEvent[] = memStore.__ptsCaseEventMem ?? (memStore.__ptsCaseEventMem = []);
 let warned = false;
 function warn(e: unknown) {
   if (warned) return;
@@ -19,7 +22,7 @@ function toRow(e: CaseEvent) {
   return {
     id: e.id, scheme_id: e.schemeId, code: e.code, kind: e.kind, at: e.at || null,
     ref: e.ref ?? null, note: e.note ?? null, recorded_by: e.recordedBy,
-    recorded_at: e.recordedAt, source: e.source,
+    recorded_at: e.recordedAt, source: e.source, doc_key: e.docKey ?? null,
   };
 }
 type Row = ReturnType<typeof toRow>;
@@ -28,6 +31,7 @@ function fromRow(r: Row): CaseEvent {
     id: r.id, schemeId: r.scheme_id, code: r.code, kind: r.kind as CaseEventKind,
     at: (r.at as string | null) ?? "", ref: r.ref ?? undefined, note: r.note ?? undefined,
     recordedBy: r.recorded_by ?? "", recordedAt: r.recorded_at ?? "", source: (r.source as "auto" | "manual") ?? "manual",
+    docKey: (r.doc_key as string | null) ?? undefined,
   };
 }
 
@@ -58,6 +62,7 @@ export async function listCaseEvents(schemeId: string, code?: string): Promise<C
 export async function addCaseEvent(input: {
   schemeId: string; code: string; kind: CaseEventKind; at?: string;
   ref?: string; note?: string; recordedBy?: string; source?: "auto" | "manual";
+  docKey?: string;
 }): Promise<CaseEvent> {
   const today = new Date().toISOString().slice(0, 10);
   const e: CaseEvent = {
@@ -71,6 +76,7 @@ export async function addCaseEvent(input: {
     recordedBy: input.recordedBy ?? "",
     recordedAt: new Date().toISOString(),
     source: input.source ?? "manual",
+    docKey: input.docKey || undefined,
   };
   const db = getDb();
   if (!db) { mem.push(e); return e; }

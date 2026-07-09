@@ -7,8 +7,10 @@ import { headers } from "next/headers";
 import { getScheme, updateScheme, addScheme, deleteScheme, listSchemeSummaries, listSchemesInFolder, schemeNumberExists } from "./store";
 import { blankScheme } from "./new-scheme";
 import { nextProject } from "./folders";
-import { addParticipant, listParticipants } from "./participants";
+import { addParticipant, listParticipants, listParticipationsForLab, updateParticipant } from "./participants";
 import { addApplication, listApplications, setApplicationStatus } from "./applications";
+import { getDoc } from "./documents";
+import { PSTATUS_ORDER, LAB_UPLOAD_SLOTS, canLabUploadNow, type LabUploadSlot } from "./lab-phases";
 import { metricsForScheme, buildScoring, computeAssigned } from "./scoring";
 import { isOwnerEmail } from "./auth";
 import { addLibraryItem, updateLibraryItem, deleteLibraryItem, type LibraryItem } from "./library-store";
@@ -40,7 +42,7 @@ import { addRevision, getRevision, approveRevision } from "./doc-revisions";
 import { createFolder, renameFolder, deleteFolder, getFolder, listChildFolders } from "./folder-tree";
 import { SAMPLE_SCHEMES } from "./sample-schemes";
 import { TYPE_SLUG, type FolderType } from "./folders";
-import type { Block, Scheme, StaffRole, StaffStatus, LabStatus, CaseEventKind, LabRegion, VatStatus, SchemeStatus } from "./types";
+import type { Block, Scheme, StaffRole, StaffStatus, LabStatus, CaseEventKind, LabRegion, VatStatus, SchemeStatus, ParticipantStatus } from "./types";
 
 const STAFF_ROLES: StaffRole[] = ["manager", "staff", "auditor"];
 const SCHEME_STATUSES: SchemeStatus[] = ["draft", "open", "running", "report", "closed"];
@@ -548,6 +550,13 @@ export async function approveApplicationAction(formData: FormData) {
   if (!app) redirect(`/schemes/${schemeId}/applications`);
 
   const total = Object.values(app.selections).reduce((a, b) => a + b, 0) || 1;
+  // Keep WHICH characteristics the lab picked (F 7.2.1-5 renders one row per
+  // characteristic) — previously this detail was flattened into `total` and lost.
+  const characteristics = Object.entries(app.selections)
+    .filter(([, n]) => n > 0)
+    .map(([idx]) => parseInt(idx, 10))
+    .filter((n) => Number.isInteger(n) && n >= 0)
+    .sort((a, b) => a - b);
 
   // Link this participation to a lab account so it shows up in that lab's portal.
   //  1) If a LOGGED-IN lab submitted the заявка, it carries app.labId — trust that
@@ -574,13 +583,88 @@ export async function approveApplicationAction(formData: FormData) {
     deliveryAddress: app.deliveryAddress,
     participations: total,
     labId,
+    characteristics,
   });
   await setApplicationStatus(schemeId, appId, "approved");
   await logActivity("application.approved", { schemeId, targetCode: p.code, summary: `Application approved → participant ${p.code}` });
   await addCaseEvent({ schemeId, code: p.code, kind: "code_assigned", source: "auto" });
+  await advanceStatusForEvent(schemeId, p.code, "code_assigned");
 
   revalidatePath(`/schemes/${schemeId}`, "layout");
   redirect(`/schemes/${schemeId}/applications`);
+}
+
+// ── Lab self-upload (traceability iteration 2, owner-approved 2026-07-09) ───────
+// A signed-in lab uploads its signed receipt protocol / completed results sheet
+// for a scheme it participates in. The upload is validated like the owner's doc
+// uploads (type allow-list, 15 MB cap, magic bytes), stored PRIVATELY, recorded
+// on scheme.labUploads[code][slot], and auto-stamps the case file (which advances
+// the participant status → matrix + timeline move without staff typing anything).
+// Replace is allowed until the participation is scored; then the slot is locked.
+// E-mail stays a first-class path — staff keep recording those steps manually.
+export async function labUploadDocAction(formData: FormData): Promise<void> {
+  const ls = await getLabSession();
+  if (!ls) redirect("/lab/login");
+  const schemeId = String(formData.get("schemeId") ?? "");
+  const slot = String(formData.get("slot") ?? "") as LabUploadSlot;
+  const slotDef = LAB_UPLOAD_SLOTS[slot];
+  if (!slotDef) redirect("/lab");
+
+  // the lab must own a participation in this scheme (never trust the form)
+  const mine = (await listParticipationsForLab(ls!.lab.id)).find((p) => p.schemeId === schemeId);
+  if (!mine) redirect("/lab");
+  // locked once scored (evaluation integrity)
+  if (!canLabUploadNow(mine!.status)) redirect("/lab?e=locked");
+
+  const scheme = await getScheme(schemeId);
+  if (!scheme) redirect("/lab");
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) redirect("/lab?e=upload");
+  const f = file as File;
+  const ext = SCHEME_DOC_EXT[f.type];
+  if (!ext || f.size > MAX_SCHEME_DOC_BYTES) redirect("/lab?e=upload");
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  if (!magicMatches(bytes, f.type)) redirect("/lab?e=upload");
+
+  const code = mine!.code;
+  const name = String(f.name || `${slot}.${ext}`).slice(0, 160);
+  const prev = scheme!.labUploads?.[code]?.[slot];
+
+  let path: string;
+  const db = getDb();
+  if (db) {
+    try {
+      await ensureSchemeDocsBucket(db);
+      path = `labs/${schemeId}/${code}/${slot}-${randomUUID()}.${ext}`;
+      const { error } = await db.storage.from(SCHEME_DOC_BUCKET).upload(path, bytes, { contentType: f.type, upsert: false });
+      if (error) throw error;
+      // best-effort cleanup of a replaced file (the timeline events stay — history is never deleted)
+      if (prev && !prev.path.startsWith("data:")) await db.storage.from(SCHEME_DOC_BUCKET).remove([prev.path]).catch(() => {});
+    } catch {
+      redirect("/lab?e=upload");
+    }
+  } else {
+    // no Supabase (dev) → keep the bytes inline so the flow still works locally
+    path = `data:${f.type};base64,${Buffer.from(bytes).toString("base64")}`;
+  }
+
+  const upload: UploadedDoc = { path: path!, name, mime: f.type, size: f.size, uploadedAt: new Date().toISOString(), uploadedBy: ls!.lab.email };
+  const labUploads = { ...(scheme!.labUploads ?? {}) };
+  labUploads[code] = { ...(labUploads[code] ?? {}), [slot]: upload };
+  await updateScheme(schemeId, { labUploads });
+
+  // auto-stamp the case file → the matrix fills in and the status advances
+  await addCaseEvent({
+    schemeId, code, kind: slotDef.kind, ref: name, docKey: slotDef.docKey,
+    note: prev ? "replaced by the laboratory (portal upload)" : "uploaded by the laboratory (portal)",
+    recordedBy: ls!.lab.email, source: "auto",
+  });
+  await advanceStatusForEvent(schemeId, code, slotDef.kind);
+  await logActivity("lab.uploaded", { schemeId, targetCode: code, summary: `Lab upload: ${slot} (${name})` });
+  revalidatePath("/lab", "page");
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  redirect("/lab");
 }
 
 // A lab edits its OWN profile. Scoped to the signed-in lab's id (a lab can never
@@ -987,11 +1071,49 @@ export async function addParticipantAction(formData: FormData) {
     country: String(formData.get("country") ?? "").trim(),
     deliveryAddress: String(formData.get("deliveryAddress") ?? "").trim(),
     participations: Number.isFinite(partRaw) ? partRaw : 1,
+    courier: String(formData.get("courier") ?? "").trim(),
+    sampleCode: String(formData.get("sampleCode") ?? "").trim().slice(0, 40),
   });
   await logActivity("participant.added", { schemeId, targetCode: p.code, summary: `Participant ${p.code} added` });
   await addCaseEvent({ schemeId, code: p.code, kind: "code_assigned", source: "auto" });
+  await advanceStatusForEvent(schemeId, p.code, "code_assigned");
   revalidatePath(`/schemes/${schemeId}/participants`);
   redirect(`/schemes/${schemeId}/participants`);
+}
+
+// Edit one participation's registration/logistics fields (new-standard forms
+// F 7.2.1-4/-5 need courier, sample code and per-lab characteristics). The code
+// itself is immutable. `characteristics` arrives as repeated checkbox values.
+export async function updateParticipantAction(formData: FormData) {
+  await requireWriter();
+  const schemeId = String(formData.get("schemeId") ?? "");
+  const id = String(formData.get("id") ?? "");
+  const labName = String(formData.get("labName") ?? "").trim();
+  const back = `/schemes/${schemeId}/participants`;
+  if (!schemeId || !id || !labName) redirect(back);
+  const own = (await listParticipants(schemeId)).find((x) => x.id === id);
+  if (!own) redirect(back); // the row must belong to THIS scheme
+  const partRaw = parseInt(String(formData.get("participations") ?? "1"), 10);
+  const characteristics = formData
+    .getAll("characteristics")
+    .map((v) => parseInt(String(v), 10))
+    .filter((n) => Number.isInteger(n) && n >= 0)
+    .sort((a, b) => a - b);
+  const p = await updateParticipant(id, {
+    labName,
+    contact: String(formData.get("contact") ?? "").trim(),
+    email: String(formData.get("email") ?? "").trim(),
+    phone: String(formData.get("phone") ?? "").trim(),
+    country: String(formData.get("country") ?? "").trim(),
+    deliveryAddress: String(formData.get("deliveryAddress") ?? "").trim(),
+    participations: Number.isFinite(partRaw) && partRaw > 0 ? partRaw : 1,
+    courier: String(formData.get("courier") ?? "").trim(),
+    sampleCode: String(formData.get("sampleCode") ?? "").trim().slice(0, 40),
+    characteristics,
+  });
+  if (p) await logActivity("participant.updated", { schemeId, targetCode: p.code, summary: `Participant ${p.code} details updated` });
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  redirect(back);
 }
 
 // ── RT3: participant case-file timeline (dated milestones, by code) ─────────────
@@ -999,6 +1121,27 @@ export async function addParticipantAction(formData: FormData) {
 const CASE_MANUAL_KINDS: CaseEventKind[] = [
   "docs_sent", "items_dispatched", "receipt_confirmed", "results_returned", "scored", "report_issued", "other",
 ];
+
+// Traceability → status machine (owner decision 2026-07-08): recording a
+// milestone advances the participation FORWARD (never backwards), so the lab's
+// stepper/timeline always reflects the real timeline staff maintain. Deleting an
+// event does not roll the status back — correct that via a newer event if needed.
+const KIND_STATUS: Partial<Record<CaseEventKind, ParticipantStatus>> = {
+  code_assigned: "approved",
+  items_dispatched: "dispatched",
+  receipt_confirmed: "received",
+  results_returned: "submitted",
+  scored: "scored",
+};
+async function advanceStatusForEvent(schemeId: string, code: string, kind: CaseEventKind): Promise<void> {
+  const target = KIND_STATUS[kind];
+  if (!target) return; // docs_sent / report_issued / other don't move the status
+  const p = (await listParticipants(schemeId)).find((x) => x.code === code);
+  if (!p) return;
+  if (PSTATUS_ORDER.indexOf(target) > PSTATUS_ORDER.indexOf(p.status)) {
+    await updateParticipant(p.id, { status: target });
+  }
+}
 
 export async function addCaseEventAction(formData: FormData): Promise<void> {
   await requireWriter();
@@ -1008,16 +1151,21 @@ export async function addCaseEventAction(formData: FormData): Promise<void> {
   const at = String(formData.get("at") ?? "").trim();
   const ref = String(formData.get("ref") ?? "").trim().slice(0, 120);
   const note = String(formData.get("note") ?? "").trim().slice(0, 400);
-  const back = `/schemes/${schemeId}/participants/${encodeURIComponent(code)}`;
+  // optional link to the portal document the event refers to — whitelist only
+  const docKeyRaw = String(formData.get("docKey") ?? "").trim();
+  const docKey = getDoc(docKeyRaw) ? docKeyRaw : "";
+  const back = String(formData.get("returnTo") ?? "") ||
+    `/schemes/${schemeId}/participants/${encodeURIComponent(code)}`;
   if (!schemeId || !code || !CASE_MANUAL_KINDS.includes(kind)) redirect(back);
   // the code must belong to this scheme (never trust the URL)
   const exists = (await listParticipants(schemeId)).some((p) => p.code === code);
   if (!exists) redirect(`/schemes/${schemeId}/participants`);
 
   const actor = (await getRoleContext()).email ?? "";
-  await addCaseEvent({ schemeId, code, kind, at, ref, note, recordedBy: actor, source: "manual" });
+  await addCaseEvent({ schemeId, code, kind, at, ref, note, docKey, recordedBy: actor, source: "manual" });
+  await advanceStatusForEvent(schemeId, code, kind);
   await logActivity("case.updated", { schemeId, targetCode: code, summary: `Timeline: ${kind} for ${code}${ref ? ` (${ref})` : ""}` });
-  revalidatePath(back);
+  revalidatePath(`/schemes/${schemeId}`, "layout");
   redirect(back);
 }
 

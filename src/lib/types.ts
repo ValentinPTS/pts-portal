@@ -20,8 +20,11 @@ export interface DocOptions {
     phone?: string;
     deliveryAddress?: string;
     participations?: number;
+    courier?: string; // F 7.2.1-4 "Вид на куриера"
+    sampleCode?: string; // F 7.2.1-5/-6 "Код на пробата"
+    characteristics?: number[]; // F 7.2.1-5 — indexes into Scheme.parameters this lab registered for
   }[];
-  // RT1 — when false, the participant lists (PTS-L 4.4-1 / 4.4-2) hide real names,
+  // RT1 — when false, the participant lists (F 7.2.1-4 / -5) hide real names,
   // contacts and addresses; only the code remains. Only a manager sees names
   // (§4.2 confidentiality). Defaults to true (build mode / older callers).
   revealNames?: boolean;
@@ -51,8 +54,14 @@ export interface Participant {
   email: string;
   phone: string;
   country: string;
-  deliveryAddress: string; // address the PT items are shipped to (PTS-L 4.4-1)
-  participations: number; // how many times this lab has participated (PTS-L 4.4-1)
+  deliveryAddress: string; // address the PT items are shipped to (F 7.2.1-4)
+  participations: number; // how many times this lab has participated (F 7.2.1-4)
+  courier?: string; // F 7.2.1-4 "Вид на куриера" — Спиди БГ / Спиди EN / Поща/Fedex
+  sampleCode?: string; // F 7.2.1-5/-6 "Код на пробата" — the coded PT item sent to this lab
+  // F 7.2.1-5 — which scheme characteristics (indexes into Scheme.parameters) this
+  // lab registered for. Kept from the application's selections at approval; absent
+  // (or empty) = all characteristics, so older participants keep rendering fully.
+  characteristics?: number[];
   status: ParticipantStatus;
   // Phase 2b: links this participation to the lab's permanent account (lib/labs.ts).
   // Absent for older/owner-added participants until linked. Indexed for the lab portal.
@@ -81,7 +90,7 @@ export interface Lab {
 // Phase RT1 — internal staff roles & access control (ISO/IEC 17043:2023 §5, §6.2).
 // A StaffUser is an internal portal user (not a lab). The role decides what they
 // may see/do; only a "manager" may reveal the real name behind a participant code
-// (the confidential PTS-L 4.4-2 mapping, §4.2). "lab" is NOT a staff role — labs
+// (the confidential F 7.2.1-5 mapping, §4.2). "lab" is NOT a staff role — labs
 // are a separate account type (see Lab above) — but the effective role union used
 // across the app (lib/roles.ts) includes it.
 export type StaffRole = "manager" | "staff" | "auditor";
@@ -148,6 +157,9 @@ export interface CaseEvent {
   recordedBy: string; // actor email (who logged it)
   recordedAt: string; // ISO timestamp it was recorded
   source: "auto" | "manual";
+  // which portal document the event refers to (lib/documents.ts key, e.g.
+  // "instruction") — proves WHICH document was sent/received (migration 0014)
+  docKey?: string;
 }
 
 // Phase RT2 — one entry in the append-only activity log (§7.5.1 / §8.4). Records
@@ -331,8 +343,11 @@ export interface AssignedValue {
   u: number; // u(xpt) (testing) / expanded U_ref (calibration)
 }
 export interface ResultEntry {
-  value: number; // the participant's reported result
+  value: number; // the participant's reported result (the mean)
   u: number; // the participant's reported uncertainty (U_lab for calibration)
+  // F 7.2.1-6 — the individual determinations I/II/III behind the mean, positional
+  // (null = that determination not reported). Absent for older/summary-only entries.
+  determinations?: (number | null)[];
 }
 export interface Scoring {
   // metric key — testing: parameter index "0","1",… · calibration: `${dirIdx}:${pointIdx}`
@@ -400,6 +415,11 @@ export interface Scheme {
   // one is active/official. Absent → the uploaded file wins when present (the chosen
   // default). Set to "built" to switch back to the app-built version. JSONB.
   docActive?: Record<string, "built" | "uploaded">;
+  // files uploaded BY LABS from the lab portal, keyed by participant code → slot
+  // ("protocol" = signed receipt protocol, "results" = completed results sheet).
+  // Upload auto-stamps the case file + advances the status; locked once scored.
+  // JSONB, no migration (lib/lab-phases.ts LAB_UPLOAD_SLOTS).
+  labUploads?: Record<string, Partial<Record<"protocol" | "results", UploadedDoc>>>;
   // chosen document skin (visual theme) id; absent → the built-in "Classic" skin.
   skin?: string;
   // friendly folder name shown in the explorer; absent → falls back to the title/number.
