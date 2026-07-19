@@ -809,6 +809,76 @@ export default function WordEditor({
   }
   function delTable() { cell?.closest("table")?.remove(); setCell(null); bumpTable(); }
 
+  // ── cell merge / split (Word-like) ──
+  // Grid column where a cell starts, counting the colSpans of the cells before it.
+  // (Like addCol/delCol above, this ignores rowSpans hanging over from earlier rows —
+  // fine for the simple document tables; Split always restores a clean grid.)
+  function gridCol(c: HTMLTableCellElement): number {
+    let col = 0;
+    for (let el = c.previousElementSibling; el; el = el.previousElementSibling)
+      col += (el as HTMLTableCellElement).colSpan || 1;
+    return col;
+  }
+  // Join a cell's content into the merged cell (skip empty <br> placeholders).
+  function foldContent(into: HTMLTableCellElement, from: HTMLTableCellElement) {
+    const extra = from.innerHTML.trim();
+    if (extra && from.textContent?.trim()) into.innerHTML = into.textContent?.trim() ? into.innerHTML + " " + extra : extra;
+  }
+  function mergeRight() {
+    if (!cell) return;
+    const next = cell.nextElementSibling as HTMLTableCellElement | null;
+    if (!next || !/^T[DH]$/.test(next.tagName)) return;
+    cell.colSpan = (cell.colSpan || 1) + (next.colSpan || 1);
+    foldContent(cell, next);
+    next.remove();
+    bumpTable();
+  }
+  function mergeDown() {
+    if (!cell) return;
+    const row = cell.closest("tr"); const table = cell.closest("table");
+    if (!row || !table) return;
+    const rows = Array.from(table.querySelectorAll("tr"));
+    const below = rows[rows.indexOf(row as HTMLTableRowElement) + (cell.rowSpan || 1)];
+    if (!below) return;
+    // the consecutive cells in the row below that tile EXACTLY the same width as
+    // this cell (so a 2-wide merged cell swallows the two 1-wide cells under it)
+    const myCol = gridCol(cell); const span = cell.colSpan || 1;
+    let col = 0; let eaten = 0; const eat: HTMLTableCellElement[] = [];
+    for (const c of Array.from(below.children) as HTMLTableCellElement[]) {
+      if (col >= myCol + span) break;
+      if (col >= myCol) { eat.push(c); eaten += c.colSpan || 1; }
+      col += c.colSpan || 1;
+    }
+    const rs = eat[0]?.rowSpan || 1;
+    if (!eat.length || eaten !== span || eat.some((c) => (c.rowSpan || 1) !== rs)) return;
+    cell.rowSpan = (cell.rowSpan || 1) + rs;
+    for (const c of eat) { foldContent(cell, c); c.remove(); }
+    bumpTable();
+  }
+  function splitCell() {
+    if (!cell) return;
+    const row = cell.closest("tr"); const table = cell.closest("table");
+    if (!row || !table) return;
+    const cs = cell.colSpan || 1, rs = cell.rowSpan || 1;
+    if (cs <= 1 && rs <= 1) return;
+    const myCol = gridCol(cell);
+    const rows = Array.from(table.querySelectorAll("tr"));
+    const ri = rows.indexOf(row as HTMLTableRowElement);
+    const mk = () => document.createElement(cell.tagName === "TH" ? "th" : "td");
+    for (let i = 1; i < cs; i++) row.insertBefore(mk(), cell.nextSibling);
+    for (let r = 1; r < rs; r++) {
+      const tr = rows[ri + r]; if (!tr) break;
+      let col = 0; let ref: Element | null = null;
+      for (const c of Array.from(tr.children)) {
+        if (col >= myCol) { ref = c; break; }
+        col += (c as HTMLTableCellElement).colSpan || 1;
+      }
+      for (let i = 0; i < cs; i++) tr.insertBefore(mk(), ref);
+    }
+    cell.removeAttribute("colspan"); cell.removeAttribute("rowspan");
+    bumpTable();
+  }
+
   function beginResize(e: React.PointerEvent, handle: string) {
     if (!imgSel) return;
     e.preventDefault();
@@ -1504,6 +1574,10 @@ export default function WordEditor({
           <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={() => addRow(true)}>↧ {L("Ред отдолу", "Row below")}</button>
           <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={() => addCol(false)}>↤ {L("Колона отляво", "Column left")}</button>
           <button className="we-pill" onMouseDown={(e) => e.preventDefault()} onClick={() => addCol(true)}>↦ {L("Колона отдясно", "Column right")}</button>
+          <span className="we-sep" />
+          <button className="we-pill" title={L("Обедини клетката със съседната вдясно", "Merge the cell with the one to its right")} onMouseDown={(e) => e.preventDefault()} onClick={mergeRight}>⧉ {L("Обедини вдясно", "Merge right")}</button>
+          <button className="we-pill" title={L("Обедини клетката с тази под нея", "Merge the cell with the one below it")} onMouseDown={(e) => e.preventDefault()} onClick={mergeDown}>⧉ {L("Обедини надолу", "Merge down")}</button>
+          <button className="we-pill" title={L("Върни обединената клетка към отделни клетки", "Split a merged cell back into single cells")} onMouseDown={(e) => e.preventDefault()} onClick={splitCell}>⊞ {L("Раздели", "Split")}</button>
           <span className="we-sep" />
           <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>{L("Фон", "Fill")}</span>
           <span className="we-swrow">
