@@ -82,6 +82,13 @@ export const FORM_ELEMENTS: { id: string; nameEn: string; nameBg: string; catego
     bg: `<span class="ff-opt"><span class="ff-box"></span><span>Да</span></span>&nbsp;&nbsp;<span class="ff-opt"><span class="ff-box"></span><span>Не</span></span>&nbsp;`,
   },
   {
+    // full option PARAGRAPH like the printed forms (Plan §1): the box hangs at the
+    // left edge and every wrapped line stays tucked under the text, justified.
+    id: "fe_opt", nameEn: "Checkbox option — paragraph", nameBg: "Опция с отметка — цял абзац", category: "Form",
+    en: `<p class="opt"><span class="ff-box"></span>&nbsp;Option text — keep typing freely: wrapped lines stay aligned under the text, tight like the printed form.</p>`,
+    bg: `<p class="opt"><span class="ff-box"></span>&nbsp;Текст на опцията — пишете свободно: пренесените редове остават подравнени под текста, стегнато като в печатния формуляр.</p>`,
+  },
+  {
     id: "fe_choice", nameEn: "Yes / No / Other", nameBg: "Да / Не / Друго", category: "Form",
     en: `<span class="ff-opt"><span class="ff-rb"></span><span>Yes</span></span>&nbsp;&nbsp;<span class="ff-opt"><span class="ff-rb"></span><span>No</span></span>&nbsp;&nbsp;<span class="ff-opt"><span class="ff-rb"></span><span>Other</span></span>&nbsp;`,
     bg: `<span class="ff-opt"><span class="ff-rb"></span><span>Да</span></span>&nbsp;&nbsp;<span class="ff-opt"><span class="ff-rb"></span><span>Не</span></span>&nbsp;&nbsp;<span class="ff-opt"><span class="ff-rb"></span><span>Друго</span></span>&nbsp;`,

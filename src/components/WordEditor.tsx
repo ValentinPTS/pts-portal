@@ -240,6 +240,9 @@ const EDITOR_CSS = `
   .we-page .ff-select{font-family:'Sofia Sans Condensed',sans-serif;font-size:10pt;border:1px solid var(--green-dark);border-radius:5px;padding:2px 8px;color:var(--green-dark);background:#fff;cursor:pointer;}
   .we-page .ff-box,.we-page .ff-rb{cursor:pointer;}
   .we-page .ff-box:hover,.we-page .ff-rb:hover{background:var(--green-soft);}
+  /* checkbox-option paragraphs — mirror of DOC_CSS p.opt (printed-form look) */
+  .we-page p.opt,.we-page li.opt,.we-page p:has(> .ff-box:first-child),.we-page p:has(> .ff-rb:first-child),.we-page p:has(> .ff-opt:first-child){margin:3px 0;padding-left:18px;text-indent:-18px;text-align:justify;line-height:1.32;}
+  .we-page .ff-opt,.we-page .ff-box,.we-page .ff-rb{text-indent:0;} /* inherited indent would push ✓/● out of the box */
   /* inserted formulas (MathML) — hover shows they're editable; double-click opens */
   .we-page .we-f{display:inline-block;padding:0 2px;border-radius:4px;cursor:pointer;}
   .we-page .we-f:hover{background:var(--green-soft);outline:1px dashed var(--green-line);}

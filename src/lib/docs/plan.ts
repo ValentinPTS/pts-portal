@@ -9,8 +9,18 @@ export function renderPlan(s: Scheme, lang: Lang): string {
   const C = (k: string) => `<p>${cl(lang, s.clauses[k])}</p>`;
 
   const sim = s.distribution === "simultaneous";
-  const s1 = `<p>${L("Distribution type:", "Вид на разпространение:")}
-    <b>${sim ? "☑" : "☐"} ${L("Simultaneous", "Едновременно")}</b> &nbsp; <b>${!sim ? "☑" : "☐"} ${L("Sequential", "Последователно")}</b></p>`;
+  // §1 exactly like the printed template: two full option paragraphs (Annex A
+  // definitions), the scheme's own type ticked. p.opt = hanging box + tight lines.
+  const box = (on: boolean) => `<span class="ff-box${on ? " on" : ""}">${on ? "✓" : ""}</span>&nbsp;`;
+  const s1 =
+    `<p class="opt">${box(sim)}${L(
+      "Simultaneous PT scheme - subsamples from a source of material are distributed simultaneously to participants for concurrent testing. (A.2.2 of Annex A of ISO/IEC 17043:2023)",
+      "Едновременна схема за РТ - подпроби от един източник на материал, които се разпространяват едновременно до участниците за едновременно изпитване. (т. А.2.2 от Приложение А на ISO/IEC 17043:2023)"
+    )}</p>` +
+    `<p class="opt">${box(!sim)}${L(
+      "Sequential PT scheme - a proficiency test item is distributed successively from one participant to the next, or occasionally returned to the proficiency testing provider for rechecking. (A.2.3 of Annex A of ISO/IEC 17043:2023)",
+      "Последователна схема за РТ - обект на изпитване за пригодност, който се разпространява последователно от един участник към следващия, или понякога се връща обратно към организатора на изпитването за пригодност за повторна проверка. (т. А.2.3 от Приложение А на ISO/IEC 17043:2023)"
+    )}</p>`;
 
   const s2 = `<div class="team">${s.team
     .map((m) => `<div class="role"><span class="rl">${L(m.roleEn, m.roleBg)}</span><span class="nm">${esc(m.name)}</span></div>`)

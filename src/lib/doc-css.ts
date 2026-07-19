@@ -109,6 +109,15 @@ export const DOC_CSS = `
   .ff-box{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.6px solid var(--green-dark);border-radius:3px;color:var(--green-dark);font-size:11px;line-height:1;font-weight:700;flex:0 0 auto;}
   .ff-rb{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.6px solid var(--green-dark);border-radius:50%;color:var(--green-dark);font-size:9px;line-height:1;flex:0 0 auto;}
   .ff-box.on,.ff-rb.on{background:var(--green-soft);}
+  /* checkbox-option PARAGRAPHS — the printed-form look: the box hangs at the left
+     edge and every wrapped line tucks under the first text character, justified
+     with tight leading. Applied via class="opt" or automatically whenever a
+     paragraph starts with a checkbox / radio mark. */
+  p.opt,li.opt,p:has(> .ff-box:first-child),p:has(> .ff-rb:first-child),p:has(> .ff-opt:first-child){
+    margin:3px 0;padding-left:18px;text-indent:-18px;text-align:justify;line-height:1.32;}
+  /* text-indent is inherited — without this reset the ✓/● inside the box would
+     slide 18px out of it on the first line of an option paragraph */
+  .ff-opt,.ff-box,.ff-rb{text-indent:0;}
   .ff-cb,.ff-rb-in{width:14px;height:14px;accent-color:var(--green-dark);margin:0;}
   .ff-line{display:inline-block;border-bottom:1px solid var(--ink);min-width:220px;padding:0 3px 1px;font-family:var(--sans);font-size:10pt;line-height:1.4;}
   .ff-line[data-empty="1"]{border-bottom-color:var(--line);min-height:14px;}

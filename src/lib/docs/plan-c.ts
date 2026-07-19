@@ -14,10 +14,20 @@ export function renderPlanC(s: Scheme, lang: Lang): string {
   const c = s.calibration;
   const cU = c ? esc(c.unit) : "";
 
-  // §1 — distribution. Calibration is Sequential.
+  // §1 — distribution. Calibration is Sequential. Rendered exactly like the printed
+  // template: two full option paragraphs (Annex A definitions), the scheme's own
+  // type ticked. p.opt = hanging box + tight lines.
   const seq = s.distribution === "sequential";
-  const s1 = `<p>${L("Distribution type:", "Вид на разпространение:")}
-    <b>${!seq ? "☑" : "☐"} ${L("Simultaneous", "Едновременно")}</b> &nbsp; <b>${seq ? "☑" : "☐"} ${L("Sequential", "Последователно")}</b></p>`;
+  const box = (on: boolean) => `<span class="ff-box${on ? " on" : ""}">${on ? "✓" : ""}</span>&nbsp;`;
+  const s1 =
+    `<p class="opt">${box(!seq)}${L(
+      "Simultaneous PT scheme - subsamples from a source of material are distributed simultaneously to participants for concurrent testing. (A.2.2 of Annex A of ISO/IEC 17043:2023)",
+      "Едновременна схема за РТ - подпроби от един източник на материал, които се разпространяват едновременно до участниците за едновременно изпитване. (т. А.2.2 от Приложение А на ISO/IEC 17043:2023)"
+    )}</p>` +
+    `<p class="opt">${box(seq)}${L(
+      "Sequential PT scheme - a proficiency test item is distributed successively from one participant to the next, or occasionally returned to the proficiency testing provider for rechecking. (A.2.3 of Annex A of ISO/IEC 17043:2023)",
+      "Последователна схема за РТ - обект на изпитване за пригодност, който се разпространява последователно от един участник към следващия, или понякога се връща обратно към организатора на изпитването за пригодност за повторна проверка. (т. А.2.3 от Приложение А на ISO/IEC 17043:2023)"
+    )}</p>`;
 
   // §2 — team grid (includes a Technical Expert in the seed data).
   const s2 = `<div class="team">${s.team
