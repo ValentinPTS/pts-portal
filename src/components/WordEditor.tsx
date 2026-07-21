@@ -245,6 +245,8 @@ const EDITOR_CSS = `
   .we-page .ff-opt,.we-page .ff-box,.we-page .ff-rb{text-indent:0;} /* inherited indent would push ✓/● out of the box */
   /* Tab key inserts a Word-like fixed tab stop */
   .we-page .we-tab{display:inline-block;width:1.25cm;}
+  /* the remembered selection stays painted while the size box is being typed in */
+  ::highlight(we-keep){background:rgba(136,167,123,.4);}
   /* inserted formulas (MathML) — hover shows they're editable; double-click opens */
   .we-page .we-f{display:inline-block;padding:0 2px;border-radius:4px;cursor:pointer;}
   .we-page .we-f:hover{background:var(--green-soft);outline:1px dashed var(--green-line);}
@@ -461,9 +463,23 @@ export default function WordEditor({
   // had selected, exactly like Word's size box.
   const sizeRef = useRef<HTMLInputElement | null>(null);
   const sizeRange = useRef<Range | null>(null);
+  // While the size box has focus the native selection highlight disappears (the
+  // input takes the document selection) — this felt like "my text got deselected".
+  // Paint the remembered range with the CSS Custom Highlight API so it stays
+  // visibly marked while typing the size (cleared on blur/apply).
+  function showKeepHighlight(r: Range | null) {
+    try {
+      const H = (window as unknown as { Highlight?: new (r: Range) => unknown }).Highlight;
+      const registry = (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
+      if (!H || !registry) return;
+      if (r) registry.set("we-keep", new H(r));
+      else registry.delete("we-keep");
+    } catch { /* older browsers: selection is still remembered, just not painted */ }
+  }
   function applySizeFromBox(raw: string) {
     const v = parseFloat(raw.replace(",", "."));
     if (!Number.isFinite(v) || v < 4 || v > 96) return;
+    showKeepHighlight(null);
     if (sizeRange.current) {
       ref.current?.focus();
       const s = window.getSelection();
@@ -1618,12 +1634,16 @@ export default function WordEditor({
           style={{ width: 74 }}
           onMouseDown={(e) => e.stopPropagation()}
           onFocus={(e) => {
-            // remember the editor selection before the box takes focus
+            // remember the editor selection before the box takes focus, and keep
+            // it VISIBLY painted while typing (it looked "deselected" otherwise)
             const s = window.getSelection();
-            if (s && s.rangeCount > 0 && ref.current?.contains(s.getRangeAt(0).commonAncestorContainer))
+            if (s && s.rangeCount > 0 && ref.current?.contains(s.getRangeAt(0).commonAncestorContainer)) {
               sizeRange.current = s.getRangeAt(0).cloneRange();
+              if (!sizeRange.current.collapsed) showKeepHighlight(sizeRange.current);
+            }
             e.currentTarget.select();
           }}
+          onBlur={() => showKeepHighlight(null)}
           onKeyDown={(e) => {
             if (e.key !== "Enter") return;
             e.preventDefault();

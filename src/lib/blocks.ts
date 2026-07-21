@@ -136,10 +136,12 @@ export const FORM_ELEMENTS: { id: string; nameEn: string; nameBg: string; catego
     bg: `<table style="width:100%;border-collapse:collapse"><tbody><tr><td style="border:1px solid transparent;padding:6px 8px;text-align:center;vertical-align:middle;width:55%"><img src="/brand/partner-njn.png" alt="" style="height:48px"><p style="margin:4px 0 0;font-weight:700;color:#86a87d">ЛАБОРАТОРЕН КОМПЛЕКС КЪМ "ЕН ДЖИ ЕН" ООД</p><p style="margin:2px 0 0">град Хасково, ул. "Планински изглед" №3</p></td><td style="border:1px solid transparent;padding:6px 8px;vertical-align:middle"><ul style="margin:0;padding-left:22px"><li>Вземане на проба;</li><li>Хомогенизиране на пробата;</li><li>Редуциране на подпроби, наричани по-нататък само проби;</li><li>Опаковане на пробите;</li></ul></td></tr></tbody></table>`,
   },
   {
-    // one green date card (as in the Plan/Invitation schedule) — date + label editable
+    // one green date card (as in the Plan §10 schedule) — built as a tiny INLINE
+    // table so several sit next to each other and every table tool works on it
+    // (resize, tighter rows, add a column for another date, …).
     id: "fe_datecard", nameEn: "Date card (schedule)", nameBg: "Дата (картичка от графика)", category: "Plan",
-    en: `<div class="cals"><div class="cal"><span class="bar"></span><div class="d">01.01.2026</div><div class="lbl">Stage</div></div></div>`,
-    bg: `<div class="cals"><div class="cal"><span class="bar"></span><div class="d">01.01.2026</div><div class="lbl">Етап</div></div></div>`,
+    en: `<table style="display:inline-table;width:110px;vertical-align:top;border-collapse:separate;border-spacing:0;margin:2px 6px 2px 0"><tbody><tr><td style="border:1px solid #88a77b;border-radius:8px;padding:0;text-align:center;vertical-align:top;overflow:hidden"><div style="height:10px;background:#88a77b"></div><div style="font-family:'Sofia Sans Condensed',Arial,sans-serif;font-weight:700;color:#9e2b2b;font-size:13pt;padding:4px 2px 0">01.01.2026</div><div style="font-size:8pt;color:#6b6b6b;padding:2px 4px 6px;line-height:1.15">Stage</div></td></tr></tbody></table>`,
+    bg: `<table style="display:inline-table;width:110px;vertical-align:top;border-collapse:separate;border-spacing:0;margin:2px 6px 2px 0"><tbody><tr><td style="border:1px solid #88a77b;border-radius:8px;padding:0;text-align:center;vertical-align:top;overflow:hidden"><div style="height:10px;background:#88a77b"></div><div style="font-family:'Sofia Sans Condensed',Arial,sans-serif;font-weight:700;color:#9e2b2b;font-size:13pt;padding:4px 2px 0">01.01.2026</div><div style="font-size:8pt;color:#6b6b6b;padding:2px 4px 6px;line-height:1.15">Етап</div></td></tr></tbody></table>`,
   },
   {
     id: "fe_table", nameEn: "Blank table (3 columns)", nameBg: "Празна таблица (3 колони)", category: "Form",

@@ -44,12 +44,14 @@ export function renderPlan(s: Scheme, lang: Lang): string {
       .join("")}</tbody></table>
     <div class="note">* ${L("The tests will be carried out according to the latest valid version of the specified standard method!", "Изпитванията ще се проведат по последната валидна версия на посочения стандартен метод!")}</div>`;
 
-  const s10 = `<div class="cals">${s.schedule
+  // §10 as a real TABLE (one styled cell per date, side by side) so the owner can
+  // use every table tool on it — resize, tighter rows, merge, add/remove columns.
+  const s10 = `<table style="width:100%;border-collapse:separate;border-spacing:8px 0"><tbody><tr>${s.schedule
     .map((it) => {
       const dm = it.date.includes(".") ? it.date.split(".").slice(0, 2).join(".") : it.date || "—";
-      return `<div class="cal"><span class="bar"></span><div class="d">${dm}</div><div class="lbl">${L(it.labelEn, it.labelBg)}</div></div>`;
+      return `<td style="width:${Math.round(100 / Math.max(1, s.schedule.length))}%;border:1px solid #88a77b;border-radius:8px;padding:0;text-align:center;vertical-align:top;overflow:hidden"><div style="height:10px;background:#88a77b"></div><div style="font-family:'Sofia Sans Condensed',Arial,sans-serif;font-weight:700;color:#9e2b2b;font-size:13pt;padding:4px 2px 0">${esc(dm)}</div><div style="font-size:8pt;color:#6b6b6b;padding:2px 4px 6px;line-height:1.15">${L(it.labelEn, it.labelBg)}</div></td>`;
     })
-    .join("")}</div>`;
+    .join("")}</tr></tbody></table>`;
 
   const s14 = `<p><b>${L("Assigned value:", "Приета стойност:")}</b> ${L(s.assignedValueMethodEn, s.assignedValueMethodBg)}</p>
     <p><b>${L("Performance scores:", "Оценки за представяне:")}</b> ${L(s.scoresEn, s.scoresBg)}</p>`;
