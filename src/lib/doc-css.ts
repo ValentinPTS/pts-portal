@@ -101,6 +101,8 @@ export const DOC_CSS = `
   ol>li{counter-increment:item;}
   ol>li::marker{content:counters(item,".") ". ";}
   .docfooter{margin-top:22px;border-top:1px solid var(--line);padding-top:6px;font-family:var(--sans);font-size:8.5pt;color:var(--muted);text-align:center;}
+  /* editor-inserted tab stops (Tab key) — fixed 1.25cm like Word's default */
+  .we-tab{display:inline-block;width:1.25cm;}
   /* editor-inserted formulas (native MathML — renders in Chromium incl. the PDF pass) */
   .we-f{display:inline-block;padding:0 1px;}
   math{font-size:1.06em;}

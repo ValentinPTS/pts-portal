@@ -243,6 +243,8 @@ const EDITOR_CSS = `
   /* checkbox-option paragraphs — mirror of DOC_CSS p.opt (printed-form look) */
   .we-page p.opt,.we-page li.opt,.we-page p:has(> .ff-box:first-child),.we-page p:has(> .ff-rb:first-child),.we-page p:has(> .ff-opt:first-child){margin:3px 0;padding-left:18px;text-indent:-18px;text-align:justify;line-height:1.32;}
   .we-page .ff-opt,.we-page .ff-box,.we-page .ff-rb{text-indent:0;} /* inherited indent would push ✓/● out of the box */
+  /* Tab key inserts a Word-like fixed tab stop */
+  .we-page .we-tab{display:inline-block;width:1.25cm;}
   /* inserted formulas (MathML) — hover shows they're editable; double-click opens */
   .we-page .we-f{display:inline-block;padding:0 2px;border-radius:4px;cursor:pointer;}
   .we-page .we-f:hover{background:var(--green-soft);outline:1px dashed var(--green-line);}
@@ -347,6 +349,7 @@ export default function WordEditor({
   const [lockAspect, setLockAspect] = useState(true);
   const [box, setBox] = useState<{ l: number; t: number; w: number; h: number } | null>(null); // px rel. to paper
   const [cell, setCell] = useState<HTMLTableCellElement | null>(null); // selected table cell
+  const [tblBox, setTblBox] = useState<{ l: number; t: number; w: number; h: number } | null>(null); // outline of the selected cell's table
   const [selEl, setSelEl] = useState<HTMLSelectElement | null>(null); // selected dropdown
   const [selOpts, setSelOpts] = useState(0); // its option count (for the bar)
   const [preview, setPreview] = useState(false);              // inline PDF preview open
@@ -380,7 +383,17 @@ export default function WordEditor({
   const drag = useRef<null | { mode: "resize" | "move"; handle: string; px: number; py: number; w: number; h: number; left: number; top: number; ratio: number }>(null);
 
   useEffect(() => {
-    if (started && ref.current) ref.current.innerHTML = sanitizeDocHtml(lang === "bg" ? bg : en);
+    const fill = () => {
+      if (started && ref.current) ref.current.innerHTML = sanitizeDocHtml(lang === "bg" ? bg : en);
+    };
+    fill();
+    // Safety net: dev hydration / double-mount can leave the freshly created div
+    // empty even after the line above ran (reopening a SAVED doc showed an empty
+    // editor). Re-check shortly after mount and refill only if still untouched.
+    const t = setTimeout(() => {
+      if (started && ref.current && ref.current.innerHTML.trim() === "") fill();
+    }, 150);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started]);
 
@@ -403,23 +416,60 @@ export default function WordEditor({
     const range = sel.getRangeAt(0);
     if (!el.contains(range.commonAncestorContainer)) return;
     if (range.collapsed) {
+      // Word behaviour: a caret INSIDE a word styles that word; a caret in an
+      // empty spot starts a "pending" span so whatever you type next gets the
+      // style. (Styling the whole paragraph surprised people — removed.)
       const n = range.startContainer;
-      const node = n.nodeType === 1 ? (n as HTMLElement) : n.parentElement;
-      const block = node?.closest("p,li,h1,h2,h3,div,td,th") as HTMLElement | null;
-      if (block && el.contains(block)) block.style[prop] = value;
+      if (n.nodeType === 3) {
+        const text = n.textContent ?? "";
+        let a = range.startOffset, b = range.startOffset;
+        while (a > 0 && /[^\s ]/.test(text[a - 1])) a--;
+        while (b < text.length && /[^\s ]/.test(text[b])) b++;
+        if (b > a) {
+          const wr = document.createRange(); wr.setStart(n, a); wr.setEnd(n, b);
+          const span = document.createElement("span"); span.style[prop] = value;
+          try { wr.surroundContents(span); }
+          catch { span.appendChild(wr.extractContents()); wr.insertNode(span); }
+          const cr = document.createRange(); cr.selectNodeContents(span); cr.collapse(false);
+          sel.removeAllRanges(); sel.addRange(cr);
+          setSaved(false); refreshGuides(); return;
+        }
+      }
+      const span = document.createElement("span"); span.style[prop] = value;
+      span.appendChild(document.createTextNode("​")); // zero-width space carries the caret
+      range.insertNode(span);
+      const cr = document.createRange(); cr.setStart(span.firstChild as Text, 1); cr.collapse(true);
+      sel.removeAllRanges(); sel.addRange(cr);
     } else {
       const span = document.createElement("span"); span.style[prop] = value;
       try { range.surroundContents(span); }
-      catch {
-        span.appendChild(range.extractContents()); range.insertNode(span);
-        const r = document.createRange(); r.selectNodeContents(span); sel.removeAllRanges(); sel.addRange(r);
-      }
+      catch { span.appendChild(range.extractContents()); range.insertNode(span); }
+      // keep the selection ON the styled text (also makes the caret-format chip
+      // and the size box read the NEW value, not the surrounding text's)
+      const r = document.createRange(); r.selectNodeContents(span);
+      sel.removeAllRanges(); sel.addRange(r);
     }
     setSaved(false); refreshGuides();
   }
   // Any size works, including halves like 13.5 pt (the toolbar box accepts "13,5").
   function applyFontSize(pt: number) { applyInlineStyle("fontSize", pt + "pt"); }
   function applyFont(family: string) { applyInlineStyle("fontFamily", family); }
+  // The size box steals focus from the editor, so the selection is remembered on
+  // focus and put back right before applying — the value lands on the text you
+  // had selected, exactly like Word's size box.
+  const sizeRef = useRef<HTMLInputElement | null>(null);
+  const sizeRange = useRef<Range | null>(null);
+  function applySizeFromBox(raw: string) {
+    const v = parseFloat(raw.replace(",", "."));
+    if (!Number.isFinite(v) || v < 4 || v > 96) return;
+    if (sizeRange.current) {
+      ref.current?.focus();
+      const s = window.getSelection();
+      s?.removeAllRanges(); s?.addRange(sizeRange.current);
+    }
+    applyFontSize(Math.round(v * 10) / 10);
+    if (sizeRef.current) sizeRef.current.value = String(Math.round(v * 10) / 10);
+  }
   function bumpFont(delta: number) {
     const sel = window.getSelection(); if (!sel || sel.rangeCount === 0) return;
     const n = sel.getRangeAt(0).startContainer;
@@ -469,6 +519,49 @@ export default function WordEditor({
     if (!img || !page) { setBox(null); return; }
     const ir = img.getBoundingClientRect(), pr = page.getBoundingClientRect();
     setBox({ l: ir.left - pr.left, t: ir.top - pr.top, w: ir.width, h: ir.height });
+  }
+  // Same, but for the table the selected cell belongs to — powers the table's
+  // resize outline + corner handle (tables resize like photos: drag or exact %).
+  function placeTbl() {
+    const tbl = cell?.closest("table"), page = pageRef.current;
+    if (!tbl || !page) { setTblBox(null); return; }
+    const tr = tbl.getBoundingClientRect(), pr = page.getBoundingClientRect();
+    setTblBox({ l: tr.left - pr.left, t: tr.top - pr.top, w: tr.width, h: tr.height });
+  }
+  // Width as % of the editing surface — mirrors how the photo resize stores mm.
+  function setTableWidthPct(pct: number) {
+    const tbl = cell?.closest("table");
+    if (!tbl || !ref.current) return;
+    const p = Math.max(20, Math.min(100, Math.round(pct * 10) / 10));
+    (tbl as HTMLTableElement).style.width = p + "%";
+    setSaved(false); refreshGuides(); placeTbl();
+  }
+  function alignTable(a: "left" | "center" | "right") {
+    const tbl = cell?.closest("table") as HTMLTableElement | null;
+    if (!tbl) return;
+    tbl.style.marginLeft = a === "left" ? "0" : "auto";
+    tbl.style.marginRight = a === "right" ? "0" : "auto";
+    setSaved(false); refreshGuides(); placeTbl();
+  }
+  function beginTblResize(e: React.PointerEvent) {
+    const tbl = cell?.closest("table") as HTMLTableElement | null;
+    if (!tbl || !ref.current) return;
+    e.preventDefault(); e.stopPropagation();
+    const startX = e.clientX;
+    const startW = tbl.getBoundingClientRect().width;
+    const pageW = ref.current.getBoundingClientRect().width;
+    const move = (ev: PointerEvent) => {
+      const w = Math.max(120, Math.min(pageW, startW + (ev.clientX - startX)));
+      tbl.style.width = Math.round((w / pageW) * 1000) / 10 + "%";
+      placeTbl();
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setSaved(false); refreshGuides(); placeTbl();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
   }
   // Real page-break gaps: insert a non-editable spacer before any block that would
   // straddle an A4 boundary, pushing it whole to the next page (like the PDF's
@@ -564,8 +657,54 @@ export default function WordEditor({
       e.preventDefault(); // Ctrl/⌘+S saves (Ctrl+B/I/U are native in contentEditable)
       if (!savedRef.current && !busyRef.current) save();
     }
+    // Tab like Word: in a list = one level in/out; in a table = hop to the
+    // next/previous cell; in text = insert a fixed 1.25cm tab stop (Shift+Tab
+    // removes the tab stop just before the caret).
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const r = sel.getRangeAt(0);
+      const nn = r.startContainer;
+      const node = nn.nodeType === 1 ? (nn as HTMLElement) : nn.parentElement;
+      const li = node?.closest("li");
+      const cellEl = node?.closest("td,th");
+      if (li && ref.current?.contains(li)) {
+        document.execCommand(e.shiftKey ? "outdent" : "indent");
+      } else if (cellEl && ref.current?.contains(cellEl)) {
+        const cells = Array.from(cellEl.closest("table")?.querySelectorAll("td,th") ?? []);
+        const next = cells[cells.indexOf(cellEl) + (e.shiftKey ? -1 : 1)] as HTMLElement | undefined;
+        if (next) {
+          const cr = document.createRange(); cr.selectNodeContents(next); cr.collapse(false);
+          sel.removeAllRanges(); sel.addRange(cr);
+        }
+      } else if (e.shiftKey) {
+        const inTab = node?.closest(".we-tab");
+        let prev: Node | null = null;
+        if (r.collapsed && !inTab) {
+          if (nn.nodeType === 3 && r.startOffset === 0) prev = nn.previousSibling;
+          else if (nn.nodeType === 1) prev = (nn as HTMLElement).childNodes[r.startOffset - 1] ?? null;
+          if (prev && prev.nodeType === 3 && !prev.textContent?.trim()) prev = prev.previousSibling;
+        }
+        if (inTab) inTab.remove();
+        else if (prev instanceof HTMLElement && prev.classList.contains("we-tab")) prev.remove();
+      } else {
+        document.execCommand("insertHTML", false, '<span class="we-tab">&nbsp;</span>');
+        // Chrome leaves the caret INSIDE the span — hop it out so typing lands after
+        const s2 = window.getSelection();
+        const c2 = s2?.rangeCount ? s2.getRangeAt(0).startContainer : null;
+        const el2 = c2 ? (c2.nodeType === 1 ? (c2 as HTMLElement) : c2.parentElement) : null;
+        const tabEl = el2?.closest?.(".we-tab");
+        if (tabEl && s2) {
+          const cr = document.createRange(); cr.setStartAfter(tabEl); cr.collapse(true);
+          s2.removeAllRanges(); s2.addRange(cr);
+        }
+      }
+      setSaved(false); refreshGuides();
+    }
   }
   useEffect(() => { place(); /* eslint-disable-next-line */ }, [imgSel, imgW, imgH, wrap]);
+  useEffect(() => { placeTbl(); /* eslint-disable-next-line */ }, [cell]);
   // close the text-colour palette when clicking outside it
   useEffect(() => {
     if (!colorOpen) return;
@@ -603,6 +742,9 @@ export default function WordEditor({
       const font = (cs.fontFamily.split(",")[0] ?? "").replace(/["']/g, "").trim();
       const pt = Math.round(((parseFloat(cs.fontSize) * 72) / 96) * 10) / 10;
       setCurFmt({ font, pt: String(pt) });
+      // the size box mirrors the caret size (like Word) — unless being typed in
+      if (sizeRef.current && document.activeElement !== sizeRef.current)
+        sizeRef.current.value = String(pt);
     };
     document.addEventListener("selectionchange", h);
     return () => document.removeEventListener("selectionchange", h);
@@ -715,7 +857,9 @@ export default function WordEditor({
       setSaved(false);
       return;
     }
-    if (!tgt.classList.contains("we-h")) deselect();
+    // resize handles (image or table) keep the current selection alive
+    if (tgt.classList.contains("we-h")) return;
+    deselect();
     setCell(cellOf(tgt));
   }
 
@@ -979,7 +1123,14 @@ export default function WordEditor({
 
   function fold() {
     deselect();
-    const cur = current();
+    let cur = current();
+    // DATA-LOSS GUARD: an empty editing surface while the state still holds a body
+    // means the div was never filled (the mount-fill glitch) — folding would save
+    // "" over the real document and autosave would make that permanent. Keep the
+    // state's body instead. (A user who really wants an empty doc still has at
+    // least an empty <p> in the div, which is not the empty string.)
+    const stateBody = lang === "bg" ? bg : en;
+    if (cur.trim() === "" && stateBody.trim() !== "") cur = stateBody;
     const nb = lang === "bg" ? cur : bg;
     const ne = lang === "en" ? cur : en;
     setBg(nb); setEn(ne);
@@ -1144,6 +1295,9 @@ export default function WordEditor({
     const cb = sanitizeDocHtml(b), ce = sanitizeDocHtml(e);
     setBg(cb); setEn(ce); setLang("bg"); setStarted(true); setSaved(false);
     setCoverIn(hasCover(cb) || hasCover(ce));
+    // Persist right away — otherwise a started-but-untouched doc vanishes on
+    // reload (nothing was ever saved) and the scheme page never shows "Започнат".
+    scheduleAutosave();
   }
   // Prepend the document's title page (cover) to an already-started document that
   // doesn't have one yet — so existing docs gain the editable cover without losing
@@ -1383,8 +1537,10 @@ export default function WordEditor({
         </select>
         {tool("A−", L("По-малък текст", "Smaller text"), () => bumpFont(-1))}
         {tool("A+", L("По-голям текст", "Bigger text"), () => bumpFont(1))}
-        {/* size — type ANY value (13,5 works) and press Enter, or pick a preset */}
+        {/* size — shows the size at the caret; type ANY value (13,5 works) and
+            press Enter, or pick a preset from the list */}
         <input
+          ref={sizeRef}
           className="we-size"
           list="we-size-list"
           inputMode="decimal"
@@ -1392,16 +1548,24 @@ export default function WordEditor({
           title={L("Размер в pt — напишете стойност (напр. 13,5) и натиснете Enter", "Size in pt — type a value (e.g. 13.5) and press Enter")}
           style={{ width: 74 }}
           onMouseDown={(e) => e.stopPropagation()}
+          onFocus={(e) => {
+            // remember the editor selection before the box takes focus
+            const s = window.getSelection();
+            if (s && s.rangeCount > 0 && ref.current?.contains(s.getRangeAt(0).commonAncestorContainer))
+              sizeRange.current = s.getRangeAt(0).cloneRange();
+            e.currentTarget.select();
+          }}
           onKeyDown={(e) => {
             if (e.key !== "Enter") return;
             e.preventDefault();
-            const v = parseFloat(e.currentTarget.value.replace(",", "."));
-            if (Number.isFinite(v) && v >= 4 && v <= 96) { applyFontSize(Math.round(v * 10) / 10); e.currentTarget.value = ""; }
+            applySizeFromBox(e.currentTarget.value);
           }}
           onChange={(e) => {
-            // picking a datalist preset applies immediately (typing does not)
-            const v = parseFloat(e.currentTarget.value.replace(",", "."));
-            if (TEXT_SIZES.includes(v)) { applyFontSize(v); e.currentTarget.value = ""; }
+            // apply immediately ONLY when a preset is picked from the dropdown —
+            // plain typing waits for Enter (so "13,5" can be typed without "13"
+            // firing halfway through)
+            if ((e.nativeEvent as InputEvent).inputType === "insertReplacementText")
+              applySizeFromBox(e.currentTarget.value);
           }}
         />
         <datalist id="we-size-list">
@@ -1579,6 +1743,27 @@ export default function WordEditor({
           <button className="we-pill" title={L("Обедини клетката с тази под нея", "Merge the cell with the one below it")} onMouseDown={(e) => e.preventDefault()} onClick={mergeDown}>⧉ {L("Обедини надолу", "Merge down")}</button>
           <button className="we-pill" title={L("Върни обединената клетка към отделни клетки", "Split a merged cell back into single cells")} onMouseDown={(e) => e.preventDefault()} onClick={splitCell}>⊞ {L("Раздели", "Split")}</button>
           <span className="we-sep" />
+          <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>{L("Ширина", "Width")}</span>
+          <input
+            className="we-size we-tblw"
+            inputMode="decimal"
+            key={(cell.closest("table") as HTMLTableElement | null)?.style.width || "100%"}
+            defaultValue={(() => { const t = cell.closest("table") as HTMLTableElement | null; const w = t?.style.width; return w?.endsWith("%") ? w.slice(0, -1) : "100"; })()}
+            title={L("Ширина на таблицата в % от страницата (20–100) — Enter прилага; или влачете ъгъла на таблицата", "Table width as % of the page (20–100) — Enter applies; or drag the table corner")}
+            style={{ width: 56 }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              e.preventDefault();
+              const v = parseFloat(e.currentTarget.value.replace(",", "."));
+              if (Number.isFinite(v)) setTableWidthPct(v);
+            }}
+          />
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>%</span>
+          <button className="we-pill" title={L("Таблицата вляво", "Table to the left")} onMouseDown={(e) => e.preventDefault()} onClick={() => alignTable("left")}>⇤</button>
+          <button className="we-pill" title={L("Таблицата в средата", "Table centred")} onMouseDown={(e) => e.preventDefault()} onClick={() => alignTable("center")}>⇹</button>
+          <button className="we-pill" title={L("Таблицата вдясно", "Table to the right")} onMouseDown={(e) => e.preventDefault()} onClick={() => alignTable("right")}>⇥</button>
+          <span className="we-sep" />
           <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>{L("Фон", "Fill")}</span>
           <span className="we-swrow">
             {CELL_COLORS.map((c) => (
@@ -1636,6 +1821,18 @@ export default function WordEditor({
                 ] as [string, number, number][]).map(([h, x, y]) => (
                   <div key={h} className={"we-h " + h} style={{ left: x - 5.5, top: y - 5.5 }} onPointerDown={(e) => beginResize(e, h)} />
                 ))}
+              </div>
+            )}
+            {/* table resize: outline + SE corner handle (drag ⇄ width %, like photos) */}
+            {cell && !imgSel && tblBox && !preview && (
+              <div className="we-ov">
+                <div className="we-selbox" style={{ left: tblBox.l, top: tblBox.t, width: tblBox.w, height: tblBox.h }} />
+                <div
+                  className="we-h se"
+                  title={L("Влачете за ширина на таблицата", "Drag to resize the table width")}
+                  style={{ left: tblBox.l + tblBox.w - 5.5, top: tblBox.t + tblBox.h - 5.5 }}
+                  onPointerDown={beginTblResize}
+                />
               </div>
             )}
           </div>
