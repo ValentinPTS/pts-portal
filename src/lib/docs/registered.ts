@@ -13,7 +13,7 @@ import { esc, pick, wrapDoc, docHeader, footer } from "../doc-shell";
 // (resolved by the print route) plus the scheme's own scope/object data.
 // NB: the source workbook's title contains a typo («Кординиран») — rendered here
 // corrected to «Кодиран» per the owner's decision (2026-07-08).
-const EXTRA_CSS = `
+export const EXTRA_CSS = `
   .code{font-family:var(--sans);font-weight:700;color:var(--green-dark);}
   .empty{color:var(--muted);font-style:italic;text-align:center;}
   table.ptable td.n{text-align:center;width:30px;}

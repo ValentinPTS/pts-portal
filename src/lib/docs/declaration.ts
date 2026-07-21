@@ -4,7 +4,7 @@ import { fText } from "../form-fields";
 
 const FORM = "F 4.2-2";
 
-const DEC_CSS = `
+export const DEC_CSS = `
   .dec-field{display:flex;align-items:flex-end;gap:14px;margin:11px 0;}
   .dec-field .lbl{flex:0 0 40%;text-align:right;font-family:var(--sans);font-weight:700;font-size:11pt;}
   .dec-field .ln{flex:1;}

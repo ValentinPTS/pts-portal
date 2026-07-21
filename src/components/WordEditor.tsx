@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { saveDocHtmlAction, translateDocHtmlAction, translateAction, addLibraryItemAction, saveDocTemplateAction, deleteDocTemplateAction, uploadCoverImageAction, setDocReadyAction } from "@/lib/actions";
 import { useLang } from "@/components/LangProvider";
-import { FONTS_HREF } from "@/lib/doc-css";
+import { FONTS_HREF, scopeCss } from "@/lib/doc-css";
 import { sanitizeDocHtml } from "@/lib/sanitize-html";
 import { formulaToMathML, PT_FORMULAS } from "@/lib/formula";
 import { categoryLabel, groupByCategory } from "@/lib/element-categories";
@@ -119,7 +119,7 @@ const EDITOR_CSS = `
   .we-col{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:16px;overflow:auto;}
 
   /* the paper = exactly the PDF content box (182mm), real document body styles */
-  .we-page{--green-dark:#5f7d52;--green:#88a77b;--green-soft:#eef3ea;--green-line:#b7d0c0;--red:#9e2b2b;--ink:#1a1a1a;--muted:#6b6b6b;--line:#dcdcdc;position:relative;width:${PAGE_W_MM}mm;color:var(--ink);border:2px solid #111;border-radius:4px;
+  .we-page{--green-dark:#5f7d52;--green:#88a77b;--green-soft:#eef3ea;--green-line:#b7d0c0;--red:#9e2b2b;--ink:#1a1a1a;--muted:#6b6b6b;--line:#dcdcdc;--sans:'Sofia Sans Condensed','Segoe UI',Arial,sans-serif;--serif:'PT Serif',Georgia,serif;position:relative;width:${PAGE_W_MM}mm;color:var(--ink);border:2px solid #111;border-radius:4px;
     padding:26px 30px 50px 50px;box-shadow:0 8px 28px rgba(15,30,22,.10);
     font-family:'PT Serif',Georgia,serif;font-size:11pt;line-height:1.5;background:#fff;}
   /* traditional embroidery border down the left (matches the printed document) */
@@ -288,6 +288,7 @@ export default function WordEditor({
   hasDefault,
   schemeType = "T",
   isForm = false,
+  extraCss = "",
   snippets,
   fields,
   formElements = [],
@@ -309,6 +310,7 @@ export default function WordEditor({
   hasDefault: boolean;
   schemeType?: "T" | "C";
   isForm?: boolean;
+  extraCss?: string; // the doc's print-only stylesheet, injected scoped for WYSIWYG
   snippets: Snippet[];
   fields: Field[];
   formElements?: FormEl[];
@@ -402,7 +404,7 @@ export default function WordEditor({
   }, [started]);
 
   const exec = (cmd: string, val?: string) => { ref.current?.focus(); document.execCommand(cmd, false, val); setSaved(false); };
-  const insertHtml = (html: string) => { ref.current?.focus(); document.execCommand("insertHTML", false, html); setSaved(false); refreshGuides(); };
+  const insertHtml = (html: string) => { ref.current?.focus(); document.execCommand("insertHTML", false, html); setSaved(false); schedulePaginate(); };
   // The page-gap spacers (.we-gap) are presentation only — strip them so the saved
   // / exported HTML is the clean document.
   const current = () => {
@@ -436,7 +438,7 @@ export default function WordEditor({
           catch { span.appendChild(wr.extractContents()); wr.insertNode(span); }
           const cr = document.createRange(); cr.selectNodeContents(span); cr.collapse(false);
           sel.removeAllRanges(); sel.addRange(cr);
-          setSaved(false); refreshGuides(); return;
+          setSaved(false); schedulePaginate(); return;
         }
       }
       const span = document.createElement("span"); span.style[prop] = value;
@@ -453,7 +455,7 @@ export default function WordEditor({
       const r = document.createRange(); r.selectNodeContents(span);
       sel.removeAllRanges(); sel.addRange(r);
     }
-    setSaved(false); refreshGuides();
+    setSaved(false); schedulePaginate();
   }
   // Any size works, including halves like 13.5 pt (the toolbar box accepts "13,5").
   function applyFontSize(pt: number) { applyInlineStyle("fontSize", pt + "pt"); }
@@ -654,9 +656,16 @@ export default function WordEditor({
   // interleaving is what forced a reflow per block and thrashed on long documents.
   // The cumulative downward shift from inserted gaps is simulated in JS instead of
   // re-measured from the DOM. (`.style.position` avoids a getComputedStyle per child.)
+  // Cheap change detector: total height + block count. Pagination only depends on
+  // block geometry, so when neither changed since the last run, the whole pass
+  // (gap removal → measure → re-insert = 2 forced reflows + DOM churn) is skipped.
+  // This is what made typing/Tab/Enter feel laggy and "jumpy" on long documents.
+  const pgSig = useRef("");
   function refreshGuides() {
     const body = ref.current;
     if (!body) return;
+    const sig = body.scrollHeight + ":" + body.childElementCount;
+    if (sig === pgSig.current) return;
     body.querySelectorAll(":scope > .we-gap").forEach((n) => n.remove());
     const pageH = mmToPx(PAGE_BREAK_MM);
     // READ: one geometry pass over the top-level, in-flow blocks.
@@ -694,6 +703,8 @@ export default function WordEditor({
       const gap = makeGap(ins.page, ins.height);
       if (ins.before) body.insertBefore(gap, ins.before); else body.appendChild(gap);
     }
+    // remember the settled geometry so unchanged content skips the whole pass
+    pgSig.current = body.scrollHeight + ":" + body.childElementCount;
   }
   // Debounced reflow for typing (programmatic DOM edits don't fire onInput, so no loop).
   function schedulePaginate() {
@@ -736,7 +747,7 @@ export default function WordEditor({
         cals.after(p);
         const r = document.createRange(); r.setStart(p, 0); r.collapse(true);
         sel!.removeAllRanges(); sel!.addRange(r);
-        setSaved(false); refreshGuides();
+        setSaved(false); schedulePaginate();
         return;
       }
     }
@@ -783,7 +794,7 @@ export default function WordEditor({
           s2.removeAllRanges(); s2.addRange(cr);
         }
       }
-      setSaved(false); refreshGuides();
+      setSaved(false); schedulePaginate();
     }
   }
   useEffect(() => { place(); /* eslint-disable-next-line */ }, [imgSel, imgW, imgH, wrap]);
@@ -816,22 +827,36 @@ export default function WordEditor({
   }, [formOpen]);
   // Track the font family + size at the caret/selection so the toolbar always
   // shows what the current text IS — makes keeping sizes consistent easy.
+  // PERF: selectionchange fires on EVERY keystroke/caret move; the handler used to
+  // force a layout read (getComputedStyle after a dirty edit) AND a React re-render
+  // of the whole editor each time. Now it coalesces to one read per frame and only
+  // touches state when the shown value actually changes.
+  const curFmtRef = useRef<{ font: string; pt: string } | null>(null);
   useEffect(() => {
+    let raf = 0;
     const h = () => {
-      const sel = window.getSelection();
-      const n = sel?.anchorNode ?? null;
-      const el = (n && (n.nodeType === 1 ? (n as HTMLElement) : n.parentElement)) ?? null;
-      if (!el || !ref.current || !ref.current.contains(el)) { setCurFmt(null); return; }
-      const cs = window.getComputedStyle(el);
-      const font = (cs.fontFamily.split(",")[0] ?? "").replace(/["']/g, "").trim();
-      const pt = Math.round(((parseFloat(cs.fontSize) * 72) / 96) * 10) / 10;
-      setCurFmt({ font, pt: String(pt) });
-      // the size box mirrors the caret size (like Word) — unless being typed in
-      if (sizeRef.current && document.activeElement !== sizeRef.current)
-        sizeRef.current.value = String(pt);
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const sel = window.getSelection();
+        const n = sel?.anchorNode ?? null;
+        const el = (n && (n.nodeType === 1 ? (n as HTMLElement) : n.parentElement)) ?? null;
+        if (!el || !ref.current || !ref.current.contains(el)) {
+          if (curFmtRef.current !== null) { curFmtRef.current = null; setCurFmt(null); }
+          return;
+        }
+        const cs = window.getComputedStyle(el);
+        const font = (cs.fontFamily.split(",")[0] ?? "").replace(/["']/g, "").trim();
+        const pt = String(Math.round(((parseFloat(cs.fontSize) * 72) / 96) * 10) / 10);
+        // the size box mirrors the caret size (like Word) — unless being typed in
+        if (sizeRef.current && document.activeElement !== sizeRef.current)
+          sizeRef.current.value = pt;
+        if (curFmtRef.current?.font === font && curFmtRef.current?.pt === pt) return;
+        curFmtRef.current = { font, pt };
+        setCurFmt({ font, pt });
+      });
     };
     document.addEventListener("selectionchange", h);
-    return () => document.removeEventListener("selectionchange", h);
+    return () => { cancelAnimationFrame(raf); document.removeEventListener("selectionchange", h); };
   }, []);
   // free the preview object URL when it changes / on unmount
   useEffect(() => () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl); }, [pdfUrl]);
@@ -1459,7 +1484,7 @@ export default function WordEditor({
     const startRow: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--line)", borderRadius: 9, padding: "8px 10px" };
     return (
       <>
-        <style>{EDITOR_CSS + COVER_CSS}</style>
+        <style>{EDITOR_CSS + COVER_CSS + scopeCss(extraCss, ".we-page")}</style>
         <link rel="stylesheet" href={FONTS_HREF} />
         <div className="card p-5" style={{ borderLeft: "4px solid var(--green-dark)", maxWidth: 640 }}>
           <div className="font-bold" style={{ color: "var(--green-dark)", fontSize: 18 }}>{L(`Започни „${docNameEn}“ от…`, `Start “${docNameEn}” from…`)}</div>
@@ -1519,7 +1544,7 @@ export default function WordEditor({
 
   return (
     <div>
-      <style>{EDITOR_CSS + COVER_CSS}</style>
+      <style>{EDITOR_CSS + COVER_CSS + scopeCss(extraCss, ".we-page")}</style>
       <link rel="stylesheet" href={FONTS_HREF} />
       <input ref={fileRef} type="file" accept="image/*" hidden onChange={onImage} />
       <input ref={replaceRef} type="file" accept="image/*" hidden onChange={onReplaceImage} />

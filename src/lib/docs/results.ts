@@ -11,7 +11,7 @@ const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI"
 const ICO_WARN =
   `<svg width="15" height="15" viewBox="0 0 24 24" aria-hidden><path d="M12 3 22.5 21H1.5z" fill="#5f7d52"/><rect x="11" y="9" width="2" height="6.2" fill="#fff"/><rect x="11" y="16.6" width="2" height="2" fill="#fff"/></svg>`;
 
-const RS_CSS = `
+export const RS_CSS = `
   .rs-scheme{font-family:var(--sans);font-weight:700;color:var(--green-dark);font-size:11.5pt;margin:8px 0 14px;border-bottom:1px solid var(--line);padding-bottom:6px;}
   .rs-scheme .lbl{color:var(--ink);margin-right:6px;}
   .rs-field{margin:7px 0;font-family:var(--sans);} .rs-field .fl{font-weight:700;margin-right:6px;}

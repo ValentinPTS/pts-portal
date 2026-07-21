@@ -8,7 +8,7 @@ const FORM = "proposed";
 // centred layout, ILAC-MRA + SNAS accreditation marks, blank participant code.
 // Participant-specific fields (lab name, code) are left as blank placeholders —
 // they are filled per lab when a certificate is issued.
-const EXTRA_CSS = `
+export const EXTRA_CSS = `
   .frame{border:3px solid var(--green);outline:1px solid var(--green);outline-offset:4px;
     padding:18mm 16mm;display:flex;flex-direction:column;align-items:center;text-align:center;min-height:250mm;}
   .frame .logo{height:78px;margin:14px 0 2px;}

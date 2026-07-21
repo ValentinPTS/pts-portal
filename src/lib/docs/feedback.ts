@@ -8,7 +8,7 @@ const FORM = "F 8.6-2";
 // of the provider's end-of-scheme satisfaction survey (originally a Google Form).
 // Same for testing and calibration; the scheme number is substituted. The controls
 // are real fillable fields (lib/form-fields.ts): 1–5 ratings, Yes/No/Other, free text.
-const EXTRA_CSS = `
+export const EXTRA_CSS = `
   .subj{font-family:var(--sans);font-size:10.5pt;margin:2px 0 14px;}
   .subj b{color:var(--green-dark);}
   .fbintro{background:var(--green-soft);border-radius:6px;padding:9px 12px;margin:6px 0 12px;font-family:var(--sans);font-size:10pt;}

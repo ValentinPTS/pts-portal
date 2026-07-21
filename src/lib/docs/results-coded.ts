@@ -13,7 +13,7 @@ const FORM = "F 7.2.1-6";
 
 const ROMAN = ["I", "II", "III", "IV", "V", "VI"];
 
-const EXTRA_CSS = `
+export const EXTRA_CSS = `
   .code{font-family:var(--sans);font-weight:700;color:var(--green-dark);}
   table.ptable{font-size:9pt;} table.ptable td.c,table.ptable th.c{text-align:center;}
   .charmeta{margin:14px 0 6px;font-size:10pt;}

@@ -27,6 +27,15 @@ export const stripBodyMarkers = (html: string) =>
 export const COVER_MARK = "<!--PTS:CV-->";
 export const stripCoverMark = (html: string) => html.split(COVER_MARK).join("");
 
+// Prefix every selector of every rule with `scope` — used to inject a document's
+// print-only extra CSS (RS_CSS, REPORT_CSS, …) into the EDITOR page so editing
+// looks exactly like the locked/printed document, without the rules leaking into
+// the app UI. The doc CSS blocks are plain class rules (audited: no at-rules).
+export function scopeCss(css: string, scope: string): string {
+  return css.replace(/(^|\})([^{@}]+)\{/g, (_m, brace: string, sels: string) =>
+    brace + sels.split(",").map((s) => (s.trim() ? `${scope} ${s.trim()}` : s)).filter(Boolean).join(",") + "{");
+}
+
 // Web-font stylesheet for the built-in skins (PT Serif body + Sofia Sans headings).
 export const FONTS_HREF =
   "https://fonts.googleapis.com/css2?family=PT+Serif:wght@400;700&family=Sofia+Sans+Condensed:wght@400;600;700;800&display=swap";

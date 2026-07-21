@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getScheme, getSchemesByIds, listSchemeSummaries } from "@/lib/store";
-import { getDoc, isFormDoc } from "@/lib/documents";
+import { getDoc, isFormDoc, docEditorCss } from "@/lib/documents";
 import { listParticipants } from "@/lib/participants";
 import { listLibraryItems } from "@/lib/library-store";
 import { listSavedTemplates } from "@/lib/saved-templates";
@@ -94,6 +94,7 @@ export default async function BuildDocPage({
         hasDefault={hasDocTemplate(doc)}
         schemeType={s.type}
         isForm={isFormDoc(doc)}
+        extraCss={docEditorCss(doc, s.type)}
         snippets={snippets}
         fields={insertableFields(s, participants)}
         formElements={insertableFormElements()}

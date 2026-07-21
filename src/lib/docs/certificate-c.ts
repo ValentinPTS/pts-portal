@@ -11,7 +11,7 @@ const FORM = "proposed";
 // `s.calibration`. Participant-specific fields (lab name, code, certificate No.,
 // date of issue) are left as blank placeholders — they are filled per lab when
 // a certificate is issued. `s.calibration` may be undefined → scope renders blank.
-const EXTRA_CSS = `
+export const EXTRA_CSS = `
   .frame{border:3px solid var(--green);outline:1px solid var(--green);outline-offset:4px;
     padding:18mm 16mm;display:flex;flex-direction:column;align-items:center;text-align:center;min-height:250mm;}
   .frame .logo{height:78px;margin:14px 0 2px;}

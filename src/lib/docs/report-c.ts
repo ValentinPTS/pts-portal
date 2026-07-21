@@ -8,7 +8,7 @@ const FORM = "F 7.4.3-1";
 // cover, the Eₙ formula/criterion call-outs and the clearly-labelled "results
 // pending" placeholder. Kept here (not in the shared shell) because they are
 // specific to the Calibration Final Report.
-const REPORT_C_CSS = `
+export const REPORT_C_CSS = `
   .marks{display:flex;gap:22px;justify-content:center;align-items:center;margin:14px 0;}
   .marks .ilac{height:80px;}
   .snasbox{border:1px solid var(--ink);padding:6px 12px;text-align:center;font-family:var(--sans);}

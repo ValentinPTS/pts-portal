@@ -8,7 +8,7 @@ const FORM = "internal";
 // start date. Faithful to Documents\Testing|Calibration\1 - Заповед - BG.pdf
 // (a plain internal memo, not a branded cover-page document). The originals are
 // Bulgarian-only; an English column is provided for the app's bilingual toggle.
-const EXTRA_CSS = `
+export const EXTRA_CSS = `
   .ohead{display:flex;align-items:center;gap:14px;border-bottom:2px solid var(--red);padding-bottom:8px;}
   .ohead .logo{height:54px;}
   .ohead .tag{height:26px;margin-left:auto;}

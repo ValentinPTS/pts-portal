@@ -9,7 +9,7 @@ const FORM = "F 7.2.2-1";
 // Статистически проект - BG.pdf (Ф 7.2.2-1). BG primary; EN provided for the
 // app's bilingual toggle. Scheme-specific bits (number, object, characteristics,
 // σpt,min floors, calibration points/directions) are filled from the scheme.
-const EXTRA_CSS = `
+export const EXTRA_CSS = `
   .internal{border:1px dashed var(--green-dark);background:var(--green-soft);border-radius:6px;padding:9px 12px;margin:8px 0 4px;color:var(--green-dark);font-family:var(--sans);font-size:10pt;}
   .formula{background:var(--green-soft);border-left:3px solid var(--green);padding:7px 12px;font-family:var(--sans);margin:7px 0;}
   ul.tight{margin:4px 0;padding-left:20px;} ul.tight li{margin:3px 0;}

@@ -8,7 +8,7 @@ const cl = (lang: Lang, c?: Clause) => (c ? esc(pick(lang, c.en, c.bg)) : "");
 // Extra styling for this document only: the accreditation marks on the custom
 // cover and the clearly-labelled "results pending" placeholder block. Kept here
 // (not in the shared shell) because they are specific to the Final Report.
-const REPORT_CSS = `
+export const REPORT_CSS = `
   .marks{display:flex;gap:22px;justify-content:center;align-items:center;margin:14px 0;}
   .marks .ilac{height:80px;}
   .snasbox{border:1px solid var(--ink);padding:6px 12px;text-align:center;font-family:var(--sans);}
