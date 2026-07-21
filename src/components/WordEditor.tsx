@@ -350,6 +350,8 @@ export default function WordEditor({
   const [box, setBox] = useState<{ l: number; t: number; w: number; h: number } | null>(null); // px rel. to paper
   const [cell, setCell] = useState<HTMLTableCellElement | null>(null); // selected table cell
   const [tblBox, setTblBox] = useState<{ l: number; t: number; w: number; h: number } | null>(null); // outline of the selected cell's table
+  const [calSel, setCalSel] = useState<HTMLElement | null>(null); // selected date-card row (.cals)
+  const [calBox, setCalBox] = useState<{ l: number; t: number; w: number; h: number } | null>(null);
   const [selEl, setSelEl] = useState<HTMLSelectElement | null>(null); // selected dropdown
   const [selOpts, setSelOpts] = useState(0); // its option count (for the bar)
   const [preview, setPreview] = useState(false);              // inline PDF preview open
@@ -536,6 +538,41 @@ export default function WordEditor({
     (tbl as HTMLTableElement).style.width = p + "%";
     setSaved(false); refreshGuides(); placeTbl();
   }
+  // Outline of the selected date-card row (.cals) — cards resize as a group.
+  function placeCal() {
+    const page = pageRef.current;
+    if (!calSel || !page) { setCalBox(null); return; }
+    const cr = calSel.getBoundingClientRect(), pr = page.getBoundingClientRect();
+    setCalBox({ l: cr.left - pr.left, t: cr.top - pr.top, w: cr.width, h: cr.height });
+  }
+  // Drag the date-card group's corner: every card scales together — width AND the
+  // date/label font sizes (proportional, like resizing a photo).
+  function beginCalResize(e: React.PointerEvent) {
+    const cards = calSel ? (Array.from(calSel.querySelectorAll(".cal")) as HTMLElement[]) : [];
+    if (!cards.length) return;
+    e.preventDefault(); e.stopPropagation();
+    const startX = e.clientX;
+    const startW = cards[0].getBoundingClientRect().width;
+    const move = (ev: PointerEvent) => {
+      const w = Math.max(60, Math.min(230, startW + (ev.clientX - startX) / cards.length));
+      const r = w / 96; // 96px = the stylesheet's base card width
+      for (const c of cards) {
+        c.style.width = Math.round(w) + "px";
+        const d = c.querySelector(".d") as HTMLElement | null;
+        const lbl = c.querySelector(".lbl") as HTMLElement | null;
+        if (d) d.style.fontSize = Math.round(13 * r * 10) / 10 + "pt";
+        if (lbl) lbl.style.fontSize = Math.round(8 * r * 10) / 10 + "pt";
+      }
+      placeCal();
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setSaved(false); refreshGuides(); placeCal();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
   function alignTable(a: "left" | "center" | "right") {
     const tbl = cell?.closest("table") as HTMLTableElement | null;
     if (!tbl) return;
@@ -543,16 +580,28 @@ export default function WordEditor({
     tbl.style.marginRight = a === "right" ? "0" : "auto";
     setSaved(false); refreshGuides(); placeTbl();
   }
-  function beginTblResize(e: React.PointerEvent) {
+  // mode: "e" = right edge (width), "s" = bottom edge (row tightness — the cells'
+  // vertical padding shrinks/grows), "se" = corner (both at once).
+  function beginTblResize(e: React.PointerEvent, mode: "e" | "s" | "se" = "se") {
     const tbl = cell?.closest("table") as HTMLTableElement | null;
     if (!tbl || !ref.current) return;
     e.preventDefault(); e.stopPropagation();
-    const startX = e.clientX;
+    const startX = e.clientX, startY = e.clientY;
     const startW = tbl.getBoundingClientRect().width;
     const pageW = ref.current.getBoundingClientRect().width;
+    const cells = Array.from(tbl.querySelectorAll("td,th")) as HTMLElement[];
+    const startPad = cells.length ? parseFloat(getComputedStyle(cells[0]).paddingTop) || 5 : 5;
     const move = (ev: PointerEvent) => {
-      const w = Math.max(120, Math.min(pageW, startW + (ev.clientX - startX)));
-      tbl.style.width = Math.round((w / pageW) * 1000) / 10 + "%";
+      if (mode !== "s") {
+        const w = Math.max(120, Math.min(pageW, startW + (ev.clientX - startX)));
+        tbl.style.width = Math.round((w / pageW) * 1000) / 10 + "%";
+      }
+      if (mode !== "e") {
+        const rows = tbl.querySelectorAll("tr").length || 1;
+        const pad = Math.max(0, Math.min(16, startPad + (ev.clientY - startY) / (rows * 2)));
+        const px = Math.round(pad * 10) / 10 + "px";
+        for (const c of cells) { c.style.paddingTop = px; c.style.paddingBottom = px; }
+      }
       placeTbl();
     };
     const up = () => {
@@ -657,6 +706,24 @@ export default function WordEditor({
       e.preventDefault(); // Ctrl/⌘+S saves (Ctrl+B/I/U are native in contentEditable)
       if (!savedRef.current && !busyRef.current) save();
     }
+    // Enter inside a date-card row (.cals) would only add lines INSIDE the card —
+    // escape below it instead: a fresh paragraph after the row, caret in it.
+    // (Shift+Enter still makes a line inside the card.)
+    if (e.key === "Enter" && !e.shiftKey) {
+      const sel = window.getSelection();
+      const n0 = sel?.rangeCount ? sel.getRangeAt(0).startContainer : null;
+      const el0 = n0 ? (n0.nodeType === 1 ? (n0 as HTMLElement) : n0.parentElement) : null;
+      const cals = el0?.closest(".cals");
+      if (cals && ref.current?.contains(cals)) {
+        e.preventDefault();
+        const p = document.createElement("p"); p.innerHTML = "<br>";
+        cals.after(p);
+        const r = document.createRange(); r.setStart(p, 0); r.collapse(true);
+        sel!.removeAllRanges(); sel!.addRange(r);
+        setSaved(false); refreshGuides();
+        return;
+      }
+    }
     // Tab like Word: in a list = one level in/out; in a table = hop to the
     // next/previous cell; in text = insert a fixed 1.25cm tab stop (Shift+Tab
     // removes the tab stop just before the caret).
@@ -705,6 +772,7 @@ export default function WordEditor({
   }
   useEffect(() => { place(); /* eslint-disable-next-line */ }, [imgSel, imgW, imgH, wrap]);
   useEffect(() => { placeTbl(); /* eslint-disable-next-line */ }, [cell]);
+  useEffect(() => { placeCal(); /* eslint-disable-next-line */ }, [calSel]);
   // close the text-colour palette when clicking outside it
   useEffect(() => {
     if (!colorOpen) return;
@@ -779,7 +847,7 @@ export default function WordEditor({
     setImgH(roundMm(pxToMm(img.getBoundingClientRect().height)));
     setWrap(wrapOf(img));
   }
-  function deselect() { setImgSel(null); setBox(null); setSelEl(null); }
+  function deselect() { setImgSel(null); setBox(null); setSelEl(null); setCalSel(null); setCalBox(null); }
 
   // ── dropdown (select) editing: add / remove / edit its options ──
   function addOption() {
@@ -857,10 +925,11 @@ export default function WordEditor({
       setSaved(false);
       return;
     }
-    // resize handles (image or table) keep the current selection alive
+    // resize handles (image / table / date cards) keep the current selection alive
     if (tgt.classList.contains("we-h")) return;
     deselect();
     setCell(cellOf(tgt));
+    setCalSel((tgt.closest?.(".cals") as HTMLElement) ?? null);
   }
 
   // Double-click an inserted formula → reopen the editor with its source.
@@ -1823,15 +1892,40 @@ export default function WordEditor({
                 ))}
               </div>
             )}
-            {/* table resize: outline + SE corner handle (drag ⇄ width %, like photos) */}
+            {/* table resize: outline + handles — right = width, bottom = tighter/looser
+                rows (cell padding), corner = both (like photos) */}
             {cell && !imgSel && tblBox && !preview && (
               <div className="we-ov">
                 <div className="we-selbox" style={{ left: tblBox.l, top: tblBox.t, width: tblBox.w, height: tblBox.h }} />
                 <div
+                  className="we-h e"
+                  title={L("Влачете за ширина", "Drag to resize the width")}
+                  style={{ left: tblBox.l + tblBox.w - 5.5, top: tblBox.t + tblBox.h / 2 - 5.5 }}
+                  onPointerDown={(e) => beginTblResize(e, "e")}
+                />
+                <div
+                  className="we-h s"
+                  title={L("Влачете за по-стегнати / по-широки редове", "Drag for tighter / looser rows")}
+                  style={{ left: tblBox.l + tblBox.w / 2 - 5.5, top: tblBox.t + tblBox.h - 5.5 }}
+                  onPointerDown={(e) => beginTblResize(e, "s")}
+                />
+                <div
                   className="we-h se"
-                  title={L("Влачете за ширина на таблицата", "Drag to resize the table width")}
+                  title={L("Влачете за размер на таблицата", "Drag to resize the table")}
                   style={{ left: tblBox.l + tblBox.w - 5.5, top: tblBox.t + tblBox.h - 5.5 }}
-                  onPointerDown={beginTblResize}
+                  onPointerDown={(e) => beginTblResize(e, "se")}
+                />
+              </div>
+            )}
+            {/* date-card row resize: the cards scale together (width + font sizes) */}
+            {calSel && !imgSel && !cell && calBox && !preview && (
+              <div className="we-ov">
+                <div className="we-selbox" style={{ left: calBox.l, top: calBox.t, width: calBox.w, height: calBox.h }} />
+                <div
+                  className="we-h se"
+                  title={L("Влачете за размер на картичките", "Drag to resize the cards")}
+                  style={{ left: calBox.l + calBox.w - 5.5, top: calBox.t + calBox.h - 5.5 }}
+                  onPointerDown={beginCalResize}
                 />
               </div>
             )}
