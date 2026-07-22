@@ -78,22 +78,25 @@ export function docEditorCss(key: string, type: "T" | "C"): string {
 export const FORM_DOCS = new Set<string>(["feedback", "declaration", "application", "protocol", "results"]);
 export const isFormDoc = (key: string): boolean => FORM_DOCS.has(key);
 
-// Has this document got any content yet (started)?
+// Has this document got any content yet (started)? A form document counts both
+// ways it can be worked on: fill-saved values AND/OR an editor-built body.
 export function hasDocContent(s: Scheme, key: string): boolean {
-  return isFormDoc(key)
-    ? !!s.formData?.[key] && Object.values(s.formData[key]).some(Boolean)
-    : !!(s.docs?.[key]?.bg || s.docs?.[key]?.en);
+  const built = !!(s.docs?.[key]?.bg || s.docs?.[key]?.en);
+  const filled = !!s.formData?.[key] && Object.values(s.formData[key]).some(Boolean);
+  return isFormDoc(key) ? built || filled : built;
 }
 
 // Is this document DONE for progress purposes? One rule everywhere (scheme tiles,
 // the documents page, stage progress): an active uploaded file is done (it's a
-// final external document); an editor-built document counts only when the owner
-// explicitly marked it ready (scheme.docReady — the editor's "Готов" button);
-// fillable form documents keep the older rule (filled = done, no editor button).
+// final external document); anything the owner BUILT in the editor counts only
+// when explicitly marked ready (scheme.docReady — the editor's "Готов" button).
+// A fill-only form document (no editor body) keeps the older rule: filled = done.
 export function isDocDone(s: Scheme, key: string): boolean {
   const hasUpload = !!s.uploads?.[key];
   const started = hasDocContent(s, key);
   if (hasUpload && (s.docActive?.[key] !== "built" || !started)) return true;
   if (!started) return false;
-  return isFormDoc(key) ? true : !!s.docReady?.[key];
+  const built = !!(s.docs?.[key]?.bg || s.docs?.[key]?.en);
+  if (isFormDoc(key) && !built) return true;
+  return !!s.docReady?.[key];
 }

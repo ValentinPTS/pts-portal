@@ -30,13 +30,18 @@ function cur(): FormCtx {
 const a = (id: string) => esc(id).replace(/"/g, "");
 const v = (id: string) => cur().values[id] ?? "";
 
+// Static renders carry the field's identity as data-ff="<kind>:<id>[:<value>]" on
+// the flat marker element. That metadata survives the Word editor round-trip (the
+// sanitizer keeps data-*), so a saved EDITED body can still be re-hydrated into
+// live inputs (Fill view) or re-drawn from newer values (print) — lib/form-hydrate.
+
 // Single checkbox (independent boolean). `label` is trusted HTML built by the renderer.
 export function fCheck(id: string, label: string): string {
   const on = v(id) === "1";
   if (cur().fill) {
     return `<label class="ff-opt"><input class="ff-cb" type="checkbox" name="${a(id)}" value="1"${on ? " checked" : ""}><span>${label}</span></label>`;
   }
-  return `<span class="ff-opt"><span class="ff-box${on ? " on" : ""}">${on ? "✓" : ""}</span><span>${label}</span></span>`;
+  return `<span class="ff-opt"><span class="ff-box${on ? " on" : ""}" data-ff="c:${a(id)}">${on ? "✓" : ""}</span><span>${label}</span></span>`;
 }
 
 // Radio group (one choice). options = [value, labelHtml][]. `round` → circular markers.
@@ -49,7 +54,7 @@ export function fRadio(id: string, options: [string, string][], round = false): 
       if (cur().fill) {
         return `<label class="ff-opt"><input class="ff-rb-in" type="radio" name="${a(id)}" value="${a(val)}"${on ? " checked" : ""}><span>${label}</span></label>`;
       }
-      return `<span class="ff-opt"><span class="${mark}${on ? " on" : ""}">${on ? (round ? "●" : "✓") : ""}</span><span>${label}</span></span>`;
+      return `<span class="ff-opt"><span class="${mark}${on ? " on" : ""}" data-ff="r:${a(id)}:${a(val)}">${on ? (round ? "●" : "✓") : ""}</span><span>${label}</span></span>`;
     })
     .join("");
 }
@@ -63,7 +68,7 @@ export function fRating(id: string, lowLabel = "", highLabel = ""): string {
       const on = sel === String(n);
       const dot = fill
         ? `<input class="ff-rate-in" type="radio" name="${a(id)}" value="${n}"${on ? " checked" : ""}>`
-        : `<span class="ff-rate${on ? " on" : ""}"></span>`;
+        : `<span class="ff-rate${on ? " on" : ""}" data-ff="s:${a(id)}:${n}"></span>`;
       return `<span class="ff-pt"><span class="ff-pn">${n}</span>${dot}</span>`;
     })
     .join("");
@@ -76,7 +81,7 @@ export function fText(id: string, minWidth = 220): string {
   if (cur().fill) {
     return `<input class="ff-line" type="text" name="${a(id)}" value="${esc(val)}" style="min-width:${minWidth}px">`;
   }
-  return `<span class="ff-line"${val ? "" : ' data-empty="1"'} style="min-width:${minWidth}px">${esc(val)}</span>`;
+  return `<span class="ff-line"${val ? "" : ' data-empty="1"'} data-ff="t:${a(id)}" style="min-width:${minWidth}px">${esc(val)}</span>`;
 }
 
 // Multi-line free text (rows of writing lines).
@@ -88,7 +93,7 @@ export function fLines(id: string, rows = 3): string {
   const filled = esc(val).split("\n");
   const out: string[] = [];
   for (let i = 0; i < Math.max(rows, filled.length); i++) out.push(`<div class="ff-lrow">${filled[i] ?? ""}</div>`);
-  return `<div class="ff-lines">${out.join("")}</div>`;
+  return `<div class="ff-lines" data-ff="l:${a(id)}:${rows}">${out.join("")}</div>`;
 }
 
 // Dropdown / pill select. options = [value, labelHtml][].

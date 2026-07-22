@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getScheme } from "@/lib/store";
-import { getDoc, isFormDoc, isDocDone } from "@/lib/documents";
+import { getDoc, isFormDoc, isDocDone, hasDocContent } from "@/lib/documents";
 import { DOC_STAGES } from "@/lib/doc-stages";
 import ExplorerShell from "@/components/ExplorerShell";
 import SchemeDocuments, { type DocStageView, type DocSource } from "@/components/SchemeDocuments";
@@ -40,9 +40,7 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
       const def = getDoc(key)!;
       const isForm = isFormDoc(key);
       const hasUpload = !!s.uploads?.[key];
-      const hasBuilt = isForm
-        ? !!s.formData?.[key] && Object.values(s.formData[key]).some(Boolean)
-        : !!(s.docs?.[key]?.bg || s.docs?.[key]?.en);
+      const hasBuilt = hasDocContent(s, key);
       const pref = s.docActive?.[key];
       let active: DocSource = "none";
       if (hasUpload && pref !== "built") active = "uploaded";

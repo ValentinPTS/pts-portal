@@ -704,9 +704,19 @@ export default function WordEditor({
   function refreshGuides() {
     const body = ref.current;
     if (!body) return;
+    const pageH = mmToPx(PAGE_BREAK_MM);
+    // SELF-HEAL: a direct-child .body wrapper taller than a page (older templates
+    // put a whole section — e.g. the Invitation's §4 — into ONE div) can never
+    // take a page break inside, so the document reads as one endless page. Unwrap
+    // it: its children become top-level, breakable blocks. Idempotent; persists
+    // with the user's next save.
+    for (const c of Array.from(body.children) as HTMLElement[]) {
+      if (c.tagName === "DIV" && c.classList.contains("body") && c.children.length > 1 && c.offsetHeight > pageH) {
+        c.replaceWith(...Array.from(c.childNodes));
+      }
+    }
     const sig = pgSigOf(body);
     if (sig === pgSig.current) return;
-    const pageH = mmToPx(PAGE_BREAK_MM);
     // READ: measure with the existing gaps LEFT IN PLACE (no strip-and-rebuild —
     // that was the loud part: two forced reflows and every seam recreated). A
     // block's "natural" top = its offsetTop minus the gap heights above it.
@@ -1663,21 +1673,19 @@ export default function WordEditor({
             : L("Незапазени промени", "Unsaved changes")}
         </span>
         {/* the document is only "Готов" on the scheme page when the owner says so */}
-        {!isForm && (
-          <button
-            className="btn"
-            onClick={toggleReady}
-            disabled={busy === "ready"}
-            title={ready
-              ? L("Документът е отбелязан като готов — кликнете, за да го върнете в процес", "Marked as ready — click to reopen as in-progress")
-              : L("Отбележи документа като готов (показва се като „Готов“ на страницата на схемата)", "Mark the document as ready (shows as “Ready” on the scheme page)")}
-            style={ready
-              ? { fontSize: 13, background: "#e3eeda", borderColor: "#cbd9be", color: "#456b2c", fontWeight: 700 }
-              : { fontSize: 13, borderColor: "var(--green-dark)", color: "var(--green-dark)", fontWeight: 700 }}
-          >
-            {busy === "ready" ? "…" : ready ? L("Готов ✓", "Ready ✓") : L("✓ Маркирай като готов", "✓ Mark as ready")}
-          </button>
-        )}
+        <button
+          className="btn"
+          onClick={toggleReady}
+          disabled={busy === "ready"}
+          title={ready
+            ? L("Документът е отбелязан като готов — кликнете, за да го върнете в процес", "Marked as ready — click to reopen as in-progress")
+            : L("Отбележи документа като готов (показва се като „Готов“ на страницата на схемата)", "Mark the document as ready (shows as “Ready” on the scheme page)")}
+          style={ready
+            ? { fontSize: 13, background: "#e3eeda", borderColor: "#cbd9be", color: "#456b2c", fontWeight: 700 }
+            : { fontSize: 13, borderColor: "var(--green-dark)", color: "var(--green-dark)", fontWeight: 700 }}
+        >
+          {busy === "ready" ? "…" : ready ? L("Готов ✓", "Ready ✓") : L("✓ Маркирай като готов", "✓ Mark as ready")}
+        </button>
         <span className="we-sep" style={{ height: 20 }} />
         <span className="text-sm" style={{ color: "var(--muted)" }}>{L("Преглед:", "Preview:")}</span>
         {(["bg", "en"] as const).map((l) => (

@@ -4,17 +4,21 @@ import { fText } from "../form-fields";
 
 const FORM = "F 4.2-2";
 
+// The real F 4.2-2 is ONE full, airy page: fields high up, the declaration text
+// centred mid-page, the signature row around ¾ down. The rhythm below is in mm so
+// the editor, the fill view and the PDF land on the identical one-page layout.
 export const DEC_CSS = `
-  .dec-field{display:flex;align-items:flex-end;gap:14px;margin:11px 0;}
+  .body > .dec-field:first-child{margin-top:13mm;}
+  .dec-field{display:flex;align-items:flex-end;gap:14px;margin:8.5mm 0;}
   .dec-field .lbl{flex:0 0 40%;text-align:right;font-family:var(--sans);font-weight:700;font-size:11pt;}
   .dec-field .ln{flex:1;}
   .dec-field .ff-line{width:100%;min-width:0;}
-  .dec-hint{margin:3px 0 14px 40%;padding-left:14px;font-style:italic;color:var(--muted);font-size:10pt;text-align:center;}
-  .dec-intro{text-align:center;margin:30px 0 6px;line-height:1.7;font-size:11.5pt;}
+  .dec-hint{margin:1.5mm 0 10mm 40%;padding-left:14px;font-style:italic;color:var(--muted);font-size:10pt;text-align:center;}
+  .dec-intro{text-align:center;margin:13mm 0 0;line-height:2.4;font-size:12pt;}
   .dec-intro .em{color:var(--green-dark);font-weight:700;}
-  .dec-declare{text-align:center;font-family:var(--sans);font-weight:800;font-size:13.5pt;letter-spacing:1.5px;margin:16px 0 12px;}
-  .dec-list{margin:8px 0;padding-left:24px;} .dec-list li{margin:11px 0;text-align:justify;line-height:1.55;}
-  .dec-sign{display:flex;justify-content:space-between;gap:40px;margin-top:52px;}
+  .dec-declare{text-align:center;font-family:var(--sans);font-weight:800;font-size:14pt;letter-spacing:1.5px;margin:10mm 0 9mm;}
+  .dec-list{margin:0;padding-left:26px;} .dec-list li{margin:8mm 0;text-align:justify;line-height:1.7;}
+  .dec-sign{display:flex;justify-content:space-between;gap:40px;margin-top:24mm;}
   .dec-sign .col{flex:0 0 42%;text-align:center;}
   .dec-sign .col .ff-line{min-width:0;width:100%;border-bottom-color:#999;}
   .dec-sign .col .cap{display:block;margin-top:3px;font-family:var(--sans);font-size:9.5pt;color:var(--muted);}

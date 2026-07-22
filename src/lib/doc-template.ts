@@ -39,10 +39,12 @@ export function hasDocTemplate(key: string): boolean {
 }
 
 // The editable body of a document, as the HTML the Word editor starts from.
+// Any saved form-field values are drawn in (static), and each control carries its
+// data-ff identity so the Fill view can re-hydrate the body after it's edited.
 export function docDefaultBody(s: Scheme, key: string, lang: Lang, opts?: DocOptions): string {
   const def = getDoc(key);
   if (!def?.render) return "";
-  const full = def.render(s, lang, opts);
+  const full = withFormCtx({ fill: false, values: s.formData?.[key] ?? {} }, () => def.render!(s, lang, opts));
   const b = bodyBounds(full);
   if (!b) return "";
   return stripBodyMarkers(full.slice(b.start, b.end)).trim();

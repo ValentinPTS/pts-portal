@@ -71,7 +71,11 @@ export interface OwnerSession {
 // Memoized per request (React cache): the root layout's header, the page's
 // requireOwner(), and any /account read share a single getUser() round-trip.
 export const getSessionUser = cache(async (): Promise<OwnerSession | null> => {
+  // No configured project (or a key-less local env) → no session, never a crash —
+  // the same silent fallback the data stores use. createServerClient throws on an
+  // empty url/key, so both are guarded here.
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return null;
+  if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) return null;
   const supabase = await createServerSupabase();
   const {
     data: { user },

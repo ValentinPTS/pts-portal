@@ -134,8 +134,6 @@ export function renderInvitation(s: Scheme, lang: Lang): string {
       )}</li>
     </ul>`;
 
-  const s4 = priceTable + clarifications + invoicing + notifications + delivery + ptItems;
-
   const body = [
     cover(s, lang, "INVITATION FOR PROFICIENCY TESTING", "ПОКАНА ЗА ИЗПИТВАНЕ ЗА ПРИГОДНОСТ", {
       withImage: false,
@@ -143,7 +141,15 @@ export function renderInvitation(s: Scheme, lang: Lang): string {
     sec(1, "Number and name of the PT scheme", "Номер и наименование на схемата", lang, s1),
     sec(2, "Methods and characteristics", "Методи и характеристики", lang, s2),
     sec(3, "Time schedule of the PT scheme", "График на схемата за изпитване за пригодност", lang, s3),
-    sec(4, "Financial conditions", "Финансови условия", lang, s4),
+    // §4 is deliberately several sibling blocks (not one giant .body): the Word
+    // editor's page engine breaks BETWEEN top-level blocks, so a section taller
+    // than a page would otherwise render as one endless page.
+    sec(4, "Financial conditions", "Финансови условия", lang, priceTable),
+    `<div class="body">${clarifications}</div>`,
+    `<div class="body">${invoicing}</div>`,
+    `<div class="body">${notifications}</div>`,
+    `<div class="body">${delivery}</div>`,
+    `<div class="body">${ptItems}</div>`,
     sec(5, "Applying for participation", "Заявяване на участие", lang, `<p>${cl(lang, s.clauses.applying)}</p>`),
     sec(6, "Contacts", "Контакти", lang, `<p>${cl(lang, s.clauses.contacts)}</p>`),
     footer(s, FORM),

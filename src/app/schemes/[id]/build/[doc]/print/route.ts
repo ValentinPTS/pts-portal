@@ -1,8 +1,9 @@
 import type { NextRequest } from "next/server";
 import { getScheme } from "@/lib/store";
-import { getDoc } from "@/lib/documents";
+import { getDoc, isFormDoc } from "@/lib/documents";
 import { listParticipants } from "@/lib/participants";
 import { docPrintHtml, docDefaultBody } from "@/lib/doc-template";
+import { drawFormBody } from "@/lib/form-hydrate";
 import { getRevision } from "@/lib/doc-revisions";
 import { canRevealNamesNow } from "@/lib/roles";
 import { resolveSkinAsync } from "@/skins";
@@ -55,6 +56,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
   // data (masked per `reveal`), never from saved HTML. This both honours the name
   // guard and stops a stale/edited copy from drifting from the real participants.
   if (isList) saved = "";
+  // A form document's edited body bakes control states as of edit time — redraw
+  // them from the latest fill-saved values (data-ff identity; fields the fill
+  // never saved keep the editor's state), so print matches the locked Fill view.
+  if (saved && isFormDoc(doc)) saved = drawFormBody(saved, scheme.formData?.[doc] ?? {});
   const body = saved || docDefaultBody(scheme, doc, lang, opts);
   const skin = await resolveSkinAsync(scheme);
   const html = docPrintHtml(scheme, doc, lang, body, opts, skin);
