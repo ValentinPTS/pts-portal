@@ -416,6 +416,18 @@ export default function WordEditor({
 
   // ── inline styling: apply font-size / font-family to the selection, or to the
   // enclosing block when the caret is just sitting in text (like Word) ──
+  // Wipe `prop` from every span INSIDE the styled one — leftover inner values
+  // would override the fresh outer one, which made repeated size switching look
+  // like it "doesn't apply". Empty style attributes are dropped entirely.
+  function clearInnerProp(root: HTMLElement, prop: "fontSize" | "fontFamily") {
+    root.querySelectorAll("span").forEach((s) => {
+      const hs = s as HTMLElement;
+      if (hs.style[prop]) {
+        hs.style[prop] = "";
+        if (!hs.getAttribute("style")) hs.removeAttribute("style");
+      }
+    });
+  }
   function applyInlineStyle(prop: "fontSize" | "fontFamily", value: string) {
     const el = ref.current; if (!el) return;
     const sel = window.getSelection(); if (!sel || sel.rangeCount === 0) return;
@@ -432,10 +444,18 @@ export default function WordEditor({
         while (a > 0 && /[^\s ]/.test(text[a - 1])) a--;
         while (b < text.length && /[^\s ]/.test(text[b])) b++;
         if (b > a) {
-          const wr = document.createRange(); wr.setStart(n, a); wr.setEnd(n, b);
-          const span = document.createElement("span"); span.style[prop] = value;
-          try { wr.surroundContents(span); }
-          catch { span.appendChild(wr.extractContents()); wr.insertNode(span); }
+          // word already exactly filling a styled span → restyle it in place
+          const parentEl = n.parentElement;
+          let span: HTMLElement;
+          if (parentEl && parentEl.tagName === "SPAN" && el.contains(parentEl) && parentEl.childNodes.length === 1 && parentEl.textContent === text.slice(a, b)) {
+            span = parentEl; span.style[prop] = value;
+          } else {
+            const wr = document.createRange(); wr.setStart(n, a); wr.setEnd(n, b);
+            span = document.createElement("span"); span.style[prop] = value;
+            try { wr.surroundContents(span); }
+            catch { span.appendChild(wr.extractContents()); wr.insertNode(span); }
+          }
+          clearInnerProp(span, prop);
           const cr = document.createRange(); cr.selectNodeContents(span); cr.collapse(false);
           sel.removeAllRanges(); sel.addRange(cr);
           setSaved(false); schedulePaginate(); return;
@@ -447,9 +467,21 @@ export default function WordEditor({
       const cr = document.createRange(); cr.setStart(span.firstChild as Text, 1); cr.collapse(true);
       sel.removeAllRanges(); sel.addRange(cr);
     } else {
-      const span = document.createElement("span"); span.style[prop] = value;
-      try { range.surroundContents(span); }
-      catch { span.appendChild(range.extractContents()); range.insertNode(span); }
+      // If the selection IS exactly an existing span's content, restyle that span
+      // in place. Every size switch used to add a NEW wrapper around the last one
+      // — the nesting grew per click, inner values kept overriding the new outer
+      // one, and switching sizes felt laggy / like it wasn't applying.
+      const c = range.commonAncestorContainer;
+      const holder = (c.nodeType === 3 ? c.parentElement : c) as HTMLElement | null;
+      let span: HTMLElement;
+      if (holder && holder.tagName === "SPAN" && el.contains(holder) && range.toString() === holder.textContent) {
+        span = holder; span.style[prop] = value;
+      } else {
+        span = document.createElement("span"); span.style[prop] = value;
+        try { range.surroundContents(span); }
+        catch { span.appendChild(range.extractContents()); range.insertNode(span); }
+      }
+      clearInnerProp(span, prop);
       // keep the selection ON the styled text (also makes the caret-format chip
       // and the size box read the NEW value, not the surrounding text's)
       const r = document.createRange(); r.selectNodeContents(span);
@@ -635,16 +667,18 @@ export default function WordEditor({
   // page-break-inside:avoid) — so text never sits on the break and pages 1/2 are
   // clearly separated. Spacers (.we-gap) are presentation only (stripped on save).
   const GAP_PX = 18; // small grey page-break separation (10–20px); the rest stays white
+  const gapLabel = (n: number) => (uiLang === "bg" ? `стр. ${n} / ${n + 1}` : `page ${n} / ${n + 1}`);
   const makeGap = (n: number, heightPx: number) => {
     const gap = document.createElement("div");
     gap.className = "we-gap";
     gap.contentEditable = "false";
     gap.style.height = heightPx + "px";
+    gap.dataset.page = String(n);
     const sep = document.createElement("div");
     sep.className = "we-gapsep";
     const span = document.createElement("span");
     span.className = "we-gaplabel";
-    span.textContent = uiLang === "bg" ? `стр. ${n} / ${n + 1}` : `page ${n} / ${n + 1}`;
+    span.textContent = gapLabel(n);
     sep.appendChild(span);
     gap.appendChild(sep);
     return gap;
@@ -661,29 +695,58 @@ export default function WordEditor({
   // (gap removal → measure → re-insert = 2 forced reflows + DOM churn) is skipped.
   // This is what made typing/Tab/Enter feel laggy and "jumpy" on long documents.
   const pgSig = useRef("");
+  // Signature = the content's real bottom edge + block count (NOT scrollHeight —
+  // the full-page min-height would mask growth inside the padded last page).
+  const pgSigOf = (body: HTMLElement) => {
+    const last = body.lastElementChild as HTMLElement | null;
+    return (last ? last.offsetTop + last.offsetHeight : 0) + ":" + body.childElementCount;
+  };
   function refreshGuides() {
     const body = ref.current;
     if (!body) return;
-    const sig = body.scrollHeight + ":" + body.childElementCount;
+    const sig = pgSigOf(body);
     if (sig === pgSig.current) return;
-    body.querySelectorAll(":scope > .we-gap").forEach((n) => n.remove());
     const pageH = mmToPx(PAGE_BREAK_MM);
-    // READ: one geometry pass over the top-level, in-flow blocks.
-    const measured = (Array.from(body.children) as HTMLElement[])
-      .filter((c) => c instanceof HTMLElement && c.style.position !== "absolute" && !c.classList.contains("free"))
-      .map((el) => ({ el, top: el.offsetTop, h: el.offsetHeight }));
+    // READ: measure with the existing gaps LEFT IN PLACE (no strip-and-rebuild —
+    // that was the loud part: two forced reflows and every seam recreated). A
+    // block's "natural" top = its offsetTop minus the gap heights above it.
+    const kids = Array.from(body.children) as HTMLElement[];
+    const measured: { el: HTMLElement; top: number; h: number }[] = [];
+    const existing: { el: HTMLElement; key: HTMLElement | null; height: number; page: string }[] = [];
+    let gapAbove = 0;
+    for (let i = 0; i < kids.length; i++) {
+      const c = kids[i];
+      if (c.classList.contains("we-gap")) {
+        let k = c.nextElementSibling as HTMLElement | null;
+        while (k && k.classList.contains("we-gap")) k = k.nextElementSibling as HTMLElement | null;
+        existing.push({ el: c, key: k, height: c.offsetHeight, page: c.dataset.page ?? "" });
+        // The spacer stops the neighbours' margins from merging; without it they
+        // would collapse by min(prev bottom, next top). Fold that back in so the
+        // measured "natural" layout matches the gapless one — otherwise anchors
+        // drift a few px between runs and stable gaps get needlessly replaced.
+        const prev = kids[i - 1], next = k;
+        const collapse = prev && next
+          ? Math.min(parseFloat(getComputedStyle(prev).marginBottom) || 0, parseFloat(getComputedStyle(next).marginTop) || 0)
+          : 0;
+        gapAbove += c.offsetHeight + collapse;
+        continue;
+      }
+      if (c.style.position === "absolute" || c.classList.contains("free")) continue;
+      measured.push({ el: c, top: c.offsetTop - gapAbove, h: c.offsetHeight });
+    }
     // COMPUTE: decide every gap using pure math (no DOM reads/writes here).
-    const inserts: { before: Node | null; height: number; page: number }[] = [];
+    const inserts: { key: HTMLElement | null; height: number; page: number }[] = [];
     let pageNum = 1;
     let shift = 0;        // total px added by gaps inserted before this point
     let boundary = pageH; // bottom of the current page in the shifted layout
-    for (const { el, top: rawTop, h } of measured) {
+    for (let i = 0; i < measured.length; i++) {
+      const { el, top: rawTop, h } = measured[i];
       const top = rawTop + shift; // where this block will sit after prior gaps
       if (isCoverEl(el)) {
         // the title page always gets its own page — push everything after it to page 2
         const bottom = top + h;
         const remaining = Math.max(0, boundary - bottom);
-        inserts.push({ before: el.nextElementSibling, height: remaining + GAP_PX, page: pageNum });
+        inserts.push({ key: measured[i + 1]?.el ?? null, height: remaining + GAP_PX, page: pageNum });
         shift += remaining + GAP_PX;
         pageNum++;
         boundary = bottom + remaining + GAP_PX + pageH;
@@ -692,19 +755,48 @@ export default function WordEditor({
       if (h >= pageH) { boundary = top + Math.ceil(h / pageH) * pageH; continue; } // too tall to push
       if (top + h > boundary) {
         const remaining = Math.max(0, boundary - top); // white space filling the rest of the page
-        inserts.push({ before: el, height: remaining + GAP_PX, page: pageNum });
+        inserts.push({ key: el, height: remaining + GAP_PX, page: pageNum });
         shift += remaining + GAP_PX;
         pageNum++;
         boundary = top + remaining + GAP_PX + pageH; // next page starts at this block's shifted top
       }
     }
-    // WRITE: apply all insertions together.
+    // DIFF/WRITE: keep every gap that is still right (same anchor block, same
+    // height, same label) — only the differences touch the DOM, so unchanged
+    // pages never move or re-animate and Enter/typing feels instant.
+    const want = new Map<HTMLElement | null, { height: number; page: number }[]>();
     for (const ins of inserts) {
-      const gap = makeGap(ins.page, ins.height);
-      if (ins.before) body.insertBefore(gap, ins.before); else body.appendChild(gap);
+      if (!want.has(ins.key)) want.set(ins.key, []);
+      want.get(ins.key)!.push({ height: ins.height, page: ins.page });
     }
+    const used = new Set<HTMLElement>();
+    for (const g of existing) {
+      const list = want.get(g.key);
+      const next = list?.[0];
+      if (next && Math.abs(next.height - g.height) < 1 && String(next.page) === g.page) {
+        list!.shift();
+        used.add(g.el); // unchanged — leave it exactly as it is
+      } else if (next && list) {
+        list.shift();
+        g.el.style.height = next.height + "px";
+        g.el.dataset.page = String(next.page);
+        const lbl = g.el.querySelector(".we-gaplabel");
+        if (lbl) lbl.textContent = gapLabel(next.page);
+        used.add(g.el); // reused in place — height/label refreshed, no re-insert
+      }
+    }
+    for (const g of existing) if (!used.has(g.el)) g.el.remove();
+    for (const [key, list] of want) {
+      for (const ins of list) {
+        const gap = makeGap(ins.page, ins.height);
+        if (key) body.insertBefore(gap, key); else body.appendChild(gap);
+      }
+    }
+    // The surface always ends on a COMPLETE page (like Word): pad the last page
+    // out to full height instead of stopping mid-sheet.
+    body.style.minHeight = Math.round((pageNum - 1) * (pageH + GAP_PX) + pageH) + "px";
     // remember the settled geometry so unchanged content skips the whole pass
-    pgSig.current = body.scrollHeight + ":" + body.childElementCount;
+    pgSig.current = pgSigOf(body);
   }
   // Debounced reflow for typing (programmatic DOM edits don't fire onInput, so no loop).
   function schedulePaginate() {
@@ -723,9 +815,20 @@ export default function WordEditor({
   // The editable body's input handler: mark unsaved (only when it flips), reflow the
   // page gaps, and arm the autosave. Guarding setSaved avoids a redundant re-render on
   // every keystroke after the first.
+  const lastKidCount = useRef(-1);
   function onBodyInput() {
     if (savedRef.current) setSaved(false);
-    schedulePaginate();
+    // STRUCTURAL edits (Enter made a block, a paste, a deleted paragraph) change
+    // the block count → repaginate on the very next frame so the new line lands
+    // on the right page immediately (the diffing makes that cheap). Plain typing
+    // keeps the debounce — pages settle when you pause, nothing jumps mid-word.
+    const n = ref.current?.childElementCount ?? 0;
+    if (n !== lastKidCount.current) {
+      lastKidCount.current = n;
+      requestAnimationFrame(() => refreshGuides());
+    } else {
+      schedulePaginate();
+    }
     scheduleAutosave();
   }
   function onEditorKeyDown(e: React.KeyboardEvent) {
