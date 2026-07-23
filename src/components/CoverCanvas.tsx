@@ -21,7 +21,7 @@ export default function CoverCanvas({
   onSetEl,
   scale = 0.7,
   width = 820,
-  height = 1086,
+  height = 1130, // fits the full simulated A4 sheet (297mm ≈ 1123px)
 }: {
   srcDoc: string;
   elements: CoverEl[];

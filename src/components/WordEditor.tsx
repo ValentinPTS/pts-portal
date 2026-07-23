@@ -14,11 +14,17 @@ type FormEl = { id: string; nameBg: string; nameEn: string; category?: string; b
 type Tmpl = { id: string; name: string; bg: string; en: string };
 type CopyItem = { id: string; number: string; title: string; bg: string; en: string };
 
-// Print geometry (must match the PDF route + DOC_CSS @page): A4 210mm wide, 14mm
-// side margins → 182mm content; 297mm tall, 16+18mm margins → 263mm per page.
+// Print geometry (must match the PDF route + DOC_CSS @page): the editor sheet IS
+// a real A4 — 210×297mm. The printed margins (/api/pdf: 16/14/18/14mm) plus the
+// print .page's inner padding (26px 30px 50px 50px) become the sheet's padding,
+// so the text column is EXACTLY the PDF's: 182mm − 80px = 608px. Same column →
+// identical line wraps and page breaks in the editor and the exported PDF.
 const PXMM = 96 / 25.4;            // CSS px per mm (browsers assume 96dpi)
-const PAGE_W_MM = 182;             // editable paper width = PDF content width
-const PAGE_BREAK_MM = 263;         // content height per A4 page
+const SHEET_W_MM = 210;            // the full A4 sheet the editor draws
+const MARGIN_MM = { top: 16, right: 14, bottom: 18, left: 14 };  // printer margins
+const PAGE_PAD_PX = { top: 26, right: 30, bottom: 50, left: 50 }; // print .page padding
+const PAGE_BREAK_MM = 263;         // content height per A4 page (297 − 16 − 18)
+const SEAM_PX = 24;                // the visible canyon between two sheets
 const mmToPx = (mm: number) => mm * PXMM;
 const pxToMm = (px: number) => px / PXMM;
 const roundMm = (mm: number) => Math.max(1, Math.round(mm));
@@ -118,15 +124,20 @@ const EDITOR_CSS = `
   .we-body{display:flex;gap:24px;align-items:flex-start;background:#fff;border:1px solid var(--line);border-radius:14px;padding:28px;}
   .we-col{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:16px;overflow:auto;}
 
-  /* the paper = exactly the PDF content box (182mm), real document body styles */
-  .we-page{--green-dark:#5f7d52;--green:#88a77b;--green-soft:#eef3ea;--green-line:#b7d0c0;--red:#9e2b2b;--ink:#1a1a1a;--muted:#6b6b6b;--line:#dcdcdc;--sans:'Sofia Sans Condensed','Segoe UI',Arial,sans-serif;--serif:'PT Serif',Georgia,serif;position:relative;width:${PAGE_W_MM}mm;color:var(--ink);border:2px solid #111;border-radius:4px;
-    padding:26px 30px 50px 50px;box-shadow:0 8px 28px rgba(15,30,22,.10);
+  /* the paper = a REAL A4 sheet (210mm): the printed margins (16/14/18/14mm) plus
+     the print .page's inner padding (26/30/50/50px) are the sheet's padding, so
+     the text column is exactly the PDF's 608px. No border — a border would eat
+     into the column; the sheet edge is a layout-neutral ring shadow instead. */
+  .we-page{--green-dark:#5f7d52;--green:#88a77b;--green-soft:#eef3ea;--green-line:#b7d0c0;--red:#9e2b2b;--ink:#1a1a1a;--muted:#6b6b6b;--line:#dcdcdc;--sans:'Sofia Sans Condensed','Segoe UI',Arial,sans-serif;--serif:'PT Serif',Georgia,serif;position:relative;width:${SHEET_W_MM}mm;color:var(--ink);border-radius:2px;
+    padding:calc(${MARGIN_MM.top}mm + ${PAGE_PAD_PX.top}px) calc(${MARGIN_MM.right}mm + ${PAGE_PAD_PX.right}px) calc(${MARGIN_MM.bottom}mm + ${PAGE_PAD_PX.bottom}px) calc(${MARGIN_MM.left}mm + ${PAGE_PAD_PX.left}px);
+    box-shadow:0 0 0 1px #d9ddd4,0 10px 30px rgba(15,30,22,.13);
     font-family:'PT Serif',Georgia,serif;font-size:11pt;line-height:1.5;background:#fff;}
-  /* traditional embroidery border down the left (matches the printed document) */
-  .we-page::before{content:"";position:absolute;top:0;bottom:0;left:0;width:30px;background:url(/brand/embroidery-side.png) top center/100% auto repeat-y;border-radius:4px 0 0 4px;pointer-events:none;z-index:0;}
-  .we-docbody{position:relative;min-height:55vh;outline:none;z-index:1;}
+  /* traditional embroidery strip exactly where print puts it: 14mm from the paper
+     edge, spanning the printable band 16mm..279mm (the fixed .doc-side strip
+     prints inside the page margins); the .we-gap mask interrupts it per sheet */
+  .we-page::before{content:"";position:absolute;top:${MARGIN_MM.top}mm;bottom:${MARGIN_MM.bottom}mm;left:${MARGIN_MM.left}mm;width:8mm;background:url(/brand/embroidery-side.png) top center/100% auto repeat-y;pointer-events:none;z-index:0;}
+  .we-docbody{position:relative;min-height:calc(${PAGE_BREAK_MM}mm - ${PAGE_PAD_PX.top + PAGE_PAD_PX.bottom}px);outline:none;z-index:1;}
   .we-docbody:focus{outline:none;}
-  .we-page.focused{box-shadow:0 8px 28px rgba(15,30,22,.12),0 0 0 2px var(--green-light);}
   .we-page h2{font-family:'Sofia Sans Condensed',sans-serif;font-weight:700;font-size:13.5pt;color:var(--ink);border-bottom:2.5px solid var(--red);padding-bottom:5px;margin:20px 0 4px;}
   .we-page h3{font-family:'Sofia Sans Condensed',sans-serif;font-weight:700;font-size:11.5pt;color:var(--green-dark);margin:12px 0 3px;}
   .we-page p{margin:6px 0;}
@@ -144,12 +155,16 @@ const EDITOR_CSS = `
   .we-page table th{background:var(--green-soft);color:var(--green-dark);}
   .we-docbody:empty:before{content:"${"Start typing, or insert an item from the panel →"}";color:var(--muted);}
 
-  /* page break: the overflowing block is pushed to the next page; the rest of the
-     current page stays WHITE like a real sheet, and only a thin neutral seam marks
-     where one page ends and the next begins — a clean, document-viewer-like gutter
-     (no loud stripes). The seam fades in gently so pagination doesn't "pop". */
+  /* page break: the gap spans the REAL inter-sheet region — the rest of the page,
+     then the sheet's 18mm bottom margin (white), a neutral canyon seam, and the
+     next sheet's 16mm top margin (white) — so every sheet reads as a full 297mm
+     A4, exactly like the PDF. The seam fades in gently so pagination doesn't "pop". */
   .we-gap{position:relative;user-select:none;pointer-events:none;background:transparent;}
-  .we-gapsep{position:absolute;left:-52px;right:-32px;bottom:0;height:18px;
+  /* opaque mask over the margins+seam band (18mm + seam + 16mm): hides the
+     embroidery strip and the sheet edge between two pages so each sheet reads
+     separate — the blank rest of the page above it keeps the strip, like paper */
+  .we-gap::before{content:"";position:absolute;left:calc(-${MARGIN_MM.left}mm - ${PAGE_PAD_PX.left}px - 12px);right:calc(-${MARGIN_MM.right}mm - ${PAGE_PAD_PX.right}px - 12px);bottom:0;height:calc(${MARGIN_MM.bottom + MARGIN_MM.top}mm + ${SEAM_PX}px);background:#fff;}
+  .we-gapsep{position:absolute;left:calc(-${MARGIN_MM.left}mm - ${PAGE_PAD_PX.left}px - 12px);right:calc(-${MARGIN_MM.right}mm - ${PAGE_PAD_PX.right}px - 12px);bottom:${MARGIN_MM.top}mm;height:${SEAM_PX}px;
     background:linear-gradient(#eef1ea,#e3e8dd);
     box-shadow:inset 0 3px 5px -3px rgba(31,45,33,.20),inset 0 -1px 0 rgba(0,0,0,.05);
     display:flex;align-items:center;justify-content:center;z-index:3;animation:we-seam-in .18s ease-out;}
@@ -668,7 +683,9 @@ export default function WordEditor({
   // straddle an A4 boundary, pushing it whole to the next page (like the PDF's
   // page-break-inside:avoid) — so text never sits on the break and pages 1/2 are
   // clearly separated. Spacers (.we-gap) are presentation only (stripped on save).
-  const GAP_PX = 18; // small grey page-break separation (10–20px); the rest stays white
+  // The spacer's fixed part = the sheet's 18mm bottom margin + the canyon seam +
+  // the next sheet's 16mm top margin, so each sheet renders a full 297mm tall.
+  const GAP_PX = Math.round(mmToPx(MARGIN_MM.bottom + MARGIN_MM.top)) + SEAM_PX;
   const gapLabel = (n: number) => (uiLang === "bg" ? `стр. ${n} / ${n + 1}` : `page ${n} / ${n + 1}`);
   const makeGap = (n: number, heightPx: number) => {
     const gap = document.createElement("div");
@@ -747,10 +764,13 @@ export default function WordEditor({
       measured.push({ el: c, top: c.offsetTop - gapAbove, h: c.offsetHeight });
     }
     // COMPUTE: decide every gap using pure math (no DOM reads/writes here).
+    // Offsets are measured from the .we-docbody origin, which in print terms sits
+    // 26px INTO page 1 (the print .page's padding-top consumes the first 26px of
+    // the printable area) — so page 1 holds 26px less content than a full page.
     const inserts: { key: HTMLElement | null; height: number; page: number }[] = [];
     let pageNum = 1;
     let shift = 0;        // total px added by gaps inserted before this point
-    let boundary = pageH; // bottom of the current page in the shifted layout
+    let boundary = pageH - PAGE_PAD_PX.top; // bottom of page 1 in docbody coords
     for (let i = 0; i < measured.length; i++) {
       const { el, top: rawTop, h } = measured[i];
       const top = rawTop + shift; // where this block will sit after prior gaps
@@ -764,7 +784,9 @@ export default function WordEditor({
         boundary = bottom + remaining + GAP_PX + pageH;
         continue;
       }
-      if (h >= pageH) { boundary = top + Math.ceil(h / pageH) * pageH; continue; } // too tall to push
+      // A block taller than a page can't be pushed — advance whole pages from the
+      // CURRENT boundary (not the block's top) so the sheet grid keeps its phase.
+      if (h >= pageH) { while (boundary < top + h) boundary += pageH; continue; }
       if (top + h > boundary) {
         const remaining = Math.max(0, boundary - top); // white space filling the rest of the page
         inserts.push({ key: el, height: remaining + GAP_PX, page: pageNum });
@@ -805,8 +827,11 @@ export default function WordEditor({
       }
     }
     // The surface always ends on a COMPLETE page (like Word): pad the last page
-    // out to full height instead of stopping mid-sheet.
-    body.style.minHeight = Math.round((pageNum - 1) * (pageH + GAP_PX) + pageH) + "px";
+    // out to full height instead of stopping mid-sheet. The sheet's own padding
+    // already renders the print .page's 26px top / 50px bottom inner padding, so
+    // the docbody itself spans that much less than n full content regions.
+    body.style.minHeight =
+      Math.round((pageNum - 1) * (pageH + GAP_PX) + pageH - PAGE_PAD_PX.top - PAGE_PAD_PX.bottom) + "px";
     // remember the settled geometry so unchanged content skips the whole pass
     pgSig.current = pgSigOf(body);
   }

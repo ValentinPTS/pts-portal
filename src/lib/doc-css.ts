@@ -30,10 +30,20 @@ export const stripCoverMark = (html: string) => html.split(COVER_MARK).join("");
 // Prefix every selector of every rule with `scope` — used to inject a document's
 // print-only extra CSS (RS_CSS, REPORT_CSS, …) into the EDITOR page so editing
 // looks exactly like the locked/printed document, without the rules leaking into
-// the app UI. The doc CSS blocks are plain class rules (audited: no at-rules).
+// the app UI. @media blocks (the certificates carry an @media screen geometry
+// override) are lifted out, their inner rules scoped separately, and put back —
+// so nothing ever passes through un-scoped and nothing is scoped twice.
 export function scopeCss(css: string, scope: string): string {
-  return css.replace(/(^|\})([^{@}]+)\{/g, (_m, brace: string, sels: string) =>
+  const blocks: string[] = [];
+  const holed = css.replace(/@media[^{]*\{[\s\S]*?\}\s*\}/g, (m) => {
+    const open = m.indexOf("{");
+    const inner = m.slice(open + 1, m.lastIndexOf("}"));
+    blocks.push(m.slice(0, open + 1) + scopeCss(inner, scope) + "}");
+    return "\u0000" + (blocks.length - 1) + "\u0000"; // NUL never occurs in our css
+  });
+  const scoped = holed.replace(/(^|\}|\u0000)([^{@}\u0000]+)\{/g, (_m, brace: string, sels: string) =>
     brace + sels.split(",").map((s) => (s.trim() ? `${scope} ${s.trim()}` : s)).filter(Boolean).join(",") + "{");
+  return scoped.replace(/\u0000(\d+)\u0000/g, (_m, i: string) => blocks[+i]);
 }
 
 // Web-font stylesheet for the built-in skins (PT Serif body + Sofia Sans headings).
@@ -54,6 +64,18 @@ export const DOC_CSS = `
      repeats it on each printed page in Chromium); sits in the left padding so it
      never overlaps text. */
   .doc-side{position:fixed;top:0;bottom:0;left:0;width:8mm;background:url(/brand/embroidery-side.png) top center/100% auto repeat-y;pointer-events:none;z-index:40;}
+  /* On SCREEN the sheet simulates the printed A4 exactly: 210mm wide, with the
+     printer margins (16/14/18/14mm) folded into the padding, so previews wrap
+     lines identically to the PDF. Print keeps the plain .page — Chromium applies
+     the real page margins there. The viewport-fixed side strip becomes a
+     per-sheet strip at its printed position (14mm in, 8mm wide). */
+  @media screen{
+    .page{position:relative;width:210mm;max-width:210mm;padding:calc(16mm + 26px) calc(14mm + 30px) calc(18mm + 50px) calc(14mm + 50px);}
+    .doc-side{display:none;}
+    /* only skins that render the .doc-side strip get the on-sheet replica, bounded
+       to the printable band (print's fixed strip spans 16mm..279mm of the sheet) */
+    .doc-side + .page::before{content:"";position:absolute;top:16mm;bottom:18mm;left:14mm;width:8mm;background:url(/brand/embroidery-side.png) top center/100% auto repeat-y;pointer-events:none;}
+  }
   .head{display:flex;align-items:center;gap:16px;} .head .logo{height:64px;} .head .tag{height:24px;margin-left:auto;}
   .emb{display:block;width:100%;height:auto;margin:10px 0 6px;}
   .emb.bottom{margin:18px 0 2px;}
@@ -67,6 +89,9 @@ export const DOC_CSS = `
   /* lighter document header (logo + embroidery band + centred title) for utility
      forms that don't have a full title page; the wrap is a white band that bleeds
      left over the side embroidery so the side strip starts at the first section */
+  /* the -50px/-26px bleed must equal the print .page padding: the band then ends
+     exactly at the printed margin (14mm), fully masking the 8mm side strip beside
+     the logo — on paper AND in the on-screen A4 simulation. */
   .dochead-wrap{position:relative;z-index:41;background:#fff;margin:-26px 0 0 -50px;padding:26px 0 4px 50px;}
   .dochead{display:flex;align-items:center;gap:18px;margin:0 0 4px;}
   .dochead .logo{height:54px;flex:0 0 auto;}

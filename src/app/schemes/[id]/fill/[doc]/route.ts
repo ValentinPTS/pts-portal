@@ -56,10 +56,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
   const css = `<style>
     body{background:#fff;}
     .page{position:relative;background:#fff;margin:24px auto 60px;box-shadow:0 1px 6px rgba(15,30,22,.08);border-radius:4px;}
-    .doc-side{display:none;}
-    .page::before{content:"";position:absolute;top:0;bottom:0;left:0;width:8mm;background:url(/brand/embroidery-side.png) top center/100% auto repeat-y;border-radius:4px 0 0 4px;z-index:0;pointer-events:none;}
+    /* the sheet geometry + embroidery strip come from DOC_CSS's @media screen
+       A4 simulation — no duplicates here so the two can never drift apart */
     .we-gap{position:relative;z-index:2;}
-    .we-gapsep{position:absolute;left:-50px;right:-30px;bottom:0;height:18px;background:#fff;display:flex;align-items:center;justify-content:center;}
+    .we-gap::before{content:"";position:absolute;left:calc(-14mm - 50px - 12px);right:calc(-14mm - 30px - 12px);bottom:0;height:calc(34mm + 24px);background:#fff;}
+    .we-gapsep{position:absolute;left:calc(-14mm - 50px - 12px);right:calc(-14mm - 30px - 12px);bottom:16mm;height:24px;background:linear-gradient(#eef1ea,#e3e8dd);display:flex;align-items:center;justify-content:center;}
     .we-gaplabel{font-size:10px;font-weight:700;color:#456b2c;background:#fff;border:1.5px solid #8fa97e;border-radius:999px;padding:1px 12px;}
     .ff-bar{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:14px;background:#fff;border-bottom:1px solid #e3e3e3;padding:10px 18px;font-family:'Open Sans','Segoe UI',sans-serif;box-shadow:0 1px 8px rgba(15,30,22,.07);}
     .ff-bar a{color:#666;text-decoration:none;font-weight:600;font-size:14px;}
@@ -84,14 +85,19 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
   // breaks at A4 boundaries with a "page N/N+1" label. Wrapped in try/catch so the
   // form always works even if measurement fails.
   const pageScript = `<script>(function(){try{
-    var LANG=${JSON.stringify(lang)},PXMM=96/25.4,pageH=263*PXMM,gapH=18;
+    // Same geometry as the editor: sheet padding includes the 16mm printed top
+    // margin (offsets are padding-edge relative), so page 1 ends at 16mm+263mm;
+    // each gap = rest of page + 18mm bottom margin + seam + 16mm top margin.
+    var LANG=${JSON.stringify(lang)},PXMM=96/25.4,pageH=263*PXMM,MTOP=16*PXMM,gapH=Math.round(34*PXMM)+24;
     var page=document.querySelector('.page'); if(!page) return;
     function mkgap(n){var d=document.createElement('div');d.className='we-gap';var sep=document.createElement('div');sep.className='we-gapsep';var s=document.createElement('span');s.className='we-gaplabel';s.textContent=(LANG==='bg'?'стр. ':'page ')+n+' / '+(n+1);sep.appendChild(s);d.appendChild(sep);return d;}
     function run(){
       var olds=page.querySelectorAll('.we-gap'); for(var i=0;i<olds.length;i++){olds[i].parentNode.removeChild(olds[i]);}
-      var pageNum=1, boundary=pageH;
+      var pageNum=1, boundary=MTOP+pageH;
       // walk the page's blocks; an owner-built body sits inside a .pts-docbody
-      // wrapper (position:relative), so descend into it and add its own offset.
+      // wrapper (position:relative), so descend into it — keeping the PARENT so
+      // its offset is read LIVE (a cover gap inserted before the wrapper shifts
+      // it; a stale offset would misplace every later seam).
       var kids=[];
       [].slice.call(page.children).forEach(function(c){
         var cls=String(c.className||'');
@@ -100,20 +106,22 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
           [].slice.call(c.children).forEach(function(k){
             var kc=String(k.className||'');
             if(kc.indexOf('we-gap')>=0 || getComputedStyle(k).position==='absolute') return;
-            kids.push({el:k, base:c.offsetTop});
+            kids.push({el:k, parent:c});
           });
-        } else kids.push({el:c, base:0});
+        } else kids.push({el:c, parent:null});
       });
       for(var j=0;j<kids.length;j++){
-        var el=kids[j].el, top=kids[j].base+el.offsetTop, h=el.offsetHeight;
+        var el=kids[j].el, base=kids[j].parent?kids[j].parent.offsetTop:0, top=base+el.offsetTop, h=el.offsetHeight;
         if(el.className&&String(el.className).indexOf('cover')>=0){
           var rest=Math.max(0, boundary-(top+h)); var g=mkgap(pageNum); g.style.height=(rest+gapH)+'px';
           if(el.nextSibling) el.parentNode.insertBefore(g, el.nextSibling); else el.parentNode.appendChild(g);
           pageNum++; boundary=(top+h)+(rest+gapH)+pageH; continue;
         }
-        if(h>=pageH){ boundary=top+Math.ceil(h/pageH)*pageH; continue; }
-        if(top+h>boundary){ var rem=Math.max(0, boundary-top); var g2=mkgap(pageNum); g2.style.height=(rem+gapH)+'px'; el.parentNode.insertBefore(g2, el); pageNum++; boundary=kids[j].base+el.offsetTop+pageH; }
+        if(h>=pageH){ while(boundary<top+h) boundary+=pageH; continue; }
+        if(top+h>boundary){ var rem=Math.max(0, boundary-top); var g2=mkgap(pageNum); g2.style.height=(rem+gapH)+'px'; el.parentNode.insertBefore(g2, el); pageNum++; boundary=(kids[j].parent?kids[j].parent.offsetTop:0)+el.offsetTop+pageH; }
       }
+      // the surface always ends on a COMPLETE sheet (like the editor): n full A4s + seams
+      page.style.minHeight=Math.round(pageNum*297*PXMM+(pageNum-1)*24)+'px';
     }
     setTimeout(run,60); setTimeout(run,450);
     if(document.fonts&&document.fonts.ready)document.fonts.ready.then(run);

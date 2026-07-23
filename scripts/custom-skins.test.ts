@@ -40,7 +40,9 @@ const rawEvil = skinCss({
   ...basePreset("classic"), id: "x", name: "x", scope: "both",
   colors: { primary: "red;}*{display:none}", accent: "#fff", heading: "#000", bg: "#fff" },
 } as unknown as CustomSkinData);
-ok("defensive CSS drops bad colour", !rawEvil.includes("display:none"));
+// DOC_CSS itself legitimately contains display:none (.doc-side on screen), so
+// assert on the injected payload's own shape, not the property name.
+ok("defensive CSS drops bad colour", !rawEvil.includes("*{display:none}") && !rawEvil.includes("red;}"));
 
 // 3. Font outside the allow-list is rejected.
 const ef = sanitizeSkinData({

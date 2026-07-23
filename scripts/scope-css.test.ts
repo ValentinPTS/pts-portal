@@ -30,6 +30,15 @@ const unscoped = [...rs.matchAll(/(^|\})\s*([^{@}]+)\{/g)].map((m) => m[2].trim(
 t("RS_CSS: every selector scoped", unscoped.length === 0, JSON.stringify(unscoped.slice(0, 3)));
 t("RS_CSS: rule count preserved", (RS_CSS.match(/\{/g) ?? []).length === (rs.match(/\{/g) ?? []).length);
 
+// @media blocks: inner rules are scoped, the wrapper survives, nothing leaks
+const med = scopeCss(".a{x:1;}@media screen{.page{padding:1mm;}.b{y:2;}}.c{z:3;}", ".we-page");
+t("media: wrapper kept", med.includes("@media screen{"), med);
+t("media: first inner rule scoped", med.includes("@media screen{.we-page .page{padding:1mm;}"), med);
+t("media: second inner rule scoped ONCE", med.includes(".we-page .b{y:2;}") && !med.includes(".we-page .we-page"), med);
+t("media: rules before/after still scoped", med.startsWith(".we-page .a{") && med.includes(".we-page .c{z:3;}"), med);
+const medVals = scopeCss("@media screen{.s{flex:0 0 42%;margin:0 1px 0 2px;}}", ".we-page");
+t("media: numeric values untouched", medVals.includes("flex:0 0 42%;margin:0 1px 0 2px;"), medVals);
+
 // registry: the editor gets the same stylesheet the print pass uses
 t("docEditorCss(results, T) is RS_CSS", docEditorCss("results", "T") === RS_CSS);
 t("docEditorCss(results, C) differs (calibration variant)", docEditorCss("results", "C").length > 0);

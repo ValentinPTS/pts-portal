@@ -37,6 +37,9 @@ export const EXTRA_CSS = `
   .issued{font-size:9.5pt;color:var(--muted);margin-top:14px;}
   .reg{font-size:9pt;color:var(--green-dark);font-family:var(--sans);margin-top:2px;}
   .page{padding:10mm;}
+  /* keep the on-screen A4 simulation's printed margins while preserving this
+     certificate's tighter 10mm inner padding (print gets the plain 10mm above) */
+  @media screen{.page{padding:calc(16mm + 10mm) calc(14mm + 10mm) calc(18mm + 10mm) calc(14mm + 10mm);}}
 `;
 
 export function renderCertificate(s: Scheme, lang: Lang, opts?: DocOptions): string {
