@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getScheme, getSchemesByIds, listSchemeSummaries } from "@/lib/store";
-import { getDoc, isFormDoc, docEditorCss } from "@/lib/documents";
+import { getDoc, isFormDoc, isListDoc, docEditorCss } from "@/lib/documents";
 import { listParticipants } from "@/lib/participants";
 import { listLibraryItems } from "@/lib/library-store";
 import { listSavedTemplates } from "@/lib/saved-templates";
 import { esc } from "@/lib/doc-shell";
 import { defaultDocHtml, coverDocHtml, insertableSnippets, insertableFields, insertableFormElements } from "@/lib/doc-html";
+import { retagFormBody } from "@/lib/form-hydrate";
 import { hasDocTemplate } from "@/lib/doc-template";
 import { resolveSkinAsync } from "@/skins";
 import WordEditor from "@/components/WordEditor";
@@ -26,12 +27,19 @@ export default async function BuildDocPage({
   const { lang, tr } = await getServerT();
 
   // Name guard (§4.2): only a manager sees real names on the participant lists.
-  // Those lists are data-driven, so we always start the editor from the fresh
-  // (masked-per-role) default rather than any saved HTML.
+  // A manager's saved list CUSTOMIZATION is honoured; anyone else always starts
+  // from the fresh (masked-per-role) data-driven default — a saved list body may
+  // carry real names, so it never reaches a role that can't reveal them.
   const reveal = canRevealNames(await getCurrentRole());
-  const isList = doc === "registered" || doc === "registered-coded" || doc === "results-coded";
-  const saved = isList ? { bg: "", en: "" } : (s.docs?.[doc] ?? { bg: "", en: "" });
+  const isList = isListDoc(doc);
+  const saved0 = isList && !reveal ? { bg: "", en: "" } : (s.docs?.[doc] ?? { bg: "", en: "" });
   const dft = defaultDocHtml(s, doc, participants, reveal);
+  // A form-doc body saved before data-ff existed gets its control identity
+  // re-attached from the template here, so the owner's next save persists it
+  // and the Fill view stays fillable (fresh copy — never mutate the store's).
+  const saved = isFormDoc(doc)
+    ? { bg: retagFormBody(saved0.bg ?? "", dft.bg), en: retagFormBody(saved0.en ?? "", dft.en) }
+    : saved0;
   // the editable title page (cover) for this document in the scheme's skin
   const skin = await resolveSkinAsync(s);
   const cov = coverDocHtml(s, doc, participants, skin);
@@ -94,6 +102,7 @@ export default async function BuildDocPage({
         hasDefault={hasDocTemplate(doc)}
         schemeType={s.type}
         isForm={isFormDoc(doc)}
+        isList={isList}
         extraCss={docEditorCss(doc, s.type)}
         snippets={snippets}
         fields={insertableFields(s, participants)}

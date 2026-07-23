@@ -288,6 +288,7 @@ export default function WordEditor({
   hasDefault,
   schemeType = "T",
   isForm = false,
+  isList = false,
   extraCss = "",
   snippets,
   fields,
@@ -310,6 +311,7 @@ export default function WordEditor({
   hasDefault: boolean;
   schemeType?: "T" | "C";
   isForm?: boolean;
+  isList?: boolean; // auto register — no ready/Готов lifecycle
   extraCss?: string; // the doc's print-only stylesheet, injected scoped for WYSIWYG
   snippets: Snippet[];
   fields: Field[];
@@ -1672,20 +1674,23 @@ export default function WordEditor({
             : saved ? L("Всичко е запазено", "All changes saved")
             : L("Незапазени промени", "Unsaved changes")}
         </span>
-        {/* the document is only "Готов" on the scheme page when the owner says so */}
-        <button
-          className="btn"
-          onClick={toggleReady}
-          disabled={busy === "ready"}
-          title={ready
-            ? L("Документът е отбелязан като готов — кликнете, за да го върнете в процес", "Marked as ready — click to reopen as in-progress")
-            : L("Отбележи документа като готов (показва се като „Готов“ на страницата на схемата)", "Mark the document as ready (shows as “Ready” on the scheme page)")}
-          style={ready
-            ? { fontSize: 13, background: "#e3eeda", borderColor: "#cbd9be", color: "#456b2c", fontWeight: 700 }
-            : { fontSize: 13, borderColor: "var(--green-dark)", color: "var(--green-dark)", fontWeight: 700 }}
-        >
-          {busy === "ready" ? "…" : ready ? L("Готов ✓", "Ready ✓") : L("✓ Маркирай като готов", "✓ Mark as ready")}
-        </button>
+        {/* the document is only "Готов" on the scheme page when the owner says so;
+            the auto lists have no such lifecycle — they always exist */}
+        {!isList && (
+          <button
+            className="btn"
+            onClick={toggleReady}
+            disabled={busy === "ready"}
+            title={ready
+              ? L("Документът е отбелязан като готов — кликнете, за да го върнете в процес", "Marked as ready — click to reopen as in-progress")
+              : L("Отбележи документа като готов (показва се като „Готов“ на страницата на схемата)", "Mark the document as ready (shows as “Ready” on the scheme page)")}
+            style={ready
+              ? { fontSize: 13, background: "#e3eeda", borderColor: "#cbd9be", color: "#456b2c", fontWeight: 700 }
+              : { fontSize: 13, borderColor: "var(--green-dark)", color: "var(--green-dark)", fontWeight: 700 }}
+          >
+            {busy === "ready" ? "…" : ready ? L("Готов ✓", "Ready ✓") : L("✓ Маркирай като готов", "✓ Mark as ready")}
+          </button>
+        )}
         <span className="we-sep" style={{ height: 20 }} />
         <span className="text-sm" style={{ color: "var(--muted)" }}>{L("Преглед:", "Preview:")}</span>
         {(["bg", "en"] as const).map((l) => (

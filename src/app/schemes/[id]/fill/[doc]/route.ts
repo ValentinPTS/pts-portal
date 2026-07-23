@@ -3,8 +3,8 @@ import { getScheme, updateScheme } from "@/lib/store";
 import { getDoc } from "@/lib/documents";
 import { withSkin, stripBodyMarkers, esc } from "@/lib/doc-shell";
 import { withFormCtx } from "@/lib/form-fields";
-import { docPrintHtml } from "@/lib/doc-template";
-import { hydrateFormBody } from "@/lib/form-hydrate";
+import { docPrintHtml, docDefaultBody } from "@/lib/doc-template";
+import { hydrateFormBody, retagFormBody } from "@/lib/form-hydrate";
 import { resolveSkinAsync } from "@/skins";
 import { requireStaff, requireWriter } from "@/lib/roles";
 
@@ -34,8 +34,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
   // auto template rendered directly in fill mode.
   const savedBody = scheme.docs?.[doc]?.[lang] ?? "";
   const composed = !!savedBody.trim();
+  // Bodies saved before data-ff existed get their control identity re-attached
+  // from the template (retagFormBody) so they hydrate into live inputs too.
   let html = composed
-    ? docPrintHtml(scheme, doc, lang, hydrateFormBody(savedBody, values), undefined, skin)
+    ? docPrintHtml(
+        scheme, doc, lang,
+        hydrateFormBody(retagFormBody(savedBody, docDefaultBody(scheme, doc, lang)), values),
+        undefined, skin
+      )
     : stripBodyMarkers(
         withSkin(skin, () => withFormCtx({ fill: true, values }, () => def.render!(scheme, lang)))
       );

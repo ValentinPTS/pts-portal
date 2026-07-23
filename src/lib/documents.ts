@@ -78,6 +78,14 @@ export function docEditorCss(key: string, type: "T" | "C"): string {
 export const FORM_DOCS = new Set<string>(["feedback", "declaration", "application", "protocol", "results"]);
 export const isFormDoc = (key: string): boolean => FORM_DOCS.has(key);
 
+// The participant/results REGISTERS (F 7.2.1-4 / -5 / -6): data-driven documents
+// generated live from the scheme's participants and results. They always exist —
+// no started/ready lifecycle, no progress contribution — and may only be visually
+// customized in the editor (a manager's saved customization is honoured per the
+// §4.2 name guard; everyone else always gets the fresh, masked auto version).
+export const LIST_DOCS = new Set<string>(["registered", "registered-coded", "results-coded"]);
+export const isListDoc = (key: string): boolean => LIST_DOCS.has(key);
+
 // Has this document got any content yet (started)? A form document counts both
 // ways it can be worked on: fill-saved values AND/OR an editor-built body.
 export function hasDocContent(s: Scheme, key: string): boolean {

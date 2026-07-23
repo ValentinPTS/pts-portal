@@ -1,7 +1,7 @@
 // form-hydrate: a saved, owner-EDITED form document stays a live form. Static
 // controls carry data-ff identity; hydrateFormBody turns them back into inputs
 // (Fill view) and drawFormBody redraws their static state from newer fill values.
-import { hydrateFormBody, drawFormBody, hasFormFields } from "../src/lib/form-hydrate.ts";
+import { hydrateFormBody, drawFormBody, hasFormFields, retagFormBody } from "../src/lib/form-hydrate.ts";
 import { fCheck, fRadio, fRating, fText, fLines, withFormCtx } from "../src/lib/form-fields.ts";
 import { sanitizeDocHtml } from "../src/lib/sanitize-html.ts";
 
@@ -81,6 +81,33 @@ d = drawFormBody(txt, { lab_name: "" });
 t("draw: emptied text gets data-empty", /data-empty="1" data-ff="t:lab_name"/.test(d), d);
 d = drawFormBody(lines, { remarks: "a\nb\nc\nd" });
 t("draw: lines grow past the row count", (d.match(/ff-lrow/g) ?? []).length === 4, d);
+
+// ── retag: legacy bodies (saved before data-ff) regain identity ──
+const template = stat(() =>
+  fText("head_name", 180) + fText("org", 180) + fCheck("agree", "Yes") +
+  fRadio("cond", [["ok", "OK"], ["bad", "BAD"]]) + fLines("remarks", 3));
+const legacy = template.replace(/ data-ff="[^"]*"/g, ""); // exactly what old saves look like
+t("legacy body really has no tags", !hasFormFields(legacy));
+const retagged = retagFormBody(legacy, template);
+t("retag: text blanks get their ids in order",
+  /data-ff="t:head_name"/.test(retagged) && /data-ff="t:org"/.test(retagged) &&
+  retagged.indexOf("t:head_name") < retagged.indexOf("t:org"), retagged);
+t("retag: markers get checkbox + radio tokens in order",
+  /data-ff="c:agree"/.test(retagged) && /data-ff="r:cond:ok"/.test(retagged) && /data-ff="r:cond:bad"/.test(retagged), retagged);
+t("retag: lines area tagged", /data-ff="l:remarks:3"/.test(retagged), retagged);
+t("retag: idempotent", retagFormBody(retagged, template) === retagged);
+t("retag: hydrates into named inputs afterwards",
+  /name="head_name"/.test(hydrateFormBody(retagged, {})) && /type="checkbox" name="agree"/.test(hydrateFormBody(retagged, {})));
+
+// a partially-tagged body: existing tokens are respected, not reassigned
+const half = template.replace(' data-ff="t:head_name"', "");
+const rehalf = retagFormBody(half, template);
+t("retag: untagged control gets the missing token", /data-ff="t:head_name"/.test(rehalf), rehalf);
+t("retag: no token assigned twice", (rehalf.match(/data-ff="t:org"/g) ?? []).length === 1, rehalf);
+
+// owner-added extra blank beyond the template stays untagged (inert, no wrong id)
+const extra = retagFormBody(legacy + '<span class="ff-line" style="min-width:100px"></span>', template);
+t("retag: extra control left untagged", (extra.match(/data-ff="t:/g) ?? []).length === 2, extra);
 
 // ── round-trip: sanitizer keeps identity; hasFormFields detects it ──
 t("sanitizer preserves data-ff", sanitizeDocHtml(rad) === rad);

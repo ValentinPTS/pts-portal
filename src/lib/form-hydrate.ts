@@ -182,3 +182,55 @@ export function hasFormFields(html: string): boolean {
   OPEN.lastIndex = 0;
   return OPEN.test(html);
 }
+
+// ── Legacy bodies: re-attach identity ────────────────────────────────────────
+// Documents edited & saved BEFORE data-ff existed carry bare ff-* markup, so the
+// Fill view has nothing to hydrate ("I can't interact while it's locked").
+// retagFormBody() matches the saved body's untagged controls against the CURRENT
+// template's tagged ones — positionally, per control shape (markers = ff-box/
+// ff-rb/ff-rate, text blanks = ff-line, line areas = ff-lines) — and stamps the
+// template's data-ff onto them. Deterministic and idempotent, so applying it on
+// the fly (fill view, print) and persistently (editor load → next save) agree.
+// Controls the owner added beyond the template stay untagged (inert), and tokens
+// already present in the saved body are never assigned twice.
+
+type FfCat = "marker" | "line" | "area";
+const catOf = (cls: string): FfCat | null =>
+  /(?:^|\s)ff-(?:box|rb|rate)(?:\s|$)/.test(cls) ? "marker"
+  : /(?:^|\s)ff-line(?:\s|$)/.test(cls) ? "line"
+  : /(?:^|\s)ff-lines(?:\s|$)/.test(cls) ? "area"
+  : null;
+
+const ANY_FF_TAG = /<(?:span|div)\b[^>]*>/g;
+
+export function retagFormBody(html: string, template: string): string {
+  if (!html || !template) return html;
+
+  // The template's tokens in document order, per category; skip any the saved
+  // body already carries (mixed old/new bodies after partial re-editing).
+  const used = new Set<string>();
+  for (const m of html.matchAll(/\bdata-ff="([^"]+)"/g)) used.add(m[1]);
+  const queue: Record<FfCat, string[]> = { marker: [], line: [], area: [] };
+  for (const m of template.matchAll(ANY_FF_TAG)) {
+    const tok = attr(m[0], "data-ff");
+    if (!tok || used.has(tok)) continue;
+    const cat = catOf(attr(m[0], "class"));
+    if (cat) queue[cat].push(tok);
+  }
+
+  // Stamp untagged controls in document order from their category's queue.
+  let out = "";
+  let pos = 0;
+  ANY_FF_TAG.lastIndex = 0;
+  for (let m = ANY_FF_TAG.exec(html); m; m = ANY_FF_TAG.exec(html)) {
+    const tag = m[0];
+    if (attr(tag, "data-ff")) continue;
+    const cat = catOf(attr(tag, "class"));
+    if (!cat) continue;
+    const tok = queue[cat].shift();
+    if (!tok) continue;
+    out += html.slice(pos, m.index) + tag.slice(0, -1) + ` data-ff="${escAttr(tok)}">`;
+    pos = m.index + tag.length;
+  }
+  return out + html.slice(pos);
+}

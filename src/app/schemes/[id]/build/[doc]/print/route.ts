@@ -1,9 +1,9 @@
 import type { NextRequest } from "next/server";
 import { getScheme } from "@/lib/store";
-import { getDoc, isFormDoc } from "@/lib/documents";
+import { getDoc, isFormDoc, isListDoc } from "@/lib/documents";
 import { listParticipants } from "@/lib/participants";
 import { docPrintHtml, docDefaultBody } from "@/lib/doc-template";
-import { drawFormBody } from "@/lib/form-hydrate";
+import { drawFormBody, retagFormBody } from "@/lib/form-hydrate";
 import { getRevision } from "@/lib/doc-revisions";
 import { canRevealNamesNow } from "@/lib/roles";
 import { resolveSkinAsync } from "@/skins";
@@ -45,21 +45,29 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
 
   // ?rev=<id> previews a specific saved revision (the History page); else the
   // current saved body, falling back to the faithful default so it's never blank.
-  const isList = doc === "registered" || doc === "registered-coded" || doc === "results-coded";
+  const isList = isListDoc(doc);
   const revId = req.nextUrl.searchParams.get("rev");
   let saved = scheme.docs?.[doc]?.[lang] ?? "";
   if (revId) {
     const rev = await getRevision(revId);
     if (rev && rev.schemeId === id && rev.docKey === doc) saved = rev[lang] ?? "";
   }
-  // The participant lists are data-driven — always render them fresh from the live
-  // data (masked per `reveal`), never from saved HTML. This both honours the name
-  // guard and stops a stale/edited copy from drifting from the real participants.
-  if (isList) saved = "";
+  // The participant lists are data-driven. A manager's saved CUSTOMIZATION is
+  // honoured; for anyone else they render fresh from the live data (masked per
+  // `reveal`) — a saved list body may carry real names, so it never reaches a
+  // role that can't reveal them.
+  if (isList && !reveal) saved = "";
   // A form document's edited body bakes control states as of edit time — redraw
   // them from the latest fill-saved values (data-ff identity; fields the fill
   // never saved keep the editor's state), so print matches the locked Fill view.
-  if (saved && isFormDoc(doc)) saved = drawFormBody(saved, scheme.formData?.[doc] ?? {});
+  // Legacy bodies (saved before data-ff) get identity re-attached from the
+  // template first — the same positional mapping the Fill view uses.
+  if (saved && isFormDoc(doc)) {
+    saved = drawFormBody(
+      retagFormBody(saved, docDefaultBody(scheme, doc, lang, opts)),
+      scheme.formData?.[doc] ?? {}
+    );
+  }
   const body = saved || docDefaultBody(scheme, doc, lang, opts);
   const skin = await resolveSkinAsync(scheme);
   const html = docPrintHtml(scheme, doc, lang, body, opts, skin);

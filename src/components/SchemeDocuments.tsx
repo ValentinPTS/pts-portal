@@ -3,7 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { uploadSchemeDocAction, removeSchemeDocUploadAction, setDocSourceAction } from "@/lib/actions";
+import { uploadSchemeDocAction, removeSchemeDocUploadAction, setDocSourceAction, saveDocHtmlAction } from "@/lib/actions";
 
 export type DocSource = "built" | "uploaded" | "none";
 export interface DocRow {
@@ -11,18 +11,20 @@ export interface DocRow {
   name: string;
   form: string;
   isForm: boolean;
+  isList?: boolean;       // an auto register (F 7.2.1-4/-5/-6) — no lifecycle
   hasBuilt: boolean;
   hasUpload: boolean;
   active: DocSource;      // which version is shown/official
   done: boolean;          // counts as ready (isDocDone — editor docs need the explicit flag)
   uploadName?: string;
   buildHref: string;      // open/create in the app editor (or fill view)
+  viewHref?: string;      // lists: the live auto view (preview + PDF)
 }
 export interface DocStageView { key: string; label: string; docs: DocRow[] }
 
 const ACCEPT = "application/pdf,image/png,image/jpeg";
 
-export default function SchemeDocuments({ schemeId, lang, stages }: { schemeId: string; lang: "bg" | "en"; stages: DocStageView[] }) {
+export default function SchemeDocuments({ schemeId, lang, stages, lists = [] }: { schemeId: string; lang: "bg" | "en"; stages: DocStageView[]; lists?: DocRow[] }) {
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -70,6 +72,18 @@ export default function SchemeDocuments({ schemeId, lang, stages }: { schemeId: 
     setBusyKey(docKey);
     startTransition(async () => {
       await setDocSourceAction(schemeId, docKey, source);
+      setBusyKey(null);
+      router.refresh();
+    });
+  }
+  // A customized list back to fully automatic: clear the saved body (the old
+  // version stays recoverable from the document's revision history).
+  function resetList(docKey: string) {
+    setMenuKey(null);
+    if (!window.confirm(L("Да върна ли автоматичния изглед? Персонализацията се маха (пази се в историята).", "Restore the automatic view? The customization is removed (kept in history)."))) return;
+    setBusyKey(docKey);
+    startTransition(async () => {
+      await saveDocHtmlAction(schemeId, docKey, "", "");
       setBusyKey(null);
       router.refresh();
     });
@@ -176,6 +190,61 @@ export default function SchemeDocuments({ schemeId, lang, stages }: { schemeId: 
           </div>
         </div>
       ))}
+
+      {/* ── Automatic lists (F 7.2.1-4/-5/-6): generated live from the data ── */}
+      {lists.length > 0 && (
+        <div style={{ marginTop: 30 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 11, margin: "0 2px 4px" }}>
+            <span style={{ ...stageIdx, background: "#e2edf2", color: "#2f6f8f" }}>⟳</span>
+            <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: ".02em" }}>{L("Автоматични списъци", "Automatic lists")}</span>
+            <span style={{ flex: 1, height: 1, background: "var(--line)" }} />
+          </div>
+          <div style={{ fontSize: 12, color: "var(--muted)", margin: "0 2px 10px 37px" }}>
+            {L("Попълват се сами от данните на участниците и резултатите — винаги актуални. При нужда могат да се персонализират в редактора.",
+               "Fill themselves from the participants and results data — always up to date. They can be customized in the editor when needed.")}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {lists.map((d) => {
+              const busy = busyKey === d.key;
+              return (
+                <div key={d.key} style={{ position: "relative", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", background: "#fbfdfe", border: "1px solid #d7e5ec", borderRadius: 12, padding: "12px 14px", opacity: busy ? 0.6 : 1 }}>
+                  <span style={{ width: 34, height: 40, flex: "0 0 auto", borderRadius: 5, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 5, background: "#e2edf2", border: "1px solid #c4d9e3" }}>
+                    <span style={{ fontSize: 8, fontWeight: 800, color: "#2f6f8f" }}>AUTO</span>
+                  </span>
+                  <div style={{ flex: "1 1 210px", minWidth: 0 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 700, letterSpacing: "-.005em", lineHeight: 1.2 }}>{d.name}</div>
+                    <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{d.form}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
+                    {d.hasBuilt
+                      ? <span style={{ ...pillBase, background: "#efe9f6", color: "#5b4a8f" }}>{L("Персонализиран", "Customized")}</span>
+                      : <span style={{ ...pillBase, background: "#e2edf2", color: "#2f6f8f" }}>{L("Автоматичен ⟳", "Automatic ⟳")}</span>}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flex: "0 0 auto" }}>
+                      <Link className="btn" style={btnSm} href={d.viewHref ?? d.buildHref}>{L("Отвори", "Open")}</Link>
+                      <button aria-label="More" style={kebab} onClick={() => setMenuKey(menuKey === d.key ? null : d.key)}>⋯</button>
+                    </div>
+                  </div>
+                  {menuKey === d.key && (
+                    <>
+                      <div style={{ position: "fixed", inset: 0, zIndex: 19 }} onClick={() => setMenuKey(null)} />
+                      <div role="menu" style={rowMenu}>
+                        <Link style={menuItem} href={d.viewHref ?? d.buildHref} onClick={() => setMenuKey(null)}>◱ {L("Виж / PDF", "View / PDF")}</Link>
+                        <Link style={menuItem} href={d.buildHref} onClick={() => setMenuKey(null)}>✎ {L("Персонализирай в редактора", "Customize in the editor")}</Link>
+                        {d.hasBuilt && (
+                          <>
+                            <div style={menuSep} />
+                            <button style={{ ...menuItem, color: "var(--red,#9e2b2b)" }} onClick={() => resetList(d.key)}>↺ {L("Върни автоматичния изглед", "Restore the automatic view")}</button>
+                          </>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* inline viewer */}
       {viewer && (

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { FolderIcon, FileIcon } from "@/components/FileIcons";
 import { ACCENT, statusChip, schemeName, type FolderType } from "@/lib/folders";
-import { DOCUMENTS, isDocDone } from "@/lib/documents";
+import { DOCUMENTS, isDocDone, isListDoc } from "@/lib/documents";
 import { t, DEFAULT_LANG, type UiLang } from "@/lib/i18n";
 import type { Scheme } from "@/lib/types";
 
@@ -26,8 +26,9 @@ export function SchemeTile({ s, lang = DEFAULT_LANG }: { s: Scheme; lang?: UiLan
   const ac = ACCENT[s.type];
   const st = statusChip(s.status, lang);
   // "готови" = the same rule as the scheme page: uploaded final files + editor
-  // documents the owner explicitly marked ready (not merely started).
-  const built = DOCUMENTS.filter((d) => isDocDone(s, d.key)).length;
+  // documents the owner explicitly marked ready (not merely started). The auto
+  // lists (F 7.2.1-4/-5/-6) always exist, so they're outside the count.
+  const built = DOCUMENTS.filter((d) => !isListDoc(d.key) && isDocDone(s, d.key)).length;
   const date = s.orderDate || s.revisionDate || "";
   return (
     <Link href={`/schemes/${s.id}`} className="card no-underline" style={{ overflow: "hidden", display: "flex", flexDirection: "column", padding: 0 }}>
@@ -40,7 +41,7 @@ export function SchemeTile({ s, lang = DEFAULT_LANG }: { s: Scheme; lang?: UiLan
         <div style={{ fontSize: 13, color: "var(--muted)" }}>{s.number}</div>
       </div>
       <div style={stripStyle}>
-        <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 500 }}>{built}/{DOCUMENTS.length} {t(lang, "tile.builtSuffix")}</span>
+        <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 500 }}>{built}/{DOCUMENTS.filter((d) => !isListDoc(d.key)).length} {t(lang, "tile.builtSuffix")}</span>
         <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>{date}</span>
       </div>
     </Link>

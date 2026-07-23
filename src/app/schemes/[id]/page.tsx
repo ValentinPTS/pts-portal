@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getScheme } from "@/lib/store";
-import { getDoc, isFormDoc, isDocDone, hasDocContent } from "@/lib/documents";
+import { getDoc, isFormDoc, isListDoc, isDocDone, hasDocContent } from "@/lib/documents";
 import { DOC_STAGES } from "@/lib/doc-stages";
 import ExplorerShell from "@/components/ExplorerShell";
-import SchemeDocuments, { type DocStageView, type DocSource } from "@/components/SchemeDocuments";
+import SchemeDocuments, { type DocStageView, type DocSource, type DocRow } from "@/components/SchemeDocuments";
 import SkinPicker from "@/components/SkinPicker";
 import ManageMenu from "@/components/ManageMenu";
 import FolderActions from "@/components/FolderActions";
@@ -33,35 +33,44 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
   // Resolve each document's state: is there an app-built version, an uploaded file,
   // and which one is active/official (uploaded wins when present unless switched).
   const formLabel = (f: string) => (f === "internal" ? L("вътрешен", "internal") : f === "proposed" ? L("предложен", "proposed") : f);
+  const rowFor = (key: string): DocRow => {
+    const def = getDoc(key)!;
+    const isForm = isFormDoc(key);
+    const isList = isListDoc(key);
+    const hasUpload = !!s.uploads?.[key];
+    const hasBuilt = hasDocContent(s, key);
+    const pref = s.docActive?.[key];
+    let active: DocSource = "none";
+    if (hasUpload && pref !== "built") active = "uploaded";
+    else if (hasBuilt) active = "built";
+    else if (hasUpload) active = "uploaded";
+    return {
+      key,
+      name: lang === "bg" ? def.nameBg : def.nameEn,
+      form: formLabel(def.formNumber),
+      isForm,
+      isList,
+      hasBuilt,
+      hasUpload,
+      active,
+      // a started editor-doc is only "Готов" when explicitly marked (lib/documents isDocDone)
+      done: isDocDone(s, key),
+      uploadName: s.uploads?.[key]?.name,
+      buildHref: isForm ? `/schemes/${id}/fill/${key}` : `/schemes/${id}/build/${key}`,
+      // the lists open on their live auto view (DocViewer: preview + PDF)
+      viewHref: isList ? `/schemes/${id}/doc/${key}` : undefined,
+    };
+  };
+  // The three auto lists (F 7.2.1-4/-5/-6) live in their own section at the
+  // bottom — they're generated from live data, not worked through stages.
   const stages: DocStageView[] = DOC_STAGES.map((stage) => ({
     key: stage.key,
     label: lang === "bg" ? stage.bg : stage.en,
-    docs: stage.docs.map((key) => {
-      const def = getDoc(key)!;
-      const isForm = isFormDoc(key);
-      const hasUpload = !!s.uploads?.[key];
-      const hasBuilt = hasDocContent(s, key);
-      const pref = s.docActive?.[key];
-      let active: DocSource = "none";
-      if (hasUpload && pref !== "built") active = "uploaded";
-      else if (hasBuilt) active = "built";
-      else if (hasUpload) active = "uploaded";
-      return {
-        key,
-        name: lang === "bg" ? def.nameBg : def.nameEn,
-        form: formLabel(def.formNumber),
-        isForm,
-        hasBuilt,
-        hasUpload,
-        active,
-        // a started editor-doc is only "Готов" when explicitly marked (lib/documents isDocDone)
-        done: isDocDone(s, key),
-        uploadName: s.uploads?.[key]?.name,
-        buildHref: isForm ? `/schemes/${id}/fill/${key}` : `/schemes/${id}/build/${key}`,
-      };
-    }),
+    docs: stage.docs.filter((k) => !isListDoc(k)).map(rowFor),
   }));
+  const lists: DocRow[] = DOC_STAGES.flatMap((st) => st.docs).filter(isListDoc).map(rowFor);
 
+  // Progress counts only the worked documents — the auto lists always exist.
   const allDocs = stages.flatMap((x) => x.docs);
   const ready = allDocs.filter((d) => d.done).length;
   const uploaded = allDocs.filter((d) => d.active === "uploaded").length;
@@ -119,7 +128,7 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
         </div>
       </div>
 
-      <SchemeDocuments schemeId={id} lang={lang} stages={stages} />
+      <SchemeDocuments schemeId={id} lang={lang} stages={stages} lists={lists} />
     </ExplorerShell>
   );
 }
