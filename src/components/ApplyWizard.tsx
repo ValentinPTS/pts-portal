@@ -38,6 +38,7 @@ export default function ApplyWizard({
   objectBg,
   objectEn,
   params,
+  paramSig = "",
 }: {
   schemeId: string;
   number: string;
@@ -46,6 +47,9 @@ export default function ApplyWizard({
   objectBg: string;
   objectEn: string;
   params: Param[];
+  // fingerprint of the standards list this form renders — the server rejects the
+  // positional sel_i answers if the owner restructured the standards meanwhile
+  paramSig?: string;
 }) {
   const { lang } = useLang();
   const [step, setStep] = useState(1);
@@ -164,6 +168,7 @@ export default function ApplyWizard({
 
       <form ref={formRef} action={submitApplicationAction} onSubmit={handleSubmit} noValidate className="mt-8">
         <input type="hidden" name="schemeId" value={schemeId} />
+        <input type="hidden" name="paramSig" value={paramSig} />
         {/* honeypot — hidden from humans; bots fill it and get silently dropped */}
         <input
           name="website"

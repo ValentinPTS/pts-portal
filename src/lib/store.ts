@@ -227,6 +227,40 @@ export async function deleteScheme(id: string): Promise<void> {
   if (i !== -1) mem.splice(i, 1);
 }
 
+// Locked read-modify-write: `mutate` receives the FRESH current scheme inside the
+// per-scheme write lock and returns the patch. Use this whenever the patch is
+// COMPUTED FROM scheme state (e.g. remapping applications after a standards
+// reorder, appending to a JSONB array) — a plain read→compute→updateScheme spans
+// the lock and can clobber a write that landed in between.
+export async function updateSchemeWith(
+  id: string,
+  mutate: (current: Scheme) => Partial<Scheme>
+): Promise<void> {
+  return withSchemeLock(id, async () => {
+    const current = await getScheme(id);
+    if (!current) return;
+    const patch = mutate(current);
+    const next = { ...current, ...patch };
+    const db = getDb();
+    if (db) {
+      try {
+        const { error } = await db
+          .from("schemes")
+          .update({ ...toRow(next), updated_at: new Date().toISOString() })
+          .eq("id", id);
+        if (error) throw error;
+        const mi = mem.findIndex((s) => s.id === id);
+        if (mi !== -1) mem[mi] = next;
+        return;
+      } catch (e) {
+        warn(e);
+      }
+    }
+    const i = mem.findIndex((s) => s.id === id);
+    if (i !== -1) mem[i] = { ...mem[i], ...patch };
+  });
+}
+
 export async function updateScheme(id: string, patch: Partial<Scheme>): Promise<void> {
   return withSchemeLock(id, async () => {
     const db = getDb();

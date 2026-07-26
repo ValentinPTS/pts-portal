@@ -364,6 +364,10 @@ const DICT: Record<string, Entry> = {
   "users.addLabName": { bg: "Име на лабораторията", en: "Laboratory name" },
   "users.addLabButton": { bg: "＋ Добави + покани", en: "＋ Add + invite" },
 
+  // ── scheme setup (Edit scheme data) ──
+  "edit.title": { bg: "Настройка на схемата", en: "Scheme setup" },
+  "edit.subtitle": { bg: "Променете стойност веднъж — обновява се във всеки документ, на двата езика.", en: "Change a value once — it updates every document, in both languages." },
+
   // ── document version history (RT5) ──
   "hist.title": { bg: "История на версиите", en: "Version history" },
   "hist.subtitle": { bg: "Всяко записване създава версия (ISO/IEC 17043 §8.3). Нищо не се изтрива — старите версии остават като заменени.", en: "Every save creates a version (ISO/IEC 17043 §8.3). Nothing is deleted — older versions are kept as superseded." },

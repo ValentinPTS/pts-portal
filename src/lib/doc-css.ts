@@ -6,8 +6,10 @@ import type { Lang } from "./types";
 // server-only skin engine (doc-shell.ts imports node:async_hooks, which cannot be
 // bundled for the browser).
 
+// Quotes are escaped too: esc() output lands in ATTRIBUTE positions as well as
+// text (e.g. coverImgTag's src) — a bare " would break out of the attribute.
 export const esc = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 export const pick = (lang: Lang, en: string, bg: string) => (lang === "bg" ? bg : en);
 

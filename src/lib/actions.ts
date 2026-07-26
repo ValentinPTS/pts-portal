@@ -4,7 +4,7 @@ import { randomInt, randomUUID, randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { getScheme, updateScheme, addScheme, deleteScheme, listSchemeSummaries, listSchemesInFolder, schemeNumberExists } from "./store";
+import { getScheme, updateScheme, updateSchemeWith, addScheme, deleteScheme, listSchemeSummaries, listSchemesInFolder, schemeNumberExists } from "./store";
 import { blankScheme } from "./new-scheme";
 import { nextProject } from "./folders";
 import { addParticipant, listParticipants, listParticipationsForLab, updateParticipant } from "./participants";
@@ -42,7 +42,8 @@ import { addRevision, getRevision, approveRevision } from "./doc-revisions";
 import { createFolder, renameFolder, deleteFolder, getFolder, listChildFolders } from "./folder-tree";
 import { SAMPLE_SCHEMES } from "./sample-schemes";
 import { TYPE_SLUG, type FolderType } from "./folders";
-import type { Block, Scheme, StaffRole, StaffStatus, LabStatus, CaseEventKind, LabRegion, VatStatus, SchemeStatus, ParticipantStatus } from "./types";
+import type { Block, Scheme, Parameter, StaffRole, StaffStatus, LabStatus, CaseEventKind, LabRegion, VatStatus, SchemeStatus, ParticipantStatus } from "./types";
+import { isIdentityMap, remapSelections, remapCharacteristics, remapScoring, paramsSignature } from "./param-remap";
 
 const STAFF_ROLES: StaffRole[] = ["manager", "staff", "auditor"];
 const SCHEME_STATUSES: SchemeStatus[] = ["draft", "open", "running", "report", "closed"];
@@ -527,6 +528,14 @@ export async function submitApplicationAction(formData: FormData) {
   const scheme = await getScheme(schemeId);
   // basic server-side validation (the client validates too)
   if (!scheme || !get("labName") || !get("email")) redirect(schemeId ? `/apply/${schemeId}` : "/apply");
+
+  // The sel_i answers are POSITIONAL against the standards list the wizard
+  // rendered. If the owner restructured the standards while this form was open,
+  // the positions no longer mean the same standards — bounce back to a fresh
+  // form instead of recording participations against the wrong standards.
+  // (Forms rendered before this field existed post no signature → accepted.)
+  const sig = get("paramSig");
+  if (sig && sig !== paramsSignature(scheme.parameters)) redirect(`/apply/${schemeId}`);
 
   const selections: Record<string, number> = {};
   scheme.parameters.forEach((_, i) => {
@@ -1428,27 +1437,99 @@ export async function updateSchemeAction(formData: FormData) {
 
   const str = (k: string, fallback: string) =>
     String(formData.get(k) ?? fallback).trim();
+  // row count posted by the SchemeEditor (variable-length lists). Bounded; null
+  // when absent (an older form) → fall back to fixed-index mapping over existing.
+  const cnt = (k: string): number | null => {
+    if (formData.get(k) === null) return null;
+    const n = parseInt(str(k, ""), 10);
+    return Number.isFinite(n) && n >= 0 ? Math.min(n, 100) : null;
+  };
 
-  const schedule = existing.schedule.map((it, i) => ({
-    date: str(`sched_${i}_date`, it.date),
-    labelEn: str(`sched_${i}_en`, it.labelEn),
-    labelBg: str(`sched_${i}_bg`, it.labelBg),
-  }));
+  // ── Schedule — dynamic add/remove/reorder; rows are purely positional ──
+  const schedCount = cnt("schedCount");
+  let schedule =
+    schedCount === null
+      ? existing.schedule.map((it, i) => ({
+          date: str(`sched_${i}_date`, it.date),
+          labelEn: str(`sched_${i}_en`, it.labelEn),
+          labelBg: str(`sched_${i}_bg`, it.labelBg),
+        }))
+      : Array.from({ length: schedCount }, (_, i) => ({
+          date: str(`sched_${i}_date`, ""),
+          labelEn: str(`sched_${i}_en`, ""),
+          labelBg: str(`sched_${i}_bg`, ""),
+        })).filter((r) => r.date || r.labelEn || r.labelBg);
+  if (!schedule.length) schedule = existing.schedule; // never silently wipe
 
-  const parameters = existing.parameters.map((p, i) => {
+  // ── Standards — dynamic; each surviving row posts its ORIGINAL index so the
+  // position-based references (applications' selections, participants'
+  // characteristics, T-scheme scoring keys) can follow their standard. ──
+  const paramCount = cnt("paramCount");
+  const readParam = (i: number, base: Parameter): Parameter => {
     const sm = parseFloat(str(`param_${i}_sigmaMin`, "").replace(",", "."));
     return {
-      standardEn: str(`param_${i}_stdEn`, p.standardEn),
-      standardBg: str(`param_${i}_stdBg`, p.standardBg),
-      characteristicEn: str(`param_${i}_chEn`, p.characteristicEn),
-      characteristicBg: str(`param_${i}_chBg`, p.characteristicBg),
-      rangeEn: str(`param_${i}_rgEn`, p.rangeEn),
-      rangeBg: str(`param_${i}_rgBg`, p.rangeBg),
-      specimensEn: str(`param_${i}_spEn`, p.specimensEn),
-      specimensBg: str(`param_${i}_spBg`, p.specimensBg),
+      standardEn: str(`param_${i}_stdEn`, base.standardEn),
+      standardBg: str(`param_${i}_stdBg`, base.standardBg),
+      characteristicEn: str(`param_${i}_chEn`, base.characteristicEn),
+      characteristicBg: str(`param_${i}_chBg`, base.characteristicBg),
+      rangeEn: str(`param_${i}_rgEn`, base.rangeEn),
+      rangeBg: str(`param_${i}_rgBg`, base.rangeBg),
+      specimensEn: str(`param_${i}_spEn`, base.specimensEn),
+      specimensBg: str(`param_${i}_spBg`, base.specimensBg),
       sigmaMin: Number.isFinite(sm) ? sm : undefined, // blank → no floor
     };
-  });
+  };
+  const EMPTY_PARAM: Parameter = {
+    standardEn: "", standardBg: "", characteristicEn: "", characteristicBg: "",
+    rangeEn: "", rangeBg: "", specimensEn: "", specimensBg: "",
+  };
+  let parameters: Parameter[];
+  const paramMap = new Map<number, number>(); // old index → new index
+  let paramsRestructured = false;
+  if (paramCount === null) {
+    parameters = existing.parameters.map((p, i) => readParam(i, p));
+  } else {
+    const rows: { p: Parameter; orig: number | null }[] = [];
+    const usedOrig = new Set<number>(); // a crafted duplicate orig must not collapse the map
+    for (let i = 0; i < paramCount; i++) {
+      const origRaw = str(`param_${i}_orig`, "");
+      const origIdx = parseInt(origRaw, 10);
+      const orig =
+        origRaw !== "" && Number.isInteger(origIdx) && origIdx >= 0 &&
+        origIdx < existing.parameters.length && !usedOrig.has(origIdx)
+          ? origIdx
+          : null;
+      if (orig !== null) usedOrig.add(orig);
+      const p = readParam(i, orig !== null ? existing.parameters[orig] : EMPTY_PARAM);
+      // a NEW row left completely blank is just noise — skip it
+      if (orig === null && !p.standardEn && !p.standardBg && !p.characteristicEn && !p.characteristicBg) continue;
+      rows.push({ p, orig });
+    }
+    if (rows.length === 0) {
+      parameters = existing.parameters; // never silently wipe every standard
+    } else {
+      parameters = rows.map((r) => r.p);
+      rows.forEach((r, newIdx) => {
+        if (r.orig !== null) paramMap.set(r.orig, newIdx);
+      });
+      paramsRestructured = !isIdentityMap(paramMap, existing.parameters.length);
+    }
+  }
+
+  // Refuse a structural change that would STRAND a participant: a lab registered
+  // for exactly the deleted standard(s) would end with characteristics=[] — and
+  // the codebase-wide convention reads empty as "registered for ALL standards",
+  // silently widening that lab's scope in official documents (F 7.2.1-5). The
+  // owner must first re-scope or remove those participants.
+  const participantRows = paramsRestructured ? await listParticipants(id) : [];
+  if (paramsRestructured) {
+    const stranded = participantRows.filter(
+      (p) => p.characteristics?.length && (remapCharacteristics(p.characteristics, paramMap) ?? []).length === 0
+    );
+    if (stranded.length) {
+      redirect(`/schemes/${id}/edit?err=stranded&codes=${encodeURIComponent(stranded.map((p) => p.code).join(", "))}`);
+    }
+  }
 
   const prices = existing.prices.map((pr, i) => ({
     characteristicEn: str(`price_${i}_chEn`, pr.characteristicEn),
@@ -1486,8 +1567,14 @@ export async function updateSchemeAction(formData: FormData) {
     };
   }
 
-  // cover photo: URL (uploaded), width (%) and placement, all owner-set on the Edit page.
-  const coverImage = str("coverImage", existing.coverImage ?? "");
+  // cover photo: URL (uploaded), width (%) and placement, all owner-set on the Edit
+  // page. Only site-relative or https URLs, with no characters that could break out
+  // of an attribute in the rendered documents (defense alongside esc()).
+  const coverRaw = str("coverImage", existing.coverImage ?? "");
+  const coverImage =
+    coverRaw === "" || (/^(\/|https:\/\/)/.test(coverRaw) && !/["'<>\s\\]/.test(coverRaw))
+      ? coverRaw
+      : existing.coverImage ?? "";
   const cwRaw = parseInt(str("coverImageWidth", ""), 10);
   const caRaw = str("coverImageAlign", "");
   const coverImageAlign = caRaw === "left" || caRaw === "center" || caRaw === "right" ? caRaw : existing.coverImageAlign;
@@ -1498,7 +1585,12 @@ export async function updateSchemeAction(formData: FormData) {
   const status = SCHEME_STATUSES.includes(statusRaw) ? statusRaw : existing.status;
   const announced = formData.get("announced") === "on";
 
-  await updateScheme(id, {
+  // Write the scheme in ONE locked read-modify-write: when the standards were
+  // reordered/removed, the position-based references stored ON the scheme (the
+  // labs' requested participations, the T-scheme scoring keys) are remapped from
+  // the FRESH state inside the lock — a заявка submitted while this action was
+  // running is remapped too, never clobbered (lib/param-remap).
+  await updateSchemeWith(id, (current) => ({
     status,
     announced,
     // official PTS number — shown on every document + drives the year grouping.
@@ -1516,10 +1608,35 @@ export async function updateSchemeAction(formData: FormData) {
     parameters,
     prices,
     calibration,
-  });
+    ...(paramsRestructured
+      ? {
+          applications: (current.applications ?? []).map((a) => ({
+            ...a,
+            selections: remapSelections(a.selections, paramMap),
+          })),
+          ...(current.type !== "C" && current.scoring
+            ? { scoring: remapScoring(current.scoring, paramMap) }
+            : {}),
+        }
+      : {}),
+  }));
+
+  // Participants' registered characteristics follow their standards too (separate
+  // table; scheme written first so documents never see new standards with old
+  // participant scopes). The stranding guard above already ensured none go empty.
+  if (paramsRestructured) {
+    for (const p of participantRows) {
+      if (!p.characteristics?.length) continue;
+      const next = remapCharacteristics(p.characteristics, paramMap) ?? [];
+      const cur = [...p.characteristics].sort((a, b) => a - b);
+      if (next.length !== cur.length || next.some((v, k) => v !== cur[k])) {
+        await updateParticipant(p.id, { characteristics: next });
+      }
+    }
+  }
 
   revalidatePath(`/schemes/${id}`, "layout");
-  redirect(`/schemes/${id}/doc/plan`);
+  redirect(`/schemes/${id}`);
 }
 
 // Parse a submitted results form into a Scoring object. Field naming uses

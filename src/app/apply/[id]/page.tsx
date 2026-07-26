@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getScheme } from "@/lib/store";
 import ApplyWizard from "@/components/ApplyWizard";
+import { paramsSignature } from "@/lib/param-remap";
 import { getServerT } from "@/lib/i18n-server";
 
 export default async function ApplyToScheme({
@@ -47,6 +48,7 @@ export default async function ApplyToScheme({
             standard: lang === "bg" ? p.standardBg : p.standardEn,
             characteristic: lang === "bg" ? p.characteristicBg : p.characteristicEn,
           }))}
+          paramSig={paramsSignature(s.parameters)}
         />
       </div>
     </>
