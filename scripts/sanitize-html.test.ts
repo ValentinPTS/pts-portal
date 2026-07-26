@@ -34,6 +34,36 @@ ok("removes <object> and <embed>",
   gone(sanitizeDocHtml(`<object data="x"></object><embed src="y">`), "<object") &&
   gone(sanitizeDocHtml(`<embed src="y">`), "<embed"));
 
+// ── handler-separator bypasses: `/` and closing-quote are attribute separators ───
+ok("removes onload after a slash separator (<svg/onload=…>)",
+  gone(sanitizeDocHtml(`<svg/onload=alert(1)>`), "onload"));
+ok("removes onerror abutting a closing quote (<img src=\"x\"onerror=…>)",
+  gone(sanitizeDocHtml(`<img src="x"onerror=alert(1)>`), "onerror"));
+ok("removes onerror after a slash before other attrs (<img/onerror=… src=x>)",
+  gone(sanitizeDocHtml(`<img/onerror=alert(1) src=x>`), "onerror"));
+ok("removes chained handlers (<img/onload=a/onerror=b>)",
+  gone(sanitizeDocHtml(`<img/onload=a()/onerror=b()>`), "onload") &&
+  gone(sanitizeDocHtml(`<img/onload=a()/onerror=b()>`), "onerror"));
+ok("slash-separated handler does not eat a real attribute's quote",
+  has(sanitizeDocHtml(`<img src="x"onerror=alert(1)>`), 'src="x"'));
+
+// ── URL scheme bypasses via HTML-entity / control-char obfuscation ──────────────
+ok("neutralizes entity-encoded javascript: (&#106;avascript:)",
+  has(sanitizeDocHtml(`<a href="&#106;avascript:alert(1)">x</a>`), 'href="#"'));
+ok("neutralizes tab-obfuscated javascript: (jav&#9;ascript:)",
+  has(sanitizeDocHtml(`<a href="jav&#9;ascript:alert(1)">x</a>`), 'href="#"'));
+ok("neutralizes hex-entity javascript: (&#x6a;avascript:)",
+  has(sanitizeDocHtml(`<a href="&#x6a;avascript:alert(1)">x</a>`), 'href="#"'));
+ok("drops a data:text/html src entirely (not an image)",
+  gone(sanitizeDocHtml(`<img src="data:text/html,<script>bad</script>">`), "text/html"));
+ok("blanks a data: href (navigable → never allowed)",
+  has(sanitizeDocHtml(`<a href="data:image/svg+xml,<svg onload=1>">x</a>`), 'href="#"'));
+
+// ── the URL allow-list keeps every legitimate value untouched ───────────────────
+ok("keeps relative/anchor href", has(sanitizeDocHtml(`<a href="#top">t</a>`), 'href="#top"') &&
+  has(sanitizeDocHtml(`<a href="/apply">a</a>`), 'href="/apply"'));
+ok("keeps tel: links", has(sanitizeDocHtml(`<a href="tel:+35921234">c</a>`), "tel:+35921234"));
+
 // ── keeps legitimate formatting ───────────────────────────────────────────────
 const rich = `<h2 class="sec">Раздел</h2><p style="color:#9e2b2b">текст <strong>bold</strong></p>` +
   `<table class="ptable"><tr><td>a</td><td>b</td></tr></table><ul><li>x</li></ul>`;

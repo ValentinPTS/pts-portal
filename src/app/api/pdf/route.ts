@@ -51,22 +51,35 @@ export async function POST(req: NextRequest) {
   // forward the participant code (if any) — the print route validates it against
   // this scheme before using it.
   const part = typeof body.participant === "string" && body.participant ? `&p=${encodeURIComponent(body.participant)}` : "";
-  // internal render token so the headless browser's same-origin navigation is not
-  // blocked by the owner-area gate in proxy.ts (set INTERNAL_TOKEN in prod with auth on).
-  const internal = process.env.INTERNAL_TOKEN ? `&_internal=${encodeURIComponent(process.env.INTERNAL_TOKEN)}` : "";
-  // Forward THIS caller's name-reveal permission (§4.2): the headless render has no
-  // session, so we tell the print route whether the requester (checked here, with a
-  // session) may see real lab names/certificate identities. Trusted only alongside
-  // the internal token, so it can't be spoofed by a direct navigation.
-  const reveal = (await canRevealNamesNow()) ? "&reveal=1" : "";
+  // The owner-area bypass token + THIS caller's name-reveal permission (§4.2) travel
+  // as HTTP HEADERS attached to the same-origin navigation below — NEVER in the URL.
+  // A secret in a query string is captured verbatim in access logs / APM traces (see
+  // proxy.ts, which now reads the header). The headless render carries no session, so
+  // the token proves the request came from our server and the reveal flag tells the
+  // print route whether names may be shown; a direct navigation has neither.
+  const internalToken = process.env.INTERNAL_TOKEN ?? "";
+  const reveal = (await canRevealNamesNow()) ? "1" : "";
   // composed = the owner-built (builder) version; else the auto-generated template
-  const url = (body.composed
+  const url = body.composed
     ? `${origin}/schemes/${encodeURIComponent(id)}/build/${encodeURIComponent(def.key)}/print?lang=${lang}`
-    : `${origin}/schemes/${encodeURIComponent(id)}/doc/${encodeURIComponent(def.key)}/print?lang=${lang}${part}`) + internal + reveal;
+    : `${origin}/schemes/${encodeURIComponent(id)}/doc/${encodeURIComponent(def.key)}/print?lang=${lang}${part}`;
 
   const browser = await getBrowser();
   const context = await browser.newContext();
   try {
+    // Attach the token/reveal headers to SAME-ORIGIN requests only. A context- or
+    // page-level extra-header would also send the secret to cross-origin subresources
+    // (Google Fonts), so we branch per request inside the interceptor instead.
+    if (internalToken) {
+      await context.route("**/*", (route) => {
+        const reqUrl = route.request().url();
+        if (reqUrl.startsWith(origin)) {
+          route.continue({ headers: { ...route.request().headers(), "x-internal-token": internalToken, "x-reveal": reveal } });
+        } else {
+          route.continue();
+        }
+      });
+    }
     const page = await context.newPage();
     // Bounded navigation: a render route that stalls must never hang the shared
     // browser indefinitely (it would starve concurrent PDF requests).

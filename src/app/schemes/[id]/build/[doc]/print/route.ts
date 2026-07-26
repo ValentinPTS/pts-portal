@@ -29,9 +29,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
   // trusted ONLY with the valid internal token; a direct navigation falls back to the
   // viewer's own session role (an auditor/staff can never coax names out this way).
   const internalToken = process.env.INTERNAL_TOKEN;
-  const isInternal = !!internalToken && req.nextUrl.searchParams.get("_internal") === internalToken;
+  const isInternal = !!internalToken && req.headers.get("x-internal-token") === internalToken;
   const reveal = isInternal
-    ? req.nextUrl.searchParams.get("reveal") === "1"
+    ? req.headers.get("x-reveal") === "1"
     : await canRevealNamesNow();
   const ps = await listParticipants(id);
   const opts: DocOptions = {

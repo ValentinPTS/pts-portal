@@ -27,6 +27,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
   const values = scheme.formData?.[doc] ?? {};
   const skin = await resolveSkinAsync(scheme);
 
+  // Per-request nonce for THIS route's own two inline scripts (pagination + PDF).
+  // It lets a strict CSP allow them while blocking any inline handler/script the
+  // sanitizer might miss inside the saved document body — the belt this route was
+  // previously missing (the sibling print routes send default-src 'none'; this one
+  // can't, because it injects its own scripts, so it whitelists them by nonce).
+  const nonce = crypto.randomUUID();
+
   // WYSIWYG: when the owner has rebuilt this document in the Word editor, the
   // locked Fill view shows THAT body (their edits) — its static form controls
   // re-hydrated into live inputs via the data-ff identity they carry
@@ -84,7 +91,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
   // Progressive-enhancement pagination: the cover gets its own page, then content
   // breaks at A4 boundaries with a "page N/N+1" label. Wrapped in try/catch so the
   // form always works even if measurement fails.
-  const pageScript = `<script>(function(){try{
+  const pageScript = `<script nonce="${nonce}">(function(){try{
     // Same geometry as the editor: sheet padding includes the 16mm printed top
     // margin (offsets are padding-edge relative), so page 1 ends at 16mm+263mm;
     // each gap = rest of page + 18mm bottom margin + seam + 16mm top margin.
@@ -130,7 +137,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
 
   // Download the locked/filled form as a PDF (uses the last saved values).
   const dlName = `${id}_${doc}_${lang}.pdf`;
-  const pdfScript = `<script>(function(){
+  const pdfScript = `<script nonce="${nonce}">(function(){
     var b=document.getElementById('ff-pdf'); if(!b) return;
     b.addEventListener('click',function(){
       var old=b.textContent, done=function(){b.disabled=false;b.textContent=old;};
@@ -148,7 +155,17 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
     .replace("</body>", `${pageScript}${pdfScript}</form></body>`);
 
   return new Response(html, {
-    headers: { "content-type": "text/html; charset=utf-8", "x-content-type-options": "nosniff" },
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "x-content-type-options": "nosniff",
+      // Strict CSP: only this route's own nonce'd scripts run; anything smuggled
+      // through the sanitizer in the document body (inline handler, injected
+      // <script>) is blocked. Fonts/images/self-fetch match the print routes.
+      "content-security-policy":
+        `default-src 'none'; script-src 'nonce-${nonce}'; img-src 'self' data: https:; ` +
+        `style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; ` +
+        `connect-src 'self'; form-action 'self'; frame-ancestors 'self'`,
+    },
   });
 }
 

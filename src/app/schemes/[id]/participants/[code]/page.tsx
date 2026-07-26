@@ -168,23 +168,32 @@ export default async function CaseFilePage({
         {tr("case.labFiles")}
       </h2>
       <div className="card p-4">
-        {(["protocol", "results"] as const).map((slot) => {
-          const up = s.labUploads?.[code]?.[slot];
-          if (!up) return null;
-          return (
-            <div key={slot} className="flex items-center gap-3 flex-wrap" style={{ padding: "4px 0" }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--green-dark)" }}>
-                📄 {tr(`casekind.${slot === "protocol" ? "receipt_confirmed" : "results_returned"}`)}
-              </span>
-              <span style={{ fontSize: 13 }}>{up.name}</span>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>{fmtDate(up.uploadedAt.slice(0, 10))} · {(up.size / 1_000_000).toFixed(1)} MB</span>
-              <a href={`/schemes/${id}/lab-uploads/${encodeURIComponent(code)}/${slot}`} target="_blank" rel="noreferrer" className="btn btn-sm" style={{ fontSize: 12 }}>↗</a>
-              <a href={`/schemes/${id}/lab-uploads/${encodeURIComponent(code)}/${slot}?download=1`} className="btn btn-sm" style={{ fontSize: 12 }}>{tr("case.download")}</a>
-            </div>
-          );
-        })}
-        {!s.labUploads?.[code]?.protocol && !s.labUploads?.[code]?.results && (
-          <p className="text-sm" style={{ color: "var(--muted)" }}>{tr("case.labFilesNone")}</p>
+        {/* These are the lab's own signed files (its letterhead names it), so the
+            links are manager-only (§4.2) — same boundary as the name reveal above.
+            A non-manager sees only that files exist, never their content. */}
+        {!canReveal ? (
+          <p className="text-sm" style={labelStyle}>{tr("case.revealHint")}</p>
+        ) : (
+          <>
+            {(["protocol", "results"] as const).map((slot) => {
+              const up = s.labUploads?.[code]?.[slot];
+              if (!up) return null;
+              return (
+                <div key={slot} className="flex items-center gap-3 flex-wrap" style={{ padding: "4px 0" }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--green-dark)" }}>
+                    📄 {tr(`casekind.${slot === "protocol" ? "receipt_confirmed" : "results_returned"}`)}
+                  </span>
+                  <span style={{ fontSize: 13 }}>{up.name}</span>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>{fmtDate(up.uploadedAt.slice(0, 10))} · {(up.size / 1_000_000).toFixed(1)} MB</span>
+                  <a href={`/schemes/${id}/lab-uploads/${encodeURIComponent(code)}/${slot}`} target="_blank" rel="noreferrer" className="btn btn-sm" style={{ fontSize: 12 }}>↗</a>
+                  <a href={`/schemes/${id}/lab-uploads/${encodeURIComponent(code)}/${slot}?download=1`} className="btn btn-sm" style={{ fontSize: 12 }}>{tr("case.download")}</a>
+                </div>
+              );
+            })}
+            {!s.labUploads?.[code]?.protocol && !s.labUploads?.[code]?.results && (
+              <p className="text-sm" style={{ color: "var(--muted)" }}>{tr("case.labFilesNone")}</p>
+            )}
+          </>
         )}
       </div>
 

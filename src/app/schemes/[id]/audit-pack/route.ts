@@ -33,6 +33,16 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const showNames = canRevealNames(role) && wantNames; // managers only
 
   const participants = await listParticipants(id);
+  // One scheme-wide query, grouped by code — instead of one round-trip per
+  // participant (which serialized N DB calls before any bytes were sent). The
+  // full-scheme fetch is already sorted newest-first, so per-code order is kept.
+  const allEvents = await listCaseEvents(id);
+  const eventsByCode = new Map<string, typeof allEvents>();
+  for (const e of allEvents) {
+    const arr = eventsByCode.get(e.code);
+    if (arr) arr.push(e);
+    else eventsByCode.set(e.code, [e]);
+  }
   const metrics = metricsForScheme(scheme);
   const now = new Date();
   const stamp = `${String(now.getUTCDate()).padStart(2, "0")}.${String(now.getUTCMonth() + 1).padStart(2, "0")}.${now.getUTCFullYear()} ${String(now.getUTCHours()).padStart(2, "0")}:${String(now.getUTCMinutes()).padStart(2, "0")} UTC`;
@@ -40,7 +50,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   // build each participant's section
   const sections: string[] = [];
   for (const p of participants) {
-    const events = await listCaseEvents(id, p.code);
+    const events = eventsByCode.get(p.code) ?? [];
     const rows = events.length
       ? events.map((e) => {
           const doc = e.docKey ? getDoc(e.docKey) : undefined;

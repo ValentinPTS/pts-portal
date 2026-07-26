@@ -46,7 +46,7 @@ export default function CoverCanvas({
   useEffect(() => {
     const ifr = iframeRef.current;
     if (!ifr) return;
-    let timers: ReturnType<typeof setTimeout>[] = [];
+    const timers: ReturnType<typeof setTimeout>[] = [];
     const measure = () => {
       const doc = ifr.contentDocument;
       if (!doc) return;

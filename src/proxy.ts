@@ -67,10 +67,11 @@ export async function proxy(request: NextRequest) {
   if (!AUTH_ENABLED) return NextResponse.next(); // scaffolded off → app stays open
 
   // Internal render bypass: the PDF generator (server-side headless browser) fetches
-  // owner render routes with a secret query token so it isn't blocked by the gate.
-  // Same-origin navigation only — the token is never sent to third parties.
+  // owner render routes with a secret token so it isn't blocked by the gate. The token
+  // rides in an HTTP HEADER (not the URL) so it never lands in an access log; /api/pdf
+  // scopes it to same-origin requests, so it's never sent to third parties.
   const internal = process.env.INTERNAL_TOKEN;
-  if (internal && request.nextUrl.searchParams.get("_internal") === internal) {
+  if (internal && request.headers.get("x-internal-token") === internal) {
     return NextResponse.next({ request });
   }
 

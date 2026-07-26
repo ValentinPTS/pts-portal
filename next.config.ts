@@ -13,9 +13,7 @@ const nextConfig: NextConfig = {
     serverActions: { bodySizeLimit: "16mb" },
   },
 
-  // Baseline security headers applied to every response. (A full
-  // Content-Security-Policy with per-request nonces for scripts is Phase 2 — see
-  // SECURITY.md. The document RENDER routes already send a strict no-script CSP.)
+  // Baseline security headers applied to every response.
   async headers() {
     return [
       {
@@ -33,10 +31,19 @@ const nextConfig: NextConfig = {
             key: "Strict-Transport-Security",
             value: "max-age=63072000; includeSubDomains; preload",
           },
-          // App-wide CSP: only the directives that don't require nonces and so are
-          // safe with Next's hydration scripts. Blocks plugins (<object>/<embed>),
-          // <base> hijacking, cross-origin form posts, and framing. A full script-src
-          // with nonces comes with the Phase-2 CSP.
+        ],
+      },
+      {
+        // App-wide baseline CSP — EVERYWHERE except the document render/fill routes,
+        // which set their own STRICTER, script-restricting policy from the route
+        // handler. A config-level header on "/(.*)" wins over a route-set one of the
+        // same name, so without this exclusion the render routes' `default-src 'none'`
+        // and the Fill route's per-request script nonce were silently overridden by
+        // this baseline (leaving the sanitizer as the only XSS defense on those
+        // routes). The negative lookahead skips any path ending in `/print` or
+        // containing `/fill/` so their own CSP is the only one sent.
+        source: "/((?!.*(?:/print$|/fill/)).*)",
+        headers: [
           {
             key: "Content-Security-Policy",
             value: "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'",

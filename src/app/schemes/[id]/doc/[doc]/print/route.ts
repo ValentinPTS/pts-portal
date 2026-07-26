@@ -30,9 +30,9 @@ export async function GET(
   // browser navigation has no token → we fall back to the viewer's own session role,
   // so an auditor/staff can never coax a named document out of this route.
   const internalToken = process.env.INTERNAL_TOKEN;
-  const isInternal = !!internalToken && req.nextUrl.searchParams.get("_internal") === internalToken;
+  const isInternal = !!internalToken && req.headers.get("x-internal-token") === internalToken;
   const reveal = isInternal
-    ? req.nextUrl.searchParams.get("reveal") === "1"
+    ? req.headers.get("x-reveal") === "1"
     : await canRevealNamesNow();
 
   // Per-document participant context.

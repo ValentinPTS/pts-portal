@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listSchemes } from "@/lib/store";
+import { listOpenSchemes } from "@/lib/store";
 import { getServerT } from "@/lib/i18n-server";
 import { typeLabel } from "@/lib/folders";
 
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 // Public landing for labs: the proficiency-testing schemes currently open for
 // applications. No confidential data — title, object, dates, min participants.
 export default async function ApplyHome() {
-  const open = (await listSchemes()).filter((s) => s.status === "open");
+  const open = await listOpenSchemes();
   const { lang, tr } = await getServerT();
 
   return (

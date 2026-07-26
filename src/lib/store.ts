@@ -74,6 +74,25 @@ export async function listSchemes(): Promise<Scheme[]> {
   }
 }
 
+// Open schemes only — for the PUBLIC apply landing, which showed the small subset
+// of open schemes but was loading every scheme's full document payload to do it.
+// Scoping the ROWS by status at the DB keeps the closed-scheme history out of each
+// anonymous request (the rendered fields — title/object/dates — live in `data`, so
+// we still select `data`, just for the few open rows).
+export async function listOpenSchemes(): Promise<Scheme[]> {
+  const db = getDb();
+  if (!db) return mem.filter((s) => s.status === "open");
+  try {
+    await ensureSeed(db);
+    const { data, error } = await db.from("schemes").select("data").eq("status", "open").order("id");
+    if (error) throw error;
+    return (data ?? []).map((r) => (r as { data: Scheme }).data);
+  } catch (e) {
+    warn(e);
+    return mem.filter((s) => s.status === "open");
+  }
+}
+
 // A lightweight scheme row for list/nav pages that don't need the full document
 // payload. Selects only the scalar columns (no JSONB `data`) so the home, type and
 // sidebar-tree pages stay cheap as the scheme count grows.
