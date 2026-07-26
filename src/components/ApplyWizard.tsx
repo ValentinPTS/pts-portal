@@ -39,6 +39,7 @@ export default function ApplyWizard({
   objectEn,
   params,
   paramSig = "",
+  branch = "std",
 }: {
   schemeId: string;
   number: string;
@@ -50,6 +51,9 @@ export default function ApplyWizard({
   // fingerprint of the standards list this form renders — the server rejects the
   // positional sel_i answers if the owner restructured the standards meanwhile
   paramSig?: string;
+  // which step-3 branch this form rendered ("cal" = the calibration device item,
+  // "std" = the standards) — the server bounces if its branch differs at submit
+  branch?: "cal" | "std";
 }) {
   const { lang } = useLang();
   const [step, setStep] = useState(1);
@@ -169,6 +173,7 @@ export default function ApplyWizard({
       <form ref={formRef} action={submitApplicationAction} onSubmit={handleSubmit} noValidate className="mt-8">
         <input type="hidden" name="schemeId" value={schemeId} />
         <input type="hidden" name="paramSig" value={paramSig} />
+        <input type="hidden" name="applyBranch" value={branch} />
         {/* honeypot — hidden from humans; bots fill it and get silently dropped */}
         <input
           name="website"

@@ -47,10 +47,16 @@ export function blankScheme(opts: {
 
     // scheme-specific data — starts blank with ready rows to fill in
     partner: { nameEn: "", nameBg: "", locationEn: "", locationBg: "", servicesEn: [], servicesBg: [] },
-    parameters: [0, 1, 2].map(() => ({
-      standardEn: "", standardBg: "", characteristicEn: "", characteristicBg: "",
-      rangeEn: "", rangeBg: "", specimensEn: "", specimensBg: "",
-    })),
+    // Calibration schemes have NO standards (the device/points in `calibration`
+    // are the scheme; parameters must stay [] so the C documents' calibration
+    // fallbacks apply). Testing schemes start with 3 blank rows to fill in.
+    parameters:
+      opts.type === "C"
+        ? []
+        : [0, 1, 2].map(() => ({
+            standardEn: "", standardBg: "", characteristicEn: "", characteristicBg: "",
+            rangeEn: "", rangeBg: "", specimensEn: "", specimensBg: "",
+          })),
     schedule: [
       { date: "", labelEn: "Start of the scheme", labelBg: "Старт на схемата" },
       { date: "", labelEn: "Deadline for applications", labelBg: "Краен срок за заявления" },
@@ -65,7 +71,7 @@ export function blankScheme(opts: {
         ? {
             quantityEn: "", quantityBg: "", unit: "",
             deviceEn: "", deviceBg: "",
-            points: ["", "", "", "", ""],
+            points: [],
             directionsEn: [], directionsBg: [],
             referenceLabEn: "", referenceLabBg: "", referenceLabLocEn: "", referenceLabLocBg: "",
             methodEn: "ISO 376 — direct comparison method", methodBg: "ISO 376 — метод на пряко сравнение",

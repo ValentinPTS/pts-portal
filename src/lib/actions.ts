@@ -44,6 +44,7 @@ import { SAMPLE_SCHEMES } from "./sample-schemes";
 import { TYPE_SLUG, type FolderType } from "./folders";
 import type { Block, Scheme, Parameter, StaffRole, StaffStatus, LabStatus, CaseEventKind, LabRegion, VatStatus, SchemeStatus, ParticipantStatus } from "./types";
 import { isIdentityMap, remapSelections, remapCharacteristics, remapScoring, paramsSignature } from "./param-remap";
+import { usesCalApplyItem, CAL_SELECTION_KEY } from "./apply-item";
 
 const STAFF_ROLES: StaffRole[] = ["manager", "staff", "auditor"];
 const SCHEME_STATUSES: SchemeStatus[] = ["draft", "open", "running", "report", "closed"];
@@ -537,11 +538,27 @@ export async function submitApplicationAction(formData: FormData) {
   const sig = get("paramSig");
   if (sig && sig !== paramsSignature(scheme.parameters)) redirect(`/apply/${schemeId}`);
 
+  // The wizard also posts WHICH branch its step 3 rendered ("cal" = the device
+  // item, "std" = the standards). If the owner's edits flipped the branch while
+  // the form was open, the positional sel_i answers mean different things —
+  // bounce to a fresh form instead of misrecording them (paramSig can't catch
+  // this: calibration edits never touch scheme.parameters).
+  const serverBranch = usesCalApplyItem(scheme) ? "cal" : "std";
+  const postedBranch = get("applyBranch");
+  if (postedBranch && postedBranch !== serverBranch) redirect(`/apply/${schemeId}`);
+
   const selections: Record<string, number> = {};
-  scheme.parameters.forEach((_, i) => {
-    const n = parseInt(get(`sel_${i}`) || "0", 10);
-    if (Number.isFinite(n) && n > 0) selections[String(i)] = n;
-  });
+  if (serverBranch === "cal") {
+    // Calibration: the wizard showed ONE item (the device) → sel_0 is the
+    // participation count, stored under the reserved "cal" key (lib/apply-item).
+    const n = parseInt(get("sel_0") || "0", 10);
+    if (Number.isFinite(n) && n > 0) selections[CAL_SELECTION_KEY] = Math.min(n, 99);
+  } else {
+    scheme.parameters.forEach((_, i) => {
+      const n = parseInt(get(`sel_${i}`) || "0", 10);
+      if (Number.isFinite(n) && n > 0) selections[String(i)] = Math.min(n, 99);
+    });
+  }
 
   await addApplication(schemeId, {
     labName: get("labName"),
@@ -1435,8 +1452,13 @@ export async function updateSchemeAction(formData: FormData) {
   const existing = await getScheme(id);
   if (!existing) throw new Error("Scheme not found");
 
+  // Every text field is stripped of invisible junk that rides along when pasting
+  // from Word/PDF (control chars, zero-width marks, private-use glyphs, U+FFFD)
+  // — mirrors the client-side cleanup in SchemeEditor so nothing slips through.
   const str = (k: string, fallback: string) =>
-    String(formData.get(k) ?? fallback).trim();
+    String(formData.get(k) ?? fallback)
+      .replace(/[\u2028\u2029]/g, "\n").replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u200B-\u200F\uE000-\uF8FF\uFEFF\uFFFD]/g, "")
+      .trim();
   // row count posted by the SchemeEditor (variable-length lists). Bounded; null
   // when absent (an older form) → fall back to fixed-index mapping over existing.
   const cnt = (k: string): number | null => {
@@ -1488,6 +1510,15 @@ export async function updateSchemeAction(formData: FormData) {
   let paramsRestructured = false;
   if (paramCount === null) {
     parameters = existing.parameters.map((p, i) => readParam(i, p));
+    // Calibration schemes must not carry the "New project" template's blank
+    // standard rows — they block the calibration fallbacks (F 7.2.1-5's
+    // quantity × directions, the заявка's device item). All-blank → none.
+    if (
+      existing.type === "C" && existing.calibration &&
+      parameters.every((p) => !p.standardEn && !p.standardBg && !p.characteristicEn && !p.characteristicBg)
+    ) {
+      parameters = [];
+    }
   } else {
     const rows: { p: Parameter; orig: number | null }[] = [];
     const usedOrig = new Set<number>(); // a crafted duplicate orig must not collapse the map
@@ -1543,9 +1574,12 @@ export async function updateSchemeAction(formData: FormData) {
   // calibration block (only for C schemes that already carry calibration data)
   let calibration = existing.calibration;
   if (existing.calibration) {
+    // A POSTED empty field clears the list (the editor's labels promise "empty
+    // if none"); the fallback applies only when the field wasn't posted at all
+    // (an older form that doesn't carry it).
     const list = (k: string, fb: string[]) => {
-      const raw = str(k, "");
-      return raw ? raw.split(",").map((x) => x.trim()).filter(Boolean) : fb;
+      if (formData.get(k) === null) return fb;
+      return str(k, "").split(",").map((x) => x.trim()).filter(Boolean);
     };
     const c = existing.calibration;
     calibration = {

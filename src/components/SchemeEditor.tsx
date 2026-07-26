@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { updateSchemeAction } from "@/lib/actions";
@@ -55,12 +55,84 @@ const STATUSES: { value: SchemeStatus; bg: string; en: string }[] = [
   { value: "closed", bg: "Затворена", en: "Closed" },
 ];
 
-function FieldS({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+// Text pasted from Word/PDF often drags in invisible junk (control chars,
+// zero-width marks, private-use glyphs, BOM, U+FFFD). Strip those on input so
+// they never reach the documents; visible characters are left untouched.
+const cleanPaste = (v: string) =>
+  v.replace(/[\u2028\u2029]/g, "\n").replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u200B-\u200F\uE000-\uF8FF\uFEFF\uFFFD]/g, "");
+
+function FieldS({ label, value, onChange, placeholder, id }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string; id?: string;
+}) {
   return (
     <label className="block">
       <span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{label}</span>
-      <input value={value} onChange={(e) => onChange(e.target.value)} className={inputCls} style={inputStyle} />
+      <input id={id} value={value} onChange={(e) => onChange(cleanPaste(e.target.value))} placeholder={placeholder} className={inputCls} style={inputStyle} />
     </label>
+  );
+}
+
+function AreaS({ label, value, onChange, placeholder, id, rows = 3 }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string; id?: string; rows?: number;
+}) {
+  return (
+    <label className="block">
+      <span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{label}</span>
+      <textarea id={id} value={value} onChange={(e) => onChange(cleanPaste(e.target.value))} placeholder={placeholder} rows={rows} className={inputCls} style={{ ...inputStyle, resize: "vertical" }} />
+    </label>
+  );
+}
+
+// A small labelled sub-group inside a card: tells the owner WHERE these fields
+// end up (the заявка, the Plan, internal docs) — the map that was missing.
+function DestGroup({ title, children, cols = "1fr 1fr" }: { title: string; children: React.ReactNode; cols?: string }) {
+  return (
+    <div className="rounded-lg p-2 mb-2" style={{ border: "1px dashed var(--line)", background: "#fcfdfb" }}>
+      <div className="text-xs font-bold mb-1.5" style={{ color: "var(--green-dark)" }}>{title}</div>
+      <div className="grid gap-2" style={{ gridTemplateColumns: cols }}>{children}</div>
+    </div>
+  );
+}
+
+// ── Live previews: exactly what the typed values produce ────────────────────
+// The dark заявка item (ApplyWizard step 3 look). Clicking a part focuses the
+// field it comes from, so the preview doubles as a "what goes where" map.
+function PreviewApply({ standard, characteristic, onStd, onChar, label }: {
+  standard: string; characteristic: string; onStd?: () => void; onChar?: () => void; label: string;
+}) {
+  return (
+    <div>
+      <div className="text-xs mb-1" style={{ color: "var(--muted)" }}>{label}</div>
+      <div className="flex items-start gap-3 rounded-lg p-3" style={{ background: "#1b2016", border: "1px solid #36422c" }}>
+        <span style={{ width: 46, flex: "0 0 auto", background: "#e9eef0", border: "1px solid #2b3422", borderRadius: 8, padding: "6px 0", color: "#10140d", textAlign: "center", fontSize: 13 }}>0</span>
+        <div style={{ fontSize: "0.9rem", minWidth: 0 }}>
+          <div data-prev="std" onClick={onStd} style={{ color: "var(--green-light, #9dc088)", fontWeight: 700, cursor: onStd ? "pointer" : undefined, overflowWrap: "anywhere" }}>{standard || "…"}</div>
+          <div data-prev="char" onClick={onChar} style={{ color: "#cdd6c2", cursor: onChar ? "pointer" : undefined, overflowWrap: "anywhere" }}>{characteristic || "…"}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// The Plan §6 row (Метод | Характеристика | Обхват | Проби), white-paper style.
+function PreviewPlan({ standard, characteristic, range, specimens, label, heads, onCells }: {
+  standard: string; characteristic: string; range: string; specimens: string; label: string;
+  heads: [string, string, string, string]; onCells?: [() => void, () => void, () => void, () => void];
+}) {
+  const td = { border: "1px solid #dcdcdc", padding: "3px 7px", fontSize: 11.5, verticalAlign: "top" as const, overflowWrap: "anywhere" as const };
+  const cells = [standard, characteristic, range, specimens];
+  return (
+    <div>
+      <div className="text-xs mb-1" style={{ color: "var(--muted)" }}>{label}</div>
+      <table style={{ borderCollapse: "collapse", width: "100%", background: "#fff" }}>
+        <thead>
+          <tr>{heads.map((h) => <th key={h} style={{ ...td, background: "#eef3ea", color: "#456b2c", fontWeight: 700 }}>{h}</th>)}</tr>
+        </thead>
+        <tbody>
+          <tr>{cells.map((c, i) => <td key={i} onClick={onCells?.[i]} style={{ ...td, cursor: onCells ? "pointer" : undefined }}>{c ? `${i === 0 ? "* " : ""}${c}` : "—"}</td>)}</tr>
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -117,18 +189,46 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
   const { lang } = useLang();
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
 
-  const uidSeq = useMemo(() => ({ n: 0 }), []);
-  const nextUid = () => ++uidSeq.n;
+  // uids must be DETERMINISTIC across server render and hydration (they become
+  // DOM ids the previews focus by): initial rows use their index; rows added
+  // later draw from a ref-based counter that only advances in event handlers
+  // (client-only), so SSR and client markup always match.
+  const uidRef = useRef(1000);
+  const nextUid = () => ++uidRef.current;
 
-  const [sched, setSched] = useState<SchedRow[]>(() => init.schedule.map((s) => ({ ...s, uid: nextUid() })));
+  const [sched, setSched] = useState<SchedRow[]>(() => init.schedule.map((s, i) => ({ ...s, uid: i })));
   const [params, setParams] = useState<ParamRow[]>(() =>
-    init.parameters.map((p, i) => ({ ...p, sigma: p.sigmaMin != null ? String(p.sigmaMin) : "", uid: nextUid(), orig: i }))
+    init.parameters.map((p, i) => ({ ...p, sigma: p.sigmaMin != null ? String(p.sigmaMin) : "", uid: i, orig: i }))
   );
   const [status, setStatus] = useState<SchemeStatus>(init.status);
   // controlled (not defaultChecked): the checkbox unmounts while status is
   // "open", and an uncontrolled remount would silently revert the owner's toggle
   const [announced, setAnnounced] = useState(init.announced);
   const [copied, setCopied] = useState(false);
+
+  // Calibration schemes have NO standards — the device/quantity/points ARE the
+  // scheme (they feed all C documents and the заявка). Controlled so the live
+  // preview mirrors typing; posted via hidden cal_* inputs (the names the save
+  // action already reads). Lists are edited as comma-joined text.
+  const isCal = !!init.calibration;
+  const [cal, setCal] = useState(() => ({
+    quantityBg: init.calibration?.quantityBg ?? "",
+    quantityEn: init.calibration?.quantityEn ?? "",
+    unit: init.calibration?.unit ?? "",
+    deviceBg: init.calibration?.deviceBg ?? "",
+    deviceEn: init.calibration?.deviceEn ?? "",
+    // filter(Boolean): the New-project template used to seed blank point slots —
+    // joining those would show a literal ", , , ," instead of the placeholder
+    points: init.calibration?.points.filter(Boolean).join(", ") ?? "",
+    dirBg: init.calibration?.directionsBg.filter(Boolean).join(", ") ?? "",
+    dirEn: init.calibration?.directionsEn.filter(Boolean).join(", ") ?? "",
+    refLabBg: init.calibration?.referenceLabBg ?? "",
+    refLabEn: init.calibration?.referenceLabEn ?? "",
+    refLocBg: init.calibration?.referenceLabLocBg ?? "",
+    refLocEn: init.calibration?.referenceLabLocEn ?? "",
+    methodBg: init.calibration?.methodBg ?? "",
+    methodEn: init.calibration?.methodEn ?? "",
+  }));
 
   const move = <T,>(arr: T[], i: number, d: -1 | 1): T[] => {
     const out = [...arr];
@@ -285,115 +385,195 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
         ＋ {L("Добави дата", "Add date")}
       </button>
 
-      {/* ── Object + standards ────────────────────────────────────── */}
-      <SectionTitle hint={L("Обектът е заглавието над стандартите в заявката; всеки стандарт става поле „брой участия“ в стъпка 3 на заявката.",
-                            "The object is the heading above the standards in the apply wizard; every standard becomes a “participations” box in its step 3.")}>
-        {L("Обект и стандарти за участие", "Object & standards for participation")}
-      </SectionTitle>
-      <div className="grid gap-3 mb-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
-        <Field label={L("Обект (БГ)", "Object (BG)")} name="objectBg" def={init.objectBg} />
-        <Field label={L("Обект (EN)", "Object (EN)")} name="objectEn" def={init.objectEn} />
-      </div>
-      <input type="hidden" name="paramCount" value={params.length} />
-      <div className="grid gap-4">
-        {params.map((p, i) => (
-          <div key={p.uid} className="card p-3" style={p.orig === null ? { borderColor: "var(--green-line)", background: "var(--green-soft)" } : {}}>
-            <div className="flex items-center gap-2 mb-2">
-              <span style={{ width: 26, height: 26, borderRadius: 7, background: "#e7f0e6", color: "#3d6b47", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12 }}>{i + 1}</span>
-              <span className="text-sm font-bold" style={{ color: "var(--green-dark)" }}>
-                {p.standardBg || p.standardEn || L("Нов стандарт", "New standard")}
-              </span>
-              {p.orig === null && (
-                <span className="text-xs rounded-full px-2" style={{ background: "#e3eeda", color: "#456b2c", fontWeight: 700 }}>{L("нов", "new")}</span>
-              )}
-              <div style={{ marginLeft: "auto" }}>
-                <RowCtl
-                  onUp={() => setParams((s) => move(s, i, -1))}
-                  onDown={() => setParams((s) => move(s, i, 1))}
-                  onDel={() => delParam(i)}
-                  canUp={i > 0}
-                  canDown={i < params.length - 1}
-                  canDel={params.length > 1}
-                  delTitle={L("Премахни стандарта", "Remove the standard")}
-                  lastTitle={L("Схемата трябва да има поне един стандарт", "The scheme needs at least one standard")}
-                />
-              </div>
-            </div>
-            <div className="grid gap-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
-              <FieldS label={L("Стандарт (БГ)", "Standard (BG)")} value={p.standardBg} onChange={(v) => setParams((s) => patchRow(s, i, { standardBg: v }))} />
-              <FieldS label={L("Стандарт (EN)", "Standard (EN)")} value={p.standardEn} onChange={(v) => setParams((s) => patchRow(s, i, { standardEn: v }))} />
-              <FieldS label={L("Характеристика (БГ)", "Characteristic (BG)")} value={p.characteristicBg} onChange={(v) => setParams((s) => patchRow(s, i, { characteristicBg: v }))} />
-              <FieldS label={L("Характеристика (EN)", "Characteristic (EN)")} value={p.characteristicEn} onChange={(v) => setParams((s) => patchRow(s, i, { characteristicEn: v }))} />
-              <FieldS label={L("Обхват (БГ)", "Range (BG)")} value={p.rangeBg} onChange={(v) => setParams((s) => patchRow(s, i, { rangeBg: v }))} />
-              <FieldS label={L("Обхват (EN)", "Range (EN)")} value={p.rangeEn} onChange={(v) => setParams((s) => patchRow(s, i, { rangeEn: v }))} />
-              <FieldS label={L("Проби (БГ)", "Specimens (BG)")} value={p.specimensBg} onChange={(v) => setParams((s) => patchRow(s, i, { specimensBg: v }))} />
-              <FieldS label={L("Проби (EN)", "Specimens (EN)")} value={p.specimensEn} onChange={(v) => setParams((s) => patchRow(s, i, { specimensEn: v }))} />
-              <FieldS label={L("σpt,min — долен праг за σ (по избор)", "σpt,min — proficiency-SD floor (optional)")} value={p.sigma} onChange={(v) => setParams((s) => patchRow(s, i, { sigma: v }))} />
-            </div>
-            <input type="hidden" name={`param_${i}_orig`} value={p.orig === null ? "" : String(p.orig)} />
-            <input type="hidden" name={`param_${i}_stdBg`} value={p.standardBg} />
-            <input type="hidden" name={`param_${i}_stdEn`} value={p.standardEn} />
-            <input type="hidden" name={`param_${i}_chBg`} value={p.characteristicBg} />
-            <input type="hidden" name={`param_${i}_chEn`} value={p.characteristicEn} />
-            <input type="hidden" name={`param_${i}_rgBg`} value={p.rangeBg} />
-            <input type="hidden" name={`param_${i}_rgEn`} value={p.rangeEn} />
-            <input type="hidden" name={`param_${i}_spBg`} value={p.specimensBg} />
-            <input type="hidden" name={`param_${i}_spEn`} value={p.specimensEn} />
-            <input type="hidden" name={`param_${i}_sigmaMin`} value={p.sigma} />
+      {isCal ? (
+        <>
+          {/* ── CALIBRATION scheme: device + points ARE the scheme — no standards ── */}
+          <SectionTitle hint={L("Устройството, величината и точките са това, което лабораториите виждат в заявката и в документите (Покана §2, План §6). Стандарти няма при калибриране.",
+                                "The device, quantity and points are what labs see in the заявка and the documents (Invitation §2, Plan §6). Calibration schemes have no standards.")}>
+            {L("Обект и калибриране", "Object & calibration")}
+          </SectionTitle>
+          <div className="grid gap-3 mb-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
+            <Field label={L("Обект (БГ) — заглавието в заявката", "Object (BG) — the заявка heading")} name="objectBg" def={init.objectBg} />
+            <Field label={L("Обект (EN)", "Object (EN)")} name="objectEn" def={init.objectEn} />
           </div>
-        ))}
-      </div>
-      <button type="button" className="btn mt-3" onClick={addParam} style={{ borderColor: "var(--green-line)", color: "var(--green-dark)" }}>
-        ＋ {L("Добави стандарт", "Add standard")}
-      </button>
+          <div className="card p-3">
+            <DestGroup title={L("Устройство за калибриране → Покана §2 · План §6 · заявка стъпка 3", "Calibration device → Invitation §2 · Plan §6 · заявка step 3")}>
+              <AreaS id="cal-devBg" label={L("Устройство (БГ)", "Device (BG)")} value={cal.deviceBg}
+                placeholder={L("Цифров хигрометър ETI Ltd THERMA 6102, с външна сонда; обхват 0–100 %RH; разделителна способност 0,1 %RH", "Digital hygrometer ETI Ltd THERMA 6102 …")}
+                onChange={(v) => setCal((c) => ({ ...c, deviceBg: v }))} />
+              <AreaS label={L("Устройство (EN)", "Device (EN)")} value={cal.deviceEn}
+                placeholder="Digital hygrometer ETI Ltd THERMA 6102, external probe; range 0–100 %RH; resolution 0.1 %RH"
+                onChange={(v) => setCal((c) => ({ ...c, deviceEn: v }))} />
+              <FieldS id="cal-qBg" label={L("Величина (БГ)", "Quantity (BG)")} value={cal.quantityBg} placeholder={L("Относителна влажност на въздуха", "…")} onChange={(v) => setCal((c) => ({ ...c, quantityBg: v }))} />
+              <FieldS label={L("Величина (EN)", "Quantity (EN)")} value={cal.quantityEn} placeholder="Relative air humidity" onChange={(v) => setCal((c) => ({ ...c, quantityEn: v }))} />
+              <FieldS id="cal-pts" label={L("Точки на калибриране (със запетая)", "Calibration points (comma-separated)")} value={cal.points} placeholder="10, 20, 30, 50, 70, 90" onChange={(v) => setCal((c) => ({ ...c, points: v }))} />
+              <FieldS label={L("Единица", "Unit")} value={cal.unit} placeholder="%RH" onChange={(v) => setCal((c) => ({ ...c, unit: v }))} />
+              <FieldS label={L("Посоки БГ (със запетая; празно ако няма)", "Directions BG (comma-sep.; empty if none)")} value={cal.dirBg} placeholder={L("Опън, Натиск", "…")} onChange={(v) => setCal((c) => ({ ...c, dirBg: v }))} />
+              <FieldS label={L("Посоки EN (със запетая)", "Directions EN (comma-separated)")} value={cal.dirEn} placeholder="Tension, Compression" onChange={(v) => setCal((c) => ({ ...c, dirEn: v }))} />
+            </DestGroup>
+            <DestGroup title={L("Референтна лаборатория и метод → План §3 · §6", "Reference laboratory & method → Plan §3 · §6")}>
+              <FieldS label={L("Референтна лаборатория (БГ)", "Reference lab (BG)")} value={cal.refLabBg} onChange={(v) => setCal((c) => ({ ...c, refLabBg: v }))} />
+              <FieldS label={L("Референтна лаборатория (EN)", "Reference lab (EN)")} value={cal.refLabEn} onChange={(v) => setCal((c) => ({ ...c, refLabEn: v }))} />
+              <FieldS label={L("Местоположение (БГ)", "Location (BG)")} value={cal.refLocBg} onChange={(v) => setCal((c) => ({ ...c, refLocBg: v }))} />
+              <FieldS label={L("Местоположение (EN)", "Location (EN)")} value={cal.refLocEn} onChange={(v) => setCal((c) => ({ ...c, refLocEn: v }))} />
+              <FieldS label={L("Метод (БГ)", "Method (BG)")} value={cal.methodBg} placeholder={L("ISO 376 — метод на пряко сравнение", "…")} onChange={(v) => setCal((c) => ({ ...c, methodBg: v }))} />
+              <FieldS label={L("Метод (EN)", "Method (EN)")} value={cal.methodEn} placeholder="ISO 376 — direct comparison method" onChange={(v) => setCal((c) => ({ ...c, methodEn: v }))} />
+            </DestGroup>
+            {/* live preview: the заявка item labs will see, built from the fields above */}
+            <PreviewApply
+              label={L("Преглед — как ще го видят лабораториите в заявката:", "Preview — how labs will see it in the заявка:")}
+              standard={cal.deviceBg}
+              characteristic={`${cal.quantityBg}${cal.points.trim() ? ` (${cal.points.split(",").map((x) => x.trim()).filter(Boolean).join(" " + cal.unit + ", ")} ${cal.unit})` : ""}`}
+              onStd={() => document.getElementById("cal-devBg")?.focus()}
+              onChar={() => document.getElementById("cal-qBg")?.focus()}
+            />
+            {/* posted under the SAME names the save action already reads */}
+            <input type="hidden" name="cal_quantityBg" value={cal.quantityBg} />
+            <input type="hidden" name="cal_quantityEn" value={cal.quantityEn} />
+            <input type="hidden" name="cal_unit" value={cal.unit} />
+            <input type="hidden" name="cal_deviceBg" value={cal.deviceBg} />
+            <input type="hidden" name="cal_deviceEn" value={cal.deviceEn} />
+            <input type="hidden" name="cal_points" value={cal.points} />
+            <input type="hidden" name="cal_dirBg" value={cal.dirBg} />
+            <input type="hidden" name="cal_dirEn" value={cal.dirEn} />
+            <input type="hidden" name="cal_refLabBg" value={cal.refLabBg} />
+            <input type="hidden" name="cal_refLabEn" value={cal.refLabEn} />
+            <input type="hidden" name="cal_refLocBg" value={cal.refLocBg} />
+            <input type="hidden" name="cal_refLocEn" value={cal.refLocEn} />
+            <input type="hidden" name="cal_methodBg" value={cal.methodBg} />
+            <input type="hidden" name="cal_methodEn" value={cal.methodEn} />
+          </div>
+        </>
+      ) : (
+        <>
+          {/* ── TESTING scheme: object + standards ───────────────────── */}
+          <SectionTitle hint={L("Обектът е заглавието над стандартите в заявката; всеки стандарт става поле „брой участия“ в стъпка 3 на заявката.",
+                                "The object is the heading above the standards in the apply wizard; every standard becomes a “participations” box in its step 3.")}>
+            {L("Обект и стандарти за участие", "Object & standards for participation")}
+          </SectionTitle>
+          <div className="grid gap-3 mb-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
+            <Field label={L("Обект (БГ) — заглавието в заявката", "Object (BG) — the заявка heading")} name="objectBg" def={init.objectBg} />
+            <Field label={L("Обект (EN)", "Object (EN)")} name="objectEn" def={init.objectEn} />
+          </div>
+          <input type="hidden" name="paramCount" value={params.length} />
+          <div className="grid gap-4">
+            {params.map((p, i) => (
+              <div key={p.uid} className="card p-3" style={p.orig === null ? { borderColor: "var(--green-line)", background: "var(--green-soft)" } : {}}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span style={{ width: 26, height: 26, borderRadius: 7, background: "#e7f0e6", color: "#3d6b47", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12 }}>{i + 1}</span>
+                  <span className="text-sm font-bold" style={{ color: "var(--green-dark)" }}>
+                    {p.standardBg || p.standardEn || L("Нов стандарт", "New standard")}
+                  </span>
+                  {p.orig === null && (
+                    <span className="text-xs rounded-full px-2" style={{ background: "#e3eeda", color: "#456b2c", fontWeight: 700 }}>{L("нов", "new")}</span>
+                  )}
+                  <div style={{ marginLeft: "auto" }}>
+                    <RowCtl
+                      onUp={() => setParams((s) => move(s, i, -1))}
+                      onDown={() => setParams((s) => move(s, i, 1))}
+                      onDel={() => delParam(i)}
+                      canUp={i > 0}
+                      canDown={i < params.length - 1}
+                      canDel={params.length > 1}
+                      delTitle={L("Премахни стандарта", "Remove the standard")}
+                      lastTitle={L("Схемата трябва да има поне един стандарт", "The scheme needs at least one standard")}
+                    />
+                  </div>
+                </div>
+                {/* fields grouped by WHERE they end up — the map the old form lacked */}
+                <DestGroup title={L("Какво виждат лабораториите → Покана §2 · заявка стъпка 3", "What labs see → Invitation §2 · заявка step 3")}>
+                  <FieldS id={`p${p.uid}-stdBg`} label={L("Код на стандарта + метод (БГ)", "Standard code + method (BG)")} value={p.standardBg}
+                    placeholder={L("БДС EN 1097-6, т. 7 (Метод с телена кошница)", "…")}
+                    onChange={(v) => setParams((s) => patchRow(s, i, { standardBg: v }))} />
+                  <FieldS label={L("Код на стандарта + метод (EN)", "Standard code + method (EN)")} value={p.standardEn}
+                    placeholder="EN 1097-6, cl. 7 (Wire basket method)"
+                    onChange={(v) => setParams((s) => patchRow(s, i, { standardEn: v }))} />
+                  <FieldS id={`p${p.uid}-chBg`} label={L("Характеристика + бележка за определянията (БГ)", "Characteristic + determinations note (BG)")} value={p.characteristicBg}
+                    placeholder={L("Абсорбция на вода, WA24 (три определяния)", "…")}
+                    onChange={(v) => setParams((s) => patchRow(s, i, { characteristicBg: v }))} />
+                  <FieldS label={L("Характеристика + бележка (EN)", "Characteristic + note (EN)")} value={p.characteristicEn}
+                    placeholder="Water absorption, WA24 (three determinations)"
+                    onChange={(v) => setParams((s) => patchRow(s, i, { characteristicEn: v }))} />
+                </DestGroup>
+                <DestGroup title={L("Само в Плана §6 и Доклада — лабораториите НЕ го виждат в заявката", "Plan §6 & Report only — labs do NOT see this in the заявка")}>
+                  <FieldS id={`p${p.uid}-rgBg`} label={L("Обхват на очакваните стойности (БГ)", "Range of expected values (BG)")} value={p.rangeBg}
+                    placeholder={L("(0,1 ÷ 3,0) %", "…")}
+                    onChange={(v) => setParams((s) => patchRow(s, i, { rangeBg: v }))} />
+                  <FieldS label={L("Обхват (EN)", "Range (EN)")} value={p.rangeEn} placeholder="(0.1 ÷ 3.0) %"
+                    onChange={(v) => setParams((s) => patchRow(s, i, { rangeEn: v }))} />
+                  <FieldS id={`p${p.uid}-spBg`} label={L("Проби (БГ)", "Specimens (BG)")} value={p.specimensBg} placeholder={L("3 блокчета", "…")}
+                    onChange={(v) => setParams((s) => patchRow(s, i, { specimensBg: v }))} />
+                  <FieldS label={L("Проби (EN)", "Specimens (EN)")} value={p.specimensEn} placeholder="3 blocks"
+                    onChange={(v) => setParams((s) => patchRow(s, i, { specimensEn: v }))} />
+                </DestGroup>
+                <DestGroup title={L("Вътрешно — Статистически проект и оценките (z)", "Internal — Statistical project & the z-scores")} cols="240px">
+                  <FieldS label={L("σpt,min — долен праг за σ (по избор)", "σpt,min — proficiency-SD floor (optional)")} value={p.sigma} placeholder={L("напр. 0,05", "e.g. 0.05")}
+                    onChange={(v) => setParams((s) => patchRow(s, i, { sigma: v }))} />
+                </DestGroup>
+                {/* live previews — click a part to jump to its field */}
+                <div className="grid gap-2 mt-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                  <PreviewApply
+                    label={L("Заявката (стъпка 3):", "The заявка (step 3):")}
+                    standard={p.standardBg}
+                    characteristic={p.characteristicBg}
+                    onStd={() => document.getElementById(`p${p.uid}-stdBg`)?.focus()}
+                    onChar={() => document.getElementById(`p${p.uid}-chBg`)?.focus()}
+                  />
+                  <PreviewPlan
+                    label={L("Планът (§6):", "The Plan (§6):")}
+                    heads={[L("Метод на изпитване", "Test method"), L("Характеристика", "Characteristic"), L("Обхват", "Range"), L("Проби", "Specimens")]}
+                    standard={p.standardBg} characteristic={p.characteristicBg} range={p.rangeBg} specimens={p.specimensBg}
+                    onCells={[
+                      () => document.getElementById(`p${p.uid}-stdBg`)?.focus(),
+                      () => document.getElementById(`p${p.uid}-chBg`)?.focus(),
+                      () => document.getElementById(`p${p.uid}-rgBg`)?.focus(),
+                      () => document.getElementById(`p${p.uid}-spBg`)?.focus(),
+                    ]}
+                  />
+                </div>
+                <input type="hidden" name={`param_${i}_orig`} value={p.orig === null ? "" : String(p.orig)} />
+                <input type="hidden" name={`param_${i}_stdBg`} value={p.standardBg} />
+                <input type="hidden" name={`param_${i}_stdEn`} value={p.standardEn} />
+                <input type="hidden" name={`param_${i}_chBg`} value={p.characteristicBg} />
+                <input type="hidden" name={`param_${i}_chEn`} value={p.characteristicEn} />
+                <input type="hidden" name={`param_${i}_rgBg`} value={p.rangeBg} />
+                <input type="hidden" name={`param_${i}_rgEn`} value={p.rangeEn} />
+                <input type="hidden" name={`param_${i}_spBg`} value={p.specimensBg} />
+                <input type="hidden" name={`param_${i}_spEn`} value={p.specimensEn} />
+                <input type="hidden" name={`param_${i}_sigmaMin`} value={p.sigma} />
+              </div>
+            ))}
+          </div>
+          <button type="button" className="btn mt-3" onClick={addParam} style={{ borderColor: "var(--green-line)", color: "var(--green-dark)" }}>
+            ＋ {L("Добави стандарт", "Add standard")}
+          </button>
+        </>
+      )}
 
-      {/* ── Advanced ──────────────────────────────────────────────── */}
+      {/* ── Advanced (the calibration fields live in the MAIN section above) ── */}
       <details className="mt-8">
         <summary className="cursor-pointer text-sm font-bold py-2" style={{ color: "var(--green-dark)" }}>
-          {L("Разширени настройки (мин. участници · цени", "Advanced settings (min. participants · prices")}
-          {init.calibration ? L(" · калибриране)", " · calibration)") : ")"}
+          {init.prices.length
+            ? L("Разширени настройки (мин. участници · цени)", "Advanced settings (min. participants · prices)")
+            : L("Разширени настройки (мин. участници)", "Advanced settings (min. participants)")}
         </summary>
 
         <div className="mt-2 mb-4" style={{ maxWidth: 240 }}>
           <Field label={L("Минимален брой участници", "Minimum participants")} name="minParticipants" def={String(init.minParticipants)} />
         </div>
 
-        <SectionTitle>{L("Цени (§21)", "Prices (§21)")}</SectionTitle>
-        <div className="grid gap-2">
-          {init.prices.map((pr, i) => (
-            <div key={i} className="grid gap-2" style={{ gridTemplateColumns: "1fr 1fr 120px 120px" }}>
-              <Field label={L("Характеристика (БГ)", "Characteristic (BG)")} name={`price_${i}_chBg`} def={pr.characteristicBg} />
-              <Field label={L("Характеристика (EN)", "Characteristic (EN)")} name={`price_${i}_chEn`} def={pr.characteristicEn} />
-              <Field label={L("Първа проба", "First sample")} name={`price_${i}_first`} def={pr.first} />
-              <Field label={L("Всяка следваща", "Each additional")} name={`price_${i}_add`} def={pr.additional} />
-            </div>
-          ))}
-        </div>
-
-        {init.calibration && (
+        {init.prices.length > 0 && (
           <>
-            <SectionTitle>{L("Калибриране", "Calibration")}</SectionTitle>
-            <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
-              <Field label={L("Величина (БГ)", "Quantity (BG)")} name="cal_quantityBg" def={init.calibration.quantityBg} />
-              <Field label={L("Величина (EN)", "Quantity (EN)")} name="cal_quantityEn" def={init.calibration.quantityEn} />
-              <Field label={L("Единица", "Unit")} name="cal_unit" def={init.calibration.unit} />
-            </div>
-            <div className="grid gap-3 mt-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
-              <Field label={L("Устройство (БГ)", "Device (BG)")} name="cal_deviceBg" def={init.calibration.deviceBg} />
-              <Field label={L("Устройство (EN)", "Device (EN)")} name="cal_deviceEn" def={init.calibration.deviceEn} />
-            </div>
-            <div className="grid gap-3 mt-3">
-              <Field label={L("Точки на калибриране (със запетая)", "Calibration points (comma-separated)")} name="cal_points" def={init.calibration.points.join(", ")} />
-            </div>
-            <div className="grid gap-3 mt-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
-              <Field label={L("Посоки БГ (със запетая)", "Directions BG (comma-separated)")} name="cal_dirBg" def={init.calibration.directionsBg.join(", ")} />
-              <Field label={L("Посоки EN (със запетая)", "Directions EN (comma-separated)")} name="cal_dirEn" def={init.calibration.directionsEn.join(", ")} />
-              <Field label={L("Референтна лаборатория (БГ)", "Reference lab (BG)")} name="cal_refLabBg" def={init.calibration.referenceLabBg} />
-              <Field label={L("Референтна лаборатория (EN)", "Reference lab (EN)")} name="cal_refLabEn" def={init.calibration.referenceLabEn} />
-              <Field label={L("Местоположение (БГ)", "Location (BG)")} name="cal_refLocBg" def={init.calibration.referenceLabLocBg} />
-              <Field label={L("Location (EN)", "Reference lab location (EN)")} name="cal_refLocEn" def={init.calibration.referenceLabLocEn} />
-              <Field label={L("Метод (БГ)", "Method (BG)")} name="cal_methodBg" def={init.calibration.methodBg} />
-              <Field label={L("Метод (EN)", "Method (EN)")} name="cal_methodEn" def={init.calibration.methodEn} />
+            <SectionTitle>{L("Цени (§21)", "Prices (§21)")}</SectionTitle>
+            <div className="grid gap-2">
+              {init.prices.map((pr, i) => (
+                <div key={i} className="grid gap-2" style={{ gridTemplateColumns: "1fr 1fr 120px 120px" }}>
+                  <Field label={L("Характеристика (БГ)", "Characteristic (BG)")} name={`price_${i}_chBg`} def={pr.characteristicBg} />
+                  <Field label={L("Характеристика (EN)", "Characteristic (EN)")} name={`price_${i}_chEn`} def={pr.characteristicEn} />
+                  <Field label={L("Първа проба", "First sample")} name={`price_${i}_first`} def={pr.first} />
+                  <Field label={L("Всяка следваща", "Each additional")} name={`price_${i}_add`} def={pr.additional} />
+                </div>
+              ))}
             </div>
           </>
         )}

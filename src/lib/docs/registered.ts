@@ -123,7 +123,13 @@ const FORM2 = "F 7.2.1-5";
 // keep rendering fully). Calibration schemes model scope in s.calibration, not
 // parameters — fall back to quantity × directions there.
 function charRows(s: Scheme, lang: Lang, chosen?: number[]): { char: string; std: string }[] {
-  if (s.parameters.length === 0 && s.type === "C" && s.calibration) {
+  // All-blank parameter rows (the "New project" template's unfilled slots) count
+  // as none — otherwise a C scheme would print empty rows instead of its
+  // calibration quantity × directions.
+  const hasRealParams = s.parameters.some(
+    (p) => p.standardEn || p.standardBg || p.characteristicEn || p.characteristicBg
+  );
+  if (!hasRealParams && s.type === "C" && s.calibration) {
     const q = pick(lang, s.calibration.quantityEn, s.calibration.quantityBg);
     const dirs = lang === "bg" ? s.calibration.directionsBg : s.calibration.directionsEn;
     return dirs.length ? dirs.map((d) => ({ char: `${q} — ${d}`, std: "" })) : [{ char: q, std: "" }];

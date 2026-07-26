@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getScheme } from "@/lib/store";
 import ApplyWizard from "@/components/ApplyWizard";
 import { paramsSignature } from "@/lib/param-remap";
+import { calApplyItem } from "@/lib/apply-item";
 import { getServerT } from "@/lib/i18n-server";
 
 export default async function ApplyToScheme({
@@ -44,11 +45,18 @@ export default async function ApplyToScheme({
           titleEn={s.titleEn}
           objectBg={s.objectBg}
           objectEn={s.objectEn}
-          params={s.parameters.map((p) => ({
-            standard: lang === "bg" ? p.standardBg : p.standardEn,
-            characteristic: lang === "bg" ? p.characteristicBg : p.characteristicEn,
-          }))}
+          params={
+            // Calibration schemes participate with the DEVICE (one item built
+            // from scheme.calibration); testing schemes with their standards.
+            calApplyItem(s, lang)
+              ? [calApplyItem(s, lang)!]
+              : s.parameters.map((p) => ({
+                  standard: lang === "bg" ? p.standardBg : p.standardEn,
+                  characteristic: lang === "bg" ? p.characteristicBg : p.characteristicEn,
+                }))
+          }
           paramSig={paramsSignature(s.parameters)}
+          branch={calApplyItem(s, lang) ? "cal" : "std"}
         />
       </div>
     </>

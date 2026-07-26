@@ -25,6 +25,8 @@ export default async function ApplicationsPage({
   const { tr } = await getServerT();
 
   const charName = (i: string) => {
+    // "cal" = a calibration scheme's device item (lib/apply-item)
+    if (i === "cal") return s.calibration?.quantityEn || s.calibration?.quantityBg || "Calibration";
     const p = s.parameters[Number(i)];
     return p ? p.characteristicEn : `#${i}`;
   };
