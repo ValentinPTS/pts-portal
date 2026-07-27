@@ -5,12 +5,14 @@ import { getDoc } from "@/lib/documents";
 import { listParticipants } from "@/lib/participants";
 import DocViewer from "@/components/DocViewer";
 import { getServerT } from "@/lib/i18n-server";
+import { requireStaff } from "@/lib/roles";
 
 export default async function DocPage({
   params,
 }: {
   params: Promise<{ id: string; doc: string }>;
 }) {
+  await requireStaff(); // read gate: manager/staff/auditor only
   const { id, doc } = await params;
   const s = await getScheme(id);
   const def = getDoc(doc);

@@ -3,6 +3,7 @@ import { FolderTile } from "@/components/Tiles";
 import { LIFECYCLE_ORDER, TYPE_SLUG, lifecycleMeta, lifecycleOf, typeLabel } from "@/lib/folders";
 import { getServerT } from "@/lib/i18n-server";
 import { plural } from "@/lib/i18n";
+import { requireStaff } from "@/lib/roles";
 
 // Render per-request so the scheme counts reflect live data (not frozen at build)
 // and the build doesn't call Supabase while compiling.
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 // Home = the two top-level folders (Testing / Calibration). New schemes are
 // created inside, organised by year. Only needs counts → scheme summaries.
 export default async function Home() {
+  await requireStaff(); // read gate: manager/staff/auditor only
   const schemes = await listSchemeSummaries();
   const { lang, tr } = await getServerT();
   // e.g. "5 схеми — 3 текущи · 1 предстоящи · 1 приключени" (zero buckets hidden)

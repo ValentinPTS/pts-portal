@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getScheme } from "@/lib/store";
 import SchemeEditor from "@/components/SchemeEditor";
 import { getServerT } from "@/lib/i18n-server";
+import { requireStaff } from "@/lib/roles";
 
 // The scheme setup page: essentials (number, name, photo), opening the scheme,
 // the schedule dates and the participation standards — with add/remove/reorder.
@@ -15,6 +16,7 @@ export default async function EditSchemePage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ err?: string; codes?: string }>;
 }) {
+  await requireStaff(); // read gate: manager/staff/auditor only
   const { id } = await params;
   const { err, codes } = await searchParams;
   const s = await getScheme(id);

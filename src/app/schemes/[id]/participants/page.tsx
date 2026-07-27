@@ -4,7 +4,7 @@ import { getScheme } from "@/lib/store";
 import { listParticipants } from "@/lib/participants";
 import { addParticipantAction, inviteLabAction, updateParticipantAction } from "@/lib/actions";
 import { getServerT } from "@/lib/i18n-server";
-import { canRevealNames, getCurrentRole } from "@/lib/roles";
+import { canRevealNames, getCurrentRole, requireStaff } from "@/lib/roles";
 
 const inputCls = "w-full rounded px-2 py-1 text-sm";
 const inputStyle = { border: "1px solid var(--line)", background: "#fff" } as const;
@@ -23,6 +23,7 @@ export default async function ParticipantsPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requireStaff(); // read gate: manager/staff/auditor only
   const { id } = await params;
   const s = await getScheme(id);
   if (!s) notFound();

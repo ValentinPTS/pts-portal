@@ -12,11 +12,13 @@ import { skinsForTypeAsync } from "@/skins";
 import { TYPE_SLUG, typeLabel, schemeName, statusChip, ACCENT } from "@/lib/folders";
 import { ancestry } from "@/lib/folder-tree";
 import { getServerT } from "@/lib/i18n-server";
+import { requireStaff } from "@/lib/roles";
 
 // A scheme folder → its 14 documents grouped by workflow stage. Every document can be
 // built in the app OR filled with an uploaded ready-made file (PDF/image) — see
 // SchemeDocuments. The header shows the primary tools; the rest tuck under "Управление".
 export default async function SchemePage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaff(); // read gate: manager/staff/auditor only
   const { id } = await params;
   const s = await getScheme(id);
   if (!s) notFound();

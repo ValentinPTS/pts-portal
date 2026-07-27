@@ -11,7 +11,7 @@ import { retagFormBody } from "@/lib/form-hydrate";
 import { hasDocTemplate } from "@/lib/doc-template";
 import { resolveSkinAsync } from "@/skins";
 import WordEditor from "@/components/WordEditor";
-import { canRevealNames, getCurrentRole } from "@/lib/roles";
+import { canRevealNames, getCurrentRole, requireStaff } from "@/lib/roles";
 import { getServerT } from "@/lib/i18n-server";
 
 export default async function BuildDocPage({
@@ -19,6 +19,7 @@ export default async function BuildDocPage({
 }: {
   params: Promise<{ id: string; doc: string }>;
 }) {
+  await requireStaff(); // read gate: manager/staff/auditor only
   const { id, doc } = await params;
   const s = await getScheme(id);
   if (!s) notFound();

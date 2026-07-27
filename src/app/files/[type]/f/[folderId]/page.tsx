@@ -11,12 +11,14 @@ import { typeFromSlug, typeLabel, ACCENT, nextProject } from "@/lib/folders";
 import { samplesForType } from "@/lib/sample-schemes";
 import { getServerT } from "@/lib/i18n-server";
 import { plural } from "@/lib/i18n";
+import { requireStaff } from "@/lib/roles";
 
 // A folder → its subfolders + schemes, with New folder / New scheme (created inside
 // this folder) and rename/delete. Breadcrumb follows the real folder ancestry.
 export const dynamic = "force-dynamic";
 
 export default async function FolderPage({ params, searchParams }: { params: Promise<{ type: string; folderId: string }>; searchParams: Promise<{ dupNumber?: string }> }) {
+  await requireStaff(); // read gate: manager/staff/auditor only
   const { type: slug, folderId } = await params;
   const type = typeFromSlug(slug);
   if (!type) notFound();

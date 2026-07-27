@@ -5,6 +5,7 @@ import { listParticipants } from "@/lib/participants";
 import { metricsForScheme, scoreMetric, type ScoredRow } from "@/lib/scoring";
 import { saveScoringAction, autoAssignAction } from "@/lib/actions";
 import { getServerT } from "@/lib/i18n-server";
+import { requireStaff } from "@/lib/roles";
 
 const inputCls = "w-full rounded px-2 py-1 text-sm";
 const inputStyle = { border: "1px solid var(--line)", background: "#fff" } as const;
@@ -39,6 +40,7 @@ export default async function ResultsPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requireStaff(); // read gate: manager/staff/auditor only
   const { id } = await params;
   const s = await getScheme(id);
   if (!s) notFound();

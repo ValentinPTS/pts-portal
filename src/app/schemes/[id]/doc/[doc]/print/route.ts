@@ -5,7 +5,7 @@ import { listParticipants } from "@/lib/participants";
 import { stripBodyMarkers, withSkin } from "@/lib/doc-shell";
 import { withFormCtx } from "@/lib/form-fields";
 import { resolveSkinAsync, getSkinAsync } from "@/skins";
-import { canRevealNamesNow } from "@/lib/roles";
+import { canRevealNamesNow, requireStaff } from "@/lib/roles";
 import type { DocOptions } from "@/lib/types";
 
 // Serves a generated document's standalone HTML (any document type).
@@ -16,6 +16,18 @@ export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ id: string; doc: string }> }
 ) {
+  // Is this our own headless renderer? Established FIRST, because it decides both
+  // who may read this route and whether a forwarded name-reveal flag is trustworthy.
+  const internalToken = process.env.INTERNAL_TOKEN;
+  const isInternal = !!internalToken && req.headers.get("x-internal-token") === internalToken;
+
+  // Read gate. This route serves a whole confidential document, so it needs its own
+  // guard rather than relying on the proxy: the proxy deliberately fails OPEN when
+  // the Supabase anon key is missing/misconfigured (see proxy.ts) so a single bad env
+  // var would otherwise publish every document. The headless PDF renderer carries no
+  // session, so it is admitted by the internal token instead.
+  if (!isInternal) await requireStaff();
+
   const { id, doc } = await ctx.params;
   const scheme = await getScheme(id);
   const def = getDoc(doc);
@@ -24,13 +36,10 @@ export async function GET(
   const lang = req.nextUrl.searchParams.get("lang") === "bg" ? "bg" : "en";
 
   // Name-reveal decision (§4.2): only a manager may see real lab names/identities.
-  // The headless PDF generator carries no session, so /api/pdf forwards the caller's
-  // already-checked reveal permission via `?reveal=1`, trusted ONLY when the request
-  // also carries the valid internal token (proving it came from our server). A direct
-  // browser navigation has no token → we fall back to the viewer's own session role,
-  // so an auditor/staff can never coax a named document out of this route.
-  const internalToken = process.env.INTERNAL_TOKEN;
-  const isInternal = !!internalToken && req.headers.get("x-internal-token") === internalToken;
+  // /api/pdf forwards the caller's already-checked reveal permission as a header,
+  // trusted ONLY alongside the valid internal token (proving it came from our server).
+  // A direct browser navigation has no token → we fall back to the viewer's own
+  // session role, so an auditor/staff can never coax a named document out of this route.
   const reveal = isInternal
     ? req.headers.get("x-reveal") === "1"
     : await canRevealNamesNow();

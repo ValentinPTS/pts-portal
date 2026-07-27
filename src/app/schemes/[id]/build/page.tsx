@@ -3,12 +3,14 @@ import { notFound } from "next/navigation";
 import { getScheme } from "@/lib/store";
 import { DOCUMENTS } from "@/lib/documents";
 import { getServerT } from "@/lib/i18n-server";
+import { requireStaff } from "@/lib/roles";
 
 export default async function BuildIndex({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requireStaff(); // read gate: manager/staff/auditor only
   const { id } = await params;
   const s = await getScheme(id);
   if (!s) notFound();

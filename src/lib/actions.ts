@@ -117,8 +117,23 @@ export async function translateAction(
       const res = await fetch(url, { headers: { "User-Agent": "PTS-Portal" }, signal: AbortSignal.timeout(8000) });
       if (!res.ok) return { error: `Translator unavailable (${res.status}).` };
       const data = await res.json();
+      // MyMemory answers HTTP 200 even when it REFUSES the request — the real status
+      // lives in the JSON body, and when the free daily quota runs out the warning
+      // text itself is delivered in `translatedText`. Checking only res.ok therefore
+      // splices "MYMEMORY WARNING: YOU USED ALL AVAILABLE FREE TRANSLATIONS FOR
+      // TODAY…" into the document as if it were the translation, paragraph after
+      // paragraph. Both guards below are needed: the status covers refusals, the
+      // pattern covers the quota case where the status is still 200.
+      const status = Number(data?.responseStatus);
+      if (Number.isFinite(status) && status !== 200) {
+        const detail = String(data?.responseDetails ?? "").slice(0, 120);
+        return { error: `Translator refused (${status})${detail ? `: ${detail}` : "."}` };
+      }
       const piece = data?.responseData?.translatedText;
       if (typeof piece !== "string" || !piece) return { error: "No translation returned." };
+      if (/^\s*(MYMEMORY WARNING|QUERY LENGTH LIMIT|PLEASE SELECT|INVALID LANGUAGE|'?AUTO'? IS AN INVALID)/i.test(piece)) {
+        return { error: "Daily free-translation limit reached — the document was left unchanged. Try again tomorrow, or translate this text by hand." };
+      }
       out.push(piece);
     }
     return { text: out.join(" ") };
@@ -465,7 +480,12 @@ export async function translateDocHtmlAction(html: string): Promise<{ html?: str
     }
     runs++;
     const r = await translateAction(part, "bg", "en");
-    out.push(r.error ? part : r.text ?? part);
+    // Stop at the first refusal and report it, instead of returning a half-translated
+    // document. The dominant failure is the daily quota, which will reject every
+    // remaining run as well — and a silently partial translation is worse than none,
+    // because nothing on the page shows which paragraphs are genuinely translated.
+    if (r.error) return { error: r.error };
+    out.push(r.text ?? part);
   }
   return { html: out.join("") };
 }

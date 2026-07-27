@@ -5,7 +5,7 @@ import { listParticipants } from "@/lib/participants";
 import { listCaseEvents } from "@/lib/case-events";
 import { getDoc } from "@/lib/documents";
 import { getServerT } from "@/lib/i18n-server";
-import { canRevealNames, getCurrentRole } from "@/lib/roles";
+import { canRevealNames, getCurrentRole, requireStaff } from "@/lib/roles";
 import type { CaseEvent, CaseEventKind } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +26,7 @@ const MILESTONES: { kind: CaseEventKind; side: "pts" | "lab" }[] = [
 const ddmm = (iso: string) => (iso?.length >= 10 ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : iso || "");
 
 export default async function TraceabilityPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaff(); // read gate: manager/staff/auditor only
   const { id } = await params;
   const s = await getScheme(id);
   if (!s) notFound();

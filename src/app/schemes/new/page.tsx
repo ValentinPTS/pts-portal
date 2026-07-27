@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createSchemeAction } from "@/lib/actions";
 import { getServerT } from "@/lib/i18n-server";
+import { requireStaff } from "@/lib/roles";
 
 const inputCls = "w-full rounded px-2 py-1 text-sm";
 const inputStyle = { border: "1px solid var(--line)", background: "#fff" } as const;
@@ -23,6 +24,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 }
 
 export default async function NewSchemePage() {
+  await requireStaff(); // read gate: manager/staff/auditor only
   const { tr } = await getServerT();
   return (
     <div>

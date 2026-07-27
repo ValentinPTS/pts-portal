@@ -5,6 +5,7 @@ import { listApplications } from "@/lib/applications";
 import { approveApplicationAction, rejectApplicationAction } from "@/lib/actions";
 import { EmptyState } from "@/components/States";
 import { getServerT } from "@/lib/i18n-server";
+import { requireStaff } from "@/lib/roles";
 
 const STATUS_COLOR: Record<string, string> = {
   pending: "var(--amber)",
@@ -17,6 +18,7 @@ export default async function ApplicationsPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requireStaff(); // read gate: manager/staff/auditor only
   const { id } = await params;
   const s = await getScheme(id);
   if (!s) notFound();

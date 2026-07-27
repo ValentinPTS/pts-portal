@@ -4,7 +4,7 @@ import { getScheme } from "@/lib/store";
 import { listParticipants } from "@/lib/participants";
 import { listCaseEvents } from "@/lib/case-events";
 import { addCaseEventAction, deleteCaseEventAction } from "@/lib/actions";
-import { canRevealNames, getCurrentRole } from "@/lib/roles";
+import { canRevealNames, getCurrentRole, requireStaff } from "@/lib/roles";
 import { getServerT } from "@/lib/i18n-server";
 import { DOCUMENTS } from "@/lib/documents";
 import type { CaseEventKind } from "@/lib/types";
@@ -34,6 +34,7 @@ export default async function CaseFilePage({
   params: Promise<{ id: string; code: string }>;
   searchParams: Promise<{ reveal?: string; kind?: string; from?: string }>;
 }) {
+  await requireStaff(); // read gate: manager/staff/auditor only
   const { id, code: rawCode } = await params;
   const code = decodeURIComponent(rawCode);
   const sp = await searchParams;

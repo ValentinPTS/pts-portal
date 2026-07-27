@@ -6,6 +6,7 @@ import { getDefaultCoverImage } from "@/lib/custom-skins";
 import DeleteSkinButton from "@/components/DeleteSkinButton";
 import DefaultCoverCard from "@/components/DefaultCoverCard";
 import { getServerT } from "@/lib/i18n-server";
+import { requireStaff } from "@/lib/roles";
 
 const BUILTIN = new Set(SKINS.map((s) => s.meta.id));
 
@@ -13,6 +14,7 @@ const BUILTIN = new Set(SKINS.map((s) => s.meta.id));
 // + your own custom skins, each with a live preview. Create new skins with the
 // visual editor; set a per-type default.
 export default async function SkinsPage({ searchParams }: { searchParams: Promise<{ type?: string }> }) {
+  await requireStaff(); // read gate: manager/staff/auditor only
   const { type: t } = await searchParams;
   const type: "T" | "C" = t === "C" ? "C" : "T";
   const skins = await skinsForTypeAsync(type);

@@ -1,10 +1,12 @@
 import { notFound } from "next/navigation";
 import SkinEditor from "@/components/SkinEditor";
 import { getCustomSkin } from "@/lib/custom-skins";
+import { requireStaff } from "@/lib/roles";
 
 // Edit an existing custom skin. Built-in skins (classic/modern/minimal) aren't
 // editable — only user-created ones live in the DB.
 export default async function EditSkinPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaff(); // read gate: manager/staff/auditor only
   const { id } = await params;
   const skin = await getCustomSkin(id);
   if (!skin) notFound();

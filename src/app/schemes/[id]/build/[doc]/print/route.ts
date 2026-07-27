@@ -5,7 +5,7 @@ import { listParticipants } from "@/lib/participants";
 import { docPrintHtml, docDefaultBody } from "@/lib/doc-template";
 import { drawFormBody, retagFormBody } from "@/lib/form-hydrate";
 import { getRevision } from "@/lib/doc-revisions";
-import { canRevealNamesNow } from "@/lib/roles";
+import { canRevealNamesNow, requireStaff } from "@/lib/roles";
 import { resolveSkinAsync } from "@/skins";
 import type { DocOptions } from "@/lib/types";
 
@@ -15,6 +15,17 @@ import type { DocOptions } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string; doc: string }> }) {
+  // Is this our own headless renderer? Established FIRST, because it decides both
+  // who may read this route and whether a forwarded name-reveal flag is trustworthy.
+  const internalToken = process.env.INTERNAL_TOKEN;
+  const isInternal = !!internalToken && req.headers.get("x-internal-token") === internalToken;
+
+  // Read gate — same reasoning as the sibling /doc/[doc]/print route: this serves a
+  // whole confidential document, and the proxy deliberately fails OPEN on a missing
+  // Supabase anon key, so the route guards itself. The headless PDF renderer carries
+  // no session and is admitted by the internal token instead.
+  if (!isInternal) await requireStaff();
+
   const { id, doc } = await ctx.params;
   const scheme = await getScheme(id);
   const def = getDoc(doc);
@@ -24,12 +35,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
 
   // Data-driven documents (the lists) need the live participants in their shell.
   // Name guard (§4.2): only a manager sees real names on the two lists; everyone
-  // else gets codes + a "confidential" placeholder. The headless PDF has no session,
-  // so /api/pdf forwards the caller's already-checked permission via `?reveal=1`,
-  // trusted ONLY with the valid internal token; a direct navigation falls back to the
-  // viewer's own session role (an auditor/staff can never coax names out this way).
-  const internalToken = process.env.INTERNAL_TOKEN;
-  const isInternal = !!internalToken && req.headers.get("x-internal-token") === internalToken;
+  // else gets codes + a "confidential" placeholder. /api/pdf forwards the caller's
+  // already-checked permission as a header, trusted ONLY with the valid internal
+  // token; a direct navigation falls back to the viewer's own session role (an
+  // auditor/staff can never coax names out this way).
   const reveal = isInternal
     ? req.headers.get("x-reveal") === "1"
     : await canRevealNamesNow();

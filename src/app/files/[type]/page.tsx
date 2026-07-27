@@ -10,12 +10,14 @@ import { typeFromSlug, typeLabel, ACCENT, nextProject } from "@/lib/folders";
 import { samplesForType } from "@/lib/sample-schemes";
 import { getServerT } from "@/lib/i18n-server";
 import { plural } from "@/lib/i18n";
+import { requireStaff } from "@/lib/roles";
 
 // A type root (Testing / Calibration): the folders and schemes directly inside it,
 // with two create options — New folder (name only) and New scheme (full dialog).
 export const dynamic = "force-dynamic";
 
 export default async function TypePage({ params, searchParams }: { params: Promise<{ type: string }>; searchParams: Promise<{ dupNumber?: string }> }) {
+  await requireStaff(); // read gate: manager/staff/auditor only
   const { type: slug } = await params;
   const type = typeFromSlug(slug);
   if (!type) notFound();

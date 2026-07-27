@@ -4,7 +4,7 @@ import { getScheme } from "@/lib/store";
 import { getDoc } from "@/lib/documents";
 import { listRevisions } from "@/lib/doc-revisions";
 import { approveDocRevisionAction, restoreDocRevisionAction } from "@/lib/actions";
-import { getCurrentRole } from "@/lib/roles";
+import { getCurrentRole, requireStaff } from "@/lib/roles";
 import { getServerT } from "@/lib/i18n-server";
 
 // Document version history (Phase RT5, §8.3). Lists every saved revision: who saved
@@ -26,6 +26,7 @@ export default async function DocHistoryPage({
 }: {
   params: Promise<{ id: string; doc: string }>;
 }) {
+  await requireStaff(); // read gate: manager/staff/auditor only
   const { id, doc } = await params;
   const s = await getScheme(id);
   if (!s) notFound();
