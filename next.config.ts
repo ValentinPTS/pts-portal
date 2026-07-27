@@ -2,7 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   // Playwright (used to render PDFs) must stay a Node external, not bundled.
-  serverExternalPackages: ["playwright", "playwright-core"],
+  // @sparticuz/chromium ships the Lambda Chromium as brotli files it resolves from
+  // its own package directory at runtime — bundling would break those paths.
+  serverExternalPackages: ["playwright", "playwright-core", "@sparticuz/chromium"],
 
   experimental: {
     // Server Actions cap request bodies at 1MB by default. Our uploads need more:

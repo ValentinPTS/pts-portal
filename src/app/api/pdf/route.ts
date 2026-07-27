@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import type { Browser } from "playwright";
+import type { Browser } from "playwright-core";
 import { getScheme } from "@/lib/store";
 import { getDoc } from "@/lib/documents";
 import { requireStaff, canRevealNamesNow } from "@/lib/roles";
@@ -8,6 +8,32 @@ import { requireStaff, canRevealNamesNow } from "@/lib/roles";
 // route), adding A4 page numbers in the footer. Node runtime (Playwright needs Node).
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Launching Chromium + rendering a multi-page document takes well over the default
+// serverless timeout on a cold start. 60s is the Vercel ceiling on Hobby/Pro-default.
+export const maxDuration = 60;
+
+// Serverless (Vercel/Lambda) can't run Playwright's own Chromium: the browser binary
+// lives in a ~/.cache download that is never traced into the function bundle, and the
+// full build is far past the 250MB limit. There we launch @sparticuz/chromium — a
+// Chromium compiled for Lambda, shipped brotli-compressed inside node_modules and
+// unpacked to /tmp on first use — driven by playwright-core. Locally we keep the full
+// `playwright` package (a devDependency) exactly as before, so dev is unchanged.
+const IS_SERVERLESS = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+
+async function launchBrowser(): Promise<Browser> {
+  if (IS_SERVERLESS) {
+    const sparticuz = (await import("@sparticuz/chromium")).default;
+    const { chromium } = await import("playwright-core");
+    return chromium.launch({
+      args: sparticuz.args,
+      executablePath: await sparticuz.executablePath(),
+      headless: true,
+    });
+  }
+  // local dev / self-hosted: Playwright's own managed Chromium
+  const { chromium } = await import("playwright");
+  return chromium.launch() as unknown as Promise<Browser>;
+}
 
 // Reuse ONE Chromium across requests instead of launching per request (launch is
 // ~hundreds of ms + memory). Each request gets its own isolated context/page. If
@@ -22,8 +48,7 @@ async function getBrowser(): Promise<Browser> {
       // previous launch failed — fall through and relaunch
     }
   }
-  const { chromium } = await import("playwright");
-  browserPromise = chromium.launch();
+  browserPromise = launchBrowser();
   try {
     return await browserPromise;
   } catch (e) {
@@ -52,11 +77,10 @@ export async function POST(req: NextRequest) {
   // this scheme before using it.
   const part = typeof body.participant === "string" && body.participant ? `&p=${encodeURIComponent(body.participant)}` : "";
   // The owner-area bypass token + THIS caller's name-reveal permission (§4.2) travel
-  // as HTTP HEADERS attached to the same-origin navigation below — NEVER in the URL.
-  // A secret in a query string is captured verbatim in access logs / APM traces (see
-  // proxy.ts, which now reads the header). The headless render carries no session, so
-  // the token proves the request came from our server and the reveal flag tells the
-  // print route whether names may be shown; a direct navigation has neither.
+  // as HTTP HEADERS on the SERVER-SIDE fetch below — never in the URL, where a secret
+  // would be captured verbatim in access logs / APM traces (see proxy.ts, which reads
+  // the header). Keeping them on a server-to-server call also means the token is never
+  // handed to the browser process at all.
   const internalToken = process.env.INTERNAL_TOKEN ?? "";
   const reveal = (await canRevealNamesNow()) ? "1" : "";
   // composed = the owner-built (builder) version; else the auto-generated template
@@ -64,29 +88,61 @@ export async function POST(req: NextRequest) {
     ? `${origin}/schemes/${encodeURIComponent(id)}/build/${encodeURIComponent(def.key)}/print?lang=${lang}`
     : `${origin}/schemes/${encodeURIComponent(id)}/doc/${encodeURIComponent(def.key)}/print?lang=${lang}${part}`;
 
+  // Fetch the rendered document OURSELVES and hand the markup to the page, rather
+  // than pointing the browser at the URL. page.goto() against our own render routes
+  // aborts the navigation outright (net::ERR_ABORTED, no response) even though the
+  // very same URL returns 200 to curl and to a normal browser — so the export used to
+  // sit until the timeout and 500. This also removes a whole class of serverless
+  // trouble: no second function invocation for the nested request, nothing for
+  // deployment protection to block, and the secret stays server-side.
+  let html: string;
+  try {
+    const res = await fetch(url, {
+      headers: internalToken ? { "x-internal-token": internalToken, "x-reveal": reveal } : undefined,
+      cache: "no-store",
+    });
+    if (!res.ok) return new Response(`Render failed (${res.status})`, { status: 502 });
+    html = await res.text();
+  } catch {
+    return new Response("Render failed", { status: 502 });
+  }
+  // The markup carries site-relative asset URLs (/brand/logo.png). Without a document
+  // URL to resolve against they'd break, so anchor them to this origin. `brand` is
+  // exempt from the proxy gate, so the logo needs no credentials.
+  html = html.replace(/<head(\s[^>]*)?>/i, (m) => `${m}<base href="${origin}/">`);
+
   const browser = await getBrowser();
   const context = await browser.newContext();
   try {
-    // Attach the token/reveal headers to SAME-ORIGIN requests only. A context- or
-    // page-level extra-header would also send the secret to cross-origin subresources
-    // (Google Fonts), so we branch per request inside the interceptor instead.
-    if (internalToken) {
-      await context.route("**/*", (route) => {
-        const reqUrl = route.request().url();
-        if (reqUrl.startsWith(origin)) {
-          route.continue({ headers: { ...route.request().headers(), "x-internal-token": internalToken, "x-reveal": reveal } });
-        } else {
-          route.continue();
-        }
-      });
-    }
+    // Bound every CROSS-ORIGIN subresource. The documents load their typefaces from
+    // Google Fonts with a render-blocking <link>, and Chromium holds `load` until that
+    // stylesheet resolves — so slow, filtered or unreachable font hosting could stall
+    // the export for the full timeout. Fetching it ourselves with a short timeout and
+    // aborting on failure makes the worst case a document in fallback faces, never a
+    // failed export.
+    await context.route("**/*", async (route) => {
+      if (route.request().url().startsWith(origin)) {
+        await route.continue();
+        return;
+      }
+      try {
+        await route.fulfill({ response: await route.fetch({ timeout: 4000 }) });
+      } catch {
+        await route.abort().catch(() => {});
+      }
+    });
     const page = await context.newPage();
-    // Bounded navigation: a render route that stalls must never hang the shared
-    // browser indefinitely (it would starve concurrent PDF requests).
+    // Bounded rendering: a document that stalls must never hang the shared browser
+    // indefinitely (it would starve concurrent PDF requests).
     page.setDefaultTimeout(20000);
-    await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
-    // wait for web fonts (string eval runs in the browser context, no DOM types needed here)
-    await page.evaluate("document.fonts ? document.fonts.ready : Promise.resolve()").catch(() => {});
+    await page.setContent(html, { waitUntil: "load", timeout: 20000 });
+    await page
+      .evaluate(
+        `document.fonts
+          ? Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 5000))])
+          : Promise.resolve()`
+      )
+      .catch(() => {});
     // Footer: document metadata on the left, the page number centred on the page
     // (a table keeps the centre cell at the true page centre regardless of the left
     // text). `.pageNumber`/`.totalPages` are filled in by Chromium per page.
