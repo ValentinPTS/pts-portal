@@ -97,8 +97,13 @@ export const pavingBlocks: Scheme = {
 
   assignedValueMethodEn: "Robust mean (Algorithm A, ISO 13528, Annex C.3.1)",
   assignedValueMethodBg: "Устойчива средна стойност (Алгоритъм A, ISO 13528, Приложение C.3.1)",
-  scoresEn: "z-score and ζ-score (pass when |score| < 2). Outliers screened by Kolmogorov–Smirnov, 3σ, IQR and Grubbs.",
-  scoresBg: "z-оценка и ζ-оценка (приема се при |оценка| < 2). Бегълци се откриват чрез Колмогоров–Смирнов, 3σ, IQR и Грабс.",
+  // Describes what the scoring engine ACTUALLY does. The wording follows the
+  // Statistical Project §10 (docs/stat-project.ts): the protection against
+  // outliers is the robust method itself, not a screening test. Do not restore a
+  // claim of Kolmogorov–Smirnov / 3σ / IQR / Grubbs screening — none is
+  // implemented, and this string prints into every issued Final Report.
+  scoresEn: "z-score and ζ-score (pass when |score| < 2). Protection against outliers comes from the robust methods of ISO 13528 (Algorithm A); classical tests are indicative only and results are not excluded unless proven invalid.",
+  scoresBg: "z-оценка и ζ-оценка (приема се при |оценка| < 2). Защитата срещу отклоняващи се резултати се осигурява от устойчивите методи по ISO 13528 (Алгоритъм A); класическите тестове са само индикативни и резултати не се изключват, освен при доказана невалидност.",
 
   clauses: {
     criteria: {
