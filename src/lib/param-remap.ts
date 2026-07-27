@@ -88,3 +88,71 @@ export function remapScoring(scoring: Scoring | undefined, map: IndexMap): Scori
   }
   return { assigned: remapKeys(scoring.assigned), results };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Calibration slot protection (scoring + the Results Sheet, lib/docs/results-c.ts)
+//
+// Unlike the standards editor, calibration points and directions are edited as
+// free-form comma-separated text (SchemeEditor cal_points / cal_dirEn), so a
+// surviving point carries NO original index: "20, 40, 60" → "20, 60" cannot be
+// told apart from a relabel of the second point. Deleting or reordering a point
+// therefore shifts every "<dir>:<point>" key after it and silently reattaches an
+// already-issued Eₙ to a DIFFERENT load. These helpers let the save action refuse
+// such an edit while data is attached, instead of corrupting it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// The direction list the metric keys are actually indexed by: an empty EN list
+// collapses to ONE unnamed direction (mirrors scoring.ts metricsForScheme).
+export function effectiveDirections(directionsEn: readonly string[]): string[] {
+  return directionsEn.length ? [...directionsEn] : ["—"];
+}
+
+// Every `<dir>:<point>` slot that currently holds owner-entered data — the assigned
+// (reference) values, every participant's results, and the non-blank Results-Sheet
+// fields. Deduped [dirIdx, pointIdx] pairs.
+export function calibrationDataSlots(
+  scoring: Scoring | undefined,
+  resultsSheet: Record<string, string> | undefined
+): [number, number][] {
+  const seen = new Set<string>();
+  const fromKey = (k: string) => {
+    const m = /^(\d+):(\d+)$/.exec(k);
+    if (m) seen.add(`${Number(m[1])}:${Number(m[2])}`);
+  };
+  if (scoring) {
+    Object.keys(scoring.assigned).forEach(fromKey);
+    for (const byMetric of Object.values(scoring.results)) Object.keys(byMetric).forEach(fromKey);
+  }
+  for (const [k, v] of Object.entries(resultsSheet ?? {})) {
+    if (!String(v).trim()) continue; // a blank field carries no data
+    const m = /^(?:result|unc)_(\d+)_(\d+)$/.exec(k);
+    if (m) seen.add(`${Number(m[1])}:${Number(m[2])}`);
+  }
+  return [...seen].map((k) => k.split(":").map(Number) as [number, number]);
+}
+
+// Which of those slots would STOP meaning what they mean today? A slot survives
+// only when its index still exists AND still holds the same text — deletion,
+// reorder and in-place replacement all move the data onto another load point.
+//
+// Two deliberate escape hatches, so the guard can never brick the edit page:
+//   • a slot whose OLD index no longer exists is already orphaned → ignored;
+//   • a slot whose OLD point is blank is ignored, because the editor drops blanks
+//     when it loads (SchemeEditor filters them) and the save trims and drops them
+//     too, so such a slot could never re-match and would refuse every future save.
+// Comparison is trimmed on both sides for the same reason: the save trims each
+// element, so a stored "20 " must still count as unchanged against "20".
+export function calibrationSlotsBroken(
+  slots: readonly [number, number][],
+  oldPoints: readonly string[], newPoints: readonly string[],
+  oldDirsEn: readonly string[], newDirsEn: readonly string[]
+): [number, number][] {
+  const norm = (x: string | undefined) => String(x ?? "").trim();
+  const oldD = effectiveDirections(oldDirsEn);
+  const newD = effectiveDirections(newDirsEn);
+  return slots.filter(([d, p]) => {
+    if (oldD[d] === undefined || oldPoints[p] === undefined) return false;
+    if (!norm(oldPoints[p])) return false;
+    return norm(newD[d]) !== norm(oldD[d]) || norm(newPoints[p]) !== norm(oldPoints[p]);
+  });
+}

@@ -14,11 +14,11 @@ export default async function EditSchemePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ err?: string; codes?: string }>;
+  searchParams: Promise<{ err?: string; codes?: string; slots?: string }>;
 }) {
   await requireStaff(); // read gate: manager/staff/auditor only
   const { id } = await params;
-  const { err, codes } = await searchParams;
+  const { err, codes, slots } = await searchParams;
   const s = await getScheme(id);
   if (!s) notFound();
   const { lang, tr } = await getServerT();
@@ -42,6 +42,16 @@ export default async function EditSchemePage({
           {L(
             `Изтриването на тези стандарти би оставило участник(ци) ${codes ?? ""} без нито един регистриран стандарт — първо променете обхвата им или ги премахнете от страницата „Участници“.`,
             `Deleting those standards would leave participant(s) ${codes ?? ""} with no registered standard — first re-scope or remove them on the “Participants” page.`
+          )}
+        </div>
+      )}
+
+      {err === "calslots" && (
+        <div className="card p-3 mt-3 text-sm" style={{ background: "#fbeeee", border: "1px solid #e3c8c8", color: "#8f2f2f" }}>
+          <b>{L("Промените НЕ са запазени.", "The changes were NOT saved.")}</b>{" "}
+          {L(
+            `За тези точки/посоки на калибриране вече има въведени резултати: ${slots ?? ""}. Пренареждането, изтриването или преименуването им би прикачило оценките Eₙ към друга точка на натоварване — първо изчистете тези резултати на страница „Резултати“, след което редактирайте точките.`,
+            `These calibration points/directions already carry entered results: ${slots ?? ""}. Reordering, deleting or renaming them would reattach the Eₙ scores to a different load point — first clear those results on the “Results” page, then edit the points.`
           )}
         </div>
       )}

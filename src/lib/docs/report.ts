@@ -129,8 +129,8 @@ export function renderReport(s: Scheme, lang: Lang): string {
     <p>${L(s.scoresEn, s.scoresBg)}</p>
     <h3 class="sub">${L("8.4 z-scores and ζ-scores", "8.4 z-оценки и ζ-оценки")}</h3>
     <p>${L(
-      "Each participant's performance is expressed as a z-score (using the standard deviation for proficiency assessment) and a ζ-score (using the participant's reported uncertainty together with the uncertainty of the assigned value). A result is satisfactory when the absolute value of the score is below 2, of warning when between 2 and 3, and unsatisfactory when 3 or above.",
-      "Представянето на всеки участник се изразява чрез z-оценка (използваща стандартното отклонение за оценка на пригодността) и ζ-оценка (използваща докладваната от участника неопределеност заедно с неопределеността на приетата стойност). Резултатът е удовлетворителен при абсолютна стойност на оценката под 2, предупредителен между 2 и 3 и неудовлетворителен при 3 и повече."
+      "Each participant's performance is expressed as a z-score (using the standard deviation for proficiency assessment) and a ζ-score (using the participant's reported uncertainty together with the uncertainty of the assigned value). A result is satisfactory when the absolute value of the score is 2 or below, of warning when above 2 and below 3, and unsatisfactory when 3 or above.",
+      "Представянето на всеки участник се изразява чрез z-оценка (използваща стандартното отклонение за оценка на пригодността) и ζ-оценка (използваща докладваната от участника неопределеност заедно с неопределеността на приетата стойност). Резултатът е удовлетворителен при абсолютна стойност на оценката 2 или по-малка, предупредителен при стойност над 2 и под 3 и неудовлетворителен при 3 и повече."
     )}</p>`;
 
   // ---- §9 Results & evaluation (real z/ζ tables once scored; else placeholder) ----

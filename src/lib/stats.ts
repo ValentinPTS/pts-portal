@@ -61,12 +61,13 @@ export function uncertaintyOfAssigned(sStar: number, n: number): number {
   return n > 0 ? (1.25 * sStar) / Math.sqrt(n) : NaN;
 }
 
-/** z-score = (xi − xpt) / σpt.  |z| < 2 satisfactory, 2–3 warning, ≥3 action. */
+/** z-score = (xi − xpt) / σpt.  ISO 13528:2022 §9.4: |z| ≤ 2 satisfactory,
+ *  2 < |z| < 3 warning, |z| ≥ 3 action. */
 export function zScore(xi: number, xpt: number, sigmaPt: number): number {
   return sigmaPt > 0 ? (xi - xpt) / sigmaPt : NaN;
 }
 
-/** ζ-score = (xi − xpt) / √(u(xi)² + u(xpt)²).  |ζ| < 2 satisfactory. */
+/** ζ-score = (xi − xpt) / √(u(xi)² + u(xpt)²).  |ζ| ≤ 2 satisfactory (same bands as z). */
 export function zetaScore(xi: number, xpt: number, uXi: number, uXpt: number): number {
   const d = Math.sqrt(uXi * uXi + uXpt * uXpt);
   return d > 0 ? (xi - xpt) / d : NaN;
@@ -81,7 +82,10 @@ export function enScore(xLab: number, xRef: number, uLab: number, uRef: number):
 export type Verdict = "satisfactory" | "warning" | "action";
 export function verdictZ(score: number): Verdict {
   const a = Math.abs(score);
-  return a < 2 ? "satisfactory" : a < 3 ? "warning" : "action";
+  // ISO 13528:2022 §9.4 defines the satisfactory band as |z| ≤ 2.0 — inclusive. The
+  // 3-boundary stays strict so |z| = 3 is action, per the same clause. (verdictEn
+  // below already used ≤ for Eₙ; these two are now consistent.)
+  return a <= 2 ? "satisfactory" : a < 3 ? "warning" : "action";
 }
 export function verdictEn(score: number): "A" | "N" {
   return Math.abs(score) <= 1 ? "A" : "N";

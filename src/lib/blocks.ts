@@ -34,8 +34,8 @@ export const LIBRARY: Element[] = [
   },
   {
     id: "scores", name: "z / ζ score criterion", category: "Report",
-    en: "Each participant's performance is expressed as a z-score and a ζ-score. A result is satisfactory when the absolute value of the score is below 2, of warning when between 2 and 3, and unsatisfactory when 3 or above.",
-    bg: "Представянето на всеки участник се изразява чрез z-оценка и ζ-оценка. Резултатът е удовлетворителен при абсолютна стойност под 2, предупредителен между 2 и 3 и неудовлетворителен при 3 и повече.",
+    en: "Each participant's performance is expressed as a z-score and a ζ-score. A result is satisfactory when the absolute value of the score is 2 or below, of warning when above 2 and below 3, and unsatisfactory when 3 or above.",
+    bg: "Представянето на всеки участник се изразява чрез z-оценка и ζ-оценка. Резултатът е удовлетворителен при абсолютна стойност 2 или по-малка, предупредителен при стойност над 2 и под 3 и неудовлетворителен при 3 и повече.",
   },
   {
     id: "feedback", name: "Feedback note", category: "Report",

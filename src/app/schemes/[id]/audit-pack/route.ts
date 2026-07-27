@@ -3,7 +3,7 @@ import { getScheme } from "@/lib/store";
 import { listParticipants } from "@/lib/participants";
 import { listCaseEvents } from "@/lib/case-events";
 import { getDoc } from "@/lib/documents";
-import { metricsForScheme } from "@/lib/scoring";
+import { metricsForScheme, scoreMetric, sigmaFloor } from "@/lib/scoring";
 import { esc, pick } from "@/lib/doc-shell";
 import { requireStaff, canRevealNames, getCurrentRole } from "@/lib/roles";
 
@@ -28,6 +28,24 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const lang = req.nextUrl.searchParams.get("lang") === "en" ? "en" : "bg";
   const L = (en: string, bg: string) => esc(pick(lang, en, bg));
 
+  // Number formatting identical to the Final Report so the pack and the report
+  // print the same digits.
+  const clean = (v: number) => parseFloat(v.toFixed(6));
+  const g = (v: number | null | undefined) =>
+    v === null || v === undefined || Number.isNaN(v) ? "" : esc(String(clean(v)));
+  const s2 = (v: number | null | undefined) =>
+    v === null || v === undefined || Number.isNaN(v) ? "—" : v.toFixed(2);
+  // Same verdict wording as the Final Report (scoring.ts). The pack is handed over
+  // WITH the report, so it must match the report's wording, not the screen's.
+  const verdictCell = (v: string | null) => {
+    if (v === null) return "—";
+    if (v === "A") return L("A — satisfactory", "A — удовлетв.");
+    if (v === "N") return `<b class="bad">${L("N — unsatisfactory", "N — неудовлетв.")}</b>`;
+    if (v === "satisfactory") return L("Satisfactory", "Удовлетворителен");
+    if (v === "warning") return `<b class="warn">${L("Warning", "Предупреждение")}</b>`;
+    return `<b class="bad">${L("Action", "Действие")}</b>`;
+  };
+
   const role = await getCurrentRole();
   const wantNames = req.nextUrl.searchParams.get("names") === "1";
   const showNames = canRevealNames(role) && wantNames; // managers only
@@ -35,7 +53,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const participants = await listParticipants(id);
   // One scheme-wide query, grouped by code — instead of one round-trip per
   // participant (which serialized N DB calls before any bytes were sent). The
-  // full-scheme fetch is already sorted newest-first, so per-code order is kept.
+  // full-scheme fetch is newest-first; each code's slice is re-sorted below.
   const allEvents = await listCaseEvents(id);
   const eventsByCode = new Map<string, typeof allEvents>();
   for (const e of allEvents) {
@@ -44,13 +62,48 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     else eventsByCode.set(e.code, [e]);
   }
   const metrics = metricsForScheme(scheme);
+  const isCal = scheme.type === "C";
+  // Score ONCE per metric for the whole scheme (scoreMetric walks every code), then
+  // index by code — the pack REUSES the Final Report's numbers instead of
+  // recomputing them, so xpt / σpt / u(xpt) / z / ζ / Eₙ match report.ts exactly.
+  // Hoisted out of the participant loop: inside it this would be
+  // O(participants × metrics × participants).
+  const scored = new Map(
+    metrics.map((m) => {
+      const { assigned, rows } = scoreMetric(scheme, m.key);
+      return [
+        m.key,
+        {
+          assigned,
+          // the σ actually used for z, with the σpt,min floor applied
+          sigmaEff: Math.max(assigned?.sigma || 0, sigmaFloor(scheme, m.key)),
+          byCode: new Map(rows.map((r) => [r.code, r] as const)),
+        },
+      ] as const;
+    })
+  );
+  const resHead = isCal
+    ? `<th>${L("Characteristic", "Характеристика")}</th><th>X<sub>LAB</sub></th><th>U<sub>LAB</sub></th>`
+      + `<th>X<sub>REF</sub></th><th>U<sub>REF</sub></th><th>D</th><th>E<sub>n</sub></th>`
+      + `<th>${L("Evaluation", "Оценка")}</th>`
+    : `<th>${L("Characteristic", "Характеристика")}</th><th>x<sub>i</sub></th><th>u(x<sub>i</sub>)</th>`
+      + `<th>x<sub>pt</sub></th><th>σ<sub>pt</sub></th><th>u(x<sub>pt</sub>)</th><th>z</th><th>ζ</th>`
+      + `<th>${L("Evaluation", "Оценка")}</th>`;
   const now = new Date();
   const stamp = `${String(now.getUTCDate()).padStart(2, "0")}.${String(now.getUTCMonth() + 1).padStart(2, "0")}.${now.getUTCFullYear()} ${String(now.getUTCHours()).padStart(2, "0")}:${String(now.getUTCMinutes()).padStart(2, "0")} UTC`;
 
   // build each participant's section
   const sections: string[] = [];
   for (const p of participants) {
-    const events = eventsByCode.get(p.code) ?? [];
+    // Oldest-first: an audit pack must read as a chronology. listCaseEvents is
+    // deliberately NEWEST-first because the case file, the traceability matrix and
+    // computeLabPhases all take the FIRST match per kind as the latest — so the pack
+    // sorts its own copy and leaves that shared behaviour alone.
+    const events = [...(eventsByCode.get(p.code) ?? [])].sort(
+      (a, b) =>
+        (a.at || "").localeCompare(b.at || "") ||
+        (a.recordedAt || "").localeCompare(b.recordedAt || "")
+    );
     const rows = events.length
       ? events.map((e) => {
           const doc = e.docKey ? getDoc(e.docKey) : undefined;
@@ -65,13 +118,25 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
         }).join("")
       : `<tr><td colspan="5" class="muted">${L("No timeline steps recorded.", "Няма записани стъпки.")}</td></tr>`;
 
-    const reported = scheme.scoring?.results?.[p.code] ?? {};
+    // What the lab reported AND how it was judged. Showing only the reported value
+    // told an assessor nothing about the evaluation — the pack now carries the
+    // assigned value, its uncertainty, the σ actually used, the score and the
+    // verdict, all taken from the same scoreMetric() the Final Report uses.
     const resRows = metrics
-      .filter((m) => reported[m.key] != null)
       .map((m) => {
-        const r = reported[m.key];
-        return `<tr><td>${L(m.labelEn, m.labelBg)}</td><td class="d">${esc(String(r.value))}</td><td class="d">${r.u != null ? esc(String(r.u)) : ""}</td></tr>`;
-      }).join("");
+        const sc = scored.get(m.key);
+        const r = sc?.byCode.get(p.code);
+        if (!sc || !r) return ""; // no result for this lab/metric — same as before
+        const a = sc.assigned;
+        const mid = isCal
+          ? `<td class="d">${g(a?.xpt)}</td><td class="d">${g(a?.u)}</td>`
+            + `<td class="d">${a ? g(r.value - a.xpt) : ""}</td><td class="d">${s2(r.en)}</td>`
+          : `<td class="d">${g(a?.xpt)}</td><td class="d">${a ? g(sc.sigmaEff) : ""}</td>`
+            + `<td class="d">${g(a?.u)}</td><td class="d">${s2(r.z)}</td><td class="d">${s2(r.zeta)}</td>`;
+        return `<tr><td>${L(m.labelEn, m.labelBg)}</td><td class="d">${g(r.value)}</td>`
+          + `<td class="d">${g(r.u)}</td>${mid}<td>${verdictCell(r.verdict)}</td></tr>`;
+      })
+      .join("");
 
     sections.push(`<section>
       <h2><span class="code">${esc(p.code)}</span>${showNames ? ` <span class="nm">— ${esc(p.labName)}${p.country ? `, ${esc(p.country)}` : ""}</span>` : ""}</h2>
@@ -79,9 +144,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       <table class="tl"><thead><tr>
         <th>${L("Date", "Дата")}</th><th>${L("Event", "Събитие")}</th><th>${L("Ref / waybill", "Реф. / товарителница")}</th><th>${L("Note", "Бележка")}</th><th>${L("Source", "Източник")}</th>
       </tr></thead><tbody>${rows}</tbody></table>
-      <h3>${L("Reported results", "Въведени резултати")}</h3>
+      <h3>${L("Reported results and evaluation", "Въведени резултати и оценка")}</h3>
       ${resRows
-        ? `<table class="rs"><thead><tr><th>${L("Characteristic", "Характеристика")}</th><th>${L("Value", "Стойност")}</th><th>U</th></tr></thead><tbody>${resRows}</tbody></table>`
+        ? `<table class="rs"><thead><tr>${resHead}</tr></thead><tbody>${resRows}</tbody></table>`
         : `<p class="muted">${L("No results reported.", "Няма въведени резултати.")}</p>`}
     </section>`);
   }
@@ -101,6 +166,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   th{background:#eef3e8;color:#2f5d2a;font-size:11px}
   td.d,th + th{white-space:nowrap} td.d{font-variant-numeric:tabular-nums}
   td.s{color:#6b6b6b}
+  table.rs{font-size:11px} table.rs td.d{text-align:right}
+  .bad{color:#9e2b2b} .warn{color:#b8860b}
   .muted{color:#888;font-style:italic}
   .bar{display:flex;gap:10px;align-items:center;justify-content:space-between;background:#f5f7f2;border:1px solid #cdd6c4;border-radius:8px;padding:8px 12px;margin-bottom:16px}
   .bar button,.bar a{font:inherit;border:1px solid #cdd6c4;background:#fff;border-radius:6px;padding:5px 10px;cursor:pointer;text-decoration:none;color:#1f2a1a}

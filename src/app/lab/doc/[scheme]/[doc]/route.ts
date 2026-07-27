@@ -3,6 +3,8 @@ import { getLabSession } from "@/lib/lab-auth";
 import { listParticipationsForLab } from "@/lib/participants";
 import { getScheme } from "@/lib/store";
 import { getDoc } from "@/lib/documents";
+import { listCaseEvents } from "@/lib/case-events";
+import { canLabFetchDoc } from "@/lib/lab-phases";
 import { stripBodyMarkers, withSkin } from "@/lib/doc-shell";
 import { resolveSkinAsync } from "@/skins";
 import type { DocOptions } from "@/lib/types";
@@ -33,6 +35,18 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ scheme: str
   const scheme = await getScheme(schemeId);
   const def = getDoc(doc);
   if (!scheme || !def || !def.render) return new Response("Not found", { status: 404 });
+
+  // LIFECYCLE gate — participating is not enough. The dashboard hides each button
+  // until the document actually exists; the URL now obeys the SAME rule, so a lab can
+  // never pull an unapproved Final Report (it carries the whole cohort's scores) or a
+  // certificate rendered with its name and a blank number (§7.4).
+  const allowed = canLabFetchDoc(doc, {
+    status: mine.status,
+    events: await listCaseEvents(schemeId, mine.code),
+    reported: scheme.status === "report" || scheme.status === "closed",
+    hasCert: !!scheme.certificates?.[mine.code],
+  });
+  if (!allowed) return new Response("Not available yet", { status: 403 });
 
   const lang = req.nextUrl.searchParams.get("lang") === "en" ? "en" : "bg";
 

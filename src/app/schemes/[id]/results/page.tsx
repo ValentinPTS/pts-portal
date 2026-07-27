@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getScheme } from "@/lib/store";
 import { listParticipants } from "@/lib/participants";
-import { metricsForScheme, scoreMetric, type ScoredRow } from "@/lib/scoring";
+import { metricsForScheme, scoreMetric, scoringStamp, type ScoredRow } from "@/lib/scoring";
 import { saveScoringAction, autoAssignAction } from "@/lib/actions";
 import { getServerT } from "@/lib/i18n-server";
 import { requireStaff } from "@/lib/roles";
@@ -37,17 +37,21 @@ function verdictBadge(r: ScoredRow | undefined, tr: (k: string) => string) {
 
 export default async function ResultsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ err?: string; warn?: string; n?: string }>;
 }) {
   await requireStaff(); // read gate: manager/staff/auditor only
   const { id } = await params;
+  const { err, warn, n } = await searchParams;
   const s = await getScheme(id);
   if (!s) notFound();
   const participants = await listParticipants(id);
   const metrics = metricsForScheme(s);
   const isCal = s.type === "C";
-  const { tr } = await getServerT();
+  const { lang, tr } = await getServerT();
+  const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
 
   return (
     <div>
@@ -61,6 +65,26 @@ export default async function ResultsPage({
         {tr(isCal ? "results.subtitleCal" : "results.subtitleTest")}
       </p>
 
+      {err === "conflict" && (
+        <div className="card p-3 mt-3 text-sm" style={{ background: "#fbeeee", border: "1px solid #e3c8c8", color: "#8f2f2f" }}>
+          <b>{L("Промените НЕ са запазени.", "Your changes were NOT saved.")}</b>{" "}
+          {L(
+            "Резултатите или участниците са променени, откакто отворихте тази страница — записът е отказан, за да не изтрие чуждите въведени данни. Страницата вече показва актуалните стойности; въведете промените си отново.",
+            "The results or participants changed after you opened this page — the save was refused so it could not erase someone else's entries. The page now shows the current values; please re-enter your changes."
+          )}
+        </div>
+      )}
+
+      {warn === "minpart" && (
+        <div className="card p-3 mt-3 text-sm" style={{ background: "#fdf6e3", border: "1px solid #e6d9a8", color: "#7a5c00" }}>
+          <b>{L("Резултатите СА запазени.", "Your results ARE saved.")}</b>{" "}
+          {L(
+            `За характеристиките с по-малко от ${n ?? ""} резултата приетата стойност не беше изчислена автоматично: при два резултата устойчивата оценка е изродена — и двете лаборатории получават z = ±0,62, независимо колко се различават. Въведете приетата стойност, σ и u ръчно (Статистически проект §4).`,
+            `For characteristics with fewer than ${n ?? ""} results the assigned value was not auto-computed: with two results the robust estimate degenerates — both laboratories score z = ±0.62 however far apart they are. Enter the assigned value, σ and u by hand instead (Statistical project §4).`
+          )}
+        </div>
+      )}
+
       {participants.length === 0 ? (
         <div className="card p-4 mt-5" style={{ borderLeft: "4px solid var(--amber)" }}>
           <p>{tr("results.noParticipants")}</p>
@@ -71,6 +95,14 @@ export default async function ResultsPage({
       ) : (
         <form action={saveScoringAction} className="mt-4">
           <input type="hidden" name="id" value={s.id} />
+          {/* optimistic lock: a fingerprint of the state this form was rendered
+              from. The save is refused if anyone saved meanwhile, so one operator
+              can never silently overwrite another — see writeScoringIfUnchanged. */}
+          <input
+            type="hidden"
+            name="stamp"
+            value={scoringStamp(s.scoring, [...metrics.map((m) => m.key), ...participants.map((p) => p.code)])}
+          />
 
           {metrics.map((m, mi) => {
             const { rows } = scoreMetric(s, m.key);

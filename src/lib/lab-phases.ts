@@ -90,6 +90,33 @@ export function computeLabPhases(
   return { phases, curIdx: phases.findIndex((x) => !x.done) };
 }
 
+// Which lab-visible document may this participation FETCH right now? The dashboard
+// already hides each button until the document exists; this states that same rule
+// ONCE so the URL can never outrun the UI — no draft Final Report (it carries the
+// whole cohort's scores) and no certificate rendered with a lab's name and a blank
+// number. Per document:
+//   report      → the round is reported/closed        (lab/page.tsx `it.reported`)
+//   certificate → a certificate is ISSUED for this code (lab/page.tsx `it.hasCert`)
+//   phase handouts (instruction / protocol / results) → their phase is done or
+//     current, i.e. from approval onwards (lab/page.tsx `ph.docs && (done || cur)`)
+// Derived from LAB_PHASES rather than hard-coding the three handout keys, so the
+// gate follows any future edit to the phase definitions exactly as the dashboard
+// does. Pure, so it is unit-tested next to the timeline it mirrors.
+export function canLabFetchDoc(
+  docKey: string,
+  ctx: { status: ParticipantStatus; events: CaseEvent[]; reported: boolean; hasCert: boolean }
+): boolean {
+  if (docKey === "report") return ctx.reported;
+  if (docKey === "certificate") return ctx.hasCert;
+  const { phases, curIdx } = computeLabPhases(ctx.status, ctx.events, {
+    reported: ctx.reported,
+    hasCert: ctx.hasCert,
+  });
+  return phases.some(
+    (p, i) => (p.done || i === curIdx) && !!p.ph.docs?.some((d) => d.key === docKey)
+  );
+}
+
 export const fmtPhaseDate = (iso: string): string => {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? "");
   return m ? `${m[3]}.${m[2]}.${m[1]}` : iso ?? "";

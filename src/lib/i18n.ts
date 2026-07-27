@@ -424,6 +424,21 @@ const DICT: Record<string, Entry> = {
   "act.folder.created": { bg: "Създадена папка", en: "Folder created" },
   "act.folder.renamed": { bg: "Преименувана папка", en: "Folder renamed" },
   "act.folder.deleted": { bg: "Изтрита папка", en: "Folder deleted" },
+  "act.doc.uploaded": { bg: "Качен файл", en: "File uploaded" },
+  "act.doc.upload_removed": { bg: "Премахнат качен файл", en: "Uploaded file removed" },
+  "act.doc.ready": { bg: "Готов документ", en: "Document ready" },
+  "act.doc.reopened": { bg: "Документ отново в процес", en: "Document back in progress" },
+  "act.participant.updated": { bg: "Обновен участник", en: "Participant updated" },
+  "act.lab.uploaded": { bg: "Качен файл от лаборатория", en: "Laboratory file upload" },
+  "act.lab_application.submitted": { bg: "Подадена заявка за акаунт", en: "Account application submitted" },
+  "act.lab_application.approved": { bg: "Одобрена заявка за акаунт", en: "Account application approved" },
+  "act.lab_application.rejected": { bg: "Отхвърлена заявка за акаунт", en: "Account application rejected" },
+  "act.cover.default": { bg: "Обща заглавна снимка", en: "Shared title-page photo" },
+  // results audit trail (§7.5.1/§8.4) — added with the logActivity calls in
+  // saveScoringAction / autoAssignAction; the summary carries the cell-level diff.
+  "act.results.saved": { bg: "Запазени резултати", en: "Results saved" },
+  "act.results.auto_assigned": { bg: "Автоматично изчислена приета стойност", en: "Assigned value auto-computed" },
+  "act.results.conflict": { bg: "Отказан запис на резултати", en: "Results save refused" },
 
   // ── applications ──
   "apps.title": { bg: "Заявки", en: "Applications" },

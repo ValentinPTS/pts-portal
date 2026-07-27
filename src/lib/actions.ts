@@ -11,7 +11,10 @@ import { addParticipant, listParticipants, listParticipationsForLab, updateParti
 import { addApplication, listApplications, setApplicationStatus } from "./applications";
 import { getDoc } from "./documents";
 import { PSTATUS_ORDER, LAB_UPLOAD_SLOTS, canLabUploadNow, type LabUploadSlot } from "./lab-phases";
-import { metricsForScheme, buildScoring, computeAssigned } from "./scoring";
+import {
+  metricsForScheme, buildScoring, computeAssigned,
+  scoringStamp, diffScoring, describeScoringChanges, belowMinimum, CONSENSUS_FLOOR,
+} from "./scoring";
 import { isOwnerEmail } from "./auth";
 import { addLibraryItem, updateLibraryItem, deleteLibraryItem, type LibraryItem } from "./library-store";
 import { addSavedTemplate, deleteSavedTemplate, type SavedTemplate } from "./saved-templates";
@@ -42,8 +45,11 @@ import { addRevision, getRevision, approveRevision } from "./doc-revisions";
 import { createFolder, renameFolder, deleteFolder, getFolder, listChildFolders } from "./folder-tree";
 import { SAMPLE_SCHEMES } from "./sample-schemes";
 import { TYPE_SLUG, type FolderType } from "./folders";
-import type { Block, Scheme, Parameter, StaffRole, StaffStatus, LabStatus, CaseEventKind, LabRegion, VatStatus, SchemeStatus, ParticipantStatus } from "./types";
-import { isIdentityMap, remapSelections, remapCharacteristics, remapScoring, paramsSignature } from "./param-remap";
+import type { Block, Scheme, Scoring, Parameter, StaffRole, StaffStatus, LabStatus, CaseEventKind, LabRegion, VatStatus, SchemeStatus, ParticipantStatus } from "./types";
+import {
+  isIdentityMap, remapSelections, remapCharacteristics, remapScoring, paramsSignature,
+  effectiveDirections, calibrationDataSlots, calibrationSlotsBroken,
+} from "./param-remap";
 import { usesCalApplyItem, CAL_SELECTION_KEY } from "./apply-item";
 
 const STAFF_ROLES: StaffRole[] = ["manager", "staff", "auditor"];
@@ -1621,6 +1627,33 @@ export async function updateSchemeAction(formData: FormData) {
     };
   }
 
+  // Calibration points/directions are edited as FREE TEXT, so a surviving point
+  // carries no original index the way a standard does (param_i_orig) — the
+  // "<dir>:<point>" keys holding the Eₙ inputs (scheme.scoring) and the Results
+  // Sheet fields (formData["results"]: result_<dir>_<pt> / unc_<dir>_<pt>) CANNOT
+  // follow it. Deleting, reordering or renaming a point would silently reattach an
+  // already-issued Eₙ to a different load. Refuse the save while those slots still
+  // hold data — the owner clears them on the Results page first, exactly as the
+  // stranded-participant guard above does. Appending new points stays allowed.
+  const oldCal = existing.calibration;
+  if (existing.type === "C" && oldCal && calibration) {
+    const broken = calibrationSlotsBroken(
+      calibrationDataSlots(existing.scoring, existing.formData?.["results"]),
+      oldCal.points, calibration.points,
+      oldCal.directionsEn, calibration.directionsEn
+    );
+    if (broken.length) {
+      const dirs = effectiveDirections(oldCal.directionsEn);
+      const list = [...new Set(broken.map(([d, p]) =>
+        `${dirs[d] ?? `#${d + 1}`} @ ${oldCal.points[p] ?? `#${p + 1}`}${oldCal.unit ? ` ${oldCal.unit}` : ""}`
+      // Trailing lone surrogate stripped: slicing mid-pair would make
+      // encodeURIComponent throw a URIError and 500 the save instead of showing
+      // the banner. (Cyrillic and digits are BMP, so this is belt-and-braces.)
+      ))].join(", ").slice(0, 300).replace(/[\uD800-\uDFFF]$/, "");
+      redirect(`/schemes/${id}/edit?err=calslots&slots=${encodeURIComponent(list)}`);
+    }
+  }
+
   // cover photo: URL (uploaded), width (%) and placement, all owner-set on the Edit
   // page. Only site-relative or https URLs, with no characters that could break out
   // of an attribute in the rendered documents (defense alongside esc()).
@@ -1710,17 +1743,64 @@ async function readScoringForm(formData: FormData) {
     return Number.isFinite(v) ? v : null;
   };
 
-  const scoring = buildScoring(metricsForScheme(scheme), participants.map((p) => p.code), num);
-  return { id, scheme, scoring };
+  const metrics = metricsForScheme(scheme);
+  const codes = participants.map((p) => p.code);
+  const scoring = buildScoring(metrics, codes, num);
+  // The positional layout the form was built from: metric keys then participant
+  // codes. Part of the stamp, so a scheme/participant change since render is a
+  // conflict too — r_<mi>_<pi>_* indices would otherwise land on the wrong lab.
+  const shape = [...metrics.map((m) => m.key), ...codes];
+  // A form with no `stamp` field at all (a page rendered by an older build, or a
+  // restored bfcache page from before this deploy) keeps the previous, unchecked
+  // behaviour — the check must not turn a working save into a hard failure.
+  const raw = formData.get("stamp");
+  const stamp = typeof raw === "string" ? raw : null;
+  return { id, scheme, scoring, metrics, stamp, shape };
 }
 
-// Save manually-entered results & assigned values.
+// Optimistic lock for the results screen. Both save paths REPLACE scheme.scoring
+// wholesale, so a form rendered before someone else's save would silently drop
+// their entries (the browser posts blanks for cells it never saw). The form carries
+// the stamp of the state it was rendered from; inside the per-scheme write lock we
+// re-read the CURRENT scheme and refuse when it no longer matches. Re-posting the
+// SAME data (double-click, Back-then-Save) is not a conflict — the write would be a
+// no-op. Returns true when the save was refused.
+async function writeScoringIfUnchanged(
+  id: string,
+  stamp: string | null,
+  shape: string[],
+  scoring: Scoring
+): Promise<boolean> {
+  let conflict = false;
+  await updateSchemeWith(id, (current) => {
+    const now = scoringStamp(current.scoring, shape);
+    if (stamp !== null && now !== stamp && now !== scoringStamp(scoring, shape)) {
+      conflict = true;
+      return {};
+    }
+    return { scoring };
+  });
+  return conflict;
+}
+
+// Save manually-entered results & assigned values. §7.5.1/§8.4 — the save is logged
+// with WHO, WHICH scheme and every cell that changed (old → new), so "who entered
+// this z-score and what was it before?" is answerable from the append-only log.
+// `scheme` here is the PRE-write snapshot readScoringForm already fetched, so the
+// diff costs no extra query.
 export async function saveScoringAction(formData: FormData) {
   await requireWriter();
-  const { id, scoring } = await readScoringForm(formData);
-  await updateScheme(id, { scoring });
+  const { id, scheme, scoring, metrics, stamp, shape } = await readScoringForm(formData);
+  const changes = diffScoring(scheme.scoring, scoring);
+  const conflict = await writeScoringIfUnchanged(id, stamp, shape, scoring);
+  await logActivity(conflict ? "results.conflict" : "results.saved", {
+    schemeId: id,
+    summary: conflict
+      ? "Results save REFUSED — the scheme changed since the form was opened; nothing was written."
+      : `Results saved — ${describeScoringChanges(changes, metrics)}`,
+  });
   revalidatePath(`/schemes/${id}`, "layout");
-  redirect(`/schemes/${id}/results`);
+  redirect(`/schemes/${id}/results${conflict ? "?err=conflict" : ""}`);
 }
 
 // Save the entered results AND auto-fill the assigned value/σ/u from them using
@@ -1729,11 +1809,29 @@ export async function saveScoringAction(formData: FormData) {
 // values remain editable, so this is a starting point, not a lock-in.
 export async function autoAssignAction(formData: FormData) {
   await requireWriter();
-  const { id, scheme, scoring } = await readScoringForm(formData);
+  const { id, scheme, scoring, metrics, stamp, shape } = await readScoringForm(formData);
+  // Refuse to derive a consensus value for a characteristic that has fewer results
+  // than the scheme's own declared minimum. At n = 2 Algorithm A degenerates — both
+  // labs always score z = ±0.62 ("satisfactory") however far apart they are — and a
+  // bogus xpt would travel into the Final Report and every lab's dashboard, where a
+  // screen warning cannot follow it. The entered results are still saved; the
+  // assigned value is then entered by hand per Statistical project §4.
+  const need = CONSENSUS_FLOOR;
+  const short = scheme.type === "C" ? [] : belowMinimum(metrics, scoring, need);
   if (scheme.type !== "C") {
-    scoring.assigned = { ...scoring.assigned, ...computeAssigned(metricsForScheme(scheme), scoring) };
+    scoring.assigned = { ...scoring.assigned, ...computeAssigned(metrics, scoring, need) };
   }
-  await updateScheme(id, { scoring });
+  const changes = diffScoring(scheme.scoring, scoring);
+  const conflict = await writeScoringIfUnchanged(id, stamp, shape, scoring);
+  await logActivity(conflict ? "results.conflict" : "results.auto_assigned", {
+    schemeId: id,
+    summary: conflict
+      ? "Results save REFUSED — the scheme changed since the form was opened; nothing was written."
+      : `Results saved + assigned value auto-computed (ISO 13528 Algorithm A, min ${need} results)`
+        + `${short.length ? `; ${short.length} characteristic(s) below the minimum were left for manual entry` : ""}`
+        + ` — ${describeScoringChanges(changes, metrics)}`,
+  });
   revalidatePath(`/schemes/${id}`, "layout");
-  redirect(`/schemes/${id}/results`);
+  const q = conflict ? "?err=conflict" : short.length ? `?warn=minpart&n=${need}` : "";
+  redirect(`/schemes/${id}/results${q}`);
 }

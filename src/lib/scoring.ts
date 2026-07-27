@@ -94,23 +94,106 @@ export function buildScoring(
 }
 
 /**
+ * Fingerprint of the state a results form was rendered from — its "version".
+ * Keys are sorted and fields written in a fixed order, so the value is stable
+ * across the JSONB round-trip (Postgres does not preserve object key order) and
+ * identical whenever the data is identical. `shape` carries the form's positional
+ * layout (metric keys, then participant codes in render order) because the field
+ * names r_<mi>_<pi>_* are index-based: if that layout changed since render, the
+ * submitted indices no longer mean what they meant. Pure → unit-testable.
+ */
+export function scoringStamp(scoring: Scoring | undefined, shape: string[] = []): string {
+  const sc = scoring ?? { assigned: {}, results: {} };
+  const parts: string[] = shape.map((k) => `k|${k}`);
+  for (const key of Object.keys(sc.assigned).sort()) {
+    const a = sc.assigned[key];
+    parts.push(`a|${key}|${g(a.xpt)}|${g(a.sigma)}|${g(a.u)}`);
+  }
+  for (const code of Object.keys(sc.results).sort()) {
+    const byMetric = sc.results[code] ?? {};
+    for (const key of Object.keys(byMetric).sort()) {
+      const e = byMetric[key];
+      parts.push(`r|${code}|${key}|${g(e.value)}|${g(e.u)}|${(e.determinations ?? []).map((d) => g(d)).join(",")}`);
+    }
+  }
+  // FNV-1a 32-bit — short, dependency-free, deterministic. The value is only ever
+  // compared against a re-computation of itself, so collisions are irrelevant.
+  let h = 0x811c9dc5;
+  const s = parts.join(";");
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h.toString(16);
+}
+
+/** The finite results entered for one metric, across all participant codes. */
+export function resultValues(scoring: Scoring, key: string): number[] {
+  const out: number[] = [];
+  for (const code of Object.keys(scoring.results)) {
+    const e = scoring.results[code]?.[key];
+    if (e && Number.isFinite(e.value)) out.push(e.value);
+  }
+  return out;
+}
+
+/**
+ * How many valid results a robust CONSENSUS assigned value needs for this scheme:
+ * the minimum number of participants the scheme was declared with (Plan §5,
+ * Statistical project §3) — never below 2. Below it, Statistical project §4
+ * applies: xpt/σpt are pre-set by hand, not derived from the participants.
+ */
+export function consensusMinimum(s: Scheme): number {
+  return Math.max(2, s.minParticipants || 0);
+}
+
+/**
+ * The STATISTICAL floor for deriving a robust consensus assigned value — the
+ * number of results below which Algorithm A cannot say anything, whatever the
+ * scheme planned for.
+ *
+ * Deliberately NOT scheme.minParticipants: that is an ENROLMENT target (how many
+ * laboratories the round expects to sign up, printed in Plan §5) and using it here
+ * turned "Auto-compute" into a silent no-op on any round that is still collecting
+ * results — a working button becoming a dead one. The real defect is at n = 2,
+ * where Algorithm A degenerates: s* is always 0.801859·|x₁ − x₂|, so BOTH labs
+ * score z = ±0.62 ("satisfactory") however far apart they are. From n = 3 the
+ * estimator has freedom and the result is meaningful, if wide.
+ */
+export const CONSENSUS_FLOOR = 3;
+
+/**
+ * Metrics that have results entered but fewer than `minN` — exactly the ones
+ * computeAssigned refuses, so the on-screen warning can never disagree with what
+ * was computed. Metrics with no results at all stay silent (nothing attempted).
+ */
+export function belowMinimum(metrics: Metric[], scoring: Scoring, minN = CONSENSUS_FLOOR): Metric[] {
+  const need = Math.max(2, minN);
+  return metrics.filter((m) => {
+    const n = resultValues(scoring, m.key).length;
+    return n > 0 && n < need;
+  });
+}
+
+/**
  * Suggested assigned values from the participants' results, via ISO 13528
  * Algorithm A (robust mean x* and robust SD s*), with u(xpt) = 1.25 · s* ÷ √n.
  * This is the *consensus* approach — appropriate for TESTING schemes only;
  * for calibration the assigned value is the reference lab's value (kept manual).
- * Caller decides whether to apply it. Pure → unit-testable. A metric with fewer
- * than 2 results is skipped (can't form a robust SD).
+ * Caller decides whether to apply it. Pure → unit-testable.
+ *
+ * A metric with fewer than `minN` results is SKIPPED — see CONSENSUS_FLOOR for
+ * why the default is 3 and why it is NOT the scheme's enrolment target. Below the
+ * floor, Statistical project §4 applies: xpt/σpt are entered by hand instead.
  */
-export function computeAssigned(metrics: Metric[], scoring: Scoring): Record<string, AssignedValue> {
+export function computeAssigned(
+  metrics: Metric[],
+  scoring: Scoring,
+  minN = CONSENSUS_FLOOR
+): Record<string, AssignedValue> {
+  const need = Math.max(2, minN);
   const round6 = (v: number) => parseFloat(v.toFixed(6));
   const out: Record<string, AssignedValue> = {};
   for (const m of metrics) {
-    const values: number[] = [];
-    for (const code of Object.keys(scoring.results)) {
-      const e = scoring.results[code]?.[m.key];
-      if (e && Number.isFinite(e.value)) values.push(e.value);
-    }
-    if (values.length < 2) continue;
+    const values = resultValues(scoring, m.key);
+    if (values.length < need) continue;
     const { xStar, sStar } = algorithmA(values);
     if (Number.isNaN(xStar)) continue;
     out[m.key] = {
@@ -120,6 +203,64 @@ export function computeAssigned(metrics: Metric[], scoring: Scoring): Record<str
     };
   }
   return out;
+}
+
+// ── §7.5.1/§8.4 audit trail: what actually changed in a results save ──────────
+// Pure diff of two Scoring objects so a save can be logged with WHICH cell changed
+// and WHAT IT WAS BEFORE — the question an ISO 17043 audit asks about a z-score.
+// `null` = the cell was blank. Values are rounded like the UI (clean) so float
+// noise never registers as a phantom change. Pure → unit-testable.
+export interface ScoringChange {
+  what: string;      // "xpt" | "sigma" | "u" | "value" | "I" | "II" | "III"
+  metricKey: string;
+  code?: string;     // participant code — absent for the assigned-value row
+  before: number | null;
+  after: number | null;
+}
+
+const DET_LABEL = ["I", "II", "III"];
+
+export function diffScoring(before: Scoring | undefined, after: Scoring): ScoringChange[] {
+  const out: ScoringChange[] = [];
+  const b: Scoring = before ?? { assigned: {}, results: {} };
+  const n = (v: number | null | undefined): number | null =>
+    v === null || v === undefined || Number.isNaN(v) ? null : clean(v);
+  const push = (what: string, metricKey: string, x: number | null, y: number | null, code?: string) => {
+    if (x === y) return;
+    out.push({ what, metricKey, code, before: x, after: y });
+  };
+  const keys = (a: object, c: object) => [...new Set([...Object.keys(a), ...Object.keys(c)])].sort();
+
+  for (const key of keys(b.assigned, after.assigned)) {
+    const x = b.assigned[key], y = after.assigned[key];
+    push("xpt", key, n(x?.xpt), n(y?.xpt));
+    push("sigma", key, n(x?.sigma), n(y?.sigma));
+    push("u", key, n(x?.u), n(y?.u));
+  }
+  for (const code of keys(b.results, after.results)) {
+    const bx = b.results[code] ?? {}, ay = after.results[code] ?? {};
+    for (const key of keys(bx, ay)) {
+      const x = bx[key], y = ay[key];
+      push("value", key, n(x?.value), n(y?.value), code);
+      push("u", key, n(x?.u), n(y?.u), code);
+      for (let d = 0; d < DET_LABEL.length; d++)
+        push(DET_LABEL[d], key, n(x?.determinations?.[d]), n(y?.determinations?.[d]), code);
+    }
+  }
+  return out;
+}
+
+// One-line, CODE-ONLY summary for the activity log (§4.2 — never a lab name).
+// Capped so one bulk save cannot write an unbounded row.
+export function describeScoringChanges(changes: ScoringChange[], metrics: Metric[], max = 12): string {
+  if (changes.length === 0) return "no values changed";
+  const label = new Map(metrics.map((m) => [m.key, m.labelEn.slice(0, 40)]));
+  const fmt = (v: number | null) => (v === null ? "—" : String(v));
+  const parts = changes.slice(0, max).map(
+    (c) => `${c.code ?? "assigned"} · ${label.get(c.metricKey) || c.metricKey} · ${c.what}: ${fmt(c.before)} → ${fmt(c.after)}`
+  );
+  const more = changes.length - parts.length;
+  return `${changes.length} value(s) changed — ${parts.join("; ")}${more > 0 ? `; +${more} more` : ""}`;
 }
 
 export interface ScoredRow {

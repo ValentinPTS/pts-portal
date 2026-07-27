@@ -88,6 +88,16 @@ export const DOC_CSS = `
   .schemettl{font-family:var(--sans);font-weight:700;font-size:13pt;margin:2px 0 10px;}
   .coverimg{width:46%;max-width:100%;height:auto;border-radius:8px;margin-top:10px;}
   img{max-width:100%;}
+  /* "Free (over text)" pictures. The Word editor's applyWrap() gives the image
+     class="free" plus inline left/top in mm and leaves the position to CSS —
+     measured against the editable body, which is position:relative in the editor
+     (.we-docbody) and in print (.pts-docbody, see lib/doc-template.ts). Without this
+     rule the coordinates are inert and the picture silently drops back into the text
+     flow on export. Exact mirror of the .we-page img.free rule in
+     components/WordEditor.tsx — keep the two in sync. Lives here, not in the skins,
+     because every skin is DOC_CSS + overrides, so one rule covers classic, modern,
+     minimal and every custom skin. */
+  img.free{position:absolute;max-width:none;z-index:1;}
   /* lighter document header (logo + embroidery band + centred title) for utility
      forms that don't have a full title page; the wrap is a white band that bleeds
      left over the side embroidery so the side strip starts at the first section */
