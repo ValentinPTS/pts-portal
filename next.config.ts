@@ -6,6 +6,17 @@ const nextConfig: NextConfig = {
   // its own package directory at runtime — bundling would break those paths.
   serverExternalPackages: ["playwright", "playwright-core", "@sparticuz/chromium"],
 
+  // WHY PDFs FAILED IN PRODUCTION. @sparticuz/chromium loads its payload — the
+  // brotli-compressed Chromium, its fonts and swiftshader — from bin/ BY PATH at
+  // runtime, not by import. Next's file tracer follows imports, so it shipped the
+  // package's JavaScript and left all 69MB of bin/*.br behind: executablePath()
+  // then unpacked a browser that wasn't in the bundle and every export 500'd,
+  // while local dev (which uses the full `playwright` package instead) worked fine.
+  // Same fix Next documents for aws-crt's binaries.
+  outputFileTracingIncludes: {
+    "/api/pdf": ["./node_modules/@sparticuz/chromium/bin/**/*"],
+  },
+
   experimental: {
     // Server Actions cap request bodies at 1MB by default. Our uploads need more:
     // scheme cover/logo images (≤2MB) and lab-onboarding documents (≤3 files ×5MB).
