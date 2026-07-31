@@ -85,16 +85,6 @@ const DICT: Record<string, Entry> = {
   "scheme.applications": { bg: "Заявки", en: "Applications" },
   "scheme.results": { bg: "Резултати", en: "Results" },
   "scheme.skin": { bg: "Облик", en: "Skin" },
-
-  // ── document tile ──
-  "tile.notStarted": { bg: "Не е започнат", en: "Not started" },
-  "tile.built": { bg: "Готов ✓", en: "Built ✓" },
-  "tile.open": { bg: "Отвори ↗", en: "Open ↗" },
-  "tile.fill": { bg: "Попълни ✎", en: "Fill ✎" },
-  "tile.filled": { bg: "Попълнен ✓", en: "Filled ✓" },
-  "tile.toFill": { bg: "За попълване", en: "To fill" },
-  "tile.builtSuffix": { bg: "готови", en: "built" },
-
   // ── home / files pages ──
   "home.title": { bg: "Вашите схеми", en: "Your schemes" },
   "home.subtitle": { bg: "Отворете работно пространство — новите схеми се създават вътре, подредени по година.", en: "Open a workspace — new schemes are created inside, organised by year." },
@@ -175,11 +165,6 @@ const DICT: Record<string, Entry> = {
   "lab.awaitingResults": { bg: "Очакват се вашите резултати", en: "Awaiting your results" },
   "lab.deadline": { bg: "Краен срок", en: "Deadline" },
   "lab.noOpen": { bg: "В момента няма други отворени схеми.", en: "No other open schemes right now." },
-  "stage.applied": { bg: "Заявка", en: "Applied" },
-  "stage.approved": { bg: "Одобрен", en: "Approved" },
-  "stage.samples": { bg: "Образци", en: "Samples" },
-  "stage.results": { bg: "Резултати", en: "Results" },
-  "stage.report": { bg: "Доклад", en: "Report" },
 
   // ── common (more) ──
   "common.saveChanges": { bg: "Запази промените", en: "Save changes" },
@@ -529,18 +514,6 @@ const DICT: Record<string, Entry> = {
   "folder.empty": { bg: "Тази папка е празна. Добавете папка или схема.", en: "This folder is empty. Add a folder or a scheme." },
   "folder.subfolders": { bg: "Папки", en: "Folders" },
   "folder.schemes": { bg: "Схеми", en: "Schemes" },
-
-  // ── table editing (Word editor) ──
-  "tbl.insert": { bg: "Таблица", en: "Table" },
-  "tbl.title": { bg: "Таблица", en: "Table" },
-  "tbl.rowAbove": { bg: "Ред отгоре", en: "Row above" },
-  "tbl.rowBelow": { bg: "Ред отдолу", en: "Row below" },
-  "tbl.colLeft": { bg: "Колона отляво", en: "Column left" },
-  "tbl.colRight": { bg: "Колона отдясно", en: "Column right" },
-  "tbl.delRow": { bg: "Изтрий реда", en: "Delete row" },
-  "tbl.delCol": { bg: "Изтрий колоната", en: "Delete column" },
-  "tbl.delTable": { bg: "Изтрий таблицата", en: "Delete table" },
-
   // ── My items (library) page ──
   "items.title": { bg: "Моите елементи", en: "My items" },
   "items.subtitle": { bg: "Многократно използваеми фрагменти, които вмъквате в документите (групата „Мои елементи“ в редактора).", en: "Reusable snippets you insert into documents (the “My items” group in the editor)." },

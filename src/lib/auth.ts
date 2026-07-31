@@ -1,6 +1,5 @@
 import { cookies } from "next/headers";
 import { cache } from "react";
-import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -85,13 +84,3 @@ export const getSessionUser = cache(async (): Promise<OwnerSession | null> => {
   return { userId: user.id, email: (user.email ?? "").toLowerCase(), aal2: aal?.currentLevel === "aal2" };
 });
 
-// THE gate. No-op while auth is off. When on: must be a signed-in owner who has
-// completed 2FA. Redirects (never returns) on failure.
-export async function requireOwner(): Promise<OwnerSession | void> {
-  if (!AUTH_ENABLED) return;
-  const session = await getSessionUser();
-  if (!session) redirect("/login");
-  if (!isOwnerEmail(session.email)) redirect("/login?denied=1");
-  if (REQUIRE_2FA && !session.aal2) redirect("/account?enroll=1"); // sign-in ok, but 2FA not satisfied
-  return session;
-}

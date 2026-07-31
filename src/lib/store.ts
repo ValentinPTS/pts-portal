@@ -144,23 +144,6 @@ export async function listSchemesInFolder(type: "T" | "C", folderId: string | nu
   }
 }
 
-// Full schemes for ONE type+year only (the year-folder tiles need docs/dates), so
-// the page loads just that year rather than every scheme.
-export async function listSchemesByYear(type: "T" | "C", year: string): Promise<Scheme[]> {
-  const db = getDb();
-  const fromMem = (): Scheme[] => mem.filter((s) => s.type === type && yearOf(s.number) === year);
-  if (!db) return fromMem();
-  try {
-    await ensureSeed(db);
-    const { data, error } = await db.from("schemes").select("data").eq("type", type).eq("year", year).order("id");
-    if (error) throw error;
-    return (data ?? []).map((r) => (r as { data: Scheme }).data);
-  } catch (e) {
-    warn(e);
-    return fromMem();
-  }
-}
-
 // True if a scheme already uses this official number (YY/MM-X-N is meant to be
 // unique system-wide). `exceptId` lets a scheme keep its own number on edit.
 export async function schemeNumberExists(number: string, exceptId?: string): Promise<boolean> {

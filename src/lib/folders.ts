@@ -33,14 +33,6 @@ export function schemeName(s: Scheme): string {
 }
 
 // distinct years (desc) present for a type
-export function yearsForType<T extends SchemeRef>(schemes: T[], type: FolderType): string[] {
-  const set = new Set(schemes.filter((s) => s.type === type).map(schemeYear));
-  return [...set].sort((a, b) => b.localeCompare(a));
-}
-export function schemesIn<T extends SchemeRef>(schemes: T[], type: FolderType, year: string): T[] {
-  return schemes.filter((s) => s.type === type && schemeYear(s) === year);
-}
-
 // Lifecycle buckets for grouping scheme lists (owner explorer + lab portal):
 // coming = being prepared (draft, incl. announced), current = actively worked
 // (enrolment open → reporting), finished = closed/reported.

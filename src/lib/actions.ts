@@ -496,29 +496,6 @@ export async function translateDocHtmlAction(html: string): Promise<{ html?: str
   return { html: out.join("") };
 }
 
-export async function saveComposedAction(schemeId: string, docKey: string, blocksJson: string) {
-  await requireWriter();
-  const scheme = await getScheme(schemeId);
-  if (!scheme) throw new Error("Scheme not found");
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(blocksJson);
-  } catch {
-    throw new Error("Invalid blocks payload");
-  }
-  const arr = Array.isArray(parsed) ? (parsed as Block[]) : [];
-  const clean: Block[] = arr.slice(0, 300).map((b, i) => ({
-    id: typeof b?.id === "string" ? b.id : `b${i}`,
-    type: b?.type === "heading" || b?.type === "field" ? b.type : "text",
-    bg: typeof b?.bg === "string" ? b.bg : "",
-    en: typeof b?.en === "string" ? b.en : "",
-    field: typeof b?.field === "string" ? b.field : undefined,
-  }));
-  const composed = { ...(scheme.composed ?? {}), [docKey]: clean };
-  await updateScheme(schemeId, { composed });
-  revalidatePath(`/schemes/${schemeId}/build/${docKey}`, "page");
-}
-
 // ── public application form: lightweight in-memory rate-limit per IP ──────────
 const appHits = new Map<string, number[]>();
 function allowSubmission(ip: string, max = 8, windowMs = 15 * 60 * 1000): boolean {
@@ -1028,22 +1005,6 @@ export async function rejectLabApplicationAction(formData: FormData): Promise<{ 
   await logActivity("lab_application.rejected", { summary: `Lab application rejected for ${app.email}` });
   revalidatePath("/users");
   return { ok: true };
-}
-
-// Short-lived signed URL for a stored non-EU document (manager review only). The key
-// is confined to the private bucket namespace — no traversal / arbitrary object keys.
-export async function labDocUrlAction(path: string): Promise<{ url?: string; error?: string }> {
-  await requireManager();
-  const db = getDb();
-  if (!db) return { error: "Not configured." };
-  if (!path || path.includes("..") || path.startsWith("/")) return { error: "Bad path." };
-  try {
-    const { data, error } = await db.storage.from(DOC_BUCKET).createSignedUrl(path, 300);
-    if (error || !data) throw error ?? new Error("no url");
-    return { url: data.signedUrl };
-  } catch (e) {
-    return { error: (e as Error)?.message || "Could not sign URL." };
-  }
 }
 
 export async function setStaffRoleAction(id: string, role: StaffRole): Promise<{ ok?: boolean; error?: string }> {

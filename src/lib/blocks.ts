@@ -1,5 +1,5 @@
-import type { Scheme, Lang, Block, Participant } from "./types";
-import { esc, pick, wrapDoc, cover, footer } from "./doc-shell";
+import type { Scheme, Lang, Participant } from "./types";
+import { esc, pick } from "./doc-shell";
 import { reportResultsTesting, reportResultsCalibration } from "./scoring";
 
 // ── The snippet library (step 1: built-in starters; step 2 adds save-your-own) ──
@@ -214,25 +214,3 @@ function fieldHtml(s: Scheme, key: string, lang: Lang, participants: Participant
   }
 }
 
-// Render the owner-composed blocks into the branded document HTML (preview + PDF).
-export function renderComposed(
-  s: Scheme,
-  blocks: Block[],
-  lang: Lang,
-  docTitleEn: string,
-  docTitleBg: string,
-  participants: Participant[] = []
-): string {
-  const body = blocks
-    .map((b) => {
-      if (b.type === "heading") return `<h2 class="sec">${esc(pick(lang, b.en ?? "", b.bg ?? ""))}</h2>`;
-      if (b.type === "text")
-        return `<div class="body"><p>${esc(pick(lang, b.en ?? "", b.bg ?? "")).replace(/\n/g, "<br>")}</p></div>`;
-      if (b.type === "field") return fieldHtml(s, b.field ?? "", lang, participants);
-      return "";
-    })
-    .join("\n");
-
-  const inner = cover(s, lang, docTitleEn, docTitleBg) + body + footer(s, "draft");
-  return wrapDoc(lang, `${s.number} — ${pick(lang, docTitleEn, docTitleBg)}`, inner);
-}

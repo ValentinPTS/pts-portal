@@ -1,6 +1,6 @@
 import type { Scheme, Lang, Participant, DocOptions } from "./types";
 import type { Skin } from "../skins/types";
-import { esc, pick, wrapDoc, cover, footer } from "./doc-shell";
+import { esc, pick, cover, footer } from "./doc-shell";
 import { LIBRARY, FIELDS, FORM_ELEMENTS, renderFieldHtml } from "./blocks";
 import { docDefaultBody, docCoverHtml } from "./doc-template";
 
@@ -40,12 +40,6 @@ export function coverDocHtml(s: Scheme, docKey: string, participants: Participan
     bg: docCoverHtml(s, docKey, "bg", opts, skin),
     en: docCoverHtml(s, docKey, "en", opts, skin),
   };
-}
-
-// Wrap the editor's body HTML in the branded document (cover/head page + footer).
-export function wrapForPrint(s: Scheme, bodyHtml: string, lang: Lang, titleEn: string, titleBg: string): string {
-  const inner = cover(s, lang, titleEn, titleBg, { withImage: true }) + `<div class="body">${bodyHtml}</div>` + footer(s, "draft");
-  return wrapDoc(lang, `${s.number} — ${pick(lang, titleEn, titleBg)}`, inner);
 }
 
 // Items for the right-hand insert panel — HTML ready to drop at the cursor (both langs).

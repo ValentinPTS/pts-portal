@@ -12,7 +12,3 @@ export function getDb(): SupabaseClient | null {
   cached = url && key ? createClient(url, key, { auth: { persistSession: false } }) : null;
   return cached;
 }
-
-export function isDbConfigured(): boolean {
-  return !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_KEY);
-}
