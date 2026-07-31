@@ -6,6 +6,8 @@ import { listSchemes } from "@/lib/store";
 import { metricsForScheme, scoreMetric } from "@/lib/scoring";
 import { statusChip } from "@/lib/folders";
 import { computeLabPhases, fmtPhaseDate, canLabUploadNow, LAB_UPLOAD_SLOTS } from "@/lib/lab-phases";
+import { releasedDocs } from "@/lib/doc-release";
+import { getDoc } from "@/lib/documents";
 import { labUploadDocAction } from "@/lib/actions";
 import { signOutLabAction } from "@/lib/auth-actions";
 import { listForLab } from "@/lib/notifications";
@@ -137,16 +139,6 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
                   {it.deadline ? ` (${lang === "bg" ? "срок" : "deadline"}: ${it.deadline})` : ""}
                 </div>
               )}
-              {ph.docs && (done || cur) && (
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-                  {ph.docs.map((d) => (
-                    <a key={d.key} href={`/lab/doc/${it.scheme.id}/${d.key}?lang=${lang}`} target="_blank" rel="noreferrer"
-                      className="btn btn-sm" style={{ fontSize: 11.5, padding: "3px 9px" }}>
-                      ⇩ {lang === "bg" ? d.bg : d.en}
-                    </a>
-                  ))}
-                </div>
-              )}
               {ph.uploadSlot && (done || cur) && (() => {
                 // the lab's own upload slot for this phase: uploaded chip + replace,
                 // or the upload form; locked (read-only) once the round is scored.
@@ -211,13 +203,40 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
     </div>
   );
 
-  const docButtons = (it: Item) => (
-    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-      {it.reported ? <a href={`/lab/doc/${it.scheme.id}/report?lang=${lang}`} target="_blank" rel="noreferrer" className="btn btn-sm">{tr("lab.finalReport")}</a> : null}
-      {it.hasCert ? <a href={`/lab/doc/${it.scheme.id}/certificate?lang=${lang}`} target="_blank" rel="noreferrer" className="btn btn-sm">{tr("lab.certificate")}</a> : null}
-      {!it.reported && !it.hasCert && <span style={{ fontSize: 13, color: "var(--muted)" }}>{tr("lab.docsAfter")}</span>}
-    </div>
-  );
+  // Every document this participation has from the provider, in ONE place: the
+  // ones he released with "Изпрати на участниците", plus the report and the
+  // certificate, which are issued rather than sent. Nothing appears here that he
+  // has not deliberately put out — an uploaded but unsent document stays his.
+  const docsFromProvider = (it: Item) => {
+    const docLabel = (key: string) => {
+      const def = getDoc(key);
+      return def ? (lang === "bg" ? def.nameBg : def.nameEn) : key;
+    };
+    const rows = [
+      ...releasedDocs(it.scheme.sentToParticipants).map((r) => ({ key: r.key, label: docLabel(r.key), at: r.at.slice(0, 10) })),
+      ...(it.reported ? [{ key: "report", label: tr("lab.finalReport"), at: "" }] : []),
+      ...(it.hasCert ? [{ key: "certificate", label: tr("lab.certificate"), at: "" }] : []),
+    ];
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <span className="field-label" style={{ marginBottom: 0 }}>
+          {lang === "bg" ? "Документи от организатора" : "Documents from the provider"}
+        </span>
+        {rows.length === 0 ? (
+          <span style={{ fontSize: 13, color: "var(--muted)" }}>{tr("lab.docsAfter")}</span>
+        ) : (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {rows.map((d) => (
+              <a key={d.key} href={`/lab/doc/${it.scheme.id}/${d.key}?lang=${lang}`} target="_blank" rel="noreferrer"
+                className="btn btn-sm" style={{ fontSize: 12 }}>
+                ⇩ {d.label}{d.at ? ` · ${fmtPhaseDate(d.at)}` : ""}
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const dateRange = (s: (typeof allSchemes)[number]) => {
     const ds = (s.schedule ?? []).map((x) => x.date).filter(Boolean);
@@ -250,8 +269,8 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
         ) : (
           <Timeline it={it} />
         )}
+        {docsFromProvider(it)}
         {resultBlock(it.scores, it.overall, awaiting)}
-        {docButtons(it)}
       </div>
     );
   };

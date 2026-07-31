@@ -27,27 +27,23 @@ export function canLabUploadNow(status: ParticipantStatus): boolean {
   return PSTATUS_ORDER.indexOf(status) < PSTATUS_ORDER.indexOf("scored");
 }
 
+// A phase dates a step and may ask the laboratory to act. It no longer carries
+// documents: which documents a laboratory has is decided by what the provider
+// RELEASED (lib/doc-release.ts), not by which phase it has reached. They are shown
+// together in one list on the dashboard rather than scattered along the timeline.
 export interface LabPhaseDef {
   bg: string;
   en: string;
   minStatus: ParticipantStatus;
   kind?: CaseEventKind;
   labMove?: { bg: string; en: string };
-  docs?: { key: string; bg: string; en: string }[];
   uploadSlot?: LabUploadSlot; // the lab can upload its file on this phase
 }
 
 export const LAB_PHASES: LabPhaseDef[] = [
   { bg: "Заявка за участие", en: "Application", minStatus: "applied" },
   { bg: "Одобрение и код", en: "Approval & code", minStatus: "approved", kind: "code_assigned" },
-  {
-    bg: "Изпращане на пробите", en: "Samples dispatched", minStatus: "dispatched", kind: "items_dispatched",
-    docs: [
-      { key: "instruction", bg: "Инструкция за участниците", en: "Instruction for participants" },
-      { key: "protocol", bg: "Протокол за получаване", en: "Receipt protocol" },
-      { key: "results", bg: "Лист за резултати", en: "Results sheet" },
-    ],
-  },
+  { bg: "Изпращане на пробите", en: "Samples dispatched", minStatus: "dispatched", kind: "items_dispatched" },
   {
     bg: "Потвърдено получаване", en: "Receipt confirmed", minStatus: "received", kind: "receipt_confirmed",
     labMove: { bg: "Потвърдете получаването — качете подписания протокол тук, или го изпратете по e-mail.", en: "Confirm receipt — upload the signed protocol here, or send it by e-mail." },
@@ -90,32 +86,10 @@ export function computeLabPhases(
   return { phases, curIdx: phases.findIndex((x) => !x.done) };
 }
 
-// Which lab-visible document may this participation FETCH right now? The dashboard
-// already hides each button until the document exists; this states that same rule
-// ONCE so the URL can never outrun the UI — no draft Final Report (it carries the
-// whole cohort's scores) and no certificate rendered with a lab's name and a blank
-// number. Per document:
-//   report      → the round is reported/closed        (lab/page.tsx `it.reported`)
-//   certificate → a certificate is ISSUED for this code (lab/page.tsx `it.hasCert`)
-//   phase handouts (instruction / protocol / results) → their phase is done or
-//     current, i.e. from approval onwards (lab/page.tsx `ph.docs && (done || cur)`)
-// Derived from LAB_PHASES rather than hard-coding the three handout keys, so the
-// gate follows any future edit to the phase definitions exactly as the dashboard
-// does. Pure, so it is unit-tested next to the timeline it mirrors.
-export function canLabFetchDoc(
-  docKey: string,
-  ctx: { status: ParticipantStatus; events: CaseEvent[]; reported: boolean; hasCert: boolean }
-): boolean {
-  if (docKey === "report") return ctx.reported;
-  if (docKey === "certificate") return ctx.hasCert;
-  const { phases, curIdx } = computeLabPhases(ctx.status, ctx.events, {
-    reported: ctx.reported,
-    hasCert: ctx.hasCert,
-  });
-  return phases.some(
-    (p, i) => (p.done || i === curIdx) && !!p.ph.docs?.some((d) => d.key === docKey)
-  );
-}
+// canLabFetchDoc used to live here and guess from the timeline: a handout counted
+// as available once its phase was done or current. It now lives in lib/doc-release
+// and reads only what the owner explicitly did — released the document, reported
+// the round, issued the certificate. Nothing inferred, nothing timed.
 
 export const fmtPhaseDate = (iso: string): string => {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? "");

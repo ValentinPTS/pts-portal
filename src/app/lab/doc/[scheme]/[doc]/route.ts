@@ -2,31 +2,34 @@ import type { NextRequest } from "next/server";
 import { getLabSession } from "@/lib/lab-auth";
 import { listParticipationsForLab } from "@/lib/participants";
 import { getScheme } from "@/lib/store";
-import { getDoc } from "@/lib/documents";
-import { listCaseEvents } from "@/lib/case-events";
-import { canLabFetchDoc } from "@/lib/lab-phases";
+import { getDoc, hasDocContent } from "@/lib/documents";
+import { canLabFetchDoc } from "@/lib/doc-release";
+import { uploadedDocResponse } from "@/lib/scheme-uploads";
 import { stripBodyMarkers, withSkin } from "@/lib/doc-shell";
 import { resolveSkinAsync } from "@/skins";
 import type { DocOptions } from "@/lib/types";
 
 // Lab-scoped document view. A laboratory can fetch ONLY:
-//   • documents for a scheme it actually participates in (verified by lab_id), and
+//   • documents for a scheme it actually participates in (verified by lab_id),
+//   • that the provider has RELEASED to the participants (lib/doc-release), and
 //   • its OWN certificate (scoped to its own code — never another lab's).
-// Returns print-ready HTML (the lab can save as PDF from the browser). Whitelist:
-// certificate + final report, plus the per-phase participant handouts of the lab
-// timeline (instruction, blank receipt protocol, blank results sheet — generic
-// documents every participant receives; they carry no other lab's identity).
-// The participant LISTS (F 7.2.1-4/-5) stay internal — never lab-visible (§4.2).
+//
+// What it gets back is what the provider actually put in the slot. He writes his
+// documents in Word and exports PDF, so when an uploaded file is the active
+// version the BYTES are streamed; only when the document was built in the app is
+// print-ready HTML rendered. Serving the app's empty template while his real PDF
+// sat unread in the slot was the gap this closes.
+//
+// The participant LISTS (F 7.2.1-4/-5/-6) and the provider's planning papers can
+// never be released at all — see SENDABLE_DOCS (§4.2).
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const ALLOWED = new Set(["certificate", "report", "instruction", "protocol", "results"]);
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ scheme: string; doc: string }> }) {
   const ls = await getLabSession();
   if (!ls) return new Response("Unauthorized", { status: 401 });
 
   const { scheme: schemeId, doc } = await ctx.params;
-  if (!ALLOWED.has(doc)) return new Response("Forbidden", { status: 403 });
 
   // the lab must own a participation in this scheme
   const mine = (await listParticipationsForLab(ls.lab.id)).find((p) => p.schemeId === schemeId);
@@ -34,20 +37,34 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ scheme: str
 
   const scheme = await getScheme(schemeId);
   const def = getDoc(doc);
-  if (!scheme || !def || !def.render) return new Response("Not found", { status: 404 });
+  if (!scheme || !def) return new Response("Not found", { status: 404 });
 
-  // LIFECYCLE gate — participating is not enough. The dashboard hides each button
-  // until the document actually exists; the URL now obeys the SAME rule, so a lab can
-  // never pull an unapproved Final Report (it carries the whole cohort's scores) or a
-  // certificate rendered with its name and a blank number (§7.4).
+  // RELEASE gate — participating is not enough. The dashboard only lists what was
+  // released; the URL obeys the same rule, so a link can never outrun the screen:
+  // no unreleased handout, no draft Final Report (it carries the whole cohort's
+  // scores) and no certificate rendered with a lab's name and a blank number (§7.4).
   const allowed = canLabFetchDoc(doc, {
-    status: mine.status,
-    events: await listCaseEvents(schemeId, mine.code),
+    sent: scheme.sentToParticipants,
     reported: scheme.status === "report" || scheme.status === "closed",
     hasCert: !!scheme.certificates?.[mine.code],
   });
   if (!allowed) return new Response("Not available yet", { status: 403 });
 
+  // The provider's own file wins when it is the active version — same rule the
+  // owner's documents page shows him, so both sides always see the same document.
+  //
+  // NEVER for the certificate. scheme.uploads holds ONE file per document slot,
+  // shared by the whole cohort — fine for a document every participant receives
+  // identically, but a certificate belongs to exactly one laboratory. Serving the
+  // slot here would hand every lab whichever certificate was uploaded last (§4.2).
+  // The certificate is always rendered, scoped to this participation's code.
+  const up = doc === "certificate" ? undefined : scheme.uploads?.[doc];
+  const preferBuilt = scheme.docActive?.[doc] === "built" && hasDocContent(scheme, doc);
+  if (up && !preferBuilt) {
+    return uploadedDocResponse(up, req.nextUrl.searchParams.get("download") === "1");
+  }
+
+  if (!def.render) return new Response("Not found", { status: 404 });
   const lang = req.nextUrl.searchParams.get("lang") === "en" ? "en" : "bg";
 
   // certificate → scoped to THIS lab's code only

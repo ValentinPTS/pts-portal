@@ -58,10 +58,12 @@ const ev = (kind: CaseEvent["kind"], at: string, ref?: string): CaseEvent => ({
   ok("all done → curIdx -1", curIdx === -1);
 }
 
-// 7) the dispatch phase carries the lab handout downloads
+// 7) a phase dates a step and may ask the lab to act — it carries NO documents.
+// Which documents a lab has is what the provider released, not what phase it
+// reached; that rule lives in lib/doc-release and is tested there.
 {
-  const docs = LAB_PHASES[2].docs?.map((d) => d.key) ?? [];
-  ok("dispatch docs = instruction/protocol/results", JSON.stringify(docs) === JSON.stringify(["instruction", "protocol", "results"]));
+  const withDocs = LAB_PHASES.filter((p) => "docs" in p);
+  ok("no phase carries documents any more", withDocs.length === 0);
 }
 
 // 8) date formatting

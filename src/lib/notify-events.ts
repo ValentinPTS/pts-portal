@@ -68,6 +68,30 @@ export async function notifyApplicationRejected(
   });
 }
 
+/**
+ * The provider released a document to the participants. One notice per
+ * participation, so a laboratory in two schemes is told twice, each carrying the
+ * code it works under in that scheme.
+ */
+export async function notifyDocsSent(
+  labId: string | undefined,
+  schemeId: string,
+  schemeNumber: string,
+  code: string,
+  docNameBg: string,
+  docNameEn: string,
+): Promise<void> {
+  if (!labId) return;
+  await notify({
+    kind: "docs.sent",
+    audience: "lab",
+    labId, schemeId, code,
+    bg: `Нов документ за схема ${schemeNumber}: „${docNameBg}“.`,
+    en: `A new document for scheme ${schemeNumber}: “${docNameEn}”.`,
+    href: "/lab",
+  });
+}
+
 /** The laboratory confirmed the items arrived (it uploaded the signed protocol). */
 export async function notifyReceiptConfirmed(schemeId: string, schemeNumber: string, code: string): Promise<void> {
   await notify({

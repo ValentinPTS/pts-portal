@@ -3,7 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { uploadSchemeDocAction, removeSchemeDocUploadAction, setDocSourceAction, saveDocHtmlAction } from "@/lib/actions";
+import { uploadSchemeDocAction, removeSchemeDocUploadAction, setDocSourceAction, saveDocHtmlAction, setDocSentAction } from "@/lib/actions";
 
 export type DocSource = "built" | "uploaded" | "none";
 export interface DocRow {
@@ -19,6 +19,8 @@ export interface DocRow {
   uploadName?: string;
   buildHref: string;      // open/create in the app editor (or fill view)
   viewHref?: string;      // lists: the live auto view (preview + PDF)
+  sendable?: boolean;     // one of the documents participants may receive
+  sentAt?: string;        // dd.mm.yyyy when it was released to them (absent = not sent)
 }
 export interface DocStageView { key: string; label: string; docs: DocRow[] }
 
@@ -76,6 +78,26 @@ export default function SchemeDocuments({ schemeId, lang, stages, lists = [] }: 
       router.refresh();
     });
   }
+  // Release / withdraw. Sending is the deliberate act that puts the document in
+  // every participant's portal and tells them — nothing else does, which is why it
+  // asks first and reports how many participations were told.
+  function setSent(d: DocRow, sent: boolean) {
+    setMenuKey(null);
+    const ask = sent
+      ? L(`Да изпратя ли „${d.name}“ на участниците? Те ще го видят в портала и ще получат известие.`,
+          `Send “${d.name}” to the participants? They will see it in their portal and be notified.`)
+      : L(`Да спра ли споделянето на „${d.name}“? Участниците няма да го виждат повече.`,
+          `Stop sharing “${d.name}”? The participants will no longer see it.`);
+    if (!window.confirm(ask)) return;
+    setBusyKey(d.key);
+    startTransition(async () => {
+      const r = await setDocSentAction(schemeId, d.key, sent);
+      setBusyKey(null);
+      if (r?.error) { alert(r.error); return; }
+      router.refresh();
+    });
+  }
+
   // A customized list back to fully automatic: clear the saved body (the old
   // version stays recoverable from the document's revision history).
   function resetList(docKey: string) {
@@ -129,6 +151,7 @@ export default function SchemeDocuments({ schemeId, lang, stages, lists = [] }: 
                     <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                       <span>{d.form}</span>
                       {d.active === "uploaded" && d.uploadName && (<><span>·</span><span style={{ color: "#2f6f8f", fontWeight: 600 }}>📎 {d.uploadName}</span></>)}
+                      {d.sentAt && (<><span>·</span><span style={{ color: "#3d6b47", fontWeight: 700 }}>📨 {L("изпратен", "sent")} {d.sentAt}</span></>)}
                       {d.hasBuilt && d.hasUpload && (
                         <>
                           <span>·</span>
@@ -154,6 +177,13 @@ export default function SchemeDocuments({ schemeId, lang, stages, lists = [] }: 
                           <Link className="btn btn-primary" style={btnSm} href={d.buildHref}>{L("Създай", "Create")}</Link>
                         </>
                       )}
+                      {/* the clear line: a document with something in it can be
+                          released to the participants, and only then do they see it */}
+                      {d.sendable && d.active !== "none" && !d.sentAt && (
+                        <button className="btn" style={{ ...btnSm, borderColor: "#cbd9be", color: "#3d6b47", fontWeight: 700 }} onClick={() => setSent(d, true)}>
+                          📨 {L("Изпрати", "Send")}
+                        </button>
+                      )}
                       {d.active !== "none" && (
                         <button aria-label="More" style={kebab} onClick={() => setMenuKey(menuKey === d.key ? null : d.key)}>⋯</button>
                       )}
@@ -164,6 +194,16 @@ export default function SchemeDocuments({ schemeId, lang, stages, lists = [] }: 
                     <>
                       <div style={{ position: "fixed", inset: 0, zIndex: 19 }} onClick={() => setMenuKey(null)} />
                       <div role="menu" style={rowMenu}>
+                        {d.sendable && (
+                          <>
+                            {d.sentAt ? (
+                              <button style={menuItem} onClick={() => setSent(d, false)}>🚫 {L("Спри споделянето", "Stop sharing")}</button>
+                            ) : (
+                              <button style={menuItem} onClick={() => setSent(d, true)}>📨 {L("Изпрати на участниците", "Send to the participants")}</button>
+                            )}
+                            <div style={menuSep} />
+                          </>
+                        )}
                         {d.active === "uploaded" ? (
                           <>
                             <button style={menuItem} onClick={() => { setMenuKey(null); setViewer(d); }}>◱ {L("Виж файла", "View file")}</button>

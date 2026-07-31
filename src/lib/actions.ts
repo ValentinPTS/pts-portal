@@ -9,7 +9,8 @@ import { blankScheme } from "./new-scheme";
 import { nextProject } from "./folders";
 import { addParticipant, listParticipants, listParticipationsForLab, updateParticipant } from "./participants";
 import { addApplication, setApplicationStatus } from "./applications";
-import { getDoc } from "./documents";
+import { getDoc, hasDocContent } from "./documents";
+import { isSendableDoc } from "./doc-release";
 import { PSTATUS_ORDER, LAB_UPLOAD_SLOTS, canLabUploadNow, type LabUploadSlot } from "./lab-phases";
 import {
   metricsForScheme, buildScoring, computeAssigned,
@@ -43,7 +44,7 @@ import { logActivity } from "./activity";
 import { markAllRead } from "./notifications";
 import {
   notifyApplicationReceived, notifyApplicationApproved, notifyApplicationRejected,
-  notifyReceiptConfirmed, notifyResultsReturned, notifyReportIssued,
+  notifyReceiptConfirmed, notifyResultsReturned, notifyReportIssued, notifyDocsSent,
 } from "./notify-events";
 import { addCaseEvent, getCaseEvent, deleteCaseEvent } from "./case-events";
 import { addRevision, getRevision, approveRevision } from "./doc-revisions";
@@ -395,6 +396,60 @@ export async function uploadSchemeDocAction(formData: FormData): Promise<{ ok?: 
   await logActivity("doc.uploaded", { schemeId, summary: `File uploaded for document “${docKey}” (${name})` });
   revalidatePath(`/schemes/${schemeId}`, "layout");
   return { ok: true };
+}
+
+// ── Release a document to the participants ───────────────────────────────────
+// The clear line the owner asked for. Uploading tells nobody; THIS is the act
+// that puts a document in every participant's portal and raises their notice.
+// Reversible: "спри споделянето" takes it back out of their view. The notices
+// already raised stay — they are a record of what was said, not a mirror of the
+// current state.
+//
+// It gates nothing else. A document can be released at any moment, in any order,
+// however late — the owner's schedule is his own and the app never argues with it.
+export async function setDocSentAction(
+  schemeId: string,
+  docKey: string,
+  sent: boolean,
+): Promise<{ ok?: boolean; error?: string; told?: number }> {
+  await requireWriter();
+  const scheme = await getScheme(schemeId);
+  if (!scheme) return { error: "Scheme not found." };
+  const def = getDoc(docKey);
+  // The allow-list is the security boundary, not the UI: the registers and the
+  // provider's planning papers can never be released, whatever gets posted here.
+  if (!def || !isSendableDoc(docKey)) return { error: "This document is not one the participants receive." };
+
+  const sentMap = { ...(scheme.sentToParticipants ?? {}) };
+  if (!sent) {
+    delete sentMap[docKey];
+    await updateScheme(schemeId, { sentToParticipants: sentMap });
+    await logActivity("doc.unsent", { schemeId, summary: `Document “${docKey}” withdrawn from the participants` });
+    revalidatePath(`/schemes/${schemeId}`, "layout");
+    return { ok: true };
+  }
+
+  // Refuse to release an empty slot — a laboratory opening a blank document is
+  // worse than not having it yet. Either an uploaded file or a built body will do.
+  if (!scheme.uploads?.[docKey] && !hasDocContent(scheme, docKey)) {
+    return { error: "There is nothing in this document yet — upload a file or create it first." };
+  }
+
+  sentMap[docKey] = new Date().toISOString();
+  await updateScheme(schemeId, { sentToParticipants: sentMap });
+
+  // One notice per PARTICIPATION, each carrying the code that participation works
+  // under. A laboratory in two schemes is told twice, never once.
+  const parts = await listParticipants(schemeId);
+  for (const p of parts) {
+    await notifyDocsSent(p.labId, schemeId, scheme.number, p.code, def.nameBg, def.nameEn);
+  }
+  await logActivity("doc.sent", {
+    schemeId,
+    summary: `Document “${docKey}” sent to the participants (${parts.length} participation(s))`,
+  });
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  return { ok: true, told: parts.length };
 }
 
 // Remove an uploaded file from a document's slot (deletes the stored file). The

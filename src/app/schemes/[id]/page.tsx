@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { getScheme } from "@/lib/store";
 import { getDoc, isFormDoc, isListDoc, isDocDone, hasDocContent } from "@/lib/documents";
 import { DOC_STAGES } from "@/lib/doc-stages";
+import { isSendableDoc } from "@/lib/doc-release";
+import { fmtPhaseDate } from "@/lib/lab-phases";
 import ExplorerShell from "@/components/ExplorerShell";
 import SchemeDocuments, { type DocStageView, type DocSource, type DocRow } from "@/components/SchemeDocuments";
 import SkinPicker from "@/components/SkinPicker";
@@ -58,6 +60,9 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
       // a started editor-doc is only "Готов" when explicitly marked (lib/documents isDocDone)
       done: isDocDone(s, key),
       uploadName: s.uploads?.[key]?.name,
+      // may this one go out to the participants, and has it? (lib/doc-release)
+      sendable: isSendableDoc(key),
+      sentAt: s.sentToParticipants?.[key] ? fmtPhaseDate(s.sentToParticipants[key].slice(0, 10)) : undefined,
       buildHref: isForm ? `/schemes/${id}/fill/${key}` : `/schemes/${id}/build/${key}`,
       // the lists open on their live auto view (DocViewer: preview + PDF)
       viewHref: isList ? `/schemes/${id}/doc/${key}` : undefined,

@@ -413,6 +413,8 @@ const DICT: Record<string, Entry> = {
   "act.folder.deleted": { bg: "Изтрита папка", en: "Folder deleted" },
   "act.doc.uploaded": { bg: "Качен файл", en: "File uploaded" },
   "act.doc.upload_removed": { bg: "Премахнат качен файл", en: "Uploaded file removed" },
+  "act.doc.sent": { bg: "Изпратен на участниците", en: "Sent to the participants" },
+  "act.doc.unsent": { bg: "Спряно споделяне", en: "Withdrawn from the participants" },
   "act.doc.ready": { bg: "Готов документ", en: "Document ready" },
   "act.doc.reopened": { bg: "Документ отново в процес", en: "Document back in progress" },
   "act.participant.updated": { bg: "Обновен участник", en: "Participant updated" },
