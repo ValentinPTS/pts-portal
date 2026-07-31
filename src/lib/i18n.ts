@@ -29,6 +29,8 @@ const DICT: Record<string, Entry> = {
   "nav.items": { bg: "Елементи", en: "My items" },
   "nav.users": { bg: "Потребители", en: "Users" },
   "nav.activity": { bg: "Дневник", en: "Activity" },
+  "notif.title": { bg: "Известия", en: "Notifications" },
+  "notif.none": { bg: "Няма известия.", en: "Nothing to report yet." },
   "cover.title": { bg: "Обща снимка за заглавната страница", en: "Shared title-page photo" },
   "cover.subtitle": { bg: "Качете една снимка — тя се показва на заглавната страница на всички схеми (освен ако дадена схема има своя собствена).", en: "Upload one photo — it appears on every scheme's title page (unless a scheme sets its own)." },
   "cover.none": { bg: "Няма снимка", en: "No photo" },

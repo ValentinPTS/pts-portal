@@ -8,9 +8,11 @@ import { statusChip } from "@/lib/folders";
 import { computeLabPhases, fmtPhaseDate, canLabUploadNow, LAB_UPLOAD_SLOTS } from "@/lib/lab-phases";
 import { labUploadDocAction } from "@/lib/actions";
 import { signOutLabAction } from "@/lib/auth-actions";
+import { listForLab } from "@/lib/notifications";
 import { EmptyState } from "@/components/States";
 import LabSchemeTabs from "@/components/LabSchemeTabs";
 import LanguageToggle from "@/components/LanguageToggle";
+import NotificationBell from "@/components/NotificationBell";
 import { getServerT } from "@/lib/i18n-server";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +44,7 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
       : "";
   const parts = await listParticipationsForLab(lab.id);
   const myIds = new Set(parts.map((p) => p.schemeId));
+  const notifications = await listForLab(lab.id, 30);
   // One fetch of all schemes serves BOTH the lab's own rounds (for its scores/docs)
   // and the public buckets it may browse — avoids a second targeted query for rows we
   // already have. Drafts are internal WIP and never shown to labs (confidentiality);
@@ -230,7 +233,10 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 17 }}>{schemeName(it.scheme)}</div>
-            <div style={{ fontSize: 13, color: "var(--muted)" }}>{it.scheme.number}</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span>{it.scheme.number}</span>
+              <span className="chip" style={{ background: "var(--green-dark)" }}>{tr("lab.yourCode")} · {it.p.code}</span>
+            </div>
           </div>
           <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, color: st.fg, background: st.bg }}>{st.label}</span>
         </div>
@@ -312,6 +318,7 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
         <span className="font-bold text-lg tracking-tight"><span style={{ color: "var(--green-dark)" }}>PTS</span> Bulgaria</span>
         <span className="text-sm" style={{ color: "var(--muted)" }}>· {tr("header.labPortal")}</span>
         <span className="ml-auto text-sm" style={{ fontWeight: 700 }}>{lab.name}</span>
+        <NotificationBell items={notifications} />
         <LanguageToggle />
         <form action={signOutLabAction}>
           <button type="submit" className="btn btn-sm">{tr("common.signOut")}</button>
@@ -324,9 +331,11 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
             {errText}
           </div>
         )}
+        {/* No single code in the header: a laboratory works under a DIFFERENT code
+            in every scheme it joins, so the code belongs on the scheme's own card
+            (below) where it can never be read as one code for everything. */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 22 }}>
           <h1 className="section-title" style={{ fontSize: 30 }}>{tr("lab.welcomePrefix")} {lab.name}</h1>
-          <span className="chip" style={{ background: "var(--green-dark)" }}>{tr("lab.yourCode")} · {parts[0]?.code ?? "—"}</span>
         </div>
 
         <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>

@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useLang } from "@/components/LangProvider";
 import LanguageToggle from "@/components/LanguageToggle";
 import AccountMenu from "@/components/AccountMenu";
+import NotificationBell from "@/components/NotificationBell";
+import type { Notification } from "@/lib/types";
 
 type EffectiveRole = "manager" | "staff" | "auditor" | "lab";
 type User = { email: string; role: EffectiveRole | null } | null;
@@ -13,7 +15,7 @@ type User = { email: string; role: EffectiveRole | null } | null;
 // with its own (dark) layout; everything else gets the admin header + main.
 // The folder-explorer pages (home, /files/*, a scheme's folder) render full-width
 // (they provide their own sidebar + padding); other pages stay centered.
-export default function Chrome({ user, canManageUsers, canViewActivity, children }: { user: User; canManageUsers?: boolean; canViewActivity?: boolean; children: React.ReactNode }) {
+export default function Chrome({ user, canManageUsers, canViewActivity, notifications = [], children }: { user: User; canManageUsers?: boolean; canViewActivity?: boolean; notifications?: Notification[]; children: React.ReactNode }) {
   const path = usePathname() ?? "";
   const { t } = useLang();
   // Public/auth flows render full-bleed with their own (non-owner) headers — no admin
@@ -61,6 +63,7 @@ export default function Chrome({ user, canManageUsers, canViewActivity, children
           {canViewActivity && navLink("/activity", t("nav.activity"), onActivity)}
           {canManageUsers && navLink("/users", t("nav.users"), onUsers)}
           <span style={{ width: 1, height: 22, background: "var(--line)", margin: "0 4px" }} />
+          {canViewActivity && <NotificationBell items={notifications} />}
           <LanguageToggle />
           {user && <AccountMenu email={user.email} role={user.role} />}
         </nav>

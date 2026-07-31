@@ -8,7 +8,7 @@ import { getScheme, updateScheme, updateSchemeWith, addScheme, deleteScheme, lis
 import { blankScheme } from "./new-scheme";
 import { nextProject } from "./folders";
 import { addParticipant, listParticipants, listParticipationsForLab, updateParticipant } from "./participants";
-import { addApplication, listApplications, setApplicationStatus } from "./applications";
+import { addApplication, setApplicationStatus } from "./applications";
 import { getDoc } from "./documents";
 import { PSTATUS_ORDER, LAB_UPLOAD_SLOTS, canLabUploadNow, type LabUploadSlot } from "./lab-phases";
 import {
@@ -27,7 +27,7 @@ import {
 import { getDb } from "./supabase";
 import { getLabByEmail, addLab, getLab, updateLab } from "./labs";
 import {
-  addLabApplication, listLabApplications, getLabApplication, setLabApplicationReview,
+  addLabApplication, getLabApplication, setLabApplicationReview,
   countPendingByEmail,
 } from "./lab-applications";
 import { validateEik } from "./verify-eik";
@@ -40,12 +40,17 @@ import { SCHEME_DOC_BUCKET, SCHEME_DOC_EXT, MAX_SCHEME_DOC_BYTES, ensureSchemeDo
 import { isDocKey } from "./doc-stages";
 import type { UploadedDoc } from "./types";
 import { logActivity } from "./activity";
+import { markAllRead } from "./notifications";
+import {
+  notifyApplicationReceived, notifyApplicationApproved, notifyApplicationRejected,
+  notifyReceiptConfirmed, notifyResultsReturned, notifyReportIssued,
+} from "./notify-events";
 import { addCaseEvent, getCaseEvent, deleteCaseEvent } from "./case-events";
 import { addRevision, getRevision, approveRevision } from "./doc-revisions";
 import { createFolder, renameFolder, deleteFolder, getFolder, listChildFolders } from "./folder-tree";
 import { SAMPLE_SCHEMES } from "./sample-schemes";
 import { TYPE_SLUG, type FolderType } from "./folders";
-import type { Block, Scheme, Scoring, Parameter, StaffRole, StaffStatus, LabStatus, CaseEventKind, LabRegion, VatStatus, SchemeStatus, ParticipantStatus } from "./types";
+import type { Scheme, Scoring, Parameter, StaffRole, StaffStatus, LabStatus, CaseEventKind, LabRegion, VatStatus, SchemeStatus, ParticipantStatus } from "./types";
 import {
   isIdentityMap, remapSelections, remapCharacteristics, remapScoring, paramsSignature,
   effectiveDirections, calibrationDataSlots, calibrationSlotsBroken,
@@ -581,6 +586,9 @@ export async function submitApplicationAction(formData: FormData) {
     // if a logged-in lab is applying, thread this заявка to its account
     labId: (await getLabSession())?.lab.id,
   });
+  // Tell the owner a заявка is waiting. Scheme number only — the notice carries no
+  // laboratory name (§4.2); the applications page behind the link shows who applied.
+  await notifyApplicationReceived(schemeId, scheme!.number);
 
   redirect("/apply/thanks");
 }
@@ -591,7 +599,10 @@ export async function approveApplicationAction(formData: FormData) {
   await requireWriter();
   const schemeId = String(formData.get("schemeId") ?? "");
   const appId = String(formData.get("appId") ?? "");
-  const app = (await listApplications(schemeId)).find((a) => a.id === appId);
+  // One read serves both: the заявка being approved and the scheme number the
+  // approval notice quotes back to the laboratory (applications live in the scheme).
+  const scheme = await getScheme(schemeId);
+  const app = scheme?.applications?.find((a) => a.id === appId);
   if (!app) redirect(`/schemes/${schemeId}/applications`);
 
   const total = Object.values(app.selections).reduce((a, b) => a + b, 0) || 1;
@@ -634,6 +645,9 @@ export async function approveApplicationAction(formData: FormData) {
   await logActivity("application.approved", { schemeId, targetCode: p.code, summary: `Application approved → participant ${p.code}` });
   await addCaseEvent({ schemeId, code: p.code, kind: "code_assigned", source: "auto" });
   await advanceStatusForEvent(schemeId, p.code, "code_assigned");
+  // This is where a laboratory learns the code it works under for THIS scheme —
+  // a different code in every scheme it joins.
+  await notifyApplicationApproved(labId, schemeId, scheme!.number, p.code);
 
   revalidatePath(`/schemes/${schemeId}`, "layout");
   redirect(`/schemes/${schemeId}/applications`);
@@ -707,6 +721,10 @@ export async function labUploadDocAction(formData: FormData): Promise<void> {
   });
   await advanceStatusForEvent(schemeId, code, slotDef.kind);
   await logActivity("lab.uploaded", { schemeId, targetCode: code, summary: `Lab upload: ${slot} (${name})` });
+  // Tell the owner the file came back, by code. Which notice depends on the slot,
+  // so a new slot has to say what it means here rather than defaulting to silence.
+  if (slot === "protocol") await notifyReceiptConfirmed(schemeId, scheme!.number, code);
+  else await notifyResultsReturned(schemeId, scheme!.number, code);
   revalidatePath("/lab", "page");
   revalidatePath(`/schemes/${schemeId}`, "layout");
   redirect("/lab");
@@ -1045,8 +1063,16 @@ export async function rejectApplicationAction(formData: FormData) {
   await requireWriter();
   const schemeId = String(formData.get("schemeId") ?? "");
   const appId = String(formData.get("appId") ?? "");
-  await setApplicationStatus(schemeId, appId, "rejected");
+  const rejected = await setApplicationStatus(schemeId, appId, "rejected");
   await logActivity("application.rejected", { schemeId, summary: "Application rejected" });
+  // Tell the applicant, but only if it has an account to read the notice in: a
+  // logged-in lab carries app.labId, a public applicant is matched by e-mail. No
+  // account (never registered) → nothing to show; the owner replies directly.
+  if (rejected) {
+    const scheme = await getScheme(schemeId);
+    const labId = rejected.labId ?? (rejected.email ? (await getLabByEmail(rejected.email))?.id : undefined);
+    if (scheme) await notifyApplicationRejected(labId, schemeId, scheme.number);
+  }
   revalidatePath(`/schemes/${schemeId}/applications`, "page");
   redirect(`/schemes/${schemeId}/applications`);
 }
@@ -1082,6 +1108,12 @@ export async function issueCertificateAction(formData: FormData) {
   await updateScheme(schemeId, { certificates: certs });
   await logActivity("certificate.issued", { schemeId, targetCode: code, summary: `Certificate ${certs[code].no} issued for ${code}` });
   await addCaseEvent({ schemeId, code, kind: "report_issued", ref: certs[code].no, source: "auto" });
+  // Tell that one laboratory its certificate is out. Only on the FIRST issue —
+  // editing the date afterwards is a correction, not news worth another notice.
+  if (!existing) {
+    const labId = (await listParticipants(schemeId)).find((p) => p.code === code)?.labId;
+    await notifyReportIssued(labId, schemeId, scheme.number, code);
+  }
   revalidatePath(`/schemes/${schemeId}/doc/certificate`, "page");
 }
 
@@ -1795,4 +1827,24 @@ export async function autoAssignAction(formData: FormData) {
   revalidatePath(`/schemes/${id}`, "layout");
   const q = conflict ? "?err=conflict" : short.length ? `?warn=minpart&n=${need}` : "";
   redirect(`/schemes/${id}/results${q}`);
+}
+
+// ── Notifications ────────────────────────────────────────────────────────────
+// Mark the reader's own feed read. The AUDIENCE is resolved from the session on
+// the server and never taken from the client: a signed-in laboratory can only
+// ever clear its own feed, and a lab session is checked FIRST so a lab can never
+// fall through to the provider branch.
+//
+// Deliberately no revalidatePath: the badge is already cleared on the reader's
+// screen, and the feed lives in the ROOT layout — revalidating that would discard
+// every cached page in the app to restyle one dropdown. The next navigation
+// re-renders the layout anyway and picks the read state up then.
+export async function markNotificationsReadAction(): Promise<void> {
+  const ls = await getLabSession();
+  if (ls) {
+    await markAllRead("lab", ls.lab.id);
+    return;
+  }
+  const role = (await getRoleContext()).role;
+  if (role && role !== "lab") await markAllRead("provider");
 }

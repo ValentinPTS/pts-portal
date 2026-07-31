@@ -120,16 +120,21 @@ export async function unreadCount(audience: "provider" | "lab", labId?: string):
   return list.filter((n) => !n.readAt).length;
 }
 
-/** Mark a whole feed read. Best-effort: failing to mark read is never worth an error. */
+/**
+ * Mark a whole feed read. Best-effort: failing to mark read is never worth an error.
+ * A failed write falls back to memory exactly as the reads do — otherwise an
+ * unreachable database would leave the two halves disagreeing, with the feed
+ * served from memory and the read state written nowhere.
+ */
 export async function markAllRead(audience: "provider" | "lab", labId?: string): Promise<void> {
   const at = new Date().toISOString();
-  const db = getDb();
-  if (!db) {
+  const inMem = () => {
     for (const n of mem) {
       if (n.audience === audience && (audience === "provider" || n.labId === labId) && !n.readAt) n.readAt = at;
     }
-    return;
-  }
+  };
+  const db = getDb();
+  if (!db) return inMem();
   try {
     let q = db.from("notifications").update({ read_at: at }).is("read_at", null).eq("audience", audience);
     if (audience === "lab") q = q.eq("lab_id", labId ?? "");
@@ -137,6 +142,7 @@ export async function markAllRead(audience: "provider" | "lab", labId?: string):
     if (error) throw error;
   } catch (e) {
     warn(e);
+    inMem();
   }
 }
 
@@ -160,19 +166,20 @@ export async function listUndelivered(limit = 100): Promise<Notification[]> {
   }
 }
 
-/** Record that a transport delivered this one. */
+/** Record that a transport delivered this one. Falls back to memory like the rest. */
 export async function markDelivered(id: string): Promise<void> {
   const at = new Date().toISOString();
-  const db = getDb();
-  if (!db) {
+  const inMem = () => {
     const n = mem.find((x) => x.id === id);
     if (n) n.emailedAt = at;
-    return;
-  }
+  };
+  const db = getDb();
+  if (!db) return inMem();
   try {
     const { error } = await db.from("notifications").update({ emailed_at: at }).eq("id", id);
     if (error) throw error;
   } catch (e) {
     warn(e);
+    inMem();
   }
 }

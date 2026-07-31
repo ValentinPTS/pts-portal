@@ -223,3 +223,19 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .skel { animation: none; }
 }
+
+/* Notification toast — slides in, holds, fades out just before the 5s timer in
+   NotificationBell removes it, so it never disappears mid-fade. */
+.pts-toast {
+  animation: pts-toast-in 0.22s ease-out, pts-toast-out 0.4s ease-in 4.6s forwards;
+}
+@keyframes pts-toast-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes pts-toast-out {
+  to { opacity: 0; transform: translateY(6px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pts-toast { animation: pts-toast-out 0.01s linear 4.9s forwards; }
+}

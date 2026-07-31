@@ -6,6 +6,7 @@ import { LangProvider } from "@/components/LangProvider";
 import { getUiLang } from "@/lib/i18n-server";
 import { getSessionUser } from "@/lib/auth";
 import { getRoleContext } from "@/lib/roles";
+import { listForProvider } from "@/lib/notifications";
 
 // App UI — Open Sans (the ptsbg.eu website font, incl. Cyrillic). Documents keep
 // their own formal fonts (PT Serif + Sofia Sans Condensed, loaded in the renderer).
@@ -38,12 +39,15 @@ export default async function RootLayout({
   const canManageUsers = ctx.role === "manager";
   // Any internal role (manager / staff / auditor) sees the Activity log; labs don't.
   const canViewActivity = !!ctx.role && ctx.role !== "lab";
+  // The provider's notification feed. Fetched only for internal roles, so a public
+  // visitor on /apply or /register never pays for a query they can't see.
+  const notifications = canViewActivity ? await listForProvider(30) : [];
 
   return (
     <html lang={lang} className={`${openSans.variable} ${ptSerif.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         <LangProvider initial={lang}>
-          <Chrome user={user} canManageUsers={canManageUsers} canViewActivity={canViewActivity}>{children}</Chrome>
+          <Chrome user={user} canManageUsers={canManageUsers} canViewActivity={canViewActivity} notifications={notifications}>{children}</Chrome>
         </LangProvider>
       </body>
     </html>
