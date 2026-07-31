@@ -240,6 +240,43 @@ export interface LabApplication {
 // A ready-made file uploaded into a document's slot (PDF / image scan), instead of
 // or alongside the app-built version. Stored in the private "scheme-docs" bucket
 // (path = the storage key, or a data: URL in the no-DB dev fallback). Confidential.
+// ── Notifications (Phase 1) ───────────────────────────────────────────────────
+// Every notice the app raises is RECORDED first and delivered second. That keeps
+// the two concerns apart: the record is written the moment something happens, and
+// a transport (e-mail, later) reads the records. Nothing is lost while mail is not
+// yet configured, and the owner/lab still see the notice in the portal.
+//
+// The message text is rendered in BOTH languages at write time rather than stored
+// as a key, so the record says what was actually said — rewording the app later
+// cannot rewrite history. §4.2: a notice may carry a participant CODE, never a name.
+export type NotifyKind =
+  | "application.received"   // → provider: a lab applied
+  | "application.approved"   // → lab: you are in, here is your code
+  | "application.rejected"   // → lab
+  | "invoice.ready"          // → lab: proforma uploaded for you
+  | "docs.sent"              // → lab: documents released
+  | "items.dispatched"       // → lab: sample/device on its way
+  | "receipt.confirmed"      // → provider: lab confirmed it arrived
+  | "results.returned"       // → provider: lab sent its results back
+  | "results.due"            // → lab: reminder, one day before
+  | "report.issued"          // → lab: report/certificate ready
+  | "device.moved";          // → lab: the calibration device is coming to you
+
+export interface Notification {
+  id: string;
+  kind: NotifyKind;
+  audience: "provider" | "lab";
+  labId?: string;    // which lab, when audience is "lab"
+  schemeId?: string;
+  code?: string;     // participant code — NEVER a laboratory name
+  bg: string;        // the message itself, both languages, fixed at write time
+  en: string;
+  href?: string;     // where clicking it should take the reader
+  createdAt: string;
+  readAt?: string;   // in-app read state
+  emailedAt?: string; // set by the transport once it actually goes out (Phase 2)
+}
+
 export interface UploadedDoc {
   path: string; // private storage key, or "data:<mime>;base64,…" (dev fallback)
   name: string; // original filename — display only (never used as a path)
@@ -422,7 +459,30 @@ export interface Scheme {
   // ("protocol" = signed receipt protocol, "results" = completed results sheet).
   // Upload auto-stamps the case file + advances the status; locked once scored.
   // JSONB, no migration (lib/lab-phases.ts LAB_UPLOAD_SLOTS).
-  labUploads?: Record<string, Partial<Record<"protocol" | "results", UploadedDoc>>>;
+  labUploads?: Record<string, Partial<Record<string, UploadedDoc>>>;
+  // ── the document exchange loop (Phase 1) ──────────────────────────────────
+  // Uploading a document tells NOBODY. Sending is a separate, deliberate act:
+  // the owner presses "изпрати на участниците" and only then does the file
+  // appear in the labs' portals and the mail go out. This records that act —
+  // docKey → when it was sent. Absent = uploaded but not released.
+  sentToParticipants?: Record<string, string>; // docKey → ISO timestamp
+  // Documents the provider sends to ONE laboratory rather than to all of them —
+  // today the proforma invoice, whose amount differs per lab. The mirror image
+  // of labUploads: code → slot → file. JSONB, no migration.
+  labDocs?: Record<string, Partial<Record<string, UploadedDoc>>>;
+  // Payment is settled outside the app by the accountant; this is only a note to
+  // self so the owner can see who still owes. It gates NOTHING. code → ISO date.
+  paidAt?: Record<string, string>;
+  // The four working dates that drive the LAB's view and the reminder. Kept apart
+  // from `schedule` on purpose: schedule is document content the owner writes by
+  // hand and prints into the Plan, and he does not want app dates leaking into
+  // his documents. These never render into any document. dd.mm.yyyy, like schedule.
+  dates?: {
+    applicationsDue?: string;
+    dispatch?: string;
+    resultsDue?: string;
+    reportDue?: string;
+  };
   // chosen document skin (visual theme) id; absent → the built-in "Classic" skin.
   skin?: string;
   // friendly folder name shown in the explorer; absent → falls back to the title/number.
