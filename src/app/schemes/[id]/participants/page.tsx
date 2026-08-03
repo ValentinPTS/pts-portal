@@ -59,15 +59,17 @@ export default async function ParticipantsPage({
               <th className="text-left p-2">{tr("col.sample")}</th>
               <th className="text-left p-2">{tr("col.courier")}</th>
               <th className="text-left p-2">{tr("col.status")}</th>
+              <th className="text-left p-2">{tr("col.paid")}</th>
               <th className="text-left p-2">{tr("part.portal")}</th>
             </tr>
           </thead>
           <tbody>
             {participants.length === 0 && (
-              <tr><td colSpan={7} className="p-3" style={{ color: "var(--muted)" }}>{tr("part.noneYet")}</td></tr>
+              <tr><td colSpan={8} className="p-3" style={{ color: "var(--muted)" }}>{tr("part.noneYet")}</td></tr>
             )}
             {participants.map((p) => (
               <ParticipantRows key={p.id} p={p} schemeId={id} reveal={reveal} hidden={hidden} tr={tr}
+                invoiced={!!s.labDocs?.[p.code]?.proforma} paid={!!s.paidAt?.[p.code]}
                 parameters={s.parameters.map((x, i) => ({ i, label: x.characteristicBg || x.characteristicEn }))} />
             ))}
           </tbody>
@@ -113,12 +115,14 @@ export default async function ParticipantsPage({
 // One participant = two <tr>s: the data row, and a collapsed edit row (native
 // <details>, no client JS) holding the full edit form — courier, sample code and
 // the F 7.2.1-5 characteristics live here so 30 labs can be filled in quickly.
-function ParticipantRows({ p, schemeId, reveal, hidden, tr, parameters }: {
+function ParticipantRows({ p, schemeId, reveal, hidden, tr, invoiced, paid, parameters }: {
   p: Awaited<ReturnType<typeof listParticipants>>[number];
   schemeId: string;
   reveal: boolean;
   hidden: React.ReactNode;
   tr: (key: string) => string;
+  invoiced: boolean; // a proforma sits in this participation's slot
+  paid: boolean;     // the owner's own note that the money arrived
   parameters: { i: number; label: string }[];
 }) {
   const all = !p.characteristics?.length; // absent/empty = registered for everything
@@ -133,6 +137,15 @@ function ParticipantRows({ p, schemeId, reveal, hidden, tr, parameters }: {
         <td className="p-2 font-mono">{p.sampleCode || <span style={{ color: "var(--muted)" }}>—</span>}</td>
         <td className="p-2">{p.courier || <span style={{ color: "var(--muted)" }}>—</span>}</td>
         <td className="p-2"><span style={{ color: STATUS_COLOR[p.status] ?? "var(--muted)", fontWeight: 700 }}>● {tr(`pstatus.${p.status}`)}</span></td>
+        {/* the money at a glance: is there an invoice, and did it come back paid?
+            Neither state gates anything — the round runs whatever this says. */}
+        <td className="p-2" style={{ whiteSpace: "nowrap" }}>
+          {paid
+            ? <span style={{ color: "var(--green-dark)", fontWeight: 700 }}>✓ {tr("col.paid")}</span>
+            : invoiced
+              ? <span style={{ color: "var(--muted)" }}>📨 {tr("part.invoiceSent")}</span>
+              : <span style={{ color: "var(--muted)" }}>—</span>}
+        </td>
         <td className="p-2">
           <div className="flex items-center gap-3">
             {p.labId ? (
@@ -150,7 +163,7 @@ function ParticipantRows({ p, schemeId, reveal, hidden, tr, parameters }: {
       </tr>
       {reveal && (
         <tr>
-          <td colSpan={7} style={{ padding: 0 }}>
+          <td colSpan={8} style={{ padding: 0 }}>
             <details>
               <summary className="text-xs px-2 py-1" style={{ color: "var(--muted)", cursor: "pointer", listStyle: "none" }}>{tr("part.edit")}</summary>
               <form action={updateParticipantAction} className="grid gap-3 p-3" style={{ gridTemplateColumns: "2fr 1fr 1fr", background: "var(--green-soft)", borderTop: "1px solid var(--line)" }}>

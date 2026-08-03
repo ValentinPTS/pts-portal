@@ -1,7 +1,7 @@
 // Releasing documents to participants. This is the boundary between what the
 // provider keeps and what a laboratory can fetch, so the assertions here are the
 // ones that must never quietly change.
-import { SENDABLE_DOCS, isSendableDoc, canLabFetchDoc, releasedDocs } from "../src/lib/doc-release.ts";
+import { SENDABLE_DOCS, isSendableDoc, canLabFetchDoc, releasedDocs, LAB_DOC_SLOTS, isLabDocSlot } from "../src/lib/doc-release.ts";
 import { ALL_DOC_KEYS } from "../src/lib/doc-stages.ts";
 
 let pass = 0, fail = 0;
@@ -52,6 +52,22 @@ ok("nothing released → empty list", releasedDocs(undefined).length === 0 && re
   const list = releasedDocs({ "stat-project": "2026-07-01T09:00:00Z", protocol: "2026-07-02T09:00:00Z" });
   ok("the list drops anything not sendable", JSON.stringify(list.map((r) => r.key)) === JSON.stringify(["protocol"]));
 }
+
+// ── per-laboratory slots ─────────────────────────────────────────────────────
+// isLabDocSlot decides whether a string off the wire may address a storage slot,
+// so the inherited-property hole matters: with `in`, "toString" would pass.
+ok("proforma is a slot", isLabDocSlot("proforma"));
+for (const junk of ["toString", "constructor", "valueOf", "hasOwnProperty", "__proto__", "", "../secret", "results"]) {
+  ok(`"${junk}" is not a slot`, !isLabDocSlot(junk));
+}
+ok("every slot is labelled in both languages",
+  Object.values(LAB_DOC_SLOTS).every((s) => s.bg.trim().length > 0 && s.en.trim().length > 0));
+// The two families must stay disjoint: a per-lab slot must never be reachable
+// through the cohort gate, which does not know about codes at all.
+ok("no per-lab slot is also a cohort document",
+  Object.keys(LAB_DOC_SLOTS).every((k) => !isSendableDoc(k)));
+ok("a per-lab slot is not fetchable through the cohort gate",
+  Object.keys(LAB_DOC_SLOTS).every((k) => !canLabFetchDoc(k, { ...NOTHING, sent: { [k]: "2026-07-31T09:00:00Z" } })));
 
 console.log(`doc-release.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

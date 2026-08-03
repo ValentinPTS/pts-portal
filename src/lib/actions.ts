@@ -10,7 +10,7 @@ import { nextProject } from "./folders";
 import { addParticipant, listParticipants, listParticipationsForLab, updateParticipant } from "./participants";
 import { addApplication, setApplicationStatus } from "./applications";
 import { getDoc, hasDocContent } from "./documents";
-import { isSendableDoc } from "./doc-release";
+import { isSendableDoc, isLabDocSlot, LAB_DOC_SLOTS, type LabDocSlot } from "./doc-release";
 import { PSTATUS_ORDER, LAB_UPLOAD_SLOTS, canLabUploadNow, type LabUploadSlot } from "./lab-phases";
 import {
   metricsForScheme, buildScoring, computeAssigned,
@@ -45,6 +45,7 @@ import { markAllRead } from "./notifications";
 import {
   notifyApplicationReceived, notifyApplicationApproved, notifyApplicationRejected,
   notifyReceiptConfirmed, notifyResultsReturned, notifyReportIssued, notifyDocsSent,
+  notifyInvoiceReady,
 } from "./notify-events";
 import { addCaseEvent, getCaseEvent, deleteCaseEvent } from "./case-events";
 import { addRevision, getRevision, approveRevision } from "./doc-revisions";
@@ -420,10 +421,14 @@ export async function setDocSentAction(
   // provider's planning papers can never be released, whatever gets posted here.
   if (!def || !isSendableDoc(docKey)) return { error: "This document is not one the participants receive." };
 
-  const sentMap = { ...(scheme.sentToParticipants ?? {}) };
+  // Rebuilt from the fresh scheme inside the per-scheme lock: releasing one
+  // document must never drop another that went out at the same moment.
   if (!sent) {
-    delete sentMap[docKey];
-    await updateScheme(schemeId, { sentToParticipants: sentMap });
+    await updateSchemeWith(schemeId, (s) => {
+      const sentMap = { ...(s.sentToParticipants ?? {}) };
+      delete sentMap[docKey];
+      return { sentToParticipants: sentMap };
+    });
     await logActivity("doc.unsent", { schemeId, summary: `Document “${docKey}” withdrawn from the participants` });
     revalidatePath(`/schemes/${schemeId}`, "layout");
     return { ok: true };
@@ -435,8 +440,10 @@ export async function setDocSentAction(
     return { error: "There is nothing in this document yet — upload a file or create it first." };
   }
 
-  sentMap[docKey] = new Date().toISOString();
-  await updateScheme(schemeId, { sentToParticipants: sentMap });
+  const sentAt = new Date().toISOString();
+  await updateSchemeWith(schemeId, (s) => ({
+    sentToParticipants: { ...(s.sentToParticipants ?? {}), [docKey]: sentAt },
+  }));
 
   // One notice per PARTICIPATION, each carrying the code that participation works
   // under. A laboratory in two schemes is told twice, never once.
@@ -450,6 +457,151 @@ export async function setDocSentAction(
   });
   revalidatePath(`/schemes/${schemeId}`, "layout");
   return { ok: true, told: parts.length };
+}
+
+// ── Per-laboratory documents (the proforma invoice) ──────────────────────────
+// The mirror image of a lab's own uploads: one file per PARTICIPATION, stored
+// under its code. Putting the file in the slot is the act of sending it — there
+// is no separate release step, because the upload was already for one named lab
+// (see lib/doc-release).
+//
+// MANAGER ONLY, both here and in the viewer route. A proforma invoice is made out
+// to the laboratory by name and VAT number, so handling one crosses the
+// code↔identity line that staff and auditors work behind (§4.2) — the same reason
+// a lab's own signed protocol is manager-only to open.
+export async function uploadLabDocAction(formData: FormData): Promise<{ ok?: boolean; error?: string }> {
+  await requireManager();
+  const schemeId = String(formData.get("schemeId") ?? "");
+  const code = String(formData.get("code") ?? "").trim();
+  const slot = String(formData.get("slot") ?? "");
+  if (!isLabDocSlot(slot)) return { error: "Unknown document." };
+  const scheme = await getScheme(schemeId);
+  if (!scheme) return { error: "Scheme not found." };
+  // the code must be a real participation in THIS scheme — never trust the form
+  const participant = (await listParticipants(schemeId)).find((p) => p.code === code);
+  if (!participant) return { error: "No such participant in this scheme." };
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return { error: "No file received." };
+  const ext = SCHEME_DOC_EXT[file.type];
+  if (!ext) return { error: "Use a PDF, JPG or PNG file." };
+  if (file.size > MAX_SCHEME_DOC_BYTES) return { error: "File too large (max 15 MB)." };
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (!magicMatches(bytes, file.type)) return { error: "That file isn't a real PDF/JPG/PNG." };
+
+  const actor = (await getRoleContext()).email ?? "";
+  const name = String(file.name || `${slot}.${ext}`).slice(0, 160);
+
+  let path: string;
+  const db = getDb();
+  if (db) {
+    try {
+      await ensureSchemeDocsBucket(db);
+      path = `labdocs/${schemeId}/${code}/${slot}-${randomUUID()}.${ext}`;
+      const { error } = await db.storage.from(SCHEME_DOC_BUCKET).upload(path, bytes, { contentType: file.type, upsert: false });
+      if (error) throw error;
+    } catch (e) {
+      return { error: (e as Error)?.message || "Upload failed." };
+    }
+  } else {
+    path = `data:${file.type};base64,${Buffer.from(bytes).toString("base64")}`;
+  }
+
+  const upload: UploadedDoc = { path, name, mime: file.type, size: file.size, uploadedAt: new Date().toISOString(), uploadedBy: actor };
+  // updateSchemeWith, not updateScheme: the map is rebuilt from the FRESH scheme
+  // inside the per-scheme lock. Invoices are issued one lab after another, and a
+  // plain read-modify-write would drop the previous one if two overlapped — the
+  // same reason applications.ts takes the lock.
+  // What the new file REPLACES is read inside the lock too, so two overlapping
+  // uploads can't both decide the same old object is theirs to delete.
+  let replaced: UploadedDoc | undefined;
+  await updateSchemeWith(schemeId, (s) => {
+    replaced = s.labDocs?.[code]?.[slot];
+    return { labDocs: { ...(s.labDocs ?? {}), [code]: { ...(s.labDocs?.[code] ?? {}), [slot]: upload } } };
+  });
+  if (db && replaced && !replaced.path.startsWith("data:")) {
+    await db.storage.from(SCHEME_DOC_BUCKET).remove([replaced.path]).catch(() => {});
+  }
+
+  if (slot === "proforma") await notifyInvoiceReady(participant.labId, schemeId, scheme.number, code);
+  // The log records the CODE and nothing else. NOT the file name: accounting
+  // software names an invoice after the customer ("Проформа-2026-ЕкоЛаб-ООД.pdf"),
+  // and the activity log, the case file and the audit pack are all read by staff
+  // and auditors who work behind the code (§4.2). The invoice itself is
+  // manager-only; its name must not walk out through the trail beside the code.
+  // A manager who needs the file name sees it on the case page, where the file is.
+  await logActivity("labdoc.uploaded", { schemeId, targetCode: code, summary: `${LAB_DOC_SLOTS[slot].en} sent to ${code}` });
+  // No case event either. The case file is the ISO traceability chain for the PT
+  // ITEMS, and "docs_sent" there means the participant handouts went out. An
+  // invoice is not a handout, and stamping it would tick that milestone — and the
+  // traceability matrix with it — for a round where nothing has been sent yet.
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  return { ok: true };
+}
+
+export async function removeLabDocAction(formData: FormData): Promise<{ ok?: boolean; error?: string }> {
+  await requireManager();
+  const schemeId = String(formData.get("schemeId") ?? "");
+  const code = String(formData.get("code") ?? "").trim();
+  const slot = String(formData.get("slot") ?? "");
+  if (!isLabDocSlot(slot)) return { error: "Unknown document." };
+  const scheme = await getScheme(schemeId);
+  if (!scheme) return { error: "Scheme not found." };
+
+  // Decide WHAT to delete from inside the lock, so an overlapping replace can't
+  // have us delete the object the other write just installed. The blob is removed
+  // after the record is gone — an orphaned blob is harmless, a live record
+  // pointing at deleted bytes is not.
+  let removed: UploadedDoc | undefined;
+  await updateSchemeWith(schemeId, (s) => {
+    removed = s.labDocs?.[code]?.[slot];
+    const labDocs = { ...(s.labDocs ?? {}) };
+    // Drop the slot, and the code's whole entry once its last slot is gone, so the
+    // scheme JSONB doesn't accumulate empty objects for every participant ever.
+    const forCode: Partial<Record<string, UploadedDoc>> = { ...(labDocs[code] ?? {}) };
+    delete forCode[slot];
+    if (Object.keys(forCode).length === 0) delete labDocs[code];
+    else labDocs[code] = forCode;
+    return { labDocs };
+  });
+  if (removed && !removed.path.startsWith("data:")) {
+    const db = getDb();
+    if (db) await db.storage.from(SCHEME_DOC_BUCKET).remove([removed.path]).catch(() => {});
+  }
+  await logActivity("labdoc.removed", { schemeId, targetCode: code, summary: `${LAB_DOC_SLOTS[slot as LabDocSlot].en} removed for ${code}` });
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  return { ok: true };
+}
+
+// The "платена" tick. Payment itself happens outside the app — the accountant
+// handles it — so this is a note to self and nothing more: it gates nothing,
+// blocks nothing, and is deliberately NOT wired to the participant status ladder,
+// which drives the lab's timeline and must not jump backwards because an invoice
+// was ticked late. Writer-level: it says nothing about who is behind the code.
+export async function setParticipantPaidAction(
+  schemeId: string,
+  code: string,
+  paid: boolean,
+): Promise<{ ok?: boolean; error?: string }> {
+  await requireWriter();
+  const scheme = await getScheme(schemeId);
+  if (!scheme) return { error: "Scheme not found." };
+  if (!(await listParticipants(schemeId)).some((p) => p.code === code)) {
+    return { error: "No such participant in this scheme." };
+  }
+  const at = new Date().toISOString();
+  await updateSchemeWith(schemeId, (s) => {
+    const paidAt = { ...(s.paidAt ?? {}) };
+    if (paid) paidAt[code] = at;
+    else delete paidAt[code];
+    return { paidAt };
+  });
+  await logActivity(paid ? "payment.marked" : "payment.unmarked", {
+    schemeId, targetCode: code,
+    summary: paid ? `${code} marked paid` : `${code} no longer marked paid`,
+  });
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  return { ok: true };
 }
 
 // Remove an uploaded file from a document's slot (deletes the stored file). The
@@ -721,8 +873,13 @@ export async function labUploadDocAction(formData: FormData): Promise<void> {
   if (!ls) redirect("/lab/login");
   const schemeId = String(formData.get("schemeId") ?? "");
   const slot = String(formData.get("slot") ?? "") as LabUploadSlot;
+  // hasOwnProperty, not a bare lookup: LAB_UPLOAD_SLOTS["constructor"] resolves up
+  // the prototype chain to a truthy function, so a posted slot of "constructor" or
+  // "toString" used to pass this guard and be written into scheme.labUploads with
+  // an undefined event kind. A Server Action can be POSTed directly, so the form
+  // never having offered those values is not a defence.
+  if (!Object.prototype.hasOwnProperty.call(LAB_UPLOAD_SLOTS, slot)) redirect("/lab");
   const slotDef = LAB_UPLOAD_SLOTS[slot];
-  if (!slotDef) redirect("/lab");
 
   // the lab must own a participation in this scheme (never trust the form)
   const mine = (await listParticipationsForLab(ls!.lab.id)).find((p) => p.schemeId === schemeId);

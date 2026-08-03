@@ -5,6 +5,7 @@ import { listParticipants } from "@/lib/participants";
 import { listCaseEvents } from "@/lib/case-events";
 import { addCaseEventAction, deleteCaseEventAction } from "@/lib/actions";
 import { canRevealNames, getCurrentRole, requireStaff } from "@/lib/roles";
+import LabInvoicePanel from "@/components/LabInvoicePanel";
 import { getServerT } from "@/lib/i18n-server";
 import { DOCUMENTS } from "@/lib/documents";
 import type { CaseEventKind } from "@/lib/types";
@@ -95,6 +96,19 @@ export default async function CaseFilePage({
         </div>
         {!canReveal && <p className="mt-2" style={labelStyle}>{tr("case.revealHint")}</p>}
       </div>
+
+      {/* The proforma invoice is addressed to this laboratory by name, so only a
+          manager may handle it (§4.2) — the same line the identity reveal draws. */}
+      {canReveal && (
+        <LabInvoicePanel
+          schemeId={id}
+          code={code}
+          lang={lang}
+          fileName={s.labDocs?.[code]?.proforma?.name}
+          uploadedAt={s.labDocs?.[code]?.proforma?.uploadedAt}
+          paidAt={s.paidAt?.[code]}
+        />
+      )}
 
       {/* timeline */}
       <h2 className="text-lg font-bold mt-7 mb-2 pb-1" style={{ color: "var(--green-dark)", borderBottom: "2px solid var(--red)" }}>

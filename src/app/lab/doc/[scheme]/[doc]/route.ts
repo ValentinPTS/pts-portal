@@ -2,9 +2,11 @@ import type { NextRequest } from "next/server";
 import { getLabSession } from "@/lib/lab-auth";
 import { listParticipationsForLab } from "@/lib/participants";
 import { getScheme } from "@/lib/store";
-import { getDoc, hasDocContent } from "@/lib/documents";
+import { getDoc, hasDocContent, isFormDoc } from "@/lib/documents";
 import { canLabFetchDoc } from "@/lib/doc-release";
 import { uploadedDocResponse } from "@/lib/scheme-uploads";
+import { docPrintHtml, docDefaultBody } from "@/lib/doc-template";
+import { drawFormBody, retagFormBody } from "@/lib/form-hydrate";
 import { stripBodyMarkers, withSkin } from "@/lib/doc-shell";
 import { resolveSkinAsync } from "@/skins";
 import type { DocOptions } from "@/lib/types";
@@ -66,17 +68,43 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ scheme: str
 
   if (!def.render) return new Response("Not found", { status: 404 });
   const lang = req.nextUrl.searchParams.get("lang") === "en" ? "en" : "bg";
+  const skin = await resolveSkinAsync(scheme);
 
-  // certificate → scoped to THIS lab's code only
-  let opts: DocOptions | undefined;
+  // The certificate is GENERATED, one per participation, and must stay that way:
+  // it is rendered fresh against this lab's own code and certificate number. It
+  // deliberately does not go through the saved-body path below, because a saved
+  // editor body is one shared document — serving it here would hand every lab the
+  // same certificate.
   if (doc === "certificate") {
     const cert = scheme.certificates?.[mine.code];
-    opts = { participant: { code: mine.code, labName: mine.labName, certNo: cert?.no, certDate: cert?.date } };
+    const opts: DocOptions = { participant: { code: mine.code, labName: mine.labName, certNo: cert?.no, certDate: cert?.date } };
+    return html(stripBodyMarkers(withSkin(skin, () => def.render!(scheme, lang, opts))));
   }
 
-  const skin = await resolveSkinAsync(scheme);
-  const html = stripBodyMarkers(withSkin(skin, () => def.render!(scheme, lang, opts)));
-  return new Response(html, {
+  // Everything else: serve what the provider actually WROTE. He may compose a
+  // document in the built-in editor instead of uploading a PDF, and until now the
+  // laboratory received the blank default template while his edits sat unread in
+  // scheme.docs — the same failure the uploaded-file path had. This mirrors his own
+  // print route: saved body, form controls redrawn from the latest saved values,
+  // dropped into the document's branded shell. Falls back to the default template
+  // so the document is never blank.
+  //
+  // No participants are passed and names are never revealed, so anything the shell
+  // or the default body renders about the cohort stays masked.
+  const opts: DocOptions = { revealNames: false, participants: [] };
+  let saved = scheme.docs?.[doc]?.[lang] ?? "";
+  if (saved && isFormDoc(doc)) {
+    saved = drawFormBody(
+      retagFormBody(saved, docDefaultBody(scheme, doc, lang, opts)),
+      scheme.formData?.[doc] ?? {},
+    );
+  }
+  const body = saved || docDefaultBody(scheme, doc, lang, opts);
+  return html(docPrintHtml(scheme, doc, lang, body, opts, skin));
+}
+
+function html(markup: string): Response {
+  return new Response(markup, {
     headers: {
       "content-type": "text/html; charset=utf-8",
       "content-security-policy":

@@ -79,6 +79,18 @@ ok("fmtPhaseDate passthrough", fmtPhaseDate("na") === "na");
   ok("upload slots sit on the lab-move phases", LAB_PHASES.every((p) => !p.uploadSlot || !!p.labMove));
 }
 
+// 9b) WHY labUploadDocAction must use hasOwnProperty and not a bare lookup: the
+// slot arrives on a Server Action, which can be POSTed directly, and a bare
+// LAB_UPLOAD_SLOTS[slot] walks the prototype chain — "constructor" resolves to a
+// truthy function and would sail past a `if (!slotDef)` guard.
+{
+  const bare = (k: string) => !!(LAB_UPLOAD_SLOTS as unknown as Record<string, unknown>)[k];
+  const own = (k: string) => Object.prototype.hasOwnProperty.call(LAB_UPLOAD_SLOTS, k);
+  ok("a bare lookup is fooled by the prototype chain", bare("constructor") && bare("toString"));
+  ok("hasOwnProperty is not", !own("constructor") && !own("toString") && !own("valueOf"));
+  ok("the real slots still pass", own("protocol") && own("results"));
+}
+
 // 10) replace lock: allowed until scored, locked at scored
 {
   ok("upload open while applied", canLabUploadNow("applied"));

@@ -92,6 +92,28 @@ export async function notifyDocsSent(
   });
 }
 
+/**
+ * A proforma invoice was put in one laboratory's slot. Addressed to that lab
+ * alone — by its code, never its name, even though the file itself carries the
+ * name (the notice travels further than the file does).
+ */
+export async function notifyInvoiceReady(
+  labId: string | undefined,
+  schemeId: string,
+  schemeNumber: string,
+  code: string,
+): Promise<void> {
+  if (!labId) return;
+  await notify({
+    kind: "invoice.ready",
+    audience: "lab",
+    labId, schemeId, code,
+    bg: `Проформа фактурата ви за схема ${schemeNumber} е готова за изтегляне.`,
+    en: `Your proforma invoice for scheme ${schemeNumber} is ready to download.`,
+    href: "/lab",
+  });
+}
+
 /** The laboratory confirmed the items arrived (it uploaded the signed protocol). */
 export async function notifyReceiptConfirmed(schemeId: string, schemeNumber: string, code: string): Promise<void> {
   await notify({

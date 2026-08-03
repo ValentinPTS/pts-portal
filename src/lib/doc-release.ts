@@ -36,6 +36,35 @@ export const SENDABLE_DOCS: string[] = [
 
 export const isSendableDoc = (key: string): boolean => SENDABLE_DOCS.includes(key);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Documents the provider sends to ONE laboratory rather than to all of them.
+//
+// SENDABLE_DOCS above are cohort documents: one file, everybody gets the same
+// one. These are the opposite — one file per participation, stored under the
+// participant code (scheme.labDocs[code][slot]). Today there is one: the proforma
+// invoice, whose amount and payee differ per lab.
+//
+// Because the file names the laboratory it is addressed to, it is the mirror of
+// the lab's own uploads: reading or writing one crosses the code↔identity line,
+// so both are manager-only on the provider side (§4.2), and on the lab side the
+// slot is resolved from the session's own participation and never from the URL.
+//
+// There is no separate "send" step here. A cohort document is uploaded once and
+// released once, so the two acts are worth separating; a per-lab document is
+// already uploaded deliberately, for one named laboratory, one at a time — so
+// putting it in the slot IS the act of sending it.
+// ─────────────────────────────────────────────────────────────────────────────
+export const LAB_DOC_SLOTS = {
+  proforma: { bg: "Проформа фактура", en: "Proforma invoice" },
+} as const;
+
+export type LabDocSlot = keyof typeof LAB_DOC_SLOTS;
+
+// hasOwnProperty, not `in`: `"toString" in LAB_DOC_SLOTS` is true, and this
+// decides whether a string off the wire may address a storage slot.
+export const isLabDocSlot = (slot: string): slot is LabDocSlot =>
+  Object.prototype.hasOwnProperty.call(LAB_DOC_SLOTS, slot);
+
 export interface LabFetchContext {
   sent?: Record<string, string>; // scheme.sentToParticipants — docKey → ISO timestamp
   reported: boolean;             // the round reached report/closed

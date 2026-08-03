@@ -6,7 +6,7 @@ import { listSchemes } from "@/lib/store";
 import { metricsForScheme, scoreMetric } from "@/lib/scoring";
 import { statusChip } from "@/lib/folders";
 import { computeLabPhases, fmtPhaseDate, canLabUploadNow, LAB_UPLOAD_SLOTS } from "@/lib/lab-phases";
-import { releasedDocs } from "@/lib/doc-release";
+import { releasedDocs, LAB_DOC_SLOTS } from "@/lib/doc-release";
 import { getDoc } from "@/lib/documents";
 import { labUploadDocAction } from "@/lib/actions";
 import { signOutLabAction } from "@/lib/auth-actions";
@@ -84,6 +84,8 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
       const deadline = scheme.schedule?.[scheme.schedule.length - 1]?.date ?? "";
       return {
         p, scheme, scores, overall, events,
+        // this participation's own proforma, if the provider has put one there
+        invoice: scheme.labDocs?.[p.code]?.proforma,
         completed: scheme.status === "closed",
         reported: scheme.status === "report" || scheme.status === "closed",
         hasCert: !!scheme.certificates?.[p.code],
@@ -213,9 +215,13 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
       return def ? (lang === "bg" ? def.nameBg : def.nameEn) : key;
     };
     const rows = [
-      ...releasedDocs(it.scheme.sentToParticipants).map((r) => ({ key: r.key, label: docLabel(r.key), at: r.at.slice(0, 10) })),
-      ...(it.reported ? [{ key: "report", label: tr("lab.finalReport"), at: "" }] : []),
-      ...(it.hasCert ? [{ key: "certificate", label: tr("lab.certificate"), at: "" }] : []),
+      ...releasedDocs(it.scheme.sentToParticipants).map((r) => ({ key: r.key, label: docLabel(r.key), at: r.at.slice(0, 10), href: `/lab/doc/${it.scheme.id}/${r.key}?lang=${lang}` })),
+      ...(it.reported ? [{ key: "report", label: tr("lab.finalReport"), at: "", href: `/lab/doc/${it.scheme.id}/report?lang=${lang}` }] : []),
+      ...(it.hasCert ? [{ key: "certificate", label: tr("lab.certificate"), at: "", href: `/lab/doc/${it.scheme.id}/certificate?lang=${lang}` }] : []),
+      // addressed to this laboratory alone, so it comes from its own route
+      // ?p= names the participation: a lab that applied twice to one scheme has an
+      // invoice per code, and the link must fetch the one this card is showing.
+      ...(it.invoice ? [{ key: "proforma", label: lang === "bg" ? LAB_DOC_SLOTS.proforma.bg : LAB_DOC_SLOTS.proforma.en, at: it.invoice.uploadedAt.slice(0, 10), href: `/lab/labdoc/${it.scheme.id}/proforma?p=${encodeURIComponent(it.p.id)}` }] : []),
     ];
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -227,7 +233,7 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
         ) : (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {rows.map((d) => (
-              <a key={d.key} href={`/lab/doc/${it.scheme.id}/${d.key}?lang=${lang}`} target="_blank" rel="noreferrer"
+              <a key={d.key} href={d.href} target="_blank" rel="noreferrer"
                 className="btn btn-sm" style={{ fontSize: 12 }}>
                 ⇩ {d.label}{d.at ? ` · ${fmtPhaseDate(d.at)}` : ""}
               </a>

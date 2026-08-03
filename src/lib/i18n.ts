@@ -221,6 +221,7 @@ const DICT: Record<string, Entry> = {
   "col.country": { bg: "Държава", en: "Country" },
   "col.contact": { bg: "Контакт", en: "Contact" },
   "col.status": { bg: "Статус", en: "Status" },
+  "col.paid": { bg: "Платена", en: "Paid" },
 
   // ── results & scoring ──
   "results.title": { bg: "Резултати и оценяване", en: "Results & scoring" },
@@ -244,6 +245,7 @@ const DICT: Record<string, Entry> = {
   // ── participants ──
   "part.subtitle": { bg: "Всяка лаборатория се показва на останалите само чрез случайния си код — имената остават конфиденциални (видими тук, за вас).", en: "Each laboratory is shown to others only by its random code — names stay confidential (visible here, to you)." },
   "part.portal": { bg: "Портал", en: "Portal" },
+  "part.invoiceSent": { bg: "изпратена", en: "invoice sent" },
   "part.hidden": { bg: "Скрито", en: "Hidden" },
   "part.confBanner": { bg: "Имената са видими само за Мениджър (ISO/IEC 17043 §4.2). С Вашата роля виждате само кодовете.", en: "Names are visible to a Manager only (ISO/IEC 17043 §4.2). With your role you see codes only." },
   "part.inviteToPortal": { bg: "Покани в портала", en: "Invite to portal" },
@@ -415,6 +417,10 @@ const DICT: Record<string, Entry> = {
   "act.doc.upload_removed": { bg: "Премахнат качен файл", en: "Uploaded file removed" },
   "act.doc.sent": { bg: "Изпратен на участниците", en: "Sent to the participants" },
   "act.doc.unsent": { bg: "Спряно споделяне", en: "Withdrawn from the participants" },
+  "act.labdoc.uploaded": { bg: "Изпратена проформа", en: "Proforma sent" },
+  "act.labdoc.removed": { bg: "Премахната проформа", en: "Proforma removed" },
+  "act.payment.marked": { bg: "Отбелязано плащане", en: "Marked paid" },
+  "act.payment.unmarked": { bg: "Отменено плащане", en: "Paid mark removed" },
   "act.doc.ready": { bg: "Готов документ", en: "Document ready" },
   "act.doc.reopened": { bg: "Документ отново в процес", en: "Document back in progress" },
   "act.participant.updated": { bg: "Обновен участник", en: "Participant updated" },
