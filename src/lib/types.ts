@@ -485,6 +485,11 @@ export interface Scheme {
     resultsDue?: string;
     reportDue?: string;
   };
+  // Which day-before reminders have already gone out, keyed "<dateKey>:<ISO date>"
+  // → when. The cron may run more than once a day (a retry, a redeploy, a manual
+  // trigger), and a laboratory must not be reminded twice for the same deadline.
+  // JSONB, no migration. See lib/notify-reminders.ts.
+  remindedAt?: Record<string, string>;
   // chosen document skin (visual theme) id; absent → the built-in "Classic" skin.
   skin?: string;
   // friendly folder name shown in the explorer; absent → falls back to the title/number.

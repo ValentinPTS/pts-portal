@@ -436,6 +436,7 @@ const DICT: Record<string, Entry> = {
   "act.results.auto_assigned": { bg: "Автоматично изчислена приета стойност", en: "Assigned value auto-computed" },
   "act.results.conflict": { bg: "Отказан запис на резултати", en: "Results save refused" },
   "act.results.cleared": { bg: "Изчистени резултати", en: "Results cleared" },
+  "act.notify.run": { bg: "Изпратени известия", en: "Notifications sent" },
 
   // ── applications ──
   "apps.title": { bg: "Заявки", en: "Applications" },
