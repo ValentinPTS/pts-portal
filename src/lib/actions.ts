@@ -56,7 +56,7 @@ import { TYPE_SLUG, type FolderType } from "./folders";
 import type { Scheme, Scoring, Parameter, StaffRole, StaffStatus, LabStatus, CaseEventKind, LabRegion, VatStatus, SchemeStatus, ParticipantStatus } from "./types";
 import {
   isIdentityMap, remapSelections, remapCharacteristics, remapScoring, paramsSignature,
-  effectiveDirections, calibrationDataSlots, calibrationSlotsBroken,
+  effectiveDirections, calibrationDataSlots, calibrationSlotsBroken, clearCalibrationSlots,
 } from "./param-remap";
 import { usesCalApplyItem, CAL_SELECTION_KEY } from "./apply-item";
 
@@ -1880,14 +1880,24 @@ export async function updateSchemeAction(formData: FormData) {
   // already-issued Eₙ to a different load. Refuse the save while those slots still
   // hold data — the owner clears them on the Results page first, exactly as the
   // stranded-participant guard above does. Appending new points stays allowed.
+  // The guard no longer REFUSES the save. The owner asked for an app that never
+  // stands in his way, and refusing meant a trip to the Results page and retyping
+  // every other edit he had made on this form. What it must still never do is let
+  // the data follow the edit onto a different load point.
+  //
+  // So: the editor warns him before submitting, naming the exact results at stake,
+  // and if he goes ahead they are CLEARED rather than reattached. Arriving without
+  // that confirmation — an older client, or a Server Action POSTed directly — still
+  // gets the refusal, so nothing can be dropped without somebody having said so.
   const oldCal = existing.calibration;
+  let clearedSlots: [number, number][] = [];
   if (existing.type === "C" && oldCal && calibration) {
     const broken = calibrationSlotsBroken(
       calibrationDataSlots(existing.scoring, existing.formData?.["results"]),
       oldCal.points, calibration.points,
       oldCal.directionsEn, calibration.directionsEn
     );
-    if (broken.length) {
+    if (broken.length && formData.get("calslotsConfirm") !== "1") {
       const dirs = effectiveDirections(oldCal.directionsEn);
       const list = [...new Set(broken.map(([d, p]) =>
         `${dirs[d] ?? `#${d + 1}`} @ ${oldCal.points[p] ?? `#${p + 1}`}${oldCal.unit ? ` ${oldCal.unit}` : ""}`
@@ -1897,6 +1907,7 @@ export async function updateSchemeAction(formData: FormData) {
       ))].join(", ").slice(0, 300).replace(/[\uD800-\uDFFF]$/, "");
       redirect(`/schemes/${id}/edit?err=calslots&slots=${encodeURIComponent(list)}`);
     }
+    clearedSlots = broken;
   }
 
   // cover photo: URL (uploaded), width (%) and placement, all owner-set on the Edit
@@ -1940,6 +1951,19 @@ export async function updateSchemeAction(formData: FormData) {
     parameters,
     prices,
     calibration,
+    // He confirmed the calibration-point edit, so the Eₙ values and Results-Sheet
+    // fields that belonged to the points he changed are dropped HERE, inside the
+    // same locked write — an entry made while this action was running is cleared
+    // too, and never left pointing at a load point that no longer means what it did.
+    ...(clearedSlots.length
+      ? (() => {
+          const c = clearCalibrationSlots(current.scoring, current.formData?.["results"], clearedSlots);
+          return {
+            ...(c.scoring ? { scoring: c.scoring } : {}),
+            ...(c.resultsSheet ? { formData: { ...(current.formData ?? {}), results: c.resultsSheet } } : {}),
+          };
+        })()
+      : {}),
     ...(paramsRestructured
       ? {
           applications: (current.applications ?? []).map((a) => ({
@@ -1965,6 +1989,19 @@ export async function updateSchemeAction(formData: FormData) {
         await updateParticipant(p.id, { characteristics: next });
       }
     }
+  }
+
+  // Dropping issued Eₙ values is exactly the kind of thing an assessor asks about,
+  // so it is recorded by load point — not just counted.
+  if (clearedSlots.length && oldCal) {
+    const dirs = effectiveDirections(oldCal.directionsEn);
+    const lost = clearedSlots
+      .map(([d, p]) => `${dirs[d] ?? `#${d + 1}`} @ ${oldCal.points[p] ?? `#${p + 1}`}${oldCal.unit ? ` ${oldCal.unit}` : ""}`)
+      .join(", ");
+    await logActivity("results.cleared", {
+      schemeId: id,
+      summary: `Calibration points edited with the owner's confirmation — results cleared for: ${lost}`,
+    });
   }
 
   revalidatePath(`/schemes/${id}`, "layout");

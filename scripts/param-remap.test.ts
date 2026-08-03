@@ -3,7 +3,8 @@
 // requested participations, participants' registered characteristics, and the
 // T-scheme scoring keys — must follow its standard or be dropped with it.
 import { isIdentityMap, remapSelections, remapCharacteristics, remapScoring,
-  effectiveDirections, calibrationDataSlots, calibrationSlotsBroken } from "../src/lib/param-remap.ts";
+  effectiveDirections, calibrationDataSlots, calibrationSlotsBroken,
+  clearCalibrationSlots } from "../src/lib/param-remap.ts";
 import type { Scoring } from "../src/lib/types.ts";
 
 let pass = 0, fail = 0;
@@ -112,6 +113,50 @@ t("broken: a slot pointing past the OLD list is already orphaned → ignored",
   calibrationSlotsBroken([[0, 9]], PTS, ["20"], DIRS, DIRS).length === 0);
 t("broken: an unnamed-direction scheme still protects its slot",
   JSON.stringify(calibrationSlotsBroken([[0, 0]], ["20"], ["30"], [], [])) === JSON.stringify([[0, 0]]));
+
+
+// ── clearing the slots the owner confirmed away ──────────────────────────────
+// The guard no longer refuses the save; it clears. Deleting an issued Eₙ is
+// serious, so what goes and what stays is pinned exactly.
+{
+  const e = (value: number, u: number) => ({ value, u });
+  const scoring: Scoring = {
+    assigned: { "0:0": { value: 20, u: 0.1 }, "0:1": { value: 30, u: 0.1 } },
+    results: {
+      "257101": { "0:0": e(20.1, 0.2), "0:1": e(30.2, 0.2) },
+      "257102": { "0:0": e(19.9, 0.2) },
+    },
+  } as unknown as Scoring;
+  const sheet = { result_0_0: "20.1", unc_0_0: "0.2", result_0_1: "30.2", unc_0_1: "0.2", other: "keep" };
+
+  const out = clearCalibrationSlots(scoring, sheet, [[0, 0]]);
+  t("the doomed assigned value goes", !("0:0" in out.scoring!.assigned));
+  t("the surviving assigned value stays", out.scoring!.assigned["0:1"] !== undefined);
+  t("the doomed result goes for every participant",
+    !("0:0" in out.scoring!.results["257101"]) && out.scoring!.results["257102"] === undefined);
+  t("a participant keeps the slots that survive", out.scoring!.results["257101"]["0:1"] !== undefined);
+  t("a participant left with nothing is dropped entirely",
+    Object.keys(out.scoring!.results).length === 1);
+  t("the Results-Sheet fields for that slot go",
+    !("result_0_0" in out.resultsSheet!) && !("unc_0_0" in out.resultsSheet!));
+  t("the other slot's sheet fields stay",
+    out.resultsSheet!.result_0_1 === "30.2" && out.resultsSheet!.unc_0_1 === "0.2");
+  t("unrelated sheet keys are untouched", out.resultsSheet!.other === "keep");
+  t("everything dropped is counted", out.cleared === 1 + 2 + 2);
+
+  // the originals must not be mutated — the caller writes inside a lock
+  t("the input scoring is untouched", "0:0" in scoring.assigned && "257102" in scoring.results);
+  t("the input sheet is untouched", sheet.result_0_0 === "20.1");
+}
+{
+  // nothing to clear must be a no-op, including on undefined inputs
+  const out = clearCalibrationSlots(undefined, undefined, []);
+  t("no slots, no change", out.scoring === undefined && out.resultsSheet === undefined && out.cleared === 0);
+  const out2 = clearCalibrationSlots(undefined, { a: "1" }, [[9, 9]]);
+  t("a slot nothing matches clears nothing", out2.cleared === 0 && out2.resultsSheet!.a === "1");
+  t("a blank sheet field is not counted as data",
+    clearCalibrationSlots(undefined, { result_0_0: "  " }, [[0, 0]]).cleared === 0);
+}
 
 console.log(`param-remap.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

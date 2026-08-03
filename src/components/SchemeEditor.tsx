@@ -6,6 +6,7 @@ import Link from "next/link";
 import { updateSchemeAction } from "@/lib/actions";
 import CoverPhotoField from "@/components/CoverPhotoField";
 import { useLang } from "@/components/LangProvider";
+import { calibrationSlotsBroken, effectiveDirections } from "@/lib/param-remap";
 import type { CalibrationData, Parameter, PriceRow, ScheduleItem, SchemeStatus } from "@/lib/types";
 
 // The reworked "Edit scheme data" view. Focused on what the owner actually
@@ -37,6 +38,10 @@ export interface SchemeEditorInit {
   parameters: Parameter[];
   prices: PriceRow[];
   calibration?: CalibrationData;
+  // Which "<dir>:<point>" slots currently hold entered results. Passed in so the
+  // editor can WARN before submitting — the server would otherwise have to refuse
+  // the save and send him back here with every other edit on this form lost.
+  calDataSlots?: [number, number][];
 }
 
 type SchedRow = ScheduleItem & { uid: number };
@@ -270,9 +275,42 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
     } catch { /* clipboard unavailable — the link is visible to copy by hand */ }
   }
 
+  // Editing a calibration point that already carries results cannot silently move
+  // those results onto another load point. Rather than refusing the save (which
+  // would throw away every other edit on this form), warn here, name exactly which
+  // results go, and post the confirmation with the save.
+  const confirmRef = useRef<HTMLInputElement>(null);
+  function guardCalibrationEdit(e: React.FormEvent<HTMLFormElement>) {
+    if (confirmRef.current) confirmRef.current.value = "";
+    const oldCal = init.calibration;
+    if (!isCal || !oldCal || !init.calDataSlots?.length) return;
+    const split = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
+    const broken = calibrationSlotsBroken(
+      init.calDataSlots,
+      oldCal.points, split(cal.points),
+      oldCal.directionsEn, split(cal.dirEn),
+    );
+    if (!broken.length) return;
+    const dirs = effectiveDirections(oldCal.directionsEn);
+    const list = [...new Set(broken.map(([d, p]) =>
+      `${dirs[d] ?? `#${d + 1}`} @ ${oldCal.points[p] ?? `#${p + 1}`}${oldCal.unit ? ` ${oldCal.unit}` : ""}`,
+    ))].join("\n  • ");
+    const okToGo = window.confirm(L(
+      `Променяте точки/посоки на калибриране, за които ВЕЧЕ има въведени резултати:\n\n  • ${list}\n\n`
+      + "Тези резултати ще бъдат ИЗЧИСТЕНИ — оценките Eₙ не могат да се прехвърлят върху друга точка на натоварване.\n\n"
+      + "Да продължа ли?",
+      `You are changing calibration points/directions that ALREADY carry entered results:\n\n  • ${list}\n\n`
+      + "Those results will be CLEARED — an Eₙ score cannot be carried over to a different load point.\n\n"
+      + "Go ahead?",
+    ));
+    if (!okToGo) { e.preventDefault(); return; }
+    if (confirmRef.current) confirmRef.current.value = "1";
+  }
+
   return (
-    <form action={updateSchemeAction}>
+    <form action={updateSchemeAction} onSubmit={guardCalibrationEdit}>
       <input type="hidden" name="id" value={init.id} />
+      <input ref={confirmRef} type="hidden" name="calslotsConfirm" defaultValue="" />
 
       {/* ── Essentials ─────────────────────────────────────────────── */}
       <SectionTitle>{L("Основни данни", "Basics")}</SectionTitle>

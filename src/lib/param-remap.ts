@@ -156,3 +156,58 @@ export function calibrationSlotsBroken(
     return norm(newD[d]) !== norm(oldD[d]) || norm(newPoints[p]) !== norm(oldPoints[p]);
   });
 }
+
+// The owner may go ahead and edit those points anyway — nothing in this app blocks
+// him. What must NOT happen is the data silently following the edit onto a
+// different load point, which is the corruption the guard above exists to prevent.
+// So when he confirms, the affected slots are CLEARED: an Eₙ that no longer has a
+// load point it belongs to is deleted rather than reattached to the wrong one.
+//
+// Returns fresh objects — the caller decides whether to write them — plus a count,
+// so the activity log can say exactly how much was dropped. Pure and total: an
+// empty slot list returns the inputs unchanged.
+export function clearCalibrationSlots(
+  scoring: Scoring | undefined,
+  resultsSheet: Record<string, string> | undefined,
+  slots: readonly [number, number][]
+): { scoring: Scoring | undefined; resultsSheet: Record<string, string> | undefined; cleared: number } {
+  if (!slots.length) return { scoring, resultsSheet, cleared: 0 };
+  const doomed = new Set(slots.map(([d, p]) => `${d}:${p}`));
+  let cleared = 0;
+
+  let nextScoring = scoring;
+  if (scoring) {
+    const assigned: Scoring["assigned"] = {};
+    for (const [k, v] of Object.entries(scoring.assigned)) {
+      if (doomed.has(k)) cleared++;
+      else assigned[k] = v;
+    }
+    const results: Scoring["results"] = {};
+    for (const [code, byMetric] of Object.entries(scoring.results)) {
+      const kept: (typeof scoring.results)[string] = {};
+      for (const [k, v] of Object.entries(byMetric)) {
+        if (doomed.has(k)) cleared++;
+        else kept[k] = v;
+      }
+      // Drop a participant's entry entirely once nothing is left under it, so the
+      // scheme does not keep an empty object per code for ever.
+      if (Object.keys(kept).length) results[code] = kept;
+    }
+    nextScoring = { ...scoring, assigned, results };
+  }
+
+  let nextSheet = resultsSheet;
+  if (resultsSheet) {
+    nextSheet = {};
+    for (const [k, v] of Object.entries(resultsSheet)) {
+      const m = /^(?:result|unc)_(\d+)_(\d+)$/.exec(k);
+      if (m && doomed.has(`${Number(m[1])}:${Number(m[2])}`)) {
+        if (String(v).trim()) cleared++;
+        continue;
+      }
+      nextSheet[k] = v;
+    }
+  }
+
+  return { scoring: nextScoring, resultsSheet: nextSheet, cleared };
+}

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getScheme } from "@/lib/store";
 import SchemeEditor from "@/components/SchemeEditor";
+import { calibrationDataSlots } from "@/lib/param-remap";
 import { getServerT } from "@/lib/i18n-server";
 import { requireStaff } from "@/lib/roles";
 
@@ -50,8 +51,8 @@ export default async function EditSchemePage({
         <div className="card p-3 mt-3 text-sm" style={{ background: "#fbeeee", border: "1px solid #e3c8c8", color: "#8f2f2f" }}>
           <b>{L("Промените НЕ са запазени.", "The changes were NOT saved.")}</b>{" "}
           {L(
-            `За тези точки/посоки на калибриране вече има въведени резултати: ${slots ?? ""}. Пренареждането, изтриването или преименуването им би прикачило оценките Eₙ към друга точка на натоварване — първо изчистете тези резултати на страница „Резултати“, след което редактирайте точките.`,
-            `These calibration points/directions already carry entered results: ${slots ?? ""}. Reordering, deleting or renaming them would reattach the Eₙ scores to a different load point — first clear those results on the “Results” page, then edit the points.`
+            `За тези точки/посоки на калибриране вече има въведени резултати: ${slots ?? ""}. Обикновено редакторът пита и, ако потвърдите, изчиства именно тези резултати — този път потвърждението не пристигна, затова нищо не е променено. Опитайте отново от страницата и потвърдете, когато ви попита.`,
+            `These calibration points/directions already carry entered results: ${slots ?? ""}. The editor normally asks first and, if you agree, clears exactly those results — this time no confirmation arrived, so nothing was changed. Try again from the page and confirm when it asks.`
           )}
         </div>
       )}
@@ -74,6 +75,9 @@ export default async function EditSchemePage({
           parameters: s.parameters,
           prices: s.prices,
           calibration: s.calibration,
+          // so the editor can warn about results at stake BEFORE the save, rather
+          // than the server refusing it and losing every other edit on the form
+          calDataSlots: s.type === "C" ? calibrationDataSlots(s.scoring, s.formData?.["results"]) : [],
         }}
       />
     </div>
