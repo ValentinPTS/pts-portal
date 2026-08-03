@@ -476,7 +476,9 @@ export interface Scheme {
   // The four working dates that drive the LAB's view and the reminder. Kept apart
   // from `schedule` on purpose: schedule is document content the owner writes by
   // hand and prints into the Plan, and he does not want app dates leaking into
-  // his documents. These never render into any document. dd.mm.yyyy, like schedule.
+  // his documents. These never render into any document, and they gate nothing.
+  // ISO yyyy-mm-dd (not the schedule's dd.mm.yyyy) because these are compared and
+  // sorted — see lib/scheme-dates.ts, which owns the format and the arithmetic.
   dates?: {
     applicationsDue?: string;
     dispatch?: string;

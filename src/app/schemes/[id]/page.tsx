@@ -7,6 +7,7 @@ import { isSendableDoc } from "@/lib/doc-release";
 import { fmtPhaseDate } from "@/lib/lab-phases";
 import ExplorerShell from "@/components/ExplorerShell";
 import SchemeDocuments, { type DocStageView, type DocSource, type DocRow } from "@/components/SchemeDocuments";
+import SchemeDates from "@/components/SchemeDates";
 import SkinPicker from "@/components/SkinPicker";
 import ManageMenu from "@/components/ManageMenu";
 import FolderActions from "@/components/FolderActions";
@@ -134,6 +135,9 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
           <span><i style={{ display: "inline-block", width: 9, height: 9, borderRadius: 999, background: "var(--line)", marginRight: 5 }} />{L("предстоят", "pending")} {total - ready}</span>
         </div>
       </div>
+
+      {/* the operational dates — separate from the Plan's printed schedule */}
+      <SchemeDates schemeId={id} lang={lang} initial={s.dates ?? {}} />
 
       <SchemeDocuments schemeId={id} lang={lang} stages={stages} lists={lists} />
     </ExplorerShell>

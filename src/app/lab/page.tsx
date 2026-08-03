@@ -7,6 +7,7 @@ import { metricsForScheme, scoreMetric } from "@/lib/scoring";
 import { statusChip } from "@/lib/folders";
 import { computeLabPhases, fmtPhaseDate, canLabUploadNow, LAB_UPLOAD_SLOTS } from "@/lib/lab-phases";
 import { releasedDocs, LAB_DOC_SLOTS } from "@/lib/doc-release";
+import { DATE_LABELS, fmtSchemeDate, setDates } from "@/lib/scheme-dates";
 import { getDoc } from "@/lib/documents";
 import { labUploadDocAction } from "@/lib/actions";
 import { signOutLabAction } from "@/lib/auth-actions";
@@ -47,6 +48,7 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
   const parts = await listParticipationsForLab(lab.id);
   const myIds = new Set(parts.map((p) => p.schemeId));
   const notifications = await listForLab(lab.id, 30);
+  const todayIso = new Date().toISOString().slice(0, 10);
   // One fetch of all schemes serves BOTH the lab's own rounds (for its scores/docs)
   // and the public buckets it may browse — avoids a second targeted query for rows we
   // already have. Drafts are internal WIP and never shown to labs (confidentiality);
@@ -81,7 +83,11 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
         .filter((x): x is { label: string; text: string; v: Verdict | null } => !!x);
       const rs = scores.map((s) => s.v);
       const overall: Verdict | null = rs.includes("action") ? "action" : rs.includes("warn") ? "warn" : rs.includes("ok") ? "ok" : null;
-      const deadline = scheme.schedule?.[scheme.schedule.length - 1]?.date ?? "";
+      // The results deadline comes from the scheme's WORKING dates, not from the
+      // schedule the owner prints into the Plan — that one is document content and
+      // was never meant to drive the portal. Absent = not decided yet, shown as no
+      // deadline rather than guessed at.
+      const deadline = fmtSchemeDate(scheme.dates?.resultsDue);
       return {
         p, scheme, scores, overall, events,
         // this participation's own proforma, if the provider has put one there
@@ -205,6 +211,27 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
     </div>
   );
 
+  // The scheme's working dates, as the laboratory sees them: what is coming and
+  // when. A date that has passed is dimmed rather than flagged — the provider waits
+  // for late results as a matter of course, and the portal must not nag about it.
+  const datesStrip = (it: Item) => {
+    const rows = setDates(it.scheme);
+    if (!rows.length) return null;
+    return (
+      <div style={{ display: "flex", gap: "6px 18px", flexWrap: "wrap", padding: "8px 12px", background: "#f7faf8", borderRadius: 10 }}>
+        {rows.map(({ key, at }) => {
+          const past = at < todayIso;
+          return (
+            <span key={key} style={{ fontSize: 12.5, color: "var(--muted)" }}>
+              {lang === "bg" ? DATE_LABELS[key].bg : DATE_LABELS[key].en}:{" "}
+              <b style={{ color: past ? "var(--muted)" : "var(--ink)", fontVariantNumeric: "tabular-nums" }}>{fmtSchemeDate(at)}</b>
+            </span>
+          );
+        })}
+      </div>
+    );
+  };
+
   // Every document this participation has from the provider, in ONE place: the
   // ones he released with "Изпрати на участниците", plus the report and the
   // certificate, which are issued rather than sent. Nothing appears here that he
@@ -275,6 +302,7 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
         ) : (
           <Timeline it={it} />
         )}
+        {datesStrip(it)}
         {docsFromProvider(it)}
         {resultBlock(it.scores, it.overall, awaiting)}
       </div>

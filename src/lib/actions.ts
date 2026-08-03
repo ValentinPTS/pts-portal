@@ -11,6 +11,7 @@ import { addParticipant, listParticipants, listParticipationsForLab, updateParti
 import { addApplication, setApplicationStatus } from "./applications";
 import { getDoc, hasDocContent } from "./documents";
 import { isSendableDoc, isLabDocSlot, hasCohortNames, LAB_DOC_SLOTS, type LabDocSlot } from "./doc-release";
+import { DATE_KEYS, DATE_LABELS, isIsoDate, type SchemeDateKey } from "./scheme-dates";
 import { PSTATUS_ORDER, LAB_UPLOAD_SLOTS, canLabUploadNow, type LabUploadSlot } from "./lab-phases";
 import {
   metricsForScheme, buildScoring, computeAssigned,
@@ -465,6 +466,37 @@ export async function setDocSentAction(
   });
   revalidatePath(`/schemes/${schemeId}`, "layout");
   return { ok: true, told: parts.length, namesWithheld };
+}
+
+// ── The scheme's four working dates ──────────────────────────────────────────
+// Operational only: they tell a laboratory what it is waiting for and they feed
+// the day-before reminder. They never reach a document, and they gate nothing —
+// a date can pass unmet and the round carries on, because in the real work it
+// often does. Blank clears a date; an unparseable one is refused rather than
+// stored as junk the reminder would later trip over.
+export async function setSchemeDatesAction(
+  schemeId: string,
+  input: Partial<Record<SchemeDateKey, string>>,
+): Promise<{ ok?: boolean; error?: string }> {
+  await requireWriter();
+  if (!(await getScheme(schemeId))) return { error: "Scheme not found." };
+
+  const dates: Record<string, string> = {};
+  for (const key of DATE_KEYS) {
+    const v = String(input?.[key] ?? "").trim();
+    if (!v) continue; // blank = not set
+    if (!isIsoDate(v)) return { error: `“${DATE_LABELS[key].en}” is not a valid date.` };
+    dates[key] = v;
+  }
+  // Replaces the whole set, so clearing a field really clears it.
+  await updateSchemeWith(schemeId, () => ({ dates }));
+  await logActivity("scheme.dates", {
+    schemeId,
+    summary: `Working dates set: ${DATE_KEYS.filter((k) => dates[k]).map((k) => `${DATE_LABELS[k].en} ${dates[k]}`).join(", ") || "none"}`,
+  });
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  revalidatePath("/lab", "page");
+  return { ok: true };
 }
 
 // ── Per-laboratory documents (the proforma invoice) ──────────────────────────

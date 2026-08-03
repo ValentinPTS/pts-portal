@@ -393,6 +393,7 @@ const DICT: Record<string, Entry> = {
   // action labels
   "act.scheme.created": { bg: "Създадена схема", en: "Scheme created" },
   "act.scheme.renamed": { bg: "Преименувана схема", en: "Scheme renamed" },
+  "act.scheme.dates": { bg: "Променени работни срокове", en: "Working dates changed" },
   "act.scheme.deleted": { bg: "Изтрита схема", en: "Scheme deleted" },
   "act.doc.saved": { bg: "Редактиран документ", en: "Document edited" },
   "act.participant.added": { bg: "Добавен участник", en: "Participant added" },
