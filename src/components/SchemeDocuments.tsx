@@ -94,6 +94,13 @@ export default function SchemeDocuments({ schemeId, lang, stages, lists = [] }: 
       const r = await setDocSentAction(schemeId, d.key, sent);
       setBusyKey(null);
       if (r?.error) { alert(r.error); return; }
+      // It went out either way — this only tells him what they will actually see.
+      if (r?.namesWithheld) {
+        alert(L(
+          `„${d.name}“ е изпратен. Съдържа таблица с имената на участниците — тя НЕ се показва на лабораториите (поверително, §4.2). Те виждат на нейно място бележка.`,
+          `“${d.name}” has been sent. It contains a table of participant names — that table is NOT shown to the laboratories (confidential, §4.2). They see a note in its place.`,
+        ));
+      }
       router.refresh();
     });
   }

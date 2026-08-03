@@ -65,6 +65,109 @@ export type LabDocSlot = keyof typeof LAB_DOC_SLOTS;
 export const isLabDocSlot = (slot: string): slot is LabDocSlot =>
   Object.prototype.hasOwnProperty.call(LAB_DOC_SLOTS, slot);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// The cohort-name guard.
+//
+// The editor can insert a "Participants" field, which renders a table of CODE +
+// LABORATORY NAME. That is right in the provider's own papers and catastrophic in
+// a handout: an edited body is stored as already-rendered HTML, so the names are
+// baked in and cannot be masked at serve time the way a freshly-rendered document
+// can. Released bodies are therefore scanned, and such a table is replaced with a
+// visible note before it reaches a laboratory.
+//
+// Visible, not silent. A provider under ISO 17043 has to know what his
+// participants actually received: a laboratory seeing "this table was withheld"
+// is honest, a laboratory seeing a document quietly one table shorter than the one
+// he believes he sent is not. He is also warned at the moment he releases it.
+//
+// The signature is deliberately narrow — a header row naming BOTH a code column
+// and a laboratory column, with at least one row under it. That is exactly what
+// the participants field emits, and it does not match a blank form table that
+// merely asks a laboratory to write its own name (those have no code column).
+// It cannot catch names somebody typed in by hand as free prose; nothing can.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CODE_HEADER = /<th[^>]*>\s*(?:Код|Code)\s*<\/th>/i;
+const NAME_HEADER = /<th[^>]*>\s*(?:Лаборатория|Laboratory)\s*<\/th>/i;
+const HAS_ROW = /<tbody[^>]*>\s*<tr/i;
+
+const isCohortNameTable = (table: string): boolean =>
+  CODE_HEADER.test(table) && NAME_HEADER.test(table) && HAS_ROW.test(table);
+
+/**
+ * Walk the <table> elements of a body and hand each one to `fn`.
+ *
+ * Nesting is counted, so a table inside a table is never sliced in half, and each
+ * table's CONTENTS are processed before the table itself. That order matters: a
+ * participants table sitting inside a layout table must take only itself with it —
+ * testing outside-in would match the outer table (it contains the inner one's
+ * headers) and delete the whole layout with it.
+ */
+function mapTables(html: string, fn: (table: string) => string): string {
+  const lower = html.toLowerCase();
+  let out = "";
+  let i = 0;
+  for (;;) {
+    const start = lower.indexOf("<table", i);
+    if (start === -1) return out + html.slice(i);
+    out += html.slice(i, start);
+    let depth = 0;
+    let j = start;
+    let end = -1;
+    for (;;) {
+      const open = lower.indexOf("<table", j);
+      const close = lower.indexOf("</table", j);
+      if (close === -1) break; // unbalanced — leave the rest untouched
+      if (open !== -1 && open < close) {
+        depth++;
+        j = open + 6;
+      } else {
+        depth--;
+        j = close + 7;
+        if (depth === 0) {
+          const gt = html.indexOf(">", close);
+          end = gt === -1 ? html.length : gt + 1;
+          break;
+        }
+      }
+    }
+    if (end === -1) return out + html.slice(start);
+    // innermost first: rebuild this table from its scrubbed contents, then test it
+    const table = html.slice(start, end);
+    const openEnd = html.indexOf(">", start);
+    if (openEnd === -1 || openEnd >= end) return out + html.slice(start);
+    const headLen = openEnd + 1 - start;
+    const closeStart = table.lastIndexOf("</table");
+    const rebuilt = closeStart > headLen
+      ? table.slice(0, headLen) + mapTables(table.slice(headLen, closeStart), fn) + table.slice(closeStart)
+      : table;
+    out += fn(rebuilt);
+    i = end;
+  }
+}
+
+/** Does this saved body carry a participants table? Used to warn at release time. */
+export function hasCohortNames(html: string): boolean {
+  if (!html || !/<table/i.test(html)) return false;
+  let found = false;
+  mapTables(html, (t) => {
+    if (isCohortNameTable(t)) found = true;
+    return t;
+  });
+  return found;
+}
+
+/** Replace any participants table with a visible note. Safe to call on any body. */
+export function stripCohortNames(html: string, lang: "bg" | "en"): string {
+  if (!html || !/<table/i.test(html)) return html;
+  const note = lang === "bg"
+    ? "[Списъкът на участниците е поверителен и не се предоставя на участващите лаборатории.]"
+    : "[The participant list is confidential and is not provided to participating laboratories.]";
+  return mapTables(html, (t) =>
+    isCohortNameTable(t) ? `<p class="muted">${note}</p>` : t,
+  );
+}
+
 export interface LabFetchContext {
   sent?: Record<string, string>; // scheme.sentToParticipants — docKey → ISO timestamp
   reported: boolean;             // the round reached report/closed

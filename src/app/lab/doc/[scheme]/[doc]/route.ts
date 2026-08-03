@@ -3,7 +3,7 @@ import { getLabSession } from "@/lib/lab-auth";
 import { listParticipationsForLab } from "@/lib/participants";
 import { getScheme } from "@/lib/store";
 import { getDoc, hasDocContent, isFormDoc } from "@/lib/documents";
-import { canLabFetchDoc } from "@/lib/doc-release";
+import { canLabFetchDoc, stripCohortNames } from "@/lib/doc-release";
 import { uploadedDocResponse } from "@/lib/scheme-uploads";
 import { docPrintHtml, docDefaultBody } from "@/lib/doc-template";
 import { drawFormBody, retagFormBody } from "@/lib/form-hydrate";
@@ -91,8 +91,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ scheme: str
   //
   // No participants are passed and names are never revealed, so anything the shell
   // or the default body renders about the cohort stays masked.
+  // A saved body is already-rendered HTML, so a participants table dropped into it
+  // carries every laboratory's NAME and cannot be masked by opts — it is cut out
+  // here, and replaced with a note so the laboratory can see something was withheld
+  // rather than silently receiving a shorter document (lib/doc-release).
   const opts: DocOptions = { revealNames: false, participants: [] };
-  let saved = scheme.docs?.[doc]?.[lang] ?? "";
+  let saved = stripCohortNames(scheme.docs?.[doc]?.[lang] ?? "", lang);
   if (saved && isFormDoc(doc)) {
     saved = drawFormBody(
       retagFormBody(saved, docDefaultBody(scheme, doc, lang, opts)),

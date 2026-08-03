@@ -10,7 +10,7 @@ import { nextProject } from "./folders";
 import { addParticipant, listParticipants, listParticipationsForLab, updateParticipant } from "./participants";
 import { addApplication, setApplicationStatus } from "./applications";
 import { getDoc, hasDocContent } from "./documents";
-import { isSendableDoc, isLabDocSlot, LAB_DOC_SLOTS, type LabDocSlot } from "./doc-release";
+import { isSendableDoc, isLabDocSlot, hasCohortNames, LAB_DOC_SLOTS, type LabDocSlot } from "./doc-release";
 import { PSTATUS_ORDER, LAB_UPLOAD_SLOTS, canLabUploadNow, type LabUploadSlot } from "./lab-phases";
 import {
   metricsForScheme, buildScoring, computeAssigned,
@@ -412,7 +412,7 @@ export async function setDocSentAction(
   schemeId: string,
   docKey: string,
   sent: boolean,
-): Promise<{ ok?: boolean; error?: string; told?: number }> {
+): Promise<{ ok?: boolean; error?: string; told?: number; namesWithheld?: boolean }> {
   await requireWriter();
   const scheme = await getScheme(schemeId);
   if (!scheme) return { error: "Scheme not found." };
@@ -451,12 +451,20 @@ export async function setDocSentAction(
   for (const p of parts) {
     await notifyDocsSent(p.labId, schemeId, scheme.number, p.code, def.nameBg, def.nameEn);
   }
+  // Releasing is never blocked — the owner's schedule is his own. But if the body
+  // he wrote contains a participants table, the laboratories will receive it with
+  // that table replaced by a note (lib/doc-release), and he has to know that BEFORE
+  // they read it rather than after.
+  const namesWithheld =
+    hasCohortNames(scheme.docs?.[docKey]?.bg ?? "") || hasCohortNames(scheme.docs?.[docKey]?.en ?? "");
+
   await logActivity("doc.sent", {
     schemeId,
-    summary: `Document “${docKey}” sent to the participants (${parts.length} participation(s))`,
+    summary: `Document “${docKey}” sent to the participants (${parts.length} participation(s))`
+      + (namesWithheld ? " — a participant-name table in the body is withheld from them" : ""),
   });
   revalidatePath(`/schemes/${schemeId}`, "layout");
-  return { ok: true, told: parts.length };
+  return { ok: true, told: parts.length, namesWithheld };
 }
 
 // ── Per-laboratory documents (the proforma invoice) ──────────────────────────
