@@ -7,6 +7,10 @@ import { metricsForScheme, scoreMetric } from "@/lib/scoring";
 import { statusChip } from "@/lib/folders";
 import { computeLabPhases, fmtPhaseDate, canLabUploadNow, LAB_UPLOAD_SLOTS } from "@/lib/lab-phases";
 import { releasedDocs, LAB_DOC_SLOTS } from "@/lib/doc-release";
+import { labState, positionOf, nextStopFor, estimatedWaitDays, describeWait } from "@/lib/chain";
+import { listParticipants } from "@/lib/participants";
+import DeviceChainCard from "@/components/DeviceChainCard";
+import type { Scheme } from "@/lib/types";
 import { DATE_LABELS, fmtSchemeDate, setDates } from "@/lib/scheme-dates";
 import { getDoc } from "@/lib/documents";
 import { labUploadDocAction } from "@/lib/actions";
@@ -19,6 +23,44 @@ import NotificationBell from "@/components/NotificationBell";
 import { getServerT } from "@/lib/i18n-server";
 
 export const dynamic = "force-dynamic";
+
+// ── The calibration chain, resolved for ONE laboratory ───────────────────────
+// §4.2 lives here. A laboratory may learn the name and address of exactly ONE
+// other participant — the stop it must ship to — and only once the device is in
+// its hands. So this resolves a single code, and only in the "holding" state.
+// Everything else it returns is position and timing, which name nobody.
+async function chainViewFor(scheme: Scheme, code: string, lang: "bg" | "en") {
+  const chain = scheme.chain;
+  if (scheme.type !== "C" || !chain?.stops?.length) return null;
+  const state = labState(chain, code);
+  if (state === "not-in-chain") return null;
+
+  let next: { kind: "lab" | "ref" | "pts"; name?: string; address?: string; contact?: string; phone?: string } | null = null;
+  if (state === "holding") {
+    const idx = chain.stops.findIndex((s) => s.kind === "lab" && s.code === code && !!s.receivedAt && !s.sentAt);
+    const ns = nextStopFor(chain, idx);
+    if (!ns) {
+      next = { kind: "pts" }; // last stop — it goes home
+    } else if (ns.kind === "ref") {
+      next = {
+        kind: "ref",
+        name: lang === "bg" ? scheme.calibration?.referenceLabBg : scheme.calibration?.referenceLabEn,
+        address: lang === "bg" ? scheme.calibration?.referenceLabLocBg : scheme.calibration?.referenceLabLocEn,
+      };
+    } else {
+      // ONE lookup, for ONE code — never the whole participant list into the view
+      const np = (await listParticipants(scheme.id)).find((x) => x.code === ns.code);
+      next = { kind: "lab", name: np?.labName, address: np?.deliveryAddress, contact: np?.contact, phone: np?.phone };
+    }
+  }
+  return {
+    state,
+    position: positionOf(chain, code),
+    wait: describeWait(estimatedWaitDays(chain, code), lang),
+    started: !!chain.dispatchedAt,
+    next,
+  };
+}
 
 type Verdict = "ok" | "warn" | "action";
 const VCHIP: Record<Verdict, { bg: string; fg: string }> = {
@@ -92,6 +134,8 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
         p, scheme, scores, overall, events,
         // this participation's own proforma, if the provider has put one there
         invoice: scheme.labDocs?.[p.code]?.proforma,
+        // the calibration chain, resolved for THIS laboratory only
+        chain: await chainViewFor(scheme, p.code, lang),
         completed: scheme.status === "closed",
         reported: scheme.status === "report" || scheme.status === "closed",
         hasCert: !!scheme.certificates?.[p.code],
@@ -303,6 +347,18 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
           <Timeline it={it} />
         )}
         {datesStrip(it)}
+        {it.chain && (
+          <DeviceChainCard
+            schemeId={it.scheme.id}
+            lang={lang}
+            state={it.chain.state}
+            position={it.chain.position?.position}
+            total={it.chain.position?.total}
+            wait={it.chain.wait}
+            started={it.chain.started}
+            next={it.chain.next}
+          />
+        )}
         {docsFromProvider(it)}
         {resultBlock(it.scores, it.overall, awaiting)}
       </div>

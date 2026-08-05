@@ -277,6 +277,35 @@ export interface Notification {
   emailedAt?: string; // set by the transport once it actually goes out (Phase 2)
 }
 
+// ── The calibration chain ────────────────────────────────────────────────────
+// The device's journey as an ORDERED LIST OF STOPS. A stop is either a
+// participating laboratory (by CODE — never a name) or the reference laboratory,
+// which may appear once, twice (start and end, which is what the stability
+// formula u_stab = |X_ref1 − X_ref2| / √3 implies) or not at all. Modelling it as
+// a plain list is what lets all three shapes work without the code caring.
+//
+// PTS is implicit at both ends and is not a stop: the owner confirms the first
+// dispatch and the final return himself.
+export type ChainStopKind = "lab" | "ref";
+
+export interface ChainStop {
+  id: string;           // stable across reordering, so a stop can be moved safely
+  kind: ChainStopKind;
+  code?: string;        // participant code, when kind === "lab"
+  receivedAt?: string;  // ISO — the device arrived here
+  sentAt?: string;      // ISO — this stop handed it on
+}
+
+export interface SchemeChain {
+  stops: ChainStop[];
+  // The owner's own guess at how long a laboratory keeps the device. Only ever
+  // used until the round produces real hops to average — see lib/chain.ts. It is
+  // an estimate for the waiting labs and nothing else: it enforces no deadline.
+  daysPerLab?: number;
+  dispatchedAt?: string; // the owner confirmed the first send
+  returnedAt?: string;   // the owner confirmed the final return
+}
+
 export interface UploadedDoc {
   path: string; // private storage key, or "data:<mime>;base64,…" (dev fallback)
   name: string; // original filename — display only (never used as a path)
@@ -485,6 +514,11 @@ export interface Scheme {
     resultsDue?: string;
     reportDue?: string;
   };
+  // ── The calibration chain (C schemes) ────────────────────────────────────
+  // One device travels from laboratory to laboratory. The owner fixes the order
+  // once; a laboratory learns the NEXT address only when the device is in its
+  // hands. lib/chain.ts owns every rule about it. JSONB, no migration.
+  chain?: SchemeChain;
   // Which day-before reminders have already gone out, keyed "<dateKey>:<ISO date>"
   // → when. The cron may run more than once a day (a retry, a redeploy, a manual
   // trigger), and a laboratory must not be reminded twice for the same deadline.

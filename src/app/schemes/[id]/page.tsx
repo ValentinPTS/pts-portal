@@ -8,6 +8,8 @@ import { fmtPhaseDate } from "@/lib/lab-phases";
 import ExplorerShell from "@/components/ExplorerShell";
 import SchemeDocuments, { type DocStageView, type DocSource, type DocRow } from "@/components/SchemeDocuments";
 import SchemeDates from "@/components/SchemeDates";
+import SchemeChainPanel from "@/components/SchemeChainPanel";
+import { listParticipants } from "@/lib/participants";
 import SkinPicker from "@/components/SkinPicker";
 import ManageMenu from "@/components/ManageMenu";
 import FolderActions from "@/components/FolderActions";
@@ -138,6 +140,24 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
 
       {/* the operational dates — separate from the Plan's printed schedule */}
       <SchemeDates schemeId={id} lang={lang} initial={s.dates ?? {}} />
+
+      {/* the calibration chain — the only screen that sees the whole order */}
+      {type === "C" && (
+        <SchemeChainPanel
+          schemeId={id}
+          lang={lang}
+          rows={(s.chain?.stops ?? []).map((st) => ({
+            id: st.id, kind: st.kind, code: st.code,
+            frozen: !!st.receivedAt, holding: !!st.receivedAt && !st.sentAt,
+            receivedAt: st.receivedAt, sentAt: st.sentAt,
+          }))}
+          participantCodes={(await listParticipants(id)).map((p) => p.code)}
+          refLabName={(lang === "bg" ? s.calibration?.referenceLabBg : s.calibration?.referenceLabEn) ?? ""}
+          daysPerLab={s.chain?.daysPerLab}
+          dispatchedAt={s.chain?.dispatchedAt}
+          returnedAt={s.chain?.returnedAt}
+        />
+      )}
 
       <SchemeDocuments schemeId={id} lang={lang} stages={stages} lists={lists} />
     </ExplorerShell>

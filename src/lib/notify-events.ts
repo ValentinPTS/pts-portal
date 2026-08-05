@@ -114,6 +114,63 @@ export async function notifyInvoiceReady(
   });
 }
 
+/**
+ * The calibration device is on its way to this laboratory — the stop before it
+ * has just handed it on. It names NOBODY: the sender's identity arrives with the
+ * package, and the app has no business announcing it in a message that travels
+ * further than the box does.
+ */
+export async function notifyDeviceMoved(
+  labId: string | undefined,
+  schemeId: string,
+  schemeNumber: string,
+  code: string,
+): Promise<void> {
+  if (!labId) return;
+  await notify({
+    kind: "device.moved",
+    audience: "lab",
+    labId, schemeId, code,
+    bg: `Уредът за схема ${schemeNumber} е изпратен към вас. Потвърдете получаването, когато пристигне.`,
+    en: `The device for scheme ${schemeNumber} is on its way to you. Confirm receipt when it arrives.`,
+    href: "/lab",
+  });
+}
+
+/** A laboratory confirmed the calibration device reached it. → the provider. */
+export async function notifyChainReceipt(schemeId: string, schemeNumber: string, code: string): Promise<void> {
+  await notify({
+    kind: "receipt.confirmed",
+    audience: "provider",
+    schemeId, code,
+    bg: `${code} потвърди, че уредът е пристигнал (${schemeNumber}).`,
+    en: `${code} confirmed the device arrived (${schemeNumber}).`,
+    href: `/schemes/${schemeId}`,
+  });
+}
+
+/**
+ * A laboratory handed the device on. → the provider. `last` marks the end of the
+ * chain, which is the moment he has to watch for: the device is coming back to him
+ * and only he can close the round.
+ */
+export async function notifyChainHandover(
+  schemeId: string, schemeNumber: string, code: string, last: boolean,
+): Promise<void> {
+  await notify({
+    kind: "device.moved",
+    audience: "provider",
+    schemeId, code,
+    bg: last
+      ? `${code} изпрати уреда — това е последната спирка по веригата (${schemeNumber}). Уредът се връща при вас.`
+      : `${code} предаде уреда на следващата лаборатория (${schemeNumber}).`,
+    en: last
+      ? `${code} sent the device on — that was the last stop in the chain (${schemeNumber}). It is on its way back to you.`
+      : `${code} handed the device to the next laboratory (${schemeNumber}).`,
+    href: `/schemes/${schemeId}`,
+  });
+}
+
 /** The laboratory confirmed the items arrived (it uploaded the signed protocol). */
 export async function notifyReceiptConfirmed(schemeId: string, schemeNumber: string, code: string): Promise<void> {
   await notify({

@@ -437,6 +437,11 @@ const DICT: Record<string, Entry> = {
   "act.results.conflict": { bg: "Отказан запис на резултати", en: "Results save refused" },
   "act.results.cleared": { bg: "Изчистени резултати", en: "Results cleared" },
   "act.notify.run": { bg: "Изпратени известия", en: "Notifications sent" },
+  "act.chain.order": { bg: "Подредена верига", en: "Chain order set" },
+  "act.chain.dispatched": { bg: "Изпратен уред", en: "Device dispatched" },
+  "act.chain.received": { bg: "Потвърден уред", en: "Device receipt confirmed" },
+  "act.chain.handed_over": { bg: "Предаден уред", en: "Device handed on" },
+  "act.chain.returned": { bg: "Върнат уред", en: "Device returned" },
 
   // ── applications ──
   "apps.title": { bg: "Заявки", en: "Applications" },

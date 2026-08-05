@@ -46,14 +46,14 @@ import { markAllRead } from "./notifications";
 import {
   notifyApplicationReceived, notifyApplicationApproved, notifyApplicationRejected,
   notifyReceiptConfirmed, notifyResultsReturned, notifyReportIssued, notifyDocsSent,
-  notifyInvoiceReady,
+  notifyInvoiceReady, notifyDeviceMoved, notifyChainReceipt, notifyChainHandover,
 } from "./notify-events";
 import { addCaseEvent, getCaseEvent, deleteCaseEvent } from "./case-events";
 import { addRevision, getRevision, approveRevision } from "./doc-revisions";
 import { createFolder, renameFolder, deleteFolder, getFolder, listChildFolders } from "./folder-tree";
 import { SAMPLE_SCHEMES } from "./sample-schemes";
 import { TYPE_SLUG, type FolderType } from "./folders";
-import type { Scheme, Scoring, Parameter, StaffRole, StaffStatus, LabStatus, CaseEventKind, LabRegion, VatStatus, SchemeStatus, ParticipantStatus } from "./types";
+import type { ChainStop, Scheme, Scoring, Parameter, StaffRole, StaffStatus, LabStatus, CaseEventKind, LabRegion, VatStatus, SchemeStatus, ParticipantStatus } from "./types";
 import {
   isIdentityMap, remapSelections, remapCharacteristics, remapScoring, paramsSignature,
   effectiveDirections, calibrationDataSlots, calibrationSlotsBroken, clearCalibrationSlots,
@@ -2136,4 +2136,171 @@ export async function markNotificationsReadAction(): Promise<void> {
   }
   const role = (await getRoleContext()).role;
   if (role && role !== "lab") await markAllRead("provider");
+}
+
+// ── The calibration chain ────────────────────────────────────────────────────
+// One device, travelling laboratory to laboratory. The owner fixes the order; the
+// app reveals each next address only when the device is actually in a lab's hands.
+// Every rule lives in lib/chain.ts — these actions only move state and tell people.
+
+/**
+ * Set or rebuild the chain. One action covers creating it, reordering, adding and
+ * dropping, because to him they are one job: "this is the order".
+ *
+ * Stops the device has ALREADY reached are frozen — they are the traceability
+ * record and are kept exactly as they are, whatever is posted. Everything else is
+ * replaced by `desired`, so omitting a pending stop drops it.
+ */
+export async function setChainAction(
+  schemeId: string,
+  desired: { id?: string; kind: "lab" | "ref"; code?: string }[],
+): Promise<{ ok?: boolean; error?: string }> {
+  await requireWriter();
+  const scheme = await getScheme(schemeId);
+  if (!scheme) return { error: "Scheme not found." };
+  if (scheme.type !== "C") return { error: "Only calibration schemes have a chain." };
+
+  // A lab stop must name a real participation in THIS scheme — never trust the form.
+  const codes = new Set((await listParticipants(schemeId)).map((p) => p.code));
+  for (const d of desired ?? []) {
+    if (d.kind === "lab" && !codes.has(String(d.code ?? ""))) {
+      return { error: `“${d.code}” is not a participant in this scheme.` };
+    }
+  }
+
+  await updateSchemeWith(schemeId, (s) => {
+    const current = s.chain?.stops ?? [];
+    const frozen = current.filter((x) => !!x.receivedAt);
+    const pending = new Map(current.filter((x) => !x.receivedAt).map((x) => [x.id, x]));
+    const rebuilt: ChainStop[] = (desired ?? []).map((d) => {
+      const existing = d.id ? pending.get(d.id) : undefined;
+      return existing ?? { id: randomUUID(), kind: d.kind, code: d.kind === "lab" ? String(d.code) : undefined };
+    });
+    return { chain: { ...(s.chain ?? {}), stops: [...frozen, ...rebuilt] } };
+  });
+  await logActivity("chain.order", { schemeId, summary: `Calibration chain order set (${(desired ?? []).length} pending stop(s))` });
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  revalidatePath("/lab", "page");
+  return { ok: true };
+}
+
+/** His own guess at how long a lab keeps the device — only used until real hops exist. */
+export async function setChainPaceAction(schemeId: string, days: number): Promise<{ ok?: boolean; error?: string }> {
+  await requireWriter();
+  if (!(await getScheme(schemeId))) return { error: "Scheme not found." };
+  const n = Math.round(Number(days));
+  if (!Number.isFinite(n) || n < 0 || n > 365) return { error: "Give a number of days between 0 and 365." };
+  await updateSchemeWith(schemeId, (s) => ({ chain: { stops: s.chain?.stops ?? [], ...(s.chain ?? {}), daysPerLab: n || undefined } }));
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  revalidatePath("/lab", "page");
+  return { ok: true };
+}
+
+/**
+ * The owner confirms he has sent the device to the first stop. Both ends of the
+ * chain stay in his hands — he asked for that explicitly.
+ */
+export async function confirmChainDispatchAction(schemeId: string): Promise<{ ok?: boolean; error?: string }> {
+  await requireWriter();
+  const scheme = await getScheme(schemeId);
+  if (!scheme) return { error: "Scheme not found." };
+  const first = scheme.chain?.stops?.[0];
+  if (!first) return { error: "Set the chain order first." };
+
+  const at = new Date().toISOString();
+  await updateSchemeWith(schemeId, (s) => ({ chain: { stops: s.chain?.stops ?? [], ...(s.chain ?? {}), dispatchedAt: at } }));
+  // Tell the first stop it is coming. A reference-lab stop has no participant
+  // account to tell — the owner deals with that laboratory directly.
+  if (first.kind === "lab" && first.code) {
+    const p = (await listParticipants(schemeId)).find((x) => x.code === first.code);
+    await notifyDeviceMoved(p?.labId, schemeId, scheme.number, first.code);
+  }
+  await logActivity("chain.dispatched", { schemeId, targetCode: first.code, summary: "Device dispatched to the first stop" });
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  revalidatePath("/lab", "page");
+  return { ok: true };
+}
+
+/** The owner confirms the device is back with PTS. The chain is closed. */
+export async function confirmChainReturnAction(schemeId: string): Promise<{ ok?: boolean; error?: string }> {
+  await requireWriter();
+  if (!(await getScheme(schemeId))) return { error: "Scheme not found." };
+  const at = new Date().toISOString();
+  await updateSchemeWith(schemeId, (s) => ({ chain: { stops: s.chain?.stops ?? [], ...(s.chain ?? {}), returnedAt: at } }));
+  await logActivity("chain.returned", { schemeId, summary: "Device returned to PTS — chain closed" });
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  revalidatePath("/lab", "page");
+  return { ok: true };
+}
+
+// Resolve the signed-in laboratory's OWN pending stop in this scheme. Returns the
+// stop index, never anything about other stops — the caller cannot use this to
+// look further down the chain.
+async function myChainStop(schemeId: string): Promise<{ scheme: Scheme; code: string; index: number } | null> {
+  const ls = await getLabSession();
+  if (!ls) return null;
+  const mine = (await listParticipationsForLab(ls.lab.id)).filter((p) => p.schemeId === schemeId);
+  if (!mine.length) return null;
+  const scheme = await getScheme(schemeId);
+  if (!scheme?.chain?.stops?.length) return null;
+  const codes = new Set(mine.map((p) => p.code));
+  // the earliest stop of ours that has not yet handed the device on
+  const index = scheme.chain.stops.findIndex((s) => s.kind === "lab" && s.code && codes.has(s.code) && !s.sentAt);
+  if (index === -1) return null;
+  return { scheme, code: scheme.chain.stops[index].code!, index };
+}
+
+/**
+ * The laboratory confirms the device arrived. THIS is what unlocks the next
+ * address for it — the order was already the owner's decision, so re-typing an
+ * address at every hop would be a chore rather than a choice.
+ *
+ * The signed protocol is attached separately (the existing "protocol" slot), and
+ * deliberately does not gate this: nothing blocks anything.
+ */
+export async function labConfirmDeviceReceiptAction(schemeId: string): Promise<{ ok?: boolean; error?: string }> {
+  const mine = await myChainStop(schemeId);
+  if (!mine) return { error: "You have no pending stop in this chain." };
+  if (mine.scheme.chain!.stops[mine.index].receivedAt) return { ok: true }; // already confirmed
+  const at = new Date().toISOString();
+  await updateSchemeWith(schemeId, (s) => ({
+    chain: {
+      ...(s.chain ?? { stops: [] }),
+      stops: (s.chain?.stops ?? []).map((x, i) => (i === mine.index ? { ...x, receivedAt: at } : x)),
+    },
+  }));
+  await addCaseEvent({ schemeId, code: mine.code, kind: "receipt_confirmed", ref: "device", note: "device received (calibration chain)", source: "auto" });
+  await notifyChainReceipt(schemeId, mine.scheme.number, mine.code);
+  await logActivity("chain.received", { schemeId, targetCode: mine.code, summary: `${mine.code} confirmed the device arrived` });
+  revalidatePath("/lab", "page");
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  return { ok: true };
+}
+
+/** "Предадох уреда" — this laboratory has sent it on to the next stop. */
+export async function labHandOverDeviceAction(schemeId: string): Promise<{ ok?: boolean; error?: string }> {
+  const mine = await myChainStop(schemeId);
+  if (!mine) return { error: "You have no pending stop in this chain." };
+  const stop = mine.scheme.chain!.stops[mine.index];
+  if (!stop.receivedAt) return { error: "Confirm you received the device first." };
+
+  const at = new Date().toISOString();
+  await updateSchemeWith(schemeId, (s) => ({
+    chain: {
+      ...(s.chain ?? { stops: [] }),
+      stops: (s.chain?.stops ?? []).map((x, i) => (i === mine.index ? { ...x, sentAt: at } : x)),
+    },
+  }));
+
+  // Tell whoever is next that it is coming — by code, never naming the sender.
+  const next = mine.scheme.chain!.stops[mine.index + 1];
+  if (next?.kind === "lab" && next.code) {
+    const p = (await listParticipants(schemeId)).find((x) => x.code === next.code);
+    await notifyDeviceMoved(p?.labId, schemeId, mine.scheme.number, next.code);
+  }
+  await notifyChainHandover(schemeId, mine.scheme.number, mine.code, !next);
+  await logActivity("chain.handed_over", { schemeId, targetCode: mine.code, summary: `${mine.code} handed the device on` });
+  revalidatePath("/lab", "page");
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  return { ok: true };
 }
