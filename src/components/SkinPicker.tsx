@@ -44,7 +44,7 @@ export default function SkinPicker({
         ))}
       </select>
       {pending && <span className="text-xs">{t("skinpicker.saving")}</span>}
-      <Link href="/skins" className="text-xs" style={{ color: "var(--green-dark)", fontWeight: 600 }}>{t("common.manage")}</Link>
+      <Link href="/skins" className="text-xs" style={{ color: "var(--green-dark)", fontWeight: 600 }}>{t("skinpicker.manageLibrary")}</Link>
     </label>
   );
 }

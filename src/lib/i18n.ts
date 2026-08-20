@@ -47,7 +47,7 @@ const DICT: Record<string, Entry> = {
   "common.cancel": { bg: "Отказ", en: "Cancel" },
   "common.edit": { bg: "Редактирай", en: "Edit" },
   "common.open": { bg: "Отвори", en: "Open" },
-  "common.manage": { bg: "Управление", en: "Manage" },
+  "skinpicker.manageLibrary": { bg: "Управление на облиците", en: "Manage skins" },
   "common.add": { bg: "Добави", en: "Add" },
   "common.home": { bg: "Начало", en: "Home" },
 
@@ -106,6 +106,9 @@ const DICT: Record<string, Entry> = {
   "login.signIn": { bg: "Вход", en: "Sign in" },
   "login.verify": { bg: "Потвърди и продължи", en: "Verify & continue" },
   "login.codeLabel": { bg: "Код за удостоверяване", en: "Authenticator code" },
+
+  // ── scheme tile (workspace grid) ──
+  "tile.builtSuffix": { bg: "готови документа", en: "documents built" },
 
   // ── new project dialog ──
   "np.new": { bg: "Нов проект", en: "New project" },

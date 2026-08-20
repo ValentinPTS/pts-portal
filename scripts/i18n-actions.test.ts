@@ -65,6 +65,31 @@ t("every act.* label has non-empty BG and EN", blank.length === 0, `blank: ${bla
 const same = [...labels].filter(([, v]) => v.bg === v.en).map(([k]) => k).sort();
 t("BG and EN are actually different strings (not a copy-paste)", same.length === 0, `identical: ${same.join(", ")}`);
 
+// ── every literal key passed to t() must exist in the dictionary ──
+// The act.* checks above only cover the activity log. A key like "tile.builtSuffix"
+// used on the workspace grid but never defined renders as the raw key on screen —
+// t() falls back to the key by design, so nothing throws and nothing turns red.
+// Only LITERAL keys are checked; the template-built ones (`doc.${k}`) can't be.
+const declared = new Set<string>();
+for (const m of i18n.matchAll(/"([a-zA-Z0-9_.]+)":\s*\{\s*bg:/g)) declared.add(m[1]);
+t("parsed the whole dictionary", declared.size > 200, `parsed ${declared.size}`);
+
+const referenced = new Map<string, string[]>();
+for (const f of files) {
+  if (f === "src/lib/i18n.ts") continue;
+  for (const m of read(f).matchAll(/\bt\(\s*(?:[A-Za-z0-9_.]+\s*,\s*)?"([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+)"/g)) {
+    referenced.set(m[1], [...(referenced.get(m[1]) ?? []), f]);
+  }
+}
+t("found t() call sites at all", referenced.size > 50, `found ${referenced.size}`);
+
+const undefinedKeys = [...referenced.keys()].filter((k) => !declared.has(k)).sort();
+t(
+  "every literal t() key is in the dictionary",
+  undefinedKeys.length === 0,
+  undefinedKeys.map((k) => `${k} (${[...new Set(referenced.get(k))].join(", ")})`).join("; "),
+);
+
 // the results audit trail specifically (added with the scoring log calls)
 for (const k of ["results.saved", "results.auto_assigned", "results.conflict"]) {
   t(`results audit action "${k}" is labelled`, labels.has(k));
