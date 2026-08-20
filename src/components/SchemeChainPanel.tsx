@@ -44,6 +44,19 @@ export default function SchemeChainPanel({
   const [pace, setPace] = useState(String(daysPerLab ?? ""));
   const seq = useRef(0);
 
+  // Take the server's version whenever the chain actually changes. Saving mints
+  // real ids for the stops added here as `new-…`, so without this the draft stays
+  // permanently unequal to `rows`: "Запази реда" never clears, and the dispatch
+  // button — disabled while dirty — can never be pressed at all. Compared by VALUE,
+  // not array identity (which is new on every server render), so a refresh caused by
+  // something else on the page cannot throw away an order he is still arranging.
+  const rowsKey = JSON.stringify(rows);
+  const [syncedKey, setSyncedKey] = useState(rowsKey);
+  if (rowsKey !== syncedKey) {
+    setSyncedKey(rowsKey);
+    setDraft(rows);
+  }
+
   const pending = draft.filter((r) => !r.frozen);
   const frozen = draft.filter((r) => r.frozen);
   const dirty = JSON.stringify(draft.map((r) => r.id)) !== JSON.stringify(rows.map((r) => r.id))
