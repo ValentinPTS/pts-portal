@@ -209,5 +209,5 @@ ok("describe: caps a bulk save", describeScoringChanges(
   Array.from({ length: 40 }, (_, i) => ({ what: "value", metricKey: "0", code: `L${i}`, before: 1, after: 2 })), M0)
   .includes("more"));
 
-console.log(`\n${pass} passed, ${fail} failed`);
+console.log(`scoring.test: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

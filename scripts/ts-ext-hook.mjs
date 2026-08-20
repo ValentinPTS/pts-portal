@@ -1,19 +1,16 @@
-// Resolve hook: lets extensionless relative imports (./foo) resolve to ./foo.ts,
-// so test scripts can import the app's source modules under --experimental-strip-types.
-import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+// Entry point for `node --import ./scripts/ts-ext-hook.mjs <test>`.
+//
+// WHY TWO FILES. This used to export `resolve` directly, which worked while Node
+// installed loader hooks from the --import'ed module itself. Node no longer does:
+// hooks must be handed to module.register(), and a plain exported `resolve` is
+// simply ignored — SILENTLY. Nothing warned; the suites that import app modules by
+// an extensionless path (notify-events → "./notifications") just died with
+// ERR_MODULE_NOT_FOUND before their first assertion, and a runner that only greps
+// for a summary line reads that as "no output", not as a failure. Eight of the
+// twenty-one suites were passing that way for nothing.
+//
+// register() loads the hook on its own thread, so the resolve function has to live
+// in a separate module — hence ts-ext-resolve.mjs.
+import { register } from "node:module";
 
-export async function resolve(specifier, context, next) {
-  if (specifier.startsWith(".") && !/\.[mc]?[jt]s$/.test(specifier)) {
-    // try ./foo.ts, then ./foo/index.ts (directory import) — same as the bundler
-    for (const cand of [specifier + ".ts", specifier + "/index.ts"]) {
-      try {
-        const url = new URL(cand, context.parentURL);
-        if (existsSync(fileURLToPath(url))) return next(cand, context);
-      } catch {
-        /* fall through */
-      }
-    }
-  }
-  return next(specifier, context);
-}
+register("./ts-ext-resolve.mjs", import.meta.url);
