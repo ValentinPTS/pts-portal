@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { labConfirmDeviceReceiptAction, labHandOverDeviceAction } from "@/lib/actions";
+import { ordinalSuffixBg } from "@/lib/chain";
 
 // What ONE laboratory sees of the calibration chain. Three states and nothing else.
 //
@@ -19,7 +20,7 @@ export interface ChainNext {
 }
 
 export default function DeviceChainCard({
-  schemeId, lang, state, position, total, wait, started, next,
+  schemeId, lang, state, position, total, wait, started, incoming, next,
 }: {
   schemeId: string;
   lang: "bg" | "en";
@@ -28,6 +29,8 @@ export default function DeviceChainCard({
   total?: number;
   wait?: string;
   started: boolean;
+  /** Nobody is holding it and this is the next stop due — it is travelling HERE. */
+  incoming?: boolean;
   next: ChainNext | null;
 }) {
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
@@ -93,15 +96,21 @@ export default function DeviceChainCard({
         {label}
         <span style={{ fontSize: 13 }}>
           {position && total
-            ? L(`Вие сте ${position}-и от ${total} в реда.`, `You are ${position} of ${total} in the queue.`)
+            ? L(`Вие сте ${position}-${ordinalSuffixBg(position)} от ${total} в реда.`, `You are ${position} of ${total} in the queue.`)
             : L("Вие сте във веригата.", "You are in the chain.")}
         </span>
         <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
+          {/* Once nobody is ahead, the device is in transit to THIS laboratory — saying
+              "it is with another participant" then contradicts the notice it was just
+              sent ("изпратен към вас") and hides the one thing it has to do next. */}
           {!started
             ? L("Уредът още не е тръгнал.", "The device has not set off yet.")
-            : wait
-              ? L(`Уредът е при друг участник — ${wait} до вас.`, `The device is with another participant — ${wait} until it reaches you.`)
-              : L("Уредът е при друг участник.", "The device is with another participant.")}
+            : incoming
+              ? L("Уредът пътува към вас. Потвърдете получаването, когато пристигне.",
+                  "The device is on its way to you. Confirm receipt when it arrives.")
+              : wait
+                ? L(`Уредът е при друг участник — ${wait} до вас.`, `The device is with another participant — ${wait} until it reaches you.`)
+                : L("Уредът е при друг участник.", "The device is with another participant.")}
         </span>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
           <button className="btn btn-sm" style={{ fontSize: 12 }} disabled={busy}

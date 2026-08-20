@@ -89,13 +89,22 @@ export function positionOf(chain: SchemeChain | undefined, code: string): { posi
   return { position: idx + 1, total: list.length };
 }
 
-/** How many stops are still ahead of this laboratory's turn. */
+/**
+ * How many stops are still ahead of this laboratory's turn.
+ *
+ * A stop counts until it has SENT THE DEVICE ON, not until it has received it: the
+ * laboratory holding the device right now still has its whole measurement and the
+ * courier leg to go, and that is exactly one pace of waiting for everyone behind
+ * it. Counting only the not-yet-received stops made the queue look one stop
+ * shorter than it is and told the next laboratory "съвсем скоро" while the device
+ * was still on somebody's bench, with no deadline to bring it back.
+ */
 export function stopsAhead(chain: SchemeChain | undefined, code: string): number {
   const list = stops(chain);
   const idxs = stopIndexesForCode(chain, code).filter((i) => !list[i].receivedAt);
   if (!idxs.length) return 0;
   const mine = Math.min(...idxs);
-  return list.slice(0, mine).filter((s) => !s.receivedAt).length;
+  return list.slice(0, mine).filter((s) => !isDone(s)).length;
 }
 
 /**
@@ -140,11 +149,54 @@ export function describeWait(days: number | null, lang: "bg" | "en"): string {
   if (days === null) return "";
   const bg = lang === "bg";
   if (days <= 0) return bg ? "съвсем скоро" : "very soon";
-  if (days < 10) return bg ? `около ${days} дни` : `about ${days} days`;
+  // One is one: "около 1 дни" / "about 1 days" is the kind of slip a laboratory
+  // reads as carelessness, and every participant sees this line every round.
+  const n = (v: number, one: string, many: string) => `${v} ${v === 1 ? one : many}`;
+  if (days < 10) return bg ? `около ${n(days, "ден", "дни")}` : `about ${n(days, "day", "days")}`;
   const weeks = Math.round(days / 7);
-  if (weeks < 9) return bg ? `около ${weeks} седмици` : `about ${weeks} weeks`;
+  if (weeks < 9) return bg ? `около ${n(weeks, "седмица", "седмици")}` : `about ${n(weeks, "week", "weeks")}`;
   const months = Math.round(days / 30);
-  return bg ? `около ${months} месеца` : `about ${months} months`;
+  return bg ? `около ${n(months, "месец", "месеца")}` : `about ${n(months, "month", "months")}`;
+}
+
+/**
+ * Is the device in transit to THIS laboratory right now?
+ *
+ * Only when it has left the provider, NOBODY is holding it, and this laboratory's
+ * stop is the next one due to receive. The "nobody holding" clause is the whole
+ * point: a laboratory still working on the device has not sent it on, so the one
+ * after it must not be told it is on its way — "how long do I wait" is the single
+ * question the chain exists to answer, and answering it early makes it a lie.
+ *
+ * Deliberately not derived from stopsAhead(), which counts stops that have not
+ * RECEIVED — a holder has received, so it stops being counted while it still has
+ * the device in its hands.
+ */
+export function isIncomingFor(chain: SchemeChain | undefined, code: string): boolean {
+  if (!chain?.dispatchedAt) return false;
+  if (holderIndex(chain) !== -1) return false;
+  const i = nextStopIndex(chain);
+  if (i === -1) return false;
+  const s = stops(chain)[i];
+  return s.kind === "lab" && s.code === code;
+}
+
+/**
+ * Bulgarian ordinal suffix for a queue position: 1-ви, 2-ри, 3-ти, 4-ти, 5-и …
+ * The teens are regular in Bulgarian (единадесети … деветнадесети all end in -и),
+ * so 11–19 take "-и" whatever their last digit is — 14 is 14-и, not 14-ти.
+ * English needs none of this, which is why the caller only reaches for it in BG.
+ */
+export function ordinalSuffixBg(n: number): string {
+  const teens = Math.abs(n) % 100;
+  if (teens >= 11 && teens <= 19) return "и";
+  switch (Math.abs(n) % 10) {
+    case 1: return "ви";
+    case 2: return "ри";
+    case 3:
+    case 4: return "ти";
+    default: return "и";
+  }
 }
 
 /** Has the whole chain been through? True once every stop has handed it on. */

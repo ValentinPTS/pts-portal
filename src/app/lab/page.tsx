@@ -7,7 +7,7 @@ import { metricsForScheme, scoreMetric } from "@/lib/scoring";
 import { statusChip } from "@/lib/folders";
 import { computeLabPhases, fmtPhaseDate, canLabUploadNow, LAB_UPLOAD_SLOTS } from "@/lib/lab-phases";
 import { releasedDocs, LAB_DOC_SLOTS } from "@/lib/doc-release";
-import { labState, positionOf, nextStopFor, estimatedWaitDays, describeWait } from "@/lib/chain";
+import { labState, positionOf, nextStopFor, estimatedWaitDays, describeWait, isIncomingFor } from "@/lib/chain";
 import { listParticipants } from "@/lib/participants";
 import DeviceChainCard from "@/components/DeviceChainCard";
 import type { Scheme } from "@/lib/types";
@@ -58,6 +58,7 @@ async function chainViewFor(scheme: Scheme, code: string, lang: "bg" | "en") {
     position: positionOf(chain, code),
     wait: describeWait(estimatedWaitDays(chain, code), lang),
     started: !!chain.dispatchedAt,
+    incoming: isIncomingFor(chain, code),
     next,
   };
 }
@@ -356,6 +357,7 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
             total={it.chain.position?.total}
             wait={it.chain.wait}
             started={it.chain.started}
+            incoming={it.chain.incoming}
             next={it.chain.next}
           />
         )}

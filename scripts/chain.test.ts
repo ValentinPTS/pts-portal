@@ -3,7 +3,7 @@
 import {
   isDone, isHolding, isFrozen, holderIndex, nextStopIndex, nextStopFor,
   stopIndexesForCode, labState, positionOf, stopsAhead, paceDays,
-  estimatedWaitDays, describeWait, chainComplete, reorderPending,
+  estimatedWaitDays, describeWait, chainComplete, reorderPending, ordinalSuffixBg, isIncomingFor,
 } from "../src/lib/chain.ts";
 import type { ChainStop, SchemeChain } from "../src/lib/types.ts";
 
@@ -78,7 +78,14 @@ ok("both stops of a code are found", JSON.stringify(stopIndexesForCode(
   const p = positionOf(mid, "CCC");
   ok("position counts every stop, reference included", p?.position === 4 && p?.total === 5);
   ok("a lab not in the chain has no position", positionOf(mid, "ZZZ") === null);
-  ok("stops ahead counts only what has NOT been reached", stopsAhead(mid, "CCC") === 0);
+  // BBB is holding the device at this point. It has not sent it on, so from CCC's
+  // side one whole stop — the rest of BBB's work plus the courier — is still ahead.
+  ok("the lab currently holding the device still counts as ahead", stopsAhead(mid, "CCC") === 1);
+  // The round's own measured pace (6.5 days a stop here) beats the owner's guess of
+  // 10, so one stop ahead reads as a week — the point is that it is a real wait and
+  // not the "съвсем скоро" the old count produced.
+  ok("and that turns into a real wait, not \"very soon\"",
+    estimatedWaitDays(mid, "CCC") === 7 && !/скоро/.test(describeWait(estimatedWaitDays(mid, "CCC"), "bg")));
 }
 {
   // nothing has moved yet: the third lab has two stops ahead of it
@@ -118,6 +125,16 @@ ok("days for a short wait", describeWait(5, "bg").includes("5"));
 ok("weeks for a medium wait", /седмиц/.test(describeWait(28, "bg")));
 ok("months for a long wait", /месец/.test(describeWait(120, "bg")));
 ok("English is worded too", describeWait(28, "en").includes("weeks"));
+// singular/plural — every participant reads this line every round
+ok("one day is a day, not days", describeWait(1, "bg") === "около 1 ден");
+ok("one day in English too", describeWait(1, "en") === "about 1 day");
+ok("two days stay plural", describeWait(2, "bg") === "около 2 дни");
+ok("one week is a week", describeWait(10, "bg") === "около 1 седмица");
+ok("one week in English too", describeWait(10, "en") === "about 1 week");
+ok("several weeks stay plural", describeWait(28, "bg") === "около 4 седмици");
+ok("months stay plural", describeWait(120, "bg") === "около 4 месеца");
+ok("no phrase is ever left with a bare number", [1, 2, 5, 9, 10, 20, 40, 60, 120, 400]
+  .every((d) => /\d+\s+\S+/.test(describeWait(d, "bg")) && /\d+\s+\S+/.test(describeWait(d, "en"))));
 ok("no estimate ever contains a date",
   [3, 28, 120].every((d) => !/\d{4}|\.\d{2}\./.test(describeWait(d, "bg"))));
 
@@ -144,6 +161,83 @@ ok("all stops passed → complete",
   ok("naming a frozen stop cannot move it",
     JSON.stringify(evil.map((s) => s.id)) === '["r1","s1","s2","s3","r2"]');
   ok("an unknown id is ignored", reorderPending(mid.stops, ["nope", "s3"]).length === 4);
+}
+
+// ── Bulgarian ordinals ───────────────────────────────────────────────────────
+// The queue position is read by every laboratory in every calibration round, so a
+// wrong suffix is the most-seen typo in the app. The teens are the trap: Bulgarian
+// says единадесети/четиринадесети, so 11-19 take "-и" regardless of last digit.
+{
+  const o = ordinalSuffixBg;
+  ok("1 is 1-ви (първи)", o(1) === "ви");
+  ok("2 is 2-ри (втори)", o(2) === "ри");
+  ok("3 is 3-ти (трети)", o(3) === "ти");
+  ok("4 is 4-ти (четвърти)", o(4) === "ти");
+  ok("5 is 5-и (пети)", o(5) === "и");
+  ok("9 is 9-и (девети)", o(9) === "и");
+  ok("10 is 10-и (десети)", o(10) === "и");
+  ok("11 is 11-и, not 11-ви (единадесети)", o(11) === "и");
+  ok("12 is 12-и, not 12-ри (дванадесети)", o(12) === "и");
+  ok("13 is 13-и, not 13-ти (тринадесети)", o(13) === "и");
+  ok("14 is 14-и, not 14-ти (четиринадесети)", o(14) === "и");
+  ok("19 is 19-и (деветнадесети)", o(19) === "и");
+  ok("20 is 20-и (двадесети)", o(20) === "и");
+  ok("21 is 21-ви (двадесет и първи)", o(21) === "ви");
+  ok("22 is 22-ри (двадесет и втори)", o(22) === "ри");
+  ok("23 is 23-ти (двадесет и трети)", o(23) === "ти");
+  ok("24 is 24-ти (двадесет и четвърти)", o(24) === "ти");
+  ok("25 is 25-и (двадесет и пети)", o(25) === "и");
+  ok("111 is 111-и (сто и единадесети)", o(111) === "и");
+  ok("121 is 121-ви", o(121) === "ви");
+  ok("every position 1..60 gets a suffix", Array.from({ length: 60 }, (_, i) => o(i + 1)).every((x) => x.length > 0));
+}
+
+// ── "the device is on its way to you" ────────────────────────────────────────
+// The trap this guards: a laboratory that is HOLDING the device has already
+// received it, so it no longer counts as a stop "ahead" — derive the in-transit
+// flag from that and the lab after the holder is told the device is travelling to
+// it while the holder still has it on the bench.
+{
+  const mk = (stops: ChainStop[], dispatchedAt?: string): SchemeChain => ({ stops, dispatchedAt });
+  const A: ChainStop = { id: "a", kind: "lab", code: "A" };
+  const R: ChainStop = { id: "r", kind: "ref" };
+  const B: ChainStop = { id: "b", kind: "lab", code: "B" };
+
+  ok("nothing is incoming before dispatch", !isIncomingFor(mk([A, R, B]), "A"));
+
+  const justSent = mk([A, R, B], "2026-01-01");
+  ok("after dispatch it is on its way to the first stop", isIncomingFor(justSent, "A"));
+  ok("but not to the ones behind it", !isIncomingFor(justSent, "B"));
+
+  const aHolds = mk([{ ...A, receivedAt: "2026-01-03" }, R, B], "2026-01-01");
+  ok("while A holds it, it is on its way to nobody", !isIncomingFor(aHolds, "A") && !isIncomingFor(aHolds, "B"));
+
+  const aSent = mk([{ ...A, receivedAt: "2026-01-03", sentAt: "2026-01-09" }, R, B], "2026-01-01");
+  ok("the reference lab is next, and it is not a participant code", !isIncomingFor(aSent, "B"));
+
+  const refDone = mk([
+    { ...A, receivedAt: "2026-01-03", sentAt: "2026-01-09" },
+    { ...R, receivedAt: "2026-01-11", sentAt: "2026-01-15" },
+    B,
+  ], "2026-01-01");
+  ok("once the reference lab sends it on, B is the one expecting it", isIncomingFor(refDone, "B"));
+
+  // THE REGRESSION: a holder mid-chain must not make the next lab think it is coming.
+  const C: ChainStop = { id: "c", kind: "lab", code: "C" };
+  const bHolds = mk([
+    { ...A, receivedAt: "2026-01-03", sentAt: "2026-01-09" },
+    { ...B, receivedAt: "2026-01-12" },
+    C,
+  ], "2026-01-01");
+  ok("a mid-chain holder does not make the NEXT lab think it is travelling", !isIncomingFor(bHolds, "C"));
+  ok("and the holder is not told it is incoming either", !isIncomingFor(bHolds, "B"));
+
+  const allDone = mk([
+    { ...A, receivedAt: "2026-01-03", sentAt: "2026-01-09" },
+    { ...B, receivedAt: "2026-01-12", sentAt: "2026-01-20" },
+  ], "2026-01-01");
+  ok("when the chain is finished nothing is incoming", !isIncomingFor(allDone, "A") && !isIncomingFor(allDone, "B"));
+  ok("an unknown code is never told anything", !isIncomingFor(refDone, "ZZZ"));
 }
 
 console.log(`chain.test: ${pass} passed, ${fail} failed`);
