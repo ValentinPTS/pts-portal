@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "./scripts/run-tests.sh"
+    "test": "zsh ./scripts/run-tests.sh"
   },
   "dependencies": {
     "@sparticuz/chromium": "^149.0.0",
