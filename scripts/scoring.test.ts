@@ -192,7 +192,7 @@ ok("stamp: the form SHAPE is part of it (a new participant is a conflict)",
   scoringStamp(scA, ["0", "L1"]) !== scoringStamp(scA, ["0", "L1", "L2"]));
 
 // ── audit trail: cell-level diff of a results save ───────────────────────────
-let ch = diffScoring(scA, scB);
+const ch = diffScoring(scA, scB);
 ok("diff: exactly one cell changed", ch.length === 1, JSON.stringify(ch));
 ok("diff: records code, field and before→after", ch[0].code === "L1" && ch[0].what === "value" && ch[0].before === 9 && ch[0].after === 9.5);
 ok("diff: identical objects → no changes", diffScoring(scA, scA).length === 0);

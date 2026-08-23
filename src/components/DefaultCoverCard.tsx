@@ -36,7 +36,13 @@ export default function DefaultCoverCard({ current }: { current: string | null }
     <div className="card p-4 mb-5" style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
       <div style={{ width: 120, height: 80, flex: "0 0 auto", border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
         {current
-          ? <img src={current} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+          ? (
+            /* eslint-disable-next-line @next/next/no-img-element --
+               A user-uploaded cover image of unknown dimensions (Supabase storage or a
+               data: URL). next/image needs fixed dimensions plus an allow-listed host,
+               and cannot optimise a data: URL — not worth it for a 120x80 thumbnail. */
+            <img src={current} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+          )
           : <span style={{ fontSize: 11, color: "var(--muted)", textAlign: "center", padding: 6 }}>{t("cover.none")}</span>}
       </div>
       <div style={{ flex: 1, minWidth: 220 }}>

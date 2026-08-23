@@ -25,7 +25,7 @@ const OVERRIDES = `
   .docfooter{text-align:left;color:var(--green-dark);border-top:2px solid var(--green-soft);}
 `;
 
-function cover(s: Scheme, lang: Lang, docTitleEn: string, docTitleBg: string, opts: { withImage?: boolean } = {}): string {
+function cover(s: Scheme, lang: Lang, docTitleEn: string, docTitleBg: string, _opts: { withImage?: boolean } = {}): string {
   const inAcc = pick(lang, "in accordance with", "съгласно");
   return `<div class="mcover">
     <div class="mband"><img class="mlogo" src="/brand/logo.png" alt="PTS Bulgaria"><div class="mttl">${esc(pick(lang, docTitleEn, docTitleBg))}</div></div>

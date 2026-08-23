@@ -24,7 +24,6 @@ await page.getByRole("button", { name: /Добави дата|Add date/ }).waitF
 t("editor: new view with add buttons renders", true);
 
 await page.getByRole("button", { name: /Добави дата|Add date/ }).click();
-const dateInputs = page.locator("form input:not([type=hidden])");
 // the new (last) schedule row: three visible inputs after the existing rows —
 // fill via the last row's inputs by walking the schedule grid
 const schedRows = page.locator("div.flex.items-end");

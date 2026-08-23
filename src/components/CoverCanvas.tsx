@@ -40,6 +40,11 @@ export default function CoverCanvas({
   const [boxes, setBoxes] = useState<Box[]>([]);
   const drag = useRef<{ key: CoverElKey; from: number; startY: number; moved: boolean } | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
+  // The row a drag started from, mirrored into state because the RENDER needs it to
+  // hide the drop line under the row being dragged. Reading drag.current here worked
+  // only because dropIndex happened to re-render on every move; state says what the
+  // render actually depends on instead of relying on that.
+  const [dragFrom, setDragFrom] = useState<number | null>(null);
 
   // Measure the rendered cover rows (.crow[data-key]) and project them, scaled,
   // onto the overlay. Re-runs on every srcDoc/elements change + after fonts settle.
@@ -89,6 +94,7 @@ export default function CoverCanvas({
       if (d && d.moved && dropIndex !== null && dropIndex !== d.from) onReorder(d.from, dropIndex);
       else if (d && !d.moved) onSelect(d.key);
       drag.current = null;
+      setDragFrom(null);
       setDropIndex(null);
     };
     window.addEventListener("pointermove", onMove);
@@ -114,12 +120,12 @@ export default function CoverCanvas({
       {/* element hotspots */}
       {boxes.map((b) => {
         const isSel = b.key === selected;
-        const isDrop = dropIndex === b.dataIndex && drag.current?.from !== b.dataIndex;
+        const isDrop = dropIndex === b.dataIndex && dragFrom !== b.dataIndex;
         return (
           <div
             key={b.key}
             title={label(b.key)}
-            onPointerDown={(e) => { e.stopPropagation(); drag.current = { key: b.key, from: b.dataIndex, startY: e.clientY, moved: false }; }}
+            onPointerDown={(e) => { e.stopPropagation(); drag.current = { key: b.key, from: b.dataIndex, startY: e.clientY, moved: false }; setDragFrom(b.dataIndex); }}
             style={{
               position: "absolute", top: b.top - 2, left: b.left - 2, width: b.width + 4, height: b.height + 4,
               border: isSel ? "2px solid var(--green-dark)" : isDrop ? "2px dashed var(--green)" : "1px solid transparent",

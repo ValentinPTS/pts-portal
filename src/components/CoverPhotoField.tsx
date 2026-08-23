@@ -73,6 +73,11 @@ export default function CoverPhotoField({
           <span className="block text-xs mb-1" style={{ color: "var(--muted)" }}>Preview (on the white page)</span>
           <div style={{ border: "1px solid var(--line)", borderRadius: 8, background: "#fff", padding: 14, minHeight: 150 }}>
             {img ? (
+              /* eslint-disable-next-line @next/next/no-img-element --
+                 A user-uploaded cover image of unknown dimensions, arriving as a
+                 Supabase storage URL or a data: URL. next/image needs a known
+                 width/height plus an allow-listed host, and cannot optimise a data:
+                 URL at all — configuration burden for no gain on a preview. */
               <img src={img} alt="" style={{ maxWidth: w + "%", display: "block", margin, borderRadius: 6 }} />
             ) : (
               <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: "48px 0" }}>No cover photo yet.</div>

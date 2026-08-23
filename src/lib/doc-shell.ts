@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Scheme, Lang } from "./types";
 import type { Skin } from "../skins/types";
-import { esc, pick, BODY_START, BODY_END, stripBodyMarkers, DOC_CSS, FONTS_HREF } from "./doc-css";
+import { esc, pick, BODY_START, BODY_END, DOC_CSS, FONTS_HREF } from "./doc-css";
 
 // Shared branding shell for ALL generated documents. The look is provided by the
 // active SKIN (see src/skins); the built-in "Classic" skin below is the strict PTS
@@ -100,7 +100,7 @@ function classicCover(
   lang: Lang,
   docTitleEn: string,
   docTitleBg: string,
-  opts: { withImage?: boolean } = {}
+  _opts: { withImage?: boolean } = {}
 ): string {
   const inAcc = pick(lang, "in accordance with", "съгласно");
   return `<div class="cover">

@@ -1,5 +1,26 @@
 "use client";
 
+/* eslint-disable react-hooks/refs, react-hooks/immutability --
+ * These two React Compiler rules cannot be satisfied by a contenteditable editor,
+ * and the 34 they report here are the rules meeting the architecture, not defects.
+ *
+ * react-hooks/refs fires on every toolbar button, because each is
+ * `tool("B", …, () => exec("bold"))` and exec() calls `ref.current?.focus()`. That is
+ * a ref read inside a CLICK HANDLER — precisely where refs are meant to be read —
+ * but the closure is created during render and the rule cannot prove the call is
+ * deferred, so it flags all of them.
+ *
+ * react-hooks/immutability fires on lines like `cell.style.backgroundColor = c` and
+ * `formEl.outerHTML = html`. Technically true — formEl came from useState — but it
+ * holds a DOM NODE, and mutating the DOM is what a WYSIWYG editor does. There is no
+ * way to write this component that satisfies the rule.
+ *
+ * Scoped to these two rules ON PURPOSE. rules-of-hooks, exhaustive-deps and
+ * set-state-in-effect stay ON for this file — those have caught real bugs here.
+ * The one genuine violation the rules did find (a ref written during render) is
+ * fixed, not silenced; see the effects beside lockRef.
+ */
+
 import { useEffect, useRef, useState } from "react";
 import { saveDocHtmlAction, translateDocHtmlAction, translateAction, addLibraryItemAction, saveDocTemplateAction, deleteDocTemplateAction, uploadCoverImageAction, setDocReadyAction } from "@/lib/actions";
 import { useLang } from "@/components/LangProvider";
@@ -387,19 +408,19 @@ export default function WordEditor({
   const symRef = useRef<HTMLSpanElement>(null);
   const [formOpen, setFormOpen] = useState(false);            // formula (√x) popover open
   const [formSrc, setFormSrc] = useState("");                 // linear formula source being edited
-  const [formErr, setFormErr] = useState(false);
   const [formEl, setFormEl] = useState<HTMLElement | null>(null); // existing .we-f being re-edited
   // what the text AT THE CARET looks like (font + size) — live, like Word's toolbar
   const [curFmt, setCurFmt] = useState<{ font: string; pt: string } | null>(null);
   const formRef = useRef<HTMLSpanElement>(null);
   const savedRange = useRef<Range | null>(null);              // caret to restore after popover typing
+  // Refs mirror the latest state so the debounced autosave timer, the beforeunload
+  // guard and the resize drag handler can read current values without being
+  // re-created each render. Updated in effects (NOT during render) so they stay
+  // correct after commit — a render React throws away must not leave a value behind.
   const lockRef = useRef(lockAspect);
-  lockRef.current = lockAspect;
-  // Refs mirror the latest saved/busy state so the debounced autosave timer and the
-  // beforeunload guard can read current values without being re-created each render.
-  // Updated in effects (not during render) so they stay correct after commit.
   const savedRef = useRef(saved);
   const busyRef = useRef(busy);
+  useEffect(() => { lockRef.current = lockAspect; }, [lockAspect]);
   useEffect(() => { savedRef.current = saved; }, [saved]);
   useEffect(() => { busyRef.current = busy; }, [busy]);
   const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -937,9 +958,17 @@ export default function WordEditor({
       setSaved(false); schedulePaginate();
     }
   }
-  useEffect(() => { place(); /* eslint-disable-next-line */ }, [imgSel, imgW, imgH, wrap]);
-  useEffect(() => { placeTbl(); /* eslint-disable-next-line */ }, [cell]);
-  useEffect(() => { placeCal(); /* eslint-disable-next-line */ }, [calSel]);
+  // place/placeTbl/placeCal are re-created every render, so listing them would make
+  // these effects run on every render. The disables have to sit on their own line
+  // ABOVE the hook: written inside the callback, "next-line" pointed at the FOLLOWING
+  // effect, so each one silenced its neighbour, the first warning was never silenced
+  // at all, and the last directive covered nothing.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { place(); }, [imgSel, imgW, imgH, wrap]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { placeTbl(); }, [cell]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { placeCal(); }, [calSel]);
   // close the text-colour palette when clicking outside it
   useEffect(() => {
     if (!colorOpen) return;
@@ -961,7 +990,7 @@ export default function WordEditor({
   }, [symOpen]);
   useEffect(() => {
     if (!formOpen) return;
-    const h = (e: MouseEvent) => { if (formRef.current && !formRef.current.contains(e.target as Node)) { setFormOpen(false); setFormEl(null); setFormErr(false); } };
+    const h = (e: MouseEvent) => { if (formRef.current && !formRef.current.contains(e.target as Node)) { setFormOpen(false); setFormEl(null); } };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, [formOpen]);
@@ -1118,7 +1147,7 @@ export default function WordEditor({
     const f = (e.target as HTMLElement).closest?.(".we-f") as HTMLElement | null;
     if (f && ref.current?.contains(f)) {
       e.preventDefault();
-      setFormEl(f); setFormSrc(f.getAttribute("data-f") ?? ""); setFormErr(false); setFormOpen(true);
+      setFormEl(f); setFormSrc(f.getAttribute("data-f") ?? ""); setFormOpen(true);
     }
   }
 
@@ -1126,12 +1155,13 @@ export default function WordEditor({
   function openFormula() {
     const sel = window.getSelection();
     savedRange.current = sel && sel.rangeCount && ref.current?.contains(sel.anchorNode) ? sel.getRangeAt(0).cloneRange() : null;
-    setFormEl(null); setFormSrc(""); setFormErr(false); setFormOpen(true);
+    setFormEl(null); setFormSrc(""); setFormOpen(true);
   }
   function insertFormula(srcOverride?: string) {
     const src = (srcOverride ?? formSrc).trim();
     const ml = formulaToMathML(src);
-    if (!ml) { setFormErr(true); return; }
+    // the live preview below the input has already said so, in red, as they typed
+    if (!ml) return;
     const attr = src.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
     const html = `<span class="we-f" contenteditable="false" data-f="${attr}">${ml}</span>`;
     if (formEl) {
@@ -1145,7 +1175,7 @@ export default function WordEditor({
       }
       insertHtml(html + "&nbsp;");
     }
-    setFormOpen(false); setFormEl(null); setFormSrc(""); setFormErr(false);
+    setFormOpen(false); setFormEl(null); setFormSrc("");
   }
   function insertSymbol(ch: string) {
     exec("insertText", ch);
@@ -1913,7 +1943,7 @@ export default function WordEditor({
               <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 8, maxHeight: 168, overflowY: "auto" }}>
                 {PT_FORMULAS.map((f) => (
                   <button key={f.id} type="button" className="we-pill" style={{ justifyContent: "space-between", width: "100%", gap: 10 }}
-                    onMouseDown={(e) => e.preventDefault()} onClick={() => { setFormSrc(f.src); setFormErr(false); }}>
+                    onMouseDown={(e) => e.preventDefault()} onClick={() => setFormSrc(f.src)}>
                     <span style={{ fontSize: 11.5, textAlign: "left" }}>{L(f.nameBg, f.nameEn)}</span>
                     <span style={{ fontSize: 13 }} dangerouslySetInnerHTML={{ __html: formulaToMathML(f.src) ?? "" }} />
                   </button>
@@ -1921,7 +1951,7 @@ export default function WordEditor({
               </div>
               <input
                 value={formSrc}
-                onChange={(e) => { setFormSrc(e.target.value); setFormErr(false); }}
+                onChange={(e) => setFormSrc(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); insertFormula(); } }}
                 placeholder="z = (x_i − x_pt) / σ_pt"
                 style={{ width: "100%", border: "1px solid var(--line)", borderRadius: 7, padding: "5px 8px", fontSize: 13, fontFamily: "ui-monospace, monospace" }}

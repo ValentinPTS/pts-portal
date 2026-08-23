@@ -1,6 +1,6 @@
-import type { Scheme, Lang, Participant, DocOptions } from "./types";
+import type { Scheme, Participant, DocOptions } from "./types";
 import type { Skin } from "../skins/types";
-import { esc, pick, cover, footer } from "./doc-shell";
+import { esc } from "./doc-shell";
 import { LIBRARY, FIELDS, FORM_ELEMENTS, renderFieldHtml } from "./blocks";
 import { docDefaultBody, docCoverHtml } from "./doc-template";
 

@@ -101,8 +101,6 @@ export const COVER_ELEMENTS: { key: CoverElKey; label: string; text: boolean }[]
 const ALL_KEYS: CoverElKey[] = COVER_ELEMENTS.map((e) => e.key);
 export const COVER_LABEL: Record<CoverElKey, string> =
   Object.fromEntries(COVER_ELEMENTS.map((e) => [e.key, e.label])) as Record<CoverElKey, string>;
-// elements whose `size` controls a dimension (logos/images), not font size
-const SIZED_IMG = new Set<CoverElKey>(["logo", "image"]);
 // elements that go inside the header band when band is on
 const BAND_KEYS = new Set<CoverElKey>(["logo", "title"]);
 

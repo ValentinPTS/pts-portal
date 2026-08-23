@@ -45,7 +45,7 @@ export function renderResultsCoded(s: Scheme, lang: Lang, opts?: DocOptions): st
     v === null || v === undefined || Number.isNaN(v) ? "" : esc(String(v));
 
   const sections = metrics
-    .map((m, mi) => {
+    .map((m) => {
       // testing metrics map 1:1 to parameters — attach the standard code when known
       const par = s.type === "T" ? s.parameters[parseInt(m.key, 10)] : undefined;
       const charLabel =
