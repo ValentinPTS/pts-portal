@@ -107,23 +107,41 @@ export function stopsAhead(chain: SchemeChain | undefined, code: string): number
   return list.slice(0, mine).filter((s) => !isDone(s)).length;
 }
 
+/** Two receipts is one hop, and one hop is not a pace. See paceDays(). */
+const MIN_HOPS_TO_TRUST = 2;
+/**
+ * A device physically moving between laboratories cannot average less than a day a
+ * stop. Anything under it is a clustered pair of receipts, not a fast round.
+ */
+const MIN_CREDIBLE_PACE_DAYS = 1;
+
 /**
  * How long a stop is actually taking, in days — measured receipt-to-receipt, so it
  * covers both the holding and the courier, which is what a waiting lab experiences.
  *
- * Returns the round's own measured pace once two stops have received the device,
- * and the owner's guess until then. His guess is a starting point that the real
- * round overwrites, not a target it is judged against.
+ * The owner's guess holds until the round has produced enough evidence to beat it,
+ * and only then does the measurement take over. His guess is a starting point the
+ * real round overwrites, not a target it is judged against — but it must not be
+ * overwritten by noise.
+ *
+ * WHY IT WAITS FOR TWO HOPS. This used to switch as soon as two stops had received
+ * the device, and two receipts are a single observation — divided by one. The first
+ * hop of a round is also systematically the fastest: the provider ships to the
+ * nearest laboratory, and the reference laboratory is usually quick because it is
+ * the anchor measurement. So a round where he expected 14 days a stop, whose first
+ * two receipts fell two days apart, told every laboratory behind them "около 4 дни"
+ * when the honest answer was four weeks. It self-corrected as stops reported, which
+ * is exactly backwards: it was most wrong while the labs were first asking.
  */
 export function paceDays(chain?: SchemeChain): number | null {
   const received = stops(chain)
     .map((s) => (s.receivedAt ? Date.parse(s.receivedAt) : NaN))
     .filter((t) => Number.isFinite(t))
     .sort((a, b) => a - b);
-  if (received.length >= 2) {
-    const span = received[received.length - 1] - received[0];
-    const measured = span / (received.length - 1) / DAY;
-    if (measured > 0) return measured;
+  const hops = received.length - 1;
+  if (hops >= MIN_HOPS_TO_TRUST) {
+    const measured = (received[received.length - 1] - received[0]) / hops / DAY;
+    if (measured >= MIN_CREDIBLE_PACE_DAYS) return measured;
   }
   const guess = chain?.daysPerLab;
   return typeof guess === "number" && guess > 0 ? guess : null;

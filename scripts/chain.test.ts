@@ -107,6 +107,45 @@ ok("a nonsense number is ignored", paceDays({ stops: [lab("a", "AAA")], daysPerL
   };
   ok("the round's real pace replaces the guess", paceDays(measured) === 6);
 }
+{
+  // THE REGRESSION. One hop is a single observation, and the first hop of a round is
+  // the fastest one: the provider ships to the nearest lab, and the reference lab is
+  // quick because it is the anchor. Trusting it told everyone behind "about 4 days"
+  // when the owner's own figure said four weeks — wrong by seven times, and wrong
+  // exactly while the laboratories were first asking.
+  const oneHop: SchemeChain = {
+    stops: [lab("a", "AAA", D(1), D(2)), ref("r", D(3)), lab("c", "CCC")],
+    daysPerLab: 14,
+  };
+  ok("a single hop does not override his figure", paceDays(oneHop) === 14);
+  ok("and the estimate stays his, not the noise", estimatedWaitDays(oneHop, "CCC") === 14);
+
+  // with no figure of his own there is nothing to fall back to — say nothing
+  const noGuess: SchemeChain = { stops: [lab("a", "AAA", D(1), D(2)), ref("r", D(3)), lab("c", "CCC")] };
+  ok("one hop and no figure invents nothing", paceDays(noGuess) === null);
+  ok("and so no wait is shown at all", estimatedWaitDays(noGuess, "CCC") === null);
+
+  // two hops IS enough — this is the point at which the round speaks for itself
+  const twoHops: SchemeChain = {
+    stops: [lab("a", "AAA", D(1), D(2)), ref("r", D(3), D(4)), lab("c", "CCC", D(21)), lab("d", "DDD")],
+    daysPerLab: 14,
+  };
+  ok("two hops replace his figure", paceDays(twoHops) === 10);
+
+  // a device cannot really move stop to stop in hours; that is clustered receipts
+  const sameDay: SchemeChain = {
+    stops: [
+      { id: "a", kind: "lab", code: "AAA", receivedAt: "2026-08-01T09:00:00Z", sentAt: "2026-08-01T10:00:00Z" },
+      { id: "r", kind: "ref", receivedAt: "2026-08-01T11:00:00Z", sentAt: "2026-08-01T12:00:00Z" },
+      { id: "c", kind: "lab", code: "CCC", receivedAt: "2026-08-01T13:00:00Z" },
+      { id: "d", kind: "lab", code: "DDD" },
+    ],
+    daysPerLab: 14,
+  };
+  ok("an implausibly fast measurement is ignored", paceDays(sameDay) === 14);
+  ok("a clustered round never says \"very soon\" to the lab behind",
+    !/скоро/.test(describeWait(estimatedWaitDays(sameDay, "DDD"), "bg")));
+}
 
 // ── the estimate ─────────────────────────────────────────────────────────────
 {
