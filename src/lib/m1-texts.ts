@@ -1,4 +1,6 @@
 // M1 — the provider's texts for the calibration documents (31.10.2026), as data (plan part 3.10).
+import { gateB, P7 } from "./gate-texts";
+
 export type M1Kind = "constant" | "fields" | "specific";
 export interface M1Point {
   no: number;
@@ -445,8 +447,13 @@ export const M1_INVITATION: M1Point[] = [
     bg: [
       "**ВАЖНО!!!** - Посочените цени са нето и подлежат на облагане с **20 % ДДС!**",
       "Таксата за участие не зависи от броя точки, които ще бъдат калибрирани.",
-      "Първоначално се издава проформа фактура, която се изпраща на посочената електронна поща в **Заявка за участие (Ф7.2.1-3)**.",
-      "След извършване на плащането, се издава електронна фактура на платилите участници, която изпраща на посочената електронна поща в **Заявка за участие (F 7.2.1-3)**.",
+      // П7 from Gate B (5.8, D16): the portal holds the proforma and the invoice; e-mail only tells.
+      // Read when the module loads — the deployment's setting, fixed until the next deploy, as
+      // the edition fingerprint reads it (lib/editions GATE_DOCS)
+      ...(gateB() ? [P7.bg] : [
+        "Първоначално се издава проформа фактура, която се изпраща на посочената електронна поща в **Заявка за участие (Ф7.2.1-3)**.",
+        "След извършване на плащането, се издава електронна фактура на платилите участници, която изпраща на посочената електронна поща в **Заявка за участие (F 7.2.1-3)**.",
+      ]),
       "Само участниците, които са платили такса за участие ще бъдат включени в изпитването за пригодност!",
       "Второ и всяко следващо участие на лабораторията с отделен лабораторен код се заплаща {{sharePct}} % от обявената цена.",
       "Ще бъдете информирани посредством имейл, когато обектът на изпитването за пригодност е изпратен към Вас.",
@@ -455,8 +462,10 @@ export const M1_INVITATION: M1Point[] = [
     en: [
       "**IMPORTANT!!!** - The prices stated are net and are subject to **20 % VAT!**",
       "The participation fee does not depend on the number of points to be calibrated.",
-      "A pro forma invoice is issued first and sent to the e-mail address indicated in the **Application form (F7.2.1-3)**.",
-      "After payment has been made, an electronic invoice is issued to the participants who have paid and is sent to the e-mail address indicated in the **Application form (F 7.2.1-3)**.",
+      ...(gateB() ? [P7.en] : [
+        "A pro forma invoice is issued first and sent to the e-mail address indicated in the **Application form (F7.2.1-3)**.",
+        "After payment has been made, an electronic invoice is issued to the participants who have paid and is sent to the e-mail address indicated in the **Application form (F 7.2.1-3)**.",
+      ]),
       "Only participants who have paid the participation fee will be included in the proficiency testing!",
       "The second and each subsequent participation of a laboratory with a separate laboratory code is paid at {{sharePct}} % of the announced price.",
       "You will be informed by e-mail when the proficiency testing item has been dispatched to you.",

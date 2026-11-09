@@ -69,11 +69,8 @@ try {
   // («Обекти и партиди» is built since part 3.5, «Доставки» since 5.6)
   await go(HREF.deliveries);
   t("«Доставки» is built (5.6): no longer a planned section", (await page.locator('[data-planned-section="deliveries"]').count()) === 0 && (await page.locator("[data-deliveries-schemes], [data-deliveries-scheme]").count() + (await page.getByText(/Няма започнала схема|No started scheme/).count())) > 0);
-  for (const [key, part] of [["invoices", "5.8"]]) {
-    await go(HREF[key]);
-    const text = await page.locator(`[data-planned-section="${key}"]`).innerText();
-    t(`«${key}» says which part builds it, and links to where it is done now`, text.includes(part) && (await page.locator(`[data-planned-section="${key}"] a`).count()) === 1);
-  }
+  await go(HREF.invoices);
+  t("«Фактури» is built (5.8): no longer a planned section", (await page.locator('[data-planned-section="invoices"]').count()) === 0);
   await go("/dashboard");
   // another check may have archived a scheme: at least the one this check uses
   t("the dashboard lists the live schemes and the sections", (await page.locator(`[data-dashboard-schemes] a[href="/schemes/${T}"]`).count()) === 1 && (await page.locator("[data-dashboard-sections] a").count()) === 13); // + «Почивни дни» (3.4)

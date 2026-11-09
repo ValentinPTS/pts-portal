@@ -1,4 +1,5 @@
 import type { Scheme, Lang, Clause } from "../types";
+import { gateB, P7 } from "../gate-texts";
 import { esc, pick, wrapDoc, cover, sec, footer } from "../doc-shell";
 import { transitRisk } from "./transit";
 import { usesM1, m1Sections, m1Fields, m1Contact, orFill, fillMark } from "../m1-render";
@@ -63,7 +64,7 @@ export function renderInvitationC(s: Scheme, lang: Lang): string {
         "The quoted prices are net and are subject to 20% VAT.",
         "Посочените цени са нето и подлежат на облагане с 20% ДДС."
       )}</li>
-      <li>${L(
+      <li>${gateB() ? L(P7.en, P7.bg) /* П7 from Gate B (5.8, D16) */ : L(
         "A pro forma invoice is issued first; after payment, an electronic invoice.",
         "Първо се издава проформа фактура; след плащане — електронна фактура."
       )}</li>

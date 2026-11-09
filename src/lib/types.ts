@@ -81,6 +81,9 @@ export interface CodedParticipant {
   // out of the round (5.1): refused with a category and a reason, annulled or withdrawn
   // with its source — set once, never changed (migration 0039)
   standing?: import("./application-model").Standing;
+  // when the participation was entered (the row's created_at) — read only; the order of entry
+  // the billing export lists them in (5.8; Реш. 98: a second participation is billed at its share)
+  createdAt?: string;
   status: ParticipantStatus;
 }
 
@@ -412,6 +415,7 @@ export interface UploadedDoc {
   uploadedAt: string; // ISO
   uploadedBy: string; // actor email
   roundAt?: string; // a laboratory's file: the round's clock when it came (1.3) — what counts against a deadline (3.4)
+  number?: string; // a proforma's or an invoice's number, as the accounting software gives it (5.8; Реш. 36)
 }
 
 export interface TeamMember {

@@ -156,9 +156,9 @@ t("the edit page: only draft ↔ open, every move an act on record", /const want
 const labUp = actions.slice(actions.indexOf("export async function labUploadDocAction"));
 t("a laboratory's results: none from processing on (Реш. 111); nothing in a scheme not held or closed", /const lockedNow = \(x: string\) => x === "not_held" \|\| x === "closed" \|\| \(slot === "results" && \(x === "processing" \|\| x === "report"\)\);/.test(labUp) && /if \(lockedNow\(st\)\) redirect/.test(labUp));
 t("…re-checked inside the lock: an upload in flight when processing starts is not recorded", /late = lockedNow\(s\.status\);\s*if \(late\) return \{\};/.test(labUp));
-t("the proforma: not held re-checked inside the lock", /notHeldNow = slot === "proforma" && \(s\.status === "not_held" \|\| invoiceProblem\(s, participant\) !== null\);/.test(actions));
+t("the proforma and the invoice: not held re-checked inside the lock (5.8: both)", /notHeldNow = s\.status === "not_held" \|\| invoiceProblem\(s, participant\) !== null/.test(actions));
 t("the chain: fixed once processing starts; the laboratory stamps only while it travels", /if \(!chainOpen\(scheme\.status\)\) return \{ error:/.test(actions) && (actions.match(/if \(!chainOpen\(mine\.scheme\.status\)\) return \{ error: "closed" \};/g) ?? []).length === 2);
-t("not held: nothing invoiced", /if \(slot === "proforma" && scheme\.status === "not_held"\) return \{ error:/.test(actions));
+t("not held: nothing invoiced — neither document (5.8)", /if \(scheme\.status === "not_held"\) return \{ error: "Схемата не се състои — нищо не се фактурира/.test(actions));
 const reminders = readFileSync(new URL("../src/lib/notify-reminders.ts", import.meta.url), "utf8");
 t("reminders: only an open or running round", /if \(s\.status !== "open" && s\.status !== "running"\) continue;/.test(reminders));
 const editions = readFileSync(new URL("../src/lib/editions.ts", import.meta.url), "utf8");

@@ -47,9 +47,10 @@ function toRow(p: CodedParticipant) {
   };
 }
 type Row = ReturnType<typeof toRow>;
-function fromRow(r: Row): CodedParticipant {
+function fromRow(r: Row & { created_at?: string | null }): CodedParticipant {
   return {
     id: r.id, schemeId: r.scheme_id, code: r.code, participations: r.participations ?? 1,
+    ...(r.created_at ? { createdAt: r.created_at } : {}),
     status: r.status as ParticipantStatus,
     courier: r.courier ?? undefined, sampleCode: r.sample_code ?? undefined,
     characteristics: Array.isArray(r.characteristics) ? (r.characteristics as number[]) : undefined,
@@ -104,7 +105,7 @@ export async function listParticipants(schemeId: string): Promise<CodedParticipa
   const db = getDb();
   if (!db) return mem.filter((p) => p.schemeId === schemeId);
   try {
-    const { data, error } = await db.from("participants").select("id,scheme_id,code,participations,status,courier,sample_code,characteristics,selections,standing").eq("scheme_id", schemeId).order("code");
+    const { data, error } = await db.from("participants").select("id,scheme_id,code,participations,status,courier,sample_code,characteristics,selections,standing,created_at").eq("scheme_id", schemeId).order("code");
     if (error) throw error;
     return (data ?? []).map((r) => fromRow(r as Row));
   } catch (e) {
@@ -204,10 +205,12 @@ export async function addParticipant(input: {
       characteristics: input.characteristics?.length ? input.characteristics : undefined,
       selections: input.selections && Object.keys(input.selections).length ? input.selections : undefined,
     };
+    // the memory store keeps the moment of entry as the database's created_at does (5.8)
+    const enteredAt = new Date().toISOString();
     if (!db) {
       if (mem.some((x) => x.schemeId === coded.schemeId && x.code === coded.code)) { if (attempt < 3) continue; throw new Error("the participant's code is taken"); }
       await addWithIdentity(toRow(coded), identity, actor); // refused first (no actor), nothing kept
-      mem.push(coded);
+      mem.push({ ...coded, createdAt: enteredAt });
       return { ...coded, ...identity, drawnFrom: drawn.drawnFrom };
     }
     // A participant that cannot be written is an ERROR, not a quiet memory-only row

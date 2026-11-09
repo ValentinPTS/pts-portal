@@ -59,7 +59,9 @@ export default async function ParticipationPage({ params, searchParams }: { para
   // the certificate is served to a laboratory's account (the document route); a user of the
   // entity gets it with phase 7 — never a row whose link answers «no» (5.5 review)
   const hasCert = viewer.kind === "lab" && !!labCertificate(s.certificates, p.code);
+  // the proforma and, after the payment, the original invoice — each with its number (5.8; Реш. 35, 36)
   const invoice = s.labDocs?.[p.code]?.proforma;
+  const original = s.labDocs?.[p.code]?.invoice;
   const running = s.status === "open" || s.status === "running";
   const chain = await chainViewFor(s, p.code, lang, viewer.actor);
   const notices = await withReadState(await listForParticipations([{ schemeId: s.id, code: p.code }], 20).catch(() => []), viewer.reader).catch(() => []);
@@ -73,7 +75,8 @@ export default async function ParticipationPage({ params, searchParams }: { para
     ...v.docs.map((d) => ({ key: d.key, name: docName(d.key, lang), ed: d.editionNo ? String(d.editionNo) : "—", at: d.at.slice(0, 10), lvl: d.level as string, level: d.level === "all" ? L("на схемата", "the scheme's") : d.level === "user" ? L("до вас лично", "to you personally") : L("на участието", "the participation's"), state: d.opened === null ? "—" : d.opened ? L("отворен", "opened") : L("неотворен", "not opened"), opened: d.opened !== false, href: docHref(v, d.key, lang) })),
     ...(officialReport ? [{ key: "report", lvl: "issued", name: L("Окончателен доклад", "Final report"), ed: "—", at: "", level: L("на схемата", "the scheme's"), state: L("издаден", "issued"), opened: true, href: `/lab/doc/${s.id}/report?lang=${lang}&p=${encodeURIComponent(v.participantId)}` }] : []),
     ...(hasCert ? [{ key: "certificate", lvl: "issued", name: L("Сертификат", "Certificate"), ed: "—", at: "", level: L("на участието", "the participation's"), state: L("издаден", "issued"), opened: true, href: `/lab/doc/${s.id}/certificate?lang=${lang}&p=${encodeURIComponent(v.participantId)}` }] : []),
-    ...(invoice ? [{ key: "proforma", lvl: "issued", name: T(LAB_DOC_SLOTS.proforma), ed: "—", at: invoice.uploadedAt.slice(0, 10), level: L("на участието", "the participation's"), state: s.status === "not_held" ? L("схемата не се състои — нищо не се фактурира", "the scheme is not held — nothing is invoiced") : T(PAYMENT_LABEL[v.payment]), opened: true, href: `/lab/labdoc/${s.id}/proforma?p=${encodeURIComponent(v.participantId)}` }] : []),
+    ...(original ? [{ key: "invoice", lvl: "issued", name: `${T(LAB_DOC_SLOTS.invoice)}${original.number ? ` № ${original.number}` : ""}`, ed: "—", at: original.uploadedAt.slice(0, 10), level: L("на участието", "the participation's"), state: L("платено", "paid"), opened: true, href: `/lab/labdoc/${s.id}/invoice?p=${encodeURIComponent(v.participantId)}` }] : []),
+    ...(invoice ? [{ key: "proforma", lvl: "issued", name: `${T(LAB_DOC_SLOTS.proforma)}${invoice.number ? ` № ${invoice.number}` : ""}`, ed: "—", at: invoice.uploadedAt.slice(0, 10), level: L("на участието", "the participation's"), state: s.status === "not_held" ? L("схемата не се състои — нищо не се фактурира", "the scheme is not held — nothing is invoiced") : T(PAYMENT_LABEL[v.payment]), opened: true, href: `/lab/labdoc/${s.id}/proforma?p=${encodeURIComponent(v.participantId)}` }] : []),
   ];
 
   // the characteristics it applied for (5.1), each with its participations when more than one
@@ -305,11 +308,12 @@ export default async function ParticipationPage({ params, searchParams }: { para
               </div>
             ))}
 
-            {card(L("Проформа и плащане", "Proforma and payment"), (
+            {card(L("Проформа, фактура и плащане", "Proforma, invoice and payment"), (
               <div data-payment-box={v.payment} style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}><span style={{ color: "var(--muted)" }}>{L("Проформа", "Proforma")}</span><span>{invoice ? fmtPhaseDate(invoice.uploadedAt.slice(0, 10)) : "—"}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }} data-proforma-number={invoice?.number ?? ""}><span style={{ color: "var(--muted)" }}>{L("Проформа", "Proforma")}</span><span>{invoice ? `${invoice.number ? `№ ${invoice.number} · ` : ""}${fmtPhaseDate(invoice.uploadedAt.slice(0, 10))}` : "—"}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }} data-invoice-number={original?.number ?? ""}><span style={{ color: "var(--muted)" }}>{L("Фактура", "Invoice")}</span><span>{original ? `${original.number ? `№ ${original.number} · ` : ""}${fmtPhaseDate(original.uploadedAt.slice(0, 10))}` : L("след плащането", "after the payment")}</span></div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}><span style={{ color: "var(--muted)" }}>{L("Състояние", "State")}</span><span style={{ fontWeight: 700 }}>{T(PAYMENT_LABEL[v.payment])}</span></div>
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>{L("Плащането не спира изпращането — обектът тръгва по графика (Реш. 96). Всички потребители на организацията виждат и свалят проформата.", "Payment never holds the dispatch back — the object goes on schedule (Реш. 96). Every user of the organisation sees and downloads the proforma.")}</span>
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>{L("Плащането не спира изпращането — обектът тръгва по графика (Реш. 96). Всички потребители на организацията виждат и свалят проформата и фактурата.", "Payment never holds the dispatch back — the object goes on schedule (Реш. 96). Every user of the organisation sees and downloads the proforma and the invoice.")}</span>
               </div>
             ))}
 

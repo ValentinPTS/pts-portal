@@ -184,6 +184,8 @@ try {
   await go(`/schemes/${S}/participants/${encodeURIComponent(codeA)}`);
   const up = page.getByRole("button", { name: /Качи проформа|Upload proforma/ });
   await up.waitFor();
+  // its number from the accounting software first (5.8; Реш. 36)
+  await page.locator('[data-doc-number="proforma"]').fill(`ПФ-${stamp}`);
   const [pc] = await Promise.all([page.waitForEvent("filechooser"), up.click()]);
   await pc.setFiles({ name: `proforma-${stamp}.pdf`, mimeType: "application/pdf", buffer: PDF("proforma") });
   await waitFor(async () => (await page.getByText(`proforma-${stamp}.pdf`).count()) > 0);

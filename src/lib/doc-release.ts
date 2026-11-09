@@ -59,6 +59,8 @@ export const isSendableDoc = (key: string): boolean => SENDABLE_DOCS.includes(ke
 // ─────────────────────────────────────────────────────────────────────────────
 export const LAB_DOC_SLOTS = {
   proforma: { bg: "Проформа фактура", en: "Proforma invoice" },
+  // the original invoice, after the payment (5.8; Реш. 35)
+  invoice: { bg: "Фактура", en: "Invoice" },
 } as const;
 
 export type LabDocSlot = keyof typeof LAB_DOC_SLOTS;

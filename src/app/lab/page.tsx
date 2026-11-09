@@ -96,8 +96,10 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
         : "";
       return {
         p, scheme,
-        // this participation's own proforma, if the provider has put one there
+        // this participation's own proforma, if the provider has put one there — and, after the
+        // payment, its original invoice (5.8; Реш. 35)
         invoice: scheme.labDocs?.[p.code]?.proforma,
+        original: scheme.labDocs?.[p.code]?.invoice,
         // the calibration chain, resolved for THIS laboratory only
         chain: await chainViewFor(scheme, p.code, lang, await actorNow()),
         view: viewOf.get(p.id),
@@ -224,7 +226,8 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
       // ?p= names the participation: a lab that applied twice to one scheme has an
       // invoice per code, and the link must fetch the one this card is showing.
       // a proforma from before the scheme was declared not held is kept, and says so (О9)
-      ...(it.invoice ? [{ key: "proforma", label: (lang === "bg" ? LAB_DOC_SLOTS.proforma.bg : LAB_DOC_SLOTS.proforma.en) + (it.scheme.status === "not_held" ? (lang === "bg" ? " — схемата не се състои, нищо не се фактурира" : " — the scheme is not held, nothing is invoiced") : ""), at: it.invoice.uploadedAt.slice(0, 10), href: `/lab/labdoc/${it.scheme.id}/proforma?p=${encodeURIComponent(it.p.id)}` }] : []),
+      ...(it.invoice ? [{ key: "proforma", label: (lang === "bg" ? LAB_DOC_SLOTS.proforma.bg : LAB_DOC_SLOTS.proforma.en) + (it.invoice.number ? ` № ${it.invoice.number}` : "") + (it.scheme.status === "not_held" ? (lang === "bg" ? " — схемата не се състои, нищо не се фактурира" : " — the scheme is not held, nothing is invoiced") : ""), at: it.invoice.uploadedAt.slice(0, 10), href: `/lab/labdoc/${it.scheme.id}/proforma?p=${encodeURIComponent(it.p.id)}` }] : []),
+      ...(it.original ? [{ key: "invoice", label: (lang === "bg" ? LAB_DOC_SLOTS.invoice.bg : LAB_DOC_SLOTS.invoice.en) + (it.original.number ? ` № ${it.original.number}` : ""), at: it.original.uploadedAt.slice(0, 10), href: `/lab/labdoc/${it.scheme.id}/invoice?p=${encodeURIComponent(it.p.id)}` }] : []),
     ];
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>

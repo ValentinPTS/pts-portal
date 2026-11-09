@@ -149,6 +149,8 @@ export const PARTICIPANT_FIELDS = {
   labName: "identity", contact: "identity", email: "identity", phone: "identity", country: "identity",
   // the participations follow from the coded counts (5.1) and sit in the coded table
   participations: "coded",
+  // when it was entered (5.8) — a moment, no one's name
+  createdAt: "coded",
   deliveryAddress: "identity", courier: "identity", labId: "identity",
 } satisfies Record<keyof Participant, Part | "split">;
 
@@ -204,7 +206,8 @@ export const scrubDeep = <T>(v: T, scrub: (s: string) => string): T =>
 const namesDoc = (doc: string) => isListDoc(doc) || pairsNamesWithCodes(doc);
 const bodyHasNames = (doc: string, b?: { bg?: string; en?: string }) => namesDoc(doc) || hasCohortNames(b?.bg ?? "") || hasCohortNames(b?.en ?? "");
 
-const fileMeta = (f?: UploadedDoc) => (f ? { mime: f.mime, size: f.size, uploadedAt: f.uploadedAt } : undefined);
+// a proforma's or an invoice's number is the accounting software's, no name (5.8)
+const fileMeta = (f?: UploadedDoc) => (f ? { mime: f.mime, size: f.size, uploadedAt: f.uploadedAt, ...(f.number ? { number: f.number } : {}) } : undefined);
 const mapValues = <T, U>(o: Record<string, T> | undefined, f: (v: T) => U) => (o ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k, f(v)])) : undefined);
 
 /** The scheme as the coded part may hold it (before scrubbing). */

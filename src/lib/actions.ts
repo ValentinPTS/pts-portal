@@ -74,6 +74,7 @@ import { inviteParticipant } from "./participant-invite";
 import { freezeParticipation, participationEntity } from "./participation-snapshots";
 import { readSelections, characteristicsOf, readRefusal, readSource, inRound, REFUSAL_CATEGORIES, STANDING_PROBLEM_TEXT, MAX_PER_CHARACTERISTIC, participationSets, selectionsOf, sameSelections, objectsNeeded, type Standing } from "./application-model";
 import { notifyParticipationRefused, notifyItemsDispatched, notifyReceiptProtocol, notifyDeliveryProblem } from "./notify-events";
+import { readDocNumber, invoiceSlotProblem, INVOICE_PROBLEM_TEXT } from "./invoice-model";
 import { readShipment, readReceipt, deliveryOf, openShipment, openProblems, replacementProblem, replacementCalledFor, minDaysOf, readMinDays, LIMITS as DELIVERY_LIMITS, MAX_OPEN_PROBLEMS, type Shipment, type ShipmentKind, type Deliveries } from "./delivery-model";
 import { finalListOf, splitFor, invoiceProblem, currentFinalList, inFinalRound, finalSelectionsOf, ANNOUNCEMENT_PROBLEM_TEXT, type FinalList } from "./announcement-model";
 import { readTarget, RELEASE_PROBLEM_TEXT, type TargetRelease } from "./release-model";
@@ -956,17 +957,22 @@ export async function uploadLabDocAction(formData: FormData): Promise<{ ok?: boo
   if (!isLabDocSlot(slot)) return { error: "Unknown document." };
   const scheme = await getScheme(schemeId);
   if (!scheme) return { error: "Scheme not found." };
-  // a scheme that is not held invoices nothing (О9, Реш. 129)
-  if (slot === "proforma" && scheme.status === "not_held") return { error: "Схемата не се състои — нищо не се фактурира. · The scheme is not held — nothing is invoiced." };
+  // a scheme that is not held invoices nothing — neither document (О9, Реш. 129)
+  if (scheme.status === "not_held") return { error: "Схемата не се състои — нищо не се фактурира. · The scheme is not held — nothing is invoiced." };
   // the code must be a real participation in THIS scheme — never trust the form
   const participant = (await listParticipants(schemeId)).find((p) => p.code === code);
   if (!participant) return { error: "No such participant in this scheme." };
-  // a proforma only after the second announcement, to a participation on its final list
-  // (5.2; Реш. 65)
-  const invoiceNo = slot === "proforma" ? invoiceProblem(scheme, participant) : null;
+  // a proforma or an invoice only after the second announcement, to a participation on its
+  // final list (5.2; Реш. 65)
+  const invoiceNo = invoiceProblem(scheme, participant);
   if (invoiceNo) return { error: ANNOUNCE_REFUSAL[invoiceNo] };
-  // an invoice is news for the laboratory: who it is, before anything is saved (2.3)
-  const invoiceTell = slot === "proforma" ? await labToTell(schemeId, code) : {};
+  // its number, as the accounting software gives it (Реш. 36); the original invoice only
+  // once the payment is marked — «Неплатена оригинална фактура не съществува» (Реш. 35)
+  const docNumber = readDocNumber(formData.get("number"));
+  const slotProblem = invoiceSlotProblem(slot as "proforma" | "invoice", docNumber, !!scheme.paidAt?.[code]);
+  if (slotProblem) return { error: `${INVOICE_PROBLEM_TEXT[slotProblem].bg} · ${INVOICE_PROBLEM_TEXT[slotProblem].en}` };
+  // a document for the participation is news for it: who it is, before anything is saved (2.3)
+  const invoiceTell = await labToTell(schemeId, code);
   if (!invoiceTell) return { error: NOT_REACHED };
 
   const file = formData.get("file");
@@ -995,7 +1001,7 @@ export async function uploadLabDocAction(formData: FormData): Promise<{ ok?: boo
     path = `data:${file.type};base64,${Buffer.from(bytes).toString("base64")}`;
   }
 
-  const upload: UploadedDoc = { path, name, mime: file.type, size: file.size, uploadedAt: new Date().toISOString(), uploadedBy: actor };
+  const upload: UploadedDoc = { path, name, mime: file.type, size: file.size, uploadedAt: new Date().toISOString(), uploadedBy: actor, number: docNumber! };
   // updateSchemeWith, not updateScheme: the map is rebuilt from the FRESH scheme
   // inside the per-scheme lock. Invoices are issued one lab after another, and a
   // plain read-modify-write would drop the previous one if two overlapped — the
@@ -1008,7 +1014,9 @@ export async function uploadLabDocAction(formData: FormData): Promise<{ ok?: boo
   await updateSchemeWith(schemeId, (s) => {
     // re-checked inside the lock: a scheme declared not held meanwhile invoices nothing;
     // nor one stepped back past its second announcement meanwhile (5.2)
-    notHeldNow = slot === "proforma" && (s.status === "not_held" || invoiceProblem(s, participant) !== null);
+    notHeldNow = s.status === "not_held" || invoiceProblem(s, participant) !== null
+      // the invoice re-checked too: still paid (Реш. 35)
+      || (slot === "invoice" && !s.paidAt?.[code]);
     if (notHeldNow) return {};
     replacedDoc = s.labDocs?.[code]?.[slot];
     return {
@@ -1018,7 +1026,7 @@ export async function uploadLabDocAction(formData: FormData): Promise<{ ok?: boo
   });
   if (notHeldNow) return { error: "Схемата не се състои или окончателният ѝ списък е отменен — нищо не се фактурира. · The scheme is not held, or its final list was undone — nothing is invoiced." };
 
-  if (slot === "proforma") await notifyInvoiceReady(invoiceTell.labId, schemeId, scheme.number, code);
+  await notifyInvoiceReady(invoiceTell.labId, schemeId, scheme.number, code, { slot: slot as "proforma" | "invoice", number: docNumber!, participantId: participant.id });
   // The log records the CODE and nothing else. NOT the file name: accounting
   // software names an invoice after the customer ("Проформа-2026-ЕкоЛаб-ООД.pdf"),
   // and the activity log, the case file and the audit pack are all read by staff
@@ -1027,10 +1035,11 @@ export async function uploadLabDocAction(formData: FormData): Promise<{ ok?: boo
   // A manager who needs the file name sees it on the case page, where the file is.
   await logActivity("labdoc.uploaded", {
     schemeId, targetCode: code, subject: `labdoc:${code}:${slot}`,
-    summary: `${LAB_DOC_SLOTS[slot].en} ${replacedDoc ? "replaced" : "sent"} to ${code}`,
+    // its number is the accounting software's, not a name — the journal may carry it (5.8)
+    summary: `${LAB_DOC_SLOTS[slot].en} No. ${docNumber} ${replacedDoc ? "replaced" : "sent"} to ${code}`,
     // never the file name — an invoice is named after the customer (§4.2)
-    before: replacedDoc ? { size: replacedDoc.size, mime: replacedDoc.mime, at: replacedDoc.uploadedAt } : null,
-    after: { size: upload.size, mime: upload.mime, at: upload.uploadedAt },
+    before: replacedDoc ? { size: replacedDoc.size, mime: replacedDoc.mime, at: replacedDoc.uploadedAt, number: replacedDoc.number ?? null } : null,
+    after: { size: upload.size, mime: upload.mime, at: upload.uploadedAt, number: docNumber },
   });
   // No case event either. The case file is the ISO traceability chain for the PT
   // ITEMS, and "docs_sent" there means the participant handouts went out. An
@@ -1085,12 +1094,16 @@ export async function setParticipantPaidAction(
     return { error: "No such participant in this scheme." };
   }
   const at = new Date().toISOString();
+  // an original invoice exists only for one paid (Реш. 35): not unmarked while it is held
+  let held = false;
   await updateSchemeWith(schemeId, (s) => {
+    if (!paid && s.labDocs?.[code]?.invoice) { held = true; return {}; }
     const paidAt = { ...(s.paidAt ?? {}) };
     if (paid) paidAt[code] = at;
     else delete paidAt[code];
     return { paidAt };
   });
+  if (held) return { error: "Оригиналната фактура е качена — първо я премахнете, после отбележете неплатено. · The original invoice is uploaded — remove it first, then mark unpaid." };
   await logActivity(paid ? "payment.marked" : "payment.unmarked", {
     schemeId, targetCode: code,
     summary: paid ? `${code} marked paid` : `${code} no longer marked paid`,

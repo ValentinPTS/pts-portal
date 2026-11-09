@@ -125,15 +125,19 @@ export async function notifyInvoiceReady(
   schemeId: string,
   schemeNumber: string,
   code: string,
+  doc: { slot: "proforma" | "invoice"; number?: string; participantId?: string } = { slot: "proforma" },
 ): Promise<void> {
   if (!(await anyoneToTell(labId, schemeId, code))) return; // nobody to tell — the owner shares it directly
+  const no = doc.number ? ` № ${doc.number}` : "";
   await notify({
     kind: "invoice.ready",
     audience: "lab",
     labId, schemeId, code,
-    bg: `Проформа фактурата ви за схема ${schemeNumber} е готова за изтегляне.`,
-    en: `Your proforma invoice for scheme ${schemeNumber} is ready to download.`,
-    href: "/lab",
+    // the proforma — or, after the payment, the original invoice (5.8; Реш. 35)
+    bg: doc.slot === "invoice" ? `Фактурата${no} за схема ${schemeNumber} е качена в портала — на страницата на участието.` : `Проформа фактурата${no} за схема ${schemeNumber} е качена в портала — на страницата на участието.`,
+    en: doc.slot === "invoice" ? `The invoice${no.replace("№", "No.")} for scheme ${schemeNumber} is in the portal — on the participation's page.` : `The proforma invoice${no.replace("№", "No.")} for scheme ${schemeNumber} is in the portal — on the participation's page.`,
+    // the participation's own page, where both documents and their numbers are (review)
+    href: doc.participantId ? `/lab/p/${encodeURIComponent(doc.participantId)}` : "/lab",
   });
 }
 

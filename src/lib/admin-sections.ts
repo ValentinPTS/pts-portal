@@ -25,7 +25,7 @@ export const SECTIONS: readonly Section[] = [
   { key: "organizations", href: "/organizations", bg: "Организации и лаборатории", en: "Organisations and laboratories", group: "main" },
   { key: "batches", href: "/batches", bg: "Обекти и партиди", en: "Objects and batches", group: "main" },
   { key: "deliveries", href: "/deliveries", bg: "Доставки", en: "Deliveries", group: "main" }, // built in 5.6
-  { key: "invoices", href: "/invoices", bg: "Фактури", en: "Invoices", group: "main", comesIn: "5.8" },
+  { key: "invoices", href: "/invoices", bg: "Фактури", en: "Invoices", group: "main" }, // built in 5.8
   { key: "journal", href: "/activity", bg: "Регистър на действията", en: "Register of actions", group: "records" },
   { key: "people", href: "/users", bg: "Потребители на провайдъра", en: "The provider's users", group: "records" },
   { key: "notices", href: "/notices", bg: "Известия", en: "Notices", group: "more" },

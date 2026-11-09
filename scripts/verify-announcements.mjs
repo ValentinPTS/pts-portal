@@ -36,6 +36,8 @@ const proforma = async (S, code) => {
   const btn = page.getByRole("button", { name: /Качи проформа|Upload proforma/ });
   await btn.waitFor();
   const before = dialogs.length;
+  // its number from the accounting software first (5.8; Реш. 36)
+  await page.locator('[data-doc-number="proforma"]').fill(`ПФ-${code}`);
   const [chooser] = await Promise.all([page.waitForEvent("filechooser"), btn.click()]);
   await chooser.setFiles({ name: `proforma-${code}.pdf`, mimeType: "application/pdf", buffer: PDF });
   await waitFor(async () => dialogs.slice(before).some((d) => d.type === "alert") || (await page.getByText(`proforma-${code}.pdf`).count()) > 0);

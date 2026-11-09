@@ -30,7 +30,10 @@ export const ROUTES = [
   { file: "batches/page.tsx", names: "never", paths: () => ["/batches"] },
   // the shipments by code; the addresses to who sees names in that scheme, for dispatch (5.6, D18)
   { file: "deliveries/page.tsx", names: "scheme", paths: (c) => ["/deliveries", `/deliveries?scheme=${c.S}`] },
-  { file: "invoices/page.tsx", names: "never", paths: () => ["/invoices"] },
+  // the proformas and invoices by code and number (5.8) — no names on the page
+  { file: "invoices/page.tsx", names: "never", paths: (c) => ["/invoices", `/invoices?scheme=${c.S}`] },
+  // the billing export for accounting — it names who is behind each code (5.8, Реш. 98)
+  { file: "invoices/export/route.ts", names: "scheme", paths: (c) => [`/invoices/export?scheme=${c.S}`, `/invoices/export?scheme=${c.OTHER}`] },
   { file: "files/[type]/page.tsx", names: "never", paths: () => ["/files/testing", "/files/calibration"] },
   { file: "files/[type]/f/[folderId]/page.tsx", names: "never", paths: (c) => (c.folderPath ? [c.folderPath] : []) },
   { file: "items/page.tsx", names: "never", paths: () => ["/items"] },

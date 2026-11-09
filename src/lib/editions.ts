@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "crypto";
 import { usesM1, isM1Doc, m1Problems } from "./m1-render";
 import { shareOf } from "./commercial-model";
 import { windowDays } from "./deadlines-model";
+import { gateB } from "./gate-texts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Scheme, Lang, UploadedDoc } from "./types";
 import { getDb, noMemoryFallback } from "./supabase";
@@ -155,6 +156,8 @@ const stable = (v: unknown): unknown =>
 /** The fingerprint of what this document is made from — the same for the same
  *  content whatever build of the portal renders it. */
 export const TEMPLATE_VERSION: Record<string, number> = { instruction: 2 };
+/** The documents whose words switch at Gate B (lib/gate-texts). */
+export const GATE_DOCS: ReadonlySet<string> = new Set(["invitation"]);
 export function fingerprint(scheme: Scheme, docKey: string): string {
   // the kind, activity and accreditation as they read (3.1): a scheme from before they
   // were kept as fields, and the same scheme once they are, are one content
@@ -169,6 +172,10 @@ export function fingerprint(scheme: Scheme, docKey: string): string {
     // a template changed under П 8.3 is a change of the documents made from it — the
     // Instruction since 3.11 (its contacts from the team, Реш. 150's sentence)
     ...(TEMPLATE_VERSION[docKey] ? { tv: TEMPLATE_VERSION[docKey] } : {}),
+    // Gate B's sentences П4, П5, П7 (5.8, D16) change the invitation — the testing one, the
+    // calibration one and M1's — so passing Gate B makes it a new edition. Off, nothing is
+    // added: the editions issued before keep their fingerprint (review)
+    ...(GATE_DOCS.has(docKey) && gateB() ? { gate: "B" } : {}),
     // what an M1 document prints from fields kept out of the documents' content — the
     // share of a second participation, the days at a participant (3.10 review)
     ...(usesM1(scheme) ? { m1: { share: shareOf(scheme.commercial), window: windowDays(scheme) } } : {}),

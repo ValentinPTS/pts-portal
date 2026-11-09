@@ -20,6 +20,9 @@ import { holidaySet } from "@/lib/holidays";
 import { fmtSchemeDate } from "@/lib/scheme-dates";
 import ExtensionForm from "@/components/ExtensionForm";
 
+/** A held proforma or invoice as the panel shows it: its name, date and number — no more. */
+const held = (d?: { name?: string; uploadedAt?: string; number?: string }) => (d ? { name: d.name, uploadedAt: d.uploadedAt, number: d.number } : undefined);
+
 // Participant case file (Phase RT3) — the auditor's per-lab view, by CODE. Dated
 // timeline of milestones (auto + manual), the identity (name revealed to managers
 // only), and a link to the combined results. Owner-area page (gated by proxy.ts).
@@ -165,8 +168,10 @@ export default async function CaseFilePage({
           schemeId={id}
           code={code}
           lang={lang}
-          fileName={s.labDocs?.[code]?.proforma?.name}
-          uploadedAt={s.labDocs?.[code]?.proforma?.uploadedAt}
+          // only what the panel shows — never the storage path (a whole file in memory mode)
+          // nor who uploaded it, into the page sent to the browser (review)
+          proforma={held(s.labDocs?.[code]?.proforma)}
+          invoice={held(s.labDocs?.[code]?.invoice)}
           paidAt={s.paidAt?.[code]}
           notHeld={s.status === "not_held"}
           // a proforma only after the second announcement, to one on its final list (5.2; Реш. 65)

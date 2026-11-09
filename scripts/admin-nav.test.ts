@@ -18,7 +18,7 @@ const keys = (v: Viewer, managesPeople = false) => visibleSections(v, managesPeo
 // ── the design's order ──────────────────────────────────────────────────────
 t("the design's sections, in its order (without «Одобрения на регистрации» — 9.1)",
   SECTIONS.filter((s) => s.group !== "more").map((s) => s.bg).join(" · ") === "Табло · Схеми · Организации и лаборатории · Обекти и партиди · Доставки · Фактури · Регистър на действията · Потребители на провайдъра");
-t("the one still to be built names the part that builds it («Обекти и партиди» built in 3.5, «Доставки» in 5.6)", SECTIONS.filter((s) => s.comesIn).map((s) => `${s.key}:${s.comesIn}`).join(" ") === "invoices:5.8");
+t("every section is built («Обекти и партиди» in 3.5, «Доставки» in 5.6, «Фактури» in 5.8)", SECTIONS.filter((s) => s.comesIn).length === 0);
 
 // ── who sees what, role by role (hand-written) ──────────────────────────────
 const MORE = "library skins changes holidays";
