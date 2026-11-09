@@ -27,6 +27,7 @@ import StandingForms from "@/components/StandingForms";
 import { inRound, objectsNeeded, selectionsOf, STANDING_LABEL, REFUSAL_CATEGORIES, MAX_PER_CHARACTERISTIC, type Selections } from "@/lib/application-model";
 import { currentFinalList, finalSelectionsOf } from "@/lib/announcement-model";
 import { isProvisional } from "@/lib/coding-model";
+import { needsCarrierChoice } from "@/lib/participation-state-model";
 
 const INVITE = invitePreview();
 
@@ -34,6 +35,8 @@ const inputCls = "w-full rounded px-2 py-1 text-sm";
 const inputStyle = { border: "1px solid var(--line)", background: "#fff" } as const;
 
 // Courier options exactly as they appear on the owner's F 7.2.1-4 workbook.
+// the usual carriers, offered — any other may be typed: outside the EU and the Balkans the
+// participant chooses one from the offers, and PTS records it here (Реш. 128, 5.5)
 const COURIERS = ["Спиди БГ", "Спиди EN", "Поща/Fedex"];
 
 const STATUS_COLOR: Record<string, string> = {
@@ -141,6 +144,9 @@ export default async function ParticipantsPage({
         <div className="card p-3 mt-3 text-sm" style={{ background: "#fbeeee", border: "1px solid #e3c8c8", color: "#8f2f2f" }}>{tr("part.saveFailed")}</div>
       )}
 
+      {/* the usual carriers, offered by the courier fields (any other may be typed) */}
+      <datalist id="courier-options">{COURIERS.map((c) => <option key={c} value={c} />)}</datalist>
+
       {/* list */}
       <div className="card mt-4 overflow-hidden">
         <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
@@ -206,10 +212,7 @@ export default async function ParticipantsPage({
         {s.parameters.length === 0 && <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{tr("part.participations")}</span>
           <input name="participations" type="number" min="1" defaultValue="1" className={inputCls} style={inputStyle} /></label>}
         <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{tr("part.courier")}</span>
-          <select name="courier" className={inputCls} style={inputStyle} defaultValue="">
-            <option value=""></option>
-            {COURIERS.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select></label>
+          <input name="courier" list="courier-options" maxLength={60} className={inputCls} style={inputStyle} defaultValue="" /></label>
         <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{tr("part.sampleCode")}</span>
           <input name="sampleCode" className={inputCls} style={inputStyle} /></label>
         {/* the application from the PDF: participations per characteristic (5.1) — no approval act follows (Реш. 123);
@@ -293,7 +296,16 @@ function ParticipantRows({ p, schemeId, reveal, hidden, tr, invoiced, paid, para
         </td>
         <td className="p-2">{p.country}</td>
         <td className="p-2 font-mono">{p.sampleCode || <span style={{ color: "var(--muted)" }}>—</span>}</td>
-        <td className="p-2">{p.courier || <span style={{ color: "var(--muted)" }}>—</span>}</td>
+        {/* the carrier only to who sees names: outside the EU and the Balkans it is chosen from
+            offers, and its name can say where the participation is (§4.2, 5.5 review) */}
+        <td className="p-2" data-courier={p.courier ? "1" : "0"}>{reveal ? (p.courier || <span style={{ color: "var(--muted)" }}>—</span>) : p.courier ? <span style={{ color: "var(--muted)" }}>{L("избран", "chosen")}</span> : <span style={{ color: "var(--muted)" }}>—</span>}
+          {/* Реш. 128: on the final list, outside the EU and the Balkans, the carrier not chosen yet — only
+              to who sees the country (§4.2). The country: its frozen copy's legal entity, else its own —
+              the same one its users read (5.5 review) */}
+          {reveal && !out && listed === true && !p.courier?.trim() && needsCarrierChoice(snapshot?.entity.country || p.country) && (
+            <span data-carrier-pending className="text-xs" style={{ display: "block", fontWeight: 700, color: "#7a5416" }}>{L("изчаква избор на доставчик", "awaiting the choice of carrier")}</span>
+          )}
+        </td>
         <td className="p-2"><span style={{ color: STATUS_COLOR[p.status] ?? "var(--muted)", fontWeight: 700 }}>● {tr(`pstatus.${p.status}`)}</span>
           {deadline.state === "overdue" && <span data-overdue style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: "#8f2f2f" }}>{tr("part.overdue")}</span>}
           {deadline.extended && <span data-extended style={{ marginLeft: 6, fontSize: 11, color: "var(--muted)" }}>{tr("part.extended")}</span>}
@@ -392,10 +404,7 @@ function ParticipantRows({ p, schemeId, reveal, hidden, tr, invoiced, paid, para
                 {parameters.length === 0 && <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{tr("part.participations")}</span>
                   <input name="participations" type="number" min="1" defaultValue={String(p.participations)} className={inputCls} style={inputStyle} /></label>}
                 <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{tr("part.courier")}</span>
-                  <select name="courier" defaultValue={p.courier ?? ""} className={inputCls} style={inputStyle}>
-                    <option value=""></option>
-                    {COURIERS.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select></label>
+                  <input name="courier" list="courier-options" maxLength={60} defaultValue={p.courier ?? ""} className={inputCls} style={inputStyle} /></label>
                 <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{tr("part.sampleCode")}</span>
                   <input name="sampleCode" defaultValue={p.sampleCode ?? ""} className={inputCls} style={inputStyle} /></label>
                 {parameters.length > 0 && (

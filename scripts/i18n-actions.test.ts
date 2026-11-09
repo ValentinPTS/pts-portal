@@ -38,6 +38,9 @@ for (const f of files) {
   for (const m of src.matchAll(/logActivity\(\s*"([^"]+)"/g)) actions.add(m[1]);
   // part 1.9: an entry with an explicit actor — logAs({ … }, "action" | x ? "a" : "b")
   for (const m of src.matchAll(/logAs\(\{[^}]*\},\s*"([^"]+)"/g)) actions.add(m[1]);
+  // part 5.5: the chain's buttons journal through the stop's own helper — as a laboratory's
+  // account or an entity's user (mine.log("chain.received", …))
+  for (const m of src.matchAll(/\bmine\.log\(\s*"([^"]+)"/g)) actions.add(m[1]);
   for (const m of src.matchAll(/logAs\(\{[^}]*\},\s*\w+\s*\?\s*"([^"]+)"\s*:\s*"([^"]+)"/g)) { actions.add(m[1]); actions.add(m[2]); }
   // some call sites choose the action with a ternary — catch both literals
   for (const m of src.matchAll(/logActivity\(\s*\w+\s*\?\s*"([^"]+)"\s*:\s*"([^"]+)"/g)) {

@@ -107,6 +107,9 @@ try {
   await page.waitForSelector(`text=${SECRET.labName}`);
   const code = (await page.locator("tr", { hasText: SECRET.labName }).locator("td").first().innerText()).trim();
   t("(the laboratory joins the scheme, with a code)", !!code);
+  // …and its participation's id — its own page (5.5) is opened as every role
+  const pid = await page.locator(`tr[data-participant-row="${code}"]`).locator("xpath=following-sibling::tr[@data-standing-row][1]").getAttribute("data-standing-row").catch(() => null);
+  t("(its participation's id, for its own page)", !!pid);
   // the list's edit form carries all of it, for who sees names — so the absence below means something
   const planted = await get(`/schemes/${S}/participants`);
   t("(…its contact, phone and delivery address are on record)", ["contact", "phone", "deliveryAddress"].every((k) => planted.text.includes(SECRET[k])));
@@ -148,7 +151,7 @@ try {
   await inv.locator('[data-edition-label="1"]').waitFor({ timeout: 60000 });
   const editions = [...new Set([...(await get(`/schemes/${S}/editions`)).text.matchAll(new RegExp(`/schemes/${S}/editions/([0-9a-f-]{36})\\?lang=bg`, "g"))].map((m) => m[1]))];
   t("(an edition issued and sent, to open as every role)", editions.length === 1, String(editions.length));
-  const ctx = { S, OTHER, code, forms: ["feedback", "declaration", "application", "protocol", "results"], folderPath, skinId, editions };
+  const ctx = { S, OTHER, code, pid, forms: ["feedback", "declaration", "application", "protocol", "results"], folderPath, skinId, editions };
   for (const r of ROUTES.filter((x) => x.names !== "dev" && x.file !== "api/pdf/route.ts")) t(`(${r.file}: at least one address)`, r.paths(ctx).length > 0);
 
   const addresses = ROUTES.filter((r) => r.names !== "dev").flatMap((r) => r.paths(ctx).map((p) => ({ ...r, path: p })));

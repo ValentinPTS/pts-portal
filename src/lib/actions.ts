@@ -1404,17 +1404,23 @@ export async function labUploadDocAction(formData: FormData): Promise<void> {
   // an undefined event kind. A Server Action can be POSTed directly, so the form
   // never having offered those values is not a defence.
   if (!Object.prototype.hasOwnProperty.call(LAB_UPLOAD_SLOTS, slot)) redirect("/lab");
+  // back to the participation's page it came from (5.5) — only ever one of its own pages
+  const backRaw = String(formData.get("back") ?? "");
+  const back = /^\/lab\/p\/[0-9A-Za-z-]{8,64}$/.test(backRaw) ? backRaw : "/lab";
+  // the participation, when the form names it: a laboratory in a scheme twice uploads for the
+  // one it means, not the first one found (5.5)
+  const pid = String(formData.get("participantId") ?? "").trim();
   const slotDef = LAB_UPLOAD_SLOTS[slot];
 
   // the lab must own a participation in this scheme (never trust the form), and the
   // scheme must have started — a draft is refused like a scheme it is not in (Реш. 147)
-  const mine = (await listVisibleParticipations(ls!.lab.id)).find((p) => p.schemeId === schemeId);
+  const mine = (await listVisibleParticipations(ls!.lab.id)).find((p) => p.schemeId === schemeId && (!pid || p.id === pid));
   if (!mine) redirect("/lab");
   // refused, annulled or withdrawn: out of the round — it sends nothing more (5.1 review)
-  if (!inRound(mine!)) redirect("/lab?e=locked");
+  if (!inRound(mine!)) redirect(`${back}?e=locked`);
   // …nor one off the final list, told it goes no further (5.2 review) — checked below with the scheme
   // locked once scored (evaluation integrity)
-  if (!canLabUploadNow(mine!.status)) redirect("/lab?e=locked");
+  if (!canLabUploadNow(mine!.status)) redirect(`${back}?e=locked`);
 
   const scheme = await getScheme(schemeId);
   if (!scheme) redirect("/lab");
@@ -1422,16 +1428,16 @@ export async function labUploadDocAction(formData: FormData): Promise<void> {
   // not held or whose records are closed takes nothing (3.2)
   const st = scheme!.status;
   const lockedNow = (x: string) => x === "not_held" || x === "closed" || (slot === "results" && (x === "processing" || x === "report"));
-  if (lockedNow(st)) redirect("/lab?e=locked");
-  if (!inFinalRound(scheme!, mine!)) redirect("/lab?e=locked");
+  if (lockedNow(st)) redirect(`${back}?e=locked`);
+  if (!inFinalRound(scheme!, mine!)) redirect(`${back}?e=locked`);
 
   const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) redirect("/lab?e=upload");
+  if (!(file instanceof File) || file.size === 0) redirect(`${back}?e=upload`);
   const f = file as File;
   const ext = SCHEME_DOC_EXT[f.type];
-  if (!ext || f.size > MAX_SCHEME_DOC_BYTES) redirect("/lab?e=upload");
+  if (!ext || f.size > MAX_SCHEME_DOC_BYTES) redirect(`${back}?e=upload`);
   const bytes = new Uint8Array(await f.arrayBuffer());
-  if (!magicMatches(bytes, f.type)) redirect("/lab?e=upload");
+  if (!magicMatches(bytes, f.type)) redirect(`${back}?e=upload`);
 
   const code = mine!.code;
   const name = String(f.name || `${slot}.${ext}`).slice(0, 160);
@@ -1447,7 +1453,7 @@ export async function labUploadDocAction(formData: FormData): Promise<void> {
       if (error) throw error;
       // the replaced file is NOT deleted — it is kept and recorded below (part 0.9)
     } catch {
-      redirect("/lab?e=upload");
+      redirect(`${back}?e=upload`);
     }
   } else {
     // no Supabase (dev) → keep the bytes inline so the flow still works locally
@@ -1471,7 +1477,7 @@ export async function labUploadDocAction(formData: FormData): Promise<void> {
       ...supersede(s, `labupload:${code}:${slot}`, s.labUploads?.[code]?.[slot], "replaced", `lab:${ls!.lab.id}`),
     };
   });
-  if (late) redirect("/lab?e=locked");
+  if (late) redirect(`${back}?e=locked`);
 
   // auto-stamp the case file → the matrix fills in and the status advances
   // No file name and no e-mail in the timeline: staff and auditors read it by code,
@@ -1494,8 +1500,9 @@ export async function labUploadDocAction(formData: FormData): Promise<void> {
   if (slot === "protocol") await notifyReceiptConfirmed(schemeId, scheme!.number, code);
   else await notifyResultsReturned(schemeId, scheme!.number, code);
   revalidatePath("/lab", "page");
+  if (back !== "/lab") revalidatePath(back); // a literal path: no type (Next 16)
   revalidatePath(`/schemes/${schemeId}`, "layout");
-  redirect("/lab");
+  redirect(back);
 }
 
 // A lab edits its OWN profile. Scoped to the signed-in lab's id (a lab can never
@@ -2383,7 +2390,7 @@ export async function addParticipantAction(formData: FormData) {
     deliveryAddress: String(formData.get("deliveryAddress") ?? "").trim(),
     // with characteristics, the participations follow from the counts (5.1); else as typed
     participations: sel?.ok ? participationSets(sel.selections) : Number.isFinite(partRaw) && partRaw > 0 ? partRaw : 1,
-    courier: String(formData.get("courier") ?? "").trim(),
+    courier: String(formData.get("courier") ?? "").trim().slice(0, 60), // free text, as offered (Реш. 128)
     sampleCode: String(formData.get("sampleCode") ?? "").trim().slice(0, 40),
     ...(sel?.ok ? { selections: sel.selections, characteristics: characteristicsOf(sel.selections) } : {}),
   }, await actorNow()).catch((e) => (e instanceof NoLabNumberError ? "full" as const : null));
@@ -2430,7 +2437,7 @@ export async function updateParticipantAction(formData: FormData) {
     country: String(formData.get("country") ?? "").trim(),
     deliveryAddress: String(formData.get("deliveryAddress") ?? "").trim(),
     participations: sel?.ok ? participationSets(sel.selections) : Number.isFinite(partRaw) && partRaw > 0 ? partRaw : 1,
-    courier: String(formData.get("courier") ?? "").trim(),
+    courier: String(formData.get("courier") ?? "").trim().slice(0, 60), // free text, as offered (Реш. 128)
     sampleCode: String(formData.get("sampleCode") ?? "").trim().slice(0, 40),
     ...(sel?.ok ? { characteristics: characteristicsOf(sel.selections), selections: sel.selections } : {}),
   }, await actorNow()).catch((e) => (/frozen/.test(String((e as Error)?.message ?? "")) ? "frozen" as const : null)); // the identity goes to the identity store, on record (2.3)
@@ -3816,20 +3823,34 @@ export async function stampChainStopAction(
 // Resolve the signed-in laboratory's OWN pending stop in this scheme. Returns the
 // stop index, never anything about other stops — the caller cannot use this to
 // look further down the chain.
-async function myChainStop(schemeId: string): Promise<{ scheme: Scheme; code: string; index: number } | null> {
+async function myChainStop(schemeId: string): Promise<{ scheme: Scheme; code: string; index: number; log: (action: string, meta: { targetCode: string; summary: string }) => Promise<void> } | null> {
+  // a laboratory's account, or a user of its legal entity (5.5 review: the participation's
+  // page shows the chain to both, so both may say the device arrived or went on) — each for
+  // its own participations, in the round only: one refused, annulled or withdrawn is no stop
+  // of the device (5.1)
   const ls = await getLabSession();
-  if (!ls) return null;
-  // started schemes only (Реш. 147)
-  // …and in the round: one refused, annulled or withdrawn is no stop of the device (5.1)
-  const mine = (await listVisibleParticipations(ls.lab.id)).filter((p) => p.schemeId === schemeId && inRound(p));
-  if (!mine.length) return null;
+  const ps = ls ? null : await getParticipantSession().catch(() => null);
+  if (!ls && !ps) return null;
   const scheme = await getScheme(schemeId);
-  if (!scheme?.chain?.stops?.length) return null;
-  const codes = new Set(mine.map((p) => p.code));
+  // started schemes only (Реш. 147)
+  if (!scheme?.chain?.stops?.length || !isStarted(scheme)) return null;
+  let codes: Set<string>;
+  if (ls) {
+    codes = new Set((await listVisibleParticipations(ls.lab.id)).filter((p) => p.schemeId === schemeId && inRound(p)).map((p) => p.code));
+  } else {
+    const own = new Set((await participationsOf(ps!)).filter((p) => p.schemeId === schemeId).map((p) => p.participantId));
+    codes = new Set((await listParticipants(schemeId)).filter((p) => own.has(p.id) && inRound(p)).map((p) => p.code));
+  }
+  if (!codes.size) return null;
   // the earliest stop of ours that has not yet handed the device on
   const index = scheme.chain.stops.findIndex((s) => s.kind === "lab" && s.code && codes.has(s.code) && !s.sentAt);
   if (index === -1) return null;
-  return { scheme, code: scheme.chain.stops[index].code!, index };
+  // on record as the account that pressed it — a laboratory's or the entity user's (1.9)
+  const log = async (action: string, meta: { targetCode: string; summary: string }) => {
+    if (ls) await logActivity(action, { schemeId, ...meta });
+    else await logAs({ kind: "lab", userId: ps!.user.id }, action, { schemeId, ...meta, after: { by: `entityuser:${ps!.user.id}` } });
+  };
+  return { scheme, code: scheme.chain.stops[index].code!, index, log };
 }
 
 /**
@@ -3866,7 +3887,7 @@ export async function labConfirmDeviceReceiptAction(schemeId: string): Promise<{
     note: `device received ${sofiaTime(at)} (calibration chain)`, source: "auto",
   });
   await notifyChainReceipt(schemeId, mine.scheme.number, mine.code);
-  await logActivity("chain.received", { schemeId, targetCode: mine.code, summary: `${mine.code} confirmed the device arrived` });
+  await mine.log("chain.received", { targetCode: mine.code, summary: `${mine.code} confirmed the device arrived` });
   revalidatePath("/lab", "page");
   revalidatePath(`/schemes/${schemeId}`, "layout");
   return { ok: true };
@@ -3911,7 +3932,7 @@ export async function labHandOverDeviceAction(schemeId: string): Promise<{ ok?: 
     await notifyDeviceMoved(await labAfter(schemeId, next.code, { code: preNext?.code, tell: tellNext }), schemeId, mine.scheme.number, next.code);
   }
   await notifyChainHandover(schemeId, mine.scheme.number, mine.code, !next);
-  await logActivity("chain.handed_over", { schemeId, targetCode: mine.code, summary: `${mine.code} handed the device on` });
+  await mine.log("chain.handed_over", { targetCode: mine.code, summary: `${mine.code} handed the device on` });
   revalidatePath("/lab", "page");
   revalidatePath(`/schemes/${schemeId}`, "layout");
   return { ok: true };

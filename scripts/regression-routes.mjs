@@ -13,7 +13,7 @@
 //                      design («names travel, codes don't»); never another participant
 //          "dev"     — the development personas themselves; not a page of the portal
 //
-// `paths(ctx)` gives the addresses to open: ctx = { S, OTHER, code, docs, forms,
+// `paths(ctx)` gives the addresses to open: ctx = { S, OTHER, code, pid, docs, forms,
 // folderPath, skinId, editions }.
 
 const DOCS = ["order", "plan", "stat-project", "invitation", "application", "registered", "registered-coded", "results-coded", "declaration", "protocol", "instruction", "results", "report", "certificate", "feedback"];
@@ -90,7 +90,9 @@ export const ROUTES = [
   // its two-step sign-in, where PTS requires it (4.4 review)
   { file: "lab/two-factor/page.tsx", names: "own", paths: () => ["/lab/two-factor"] },
   // its home: the laboratory switcher, its participations and notices (4.6)
-  { file: "lab/overview/page.tsx", names: "own", paths: () => ["/lab/overview"] },
+  { file: "lab/overview/page.tsx", names: "own", paths: () => ["/lab/overview", "/lab/overview?view=archive"] },
+  // one participation's own page (5.5): only one of the reader's own — any other id is not found
+  { file: "lab/p/[id]/page.tsx", names: "own", paths: (c) => [...(c.pid ? [`/lab/p/${c.pid}`] : []), "/lab/p/00000000-0000-4000-8000-000000000000"] },
   { file: "lab/login/page.tsx", names: "never", paths: () => ["/lab/login"] },
   { file: "lab/doc/[scheme]/[doc]/route.ts", names: "own", paths: (c) => ["invitation", "report", "certificate", "results"].flatMap((d) => [`/lab/doc/${c.S}/${d}`, `/lab/doc/${c.OTHER}/${d}`]) },
   { file: "lab/labdoc/[scheme]/[slot]/route.ts", names: "own", paths: (c) => [`/lab/labdoc/${c.S}/proforma`, `/lab/labdoc/${c.OTHER}/proforma`] },

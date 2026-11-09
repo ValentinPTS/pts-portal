@@ -78,6 +78,14 @@ export function deadlineMs(v: string | undefined): number | null {
   return wall - sofiaOffsetMin(first) * 60_000;
 }
 
+/** The zone at the instant a deadline with an hour passes — EET or EEST — or null: a day
+ *  alone (it lasts to the end of that day). The clock-change days are told right (5.5 review). */
+export function deadlineZone(v: string | undefined): "EET" | "EEST" | null {
+  if (!v || !deadlineTime(v)) return null;
+  const at = deadlineMs(v);
+  return at === null ? null : sofiaOffsetMin(at) === 180 ? "EEST" : "EET";
+}
+
 /** Has the deadline passed at this instant? A state, never a block (Zadanie §9). */
 export const isPast = (v: string | undefined, nowMs: number): boolean => { const d = deadlineMs(v); return d !== null && nowMs > d; };
 

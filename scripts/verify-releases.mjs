@@ -123,7 +123,10 @@ try {
   // ── the user's page: what reaches it, each at its level ──
   await go(`/dev/persona?role=participant&user=${uid}`);
   await go("/lab/overview");
-  const docs = page.locator(`[data-participation-id="${pidA}"] [data-docs]`);
+  // the home lists the participation; its documents are on its own page (5.5)
+  t("the user's home lists the participation, a link to its own page", await waitFor(async () => (await page.locator(`[data-participations] [data-participation-id="${pidA}"] a[href="/lab/p/${pidA}"]`).count()) === 1));
+  await go(`/lab/p/${pidA}`);
+  const docs = page.locator("[data-participation-docs]");
   await docs.waitFor();
   t("the user sees the invitation (every participant), the plan, the Instruction for its participation alone, the Protocol to it personally", (await docs.locator('[data-doc="invitation"][data-doc-level="all"]').count()) === 1 && (await docs.locator('[data-doc="plan"]').count()) === 1 && (await docs.locator('[data-doc="instruction"][data-doc-level="participation"]').count()) === 1 && (await docs.locator('[data-doc="protocol"][data-doc-level="user"]').count()) === 1);
   const getI = await page.request.get(`${BASE}/lab/doc/${S}/instruction?p=${pidA}`);

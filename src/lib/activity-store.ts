@@ -155,6 +155,10 @@ export interface ActivityFilter {
   actor?: string;
   /** e.g. "lab" — a laboratory's own entries (5.4: its downloads) */
   actorRole?: string;
+  /** only these subjects (5.5: the editions a participation holds) */
+  subjects?: readonly string[];
+  /** only these participations' codes (5.5) */
+  targetCodes?: readonly string[];
   limit?: number;
 }
 
@@ -166,7 +170,9 @@ export async function listActivity(filter: ActivityFilter = {}): Promise<Activit
       .filter((e) => (!filter.schemeId || e.schemeId === filter.schemeId)
         && (!filter.action || e.action === filter.action)
         && (!filter.actor || e.actorEmail === filter.actor)
-        && (!filter.actorRole || e.actorRole === filter.actorRole))
+        && (!filter.actorRole || e.actorRole === filter.actorRole)
+        && (!filter.subjects || (!!e.subject && filter.subjects.includes(e.subject)))
+        && (!filter.targetCodes || (!!e.targetCode && filter.targetCodes.includes(e.targetCode))))
       .slice(0, limit);
   }
   try {
@@ -175,6 +181,8 @@ export async function listActivity(filter: ActivityFilter = {}): Promise<Activit
     if (filter.action) q = q.eq("action", filter.action);
     if (filter.actor) q = q.eq("actor_email", filter.actor);
     if (filter.actorRole) q = q.eq("actor_role", filter.actorRole);
+    if (filter.subjects) q = q.in("subject", [...filter.subjects]);
+    if (filter.targetCodes) q = q.in("target_code", [...filter.targetCodes]);
     const { data, error } = await q;
     if (error) throw error;
     return (data ?? []).map((r) => fromRow(r as Row));

@@ -5,21 +5,20 @@ import { writtenInstructions } from "@/lib/docs/instruction-common";
 import { requireLab } from "@/lib/lab-auth";
 import { isStarted, listVisibleParticipations } from "@/lib/visibility";
 import { ONLINE_APPLICATIONS_OPEN, PDF_APPLICATION_URL } from "@/lib/online-applications";
-import { listCaseEvents } from "@/lib/case-events";
 import { listSchemes } from "@/lib/store";
 import { statusChip } from "@/lib/folders";
-import { computeLabPhases, fmtPhaseDate, canLabUploadNow, LAB_UPLOAD_SLOTS } from "@/lib/lab-phases";
+import { fmtPhaseDate, canLabUploadNow, LAB_UPLOAD_SLOTS, type LabUploadSlot } from "@/lib/lab-phases";
+import { participationViews } from "@/lib/participation-view";
+import StageBar from "@/components/StageBar";
+import { ActionItems } from "@/components/ParticipationLists";
 import { amendmentLine } from "@/lib/amendments-model";
 import { LAB_DOC_SLOTS } from "@/lib/doc-release";
 import { docsFor } from "@/lib/release-model";
-import { labState, positionOf, nextStopFor, estimatedWaitDays, describeWait, isIncomingFor } from "@/lib/chain";
-import { listParticipants, withIdentities } from "@/lib/participants";
+import { chainViewFor } from "@/lib/chain-view";
 import { actorNow } from "@/lib/identities";
 import DeviceChainCard from "@/components/DeviceChainCard";
-import type { Scheme } from "@/lib/types";
 import { DATE_LABELS, fmtSchemeDate, setDates, isPast } from "@/lib/scheme-dates";
-import { resultsDeadline, deadlineState, chainWindow, resultsSubmittedAt } from "@/lib/deadlines-model";
-import { holidaySet } from "@/lib/holidays";
+import { resultsDeadline, deadlineState, resultsSubmittedAt } from "@/lib/deadlines-model";
 import { getDoc } from "@/lib/documents";
 import { labUploadDocAction } from "@/lib/actions";
 import { signOutLabAction } from "@/lib/auth-actions";
@@ -34,57 +33,7 @@ import { schemeNowMs } from "@/lib/clock";
 
 export const dynamic = "force-dynamic";
 
-// ── The calibration chain, resolved for ONE laboratory ───────────────────────
-// §4.2 lives here. A laboratory may learn the name and address of exactly ONE
-// other participant — the stop it must ship to — and only once the device is in
-// its hands. So this resolves a single code, and only in the "holding" state.
-// Everything else it returns is position and timing, which name nobody.
-async function chainViewFor(scheme: Scheme, code: string, lang: "bg" | "en") {
-  const chain = scheme.chain;
-  if (scheme.type !== "C" || !chain?.stops?.length) return null;
-  const state = labState(chain, code);
-  if (state === "not-in-chain") return null;
-
-  let next: { kind: "lab" | "ref" | "pts"; name?: string; address?: string; contact?: string; phone?: string } | null = null;
-  if (state === "holding") {
-    const idx = chain.stops.findIndex((s) => s.kind === "lab" && s.code === code && !!s.receivedAt && !s.sentAt);
-    const ns = nextStopFor(chain, idx);
-    if (!ns) {
-      next = { kind: "pts" }; // last stop — it goes home
-    } else if (ns.kind === "ref") {
-      next = {
-        kind: "ref",
-        name: lang === "bg" ? scheme.calibration?.referenceLabBg : scheme.calibration?.referenceLabEn,
-        address: lang === "bg" ? scheme.calibration?.referenceLabLocBg : scheme.calibration?.referenceLabLocEn,
-      };
-    } else {
-      // ONE lookup, for ONE code — never the whole participant list into the view
-      // names travel, codes don't: the holder sees where the device goes next — an
-      // opening for dispatch by this laboratory, on record (2.3)
-      const one = (await listParticipants(scheme.id)).filter((x) => x.code === ns.code);
-      const np = one.length ? (await withIdentities(one, scheme.id, { actor: await actorNow(), purpose: "dispatch" }))[0] : undefined;
-      next = { kind: "lab", name: np?.labName, address: np?.deliveryAddress, contact: np?.contact, phone: np?.phone };
-    }
-  }
-  // its own window while it holds the instrument (3.4)
-  let handOnBy: { dueText: string; days: number; orderNo?: string; overdue: boolean } | undefined;
-  if (state === "holding") {
-    const stop = chain.stops.find((s) => s.kind === "lab" && s.code === code && !!s.receivedAt && !s.sentAt);
-    const w = stop ? chainWindow(scheme, stop, await holidaySet()) : null;
-    if (w) handOnBy = { dueText: fmtSchemeDate(w.due), days: w.days, orderNo: w.ext?.orderNo, overdue: isPast(w.due, schemeNowMs(scheme)) };
-  }
-  return {
-    handOnBy,
-    state,
-    position: positionOf(chain, code),
-    wait: describeWait(estimatedWaitDays(chain, code), lang),
-    started: !!chain.dispatchedAt,
-    closed: !!chain.returnedAt,
-    incoming: isIncomingFor(chain, code),
-    next,
-  };
-}
-
+// The calibration chain, resolved for ONE laboratory, lives in lib/chain-view.ts (5.5).
 
 // The lab-facing phase timeline logic lives in lib/lab-phases.ts (pure, tested);
 // this page only renders it.
@@ -121,12 +70,14 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
 
   const schemeName = (s: (typeof schemes)[number]) => s.name?.trim() || (lang === "bg" ? s.titleBg : s.titleEn) || s.number;
 
+  // each participation from the record: its state, stage, payment, deadline, actions (5.5)
+  const views = await participationViews(parts.map((p) => ({ participantId: p.id, schemeId: p.schemeId, labName: p.labName, country: p.country })), {});
+  const viewOf = new Map(views.map((v) => [v.participantId, v] as const));
+
   const items = (await Promise.all(parts
     .map(async (p) => {
       const scheme = byId.get(p.schemeId);
       if (!scheme) return null;
-      // the participation's own timeline — dates the phases below (auto + manual)
-      const events = await listCaseEvents(p.schemeId, p.code);
       // No score of any kind is computed or shown here: the portal's engine never
       // reaches a participant (Реш. 135, part 0.6). The lab reads its scores in the
       // report PTS issues; from part 7.5 also from the values imported from 2.0.
@@ -144,12 +95,12 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
           + (state === "overdue" ? (lang === "bg" ? " — срокът е изтекъл; свържете се с PTS" : " — the deadline has passed; contact PTS") : "")
         : "";
       return {
-        p, scheme, events,
+        p, scheme,
         // this participation's own proforma, if the provider has put one there
         invoice: scheme.labDocs?.[p.code]?.proforma,
         // the calibration chain, resolved for THIS laboratory only
-        chain: await chainViewFor(scheme, p.code, lang),
-        completed: scheme.status === "closed" || scheme.status === "not_held",
+        chain: await chainViewFor(scheme, p.code, lang, await actorNow()),
+        view: viewOf.get(p.id),
         reported: scheme.status === "report" || scheme.status === "closed",
         // the report reaches the lab only as the file PTS issued (Реш. 135)
         officialReport: !!scheme.uploads?.report,
@@ -168,89 +119,51 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
     </div>
   );
 
-  // The phase timeline: done phases with real dates from the case file, the
-  // current phase highlighted (with "your move" when the lab must act), per-phase
-  // document downloads. Collapsed for finished (closed) rounds via <details>.
-  const Timeline = ({ it }: { it: Item }) => {
-    const { phases, curIdx } = computeLabPhases(it.p.status, it.events, { reported: it.reported, hasCert: it.hasCert });
+  // The laboratory's own upload slots — the signed receipt protocol once the object is on
+  // its way, the results sheet once it is received — by the participation's state (5.5);
+  // locked (read-only) once scored, or once the scheme no longer takes them (3.2).
+  const uploads = (it: Item) => {
+    const st = it.view?.state;
+    if (!st) return null;
+    const slots: LabUploadSlot[] = [
+      ...(["dispatched", "received", "draft", "submitted", "scored", "nr"].includes(st) ? ["protocol" as const] : []),
+      ...(["received", "draft", "submitted", "scored", "nr"].includes(st) ? ["results" as const] : []),
+    ];
+    if (!slots.length) return null;
     return (
-      <ol style={{ listStyle: "none", margin: "10px 0 2px", padding: 0 }}>
-        {phases.map(({ ph, e, done }, i) => {
-          const cur = i === curIdx;
-          const dotStyle: React.CSSProperties = {
-            position: "absolute", left: 0, top: 1, width: 18, height: 18, borderRadius: "50%",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 10, fontWeight: 700,
-            background: done ? "#e3eeda" : cur ? "#faf2e0" : "#fff",
-            color: done ? "#456b2c" : cur ? "#9a6b22" : "var(--muted)",
-            border: `2px solid ${done ? "var(--green-dark)" : cur ? "#d9a53f" : "var(--line)"}`,
-            boxShadow: cur ? "0 0 0 3px #faf2e0" : "none",
-          };
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {slots.map((slot) => {
+          const up = it.scheme.labUploads?.[it.p.code]?.[slot];
+          const sst = it.scheme.status;
+          const open = !it.view!.finished && canLabUploadNow(it.p.status) && sst !== "not_held" && sst !== "closed"
+            && !(slot === "results" && (sst === "processing" || sst === "report"));
+          if (!open && !up) return null;
           return (
-            <li key={i} style={{ position: "relative", padding: "0 0 14px 30px" }}>
-              {i < phases.length - 1 && (
-                <span style={{ position: "absolute", left: 8, top: 20, bottom: -2, width: 2, background: done ? "var(--green-line, #cbd9be)" : "var(--line)" }} />
+            <div key={slot} data-upload-slot={slot} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              {up && (
+                <a href={`/lab/upload/${it.scheme.id}/${slot}?p=${encodeURIComponent(it.p.id)}`} target="_blank" rel="noreferrer"
+                  className="btn btn-sm" style={{ fontSize: 11.5, padding: "3px 9px", borderColor: "var(--green-line, #cbd9be)", background: "#eef3ea", color: "#456b2c", fontWeight: 700 }}>
+                  📄 {up.name}
+                </a>
               )}
-              <span style={dotStyle}>{done ? "✓" : i + 1}</span>
-              <span style={{ fontSize: 13.5, fontWeight: done || cur ? 600 : 400, color: done || cur ? "var(--ink)" : "var(--muted)" }}>
-                {lang === "bg" ? ph.bg : ph.en}
-              </span>
-              {e && (
-                <span style={{ marginLeft: 8, fontSize: 12, color: "var(--muted)" }}>
-                  {fmtPhaseDate(e.at)}{e.ref ? ` · ${e.ref}` : ""}
-                </span>
+              {up && <span style={{ fontSize: 11, color: "var(--muted)" }}>{(lang === "bg" ? "качен " : "uploaded ") + fmtPhaseDate(up.uploadedAt.slice(0, 10))}</span>}
+              {open ? (
+                <form action={labUploadDocAction} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                  <input type="hidden" name="schemeId" value={it.scheme.id} />
+                  <input type="hidden" name="participantId" value={it.p.id} />
+                  <input type="hidden" name="slot" value={slot} />
+                  <input type="file" name="file" required accept="application/pdf,image/png,image/jpeg" style={{ fontSize: 11.5, maxWidth: 210 }} />
+                  <button type="submit" className="btn btn-sm" style={{ fontSize: 11.5, padding: "3px 9px", borderStyle: up ? "solid" : "dashed" }}>
+                    ↑ {up ? (lang === "bg" ? "Замени файла" : "Replace file") : (lang === "bg" ? LAB_UPLOAD_SLOTS[slot].bg : LAB_UPLOAD_SLOTS[slot].en)}
+                  </button>
+                </form>
+              ) : (
+                <span style={{ fontSize: 11, color: "var(--muted)" }}>{lang === "bg" ? "заключен" : "locked"}</span>
               )}
-              {cur && ph.labMove && (
-                <div style={{ margin: "6px 0 0", padding: "7px 10px", background: "#faf2e0", border: "1px solid #ecd9ae", borderRadius: 8, fontSize: 12.5, color: "#7a5416" }}>
-                  <b>{lang === "bg" ? "Вашият ход:" : "Your move:"}</b> {lang === "bg" ? ph.labMove.bg : ph.labMove.en}
-                  {it.deadline ? ` (${lang === "bg" ? "срок" : "deadline"}: ${it.deadline})` : ""}
-                </div>
-              )}
-              {ph.uploadSlot && (done || cur) && (() => {
-                // the lab's own upload slot for this phase: uploaded chip + replace,
-                // or the upload form; locked (read-only) once the round is scored.
-                const slot = ph.uploadSlot;
-                const up = it.scheme.labUploads?.[it.p.code]?.[slot];
-                // …and the scheme's state (3.2): no results from processing on, nothing
-                // in a scheme closed or not held — the same rule the upload action keeps
-                const st = it.scheme.status;
-                const open = canLabUploadNow(it.p.status) && st !== "not_held" && st !== "closed"
-                  && !(slot === "results" && (st === "processing" || st === "report"));
-                return (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
-                    {up && (
-                      <a href={`/lab/upload/${it.scheme.id}/${slot}`} target="_blank" rel="noreferrer"
-                        className="btn btn-sm" style={{ fontSize: 11.5, padding: "3px 9px", borderColor: "var(--green-line, #cbd9be)", background: "#eef3ea", color: "#456b2c", fontWeight: 700 }}>
-                        📄 {up.name}
-                      </a>
-                    )}
-                    {up && (
-                      <span style={{ fontSize: 11, color: "var(--muted)" }}>
-                        {(lang === "bg" ? "качен " : "uploaded ") + fmtPhaseDate(up.uploadedAt.slice(0, 10))}
-                      </span>
-                    )}
-                    {open ? (
-                      <form action={labUploadDocAction} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                        <input type="hidden" name="schemeId" value={it.scheme.id} />
-                        <input type="hidden" name="slot" value={slot} />
-                        <input type="file" name="file" required accept="application/pdf,image/png,image/jpeg"
-                          style={{ fontSize: 11.5, maxWidth: 210 }} />
-                        <button type="submit" className="btn btn-sm" style={{ fontSize: 11.5, padding: "3px 9px", borderStyle: up ? "solid" : "dashed" }}>
-                          ↑ {up
-                            ? (lang === "bg" ? "Замени файла" : "Replace file")
-                            : (lang === "bg" ? LAB_UPLOAD_SLOTS[slot].bg : LAB_UPLOAD_SLOTS[slot].en)}
-                        </button>
-                      </form>
-                    ) : up ? (
-                      <span style={{ fontSize: 11, color: "var(--muted)" }}>{lang === "bg" ? "заключен след оценяване" : "locked after scoring"}</span>
-                    ) : null}
-                  </div>
-                );
-              })()}
-            </li>
+            </div>
           );
         })}
-      </ol>
+      </div>
     );
   };
 
@@ -360,17 +273,14 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
           </div>
           <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, color: st.fg, background: st.bg }}>{st.label}</span>
         </div>
-        {it.completed ? (
-          <details>
-            <summary style={{ fontSize: 12.5, color: "var(--muted)", cursor: "pointer" }}>
-              {lang === "bg" ? "Хронология на фазите" : "Phase timeline"}
-            </summary>
-            <Timeline it={it} />
-          </details>
-        ) : (
-          <Timeline it={it} />
-        )}
-        {datesStrip(it)}
+        {/* the participation's state on the bar, payment beside it (5.5; К26, К18) */}
+        {it.view && <StageBar lang={lang} type={it.scheme.type} state={it.view.state} payment={it.view.finished ? undefined : it.view.payment} compact />}
+        {uploads(it)}
+        <Link href={`/lab/p/${encodeURIComponent(it.p.id)}`} data-open-participation={it.p.id} className="btn btn-sm" style={{ alignSelf: "flex-start", fontSize: 12.5 }}>
+          {lang === "bg" ? "Отвори участието →" : "Open the participation →"}
+        </Link>
+        {/* the scheme's dates, its instructions sentence and its reminder — while the participation goes on (5.5) */}
+        {!it.view?.finished && datesStrip(it)}
         {it.chain && (
           <DeviceChainCard
             schemeId={it.scheme.id}
@@ -388,13 +298,13 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
         )}
         {/* Реш. 150 (3.11): information, never a block — the decided sentence, by the
             scheme's kind, while the scheme runs and until the laboratory's results are in */}
-        {(it.scheme.status === "open" || it.scheme.status === "running") && it.p.status !== "submitted" && it.p.status !== "scored" && (
+        {!it.view?.finished && (it.scheme.status === "open" || it.scheme.status === "running") && it.p.status !== "submitted" && it.p.status !== "scored" && (
           <div data-written-instructions style={{ fontSize: 13, color: "var(--muted)" }}>
             {lang === "bg" ? writtenInstructions(it.scheme.type).bg : writtenInstructions(it.scheme.type).en}
           </div>
         )}
         {/* the scheme's one static reminder (А3, 3.6) — while it is running */}
-        {(it.scheme.status === "open" || it.scheme.status === "running") && (lang === "bg" ? it.scheme.staticReminder?.bg : it.scheme.staticReminder?.en) && (
+        {!it.view?.finished && (it.scheme.status === "open" || it.scheme.status === "running") && (lang === "bg" ? it.scheme.staticReminder?.bg : it.scheme.staticReminder?.en) && (
           <div data-static-reminder style={{ fontSize: 13, background: "#f7faf8", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 12px" }}>
             <b>{lang === "bg" ? "Напомняне: " : "Reminder: "}</b>{lang === "bg" ? it.scheme.staticReminder?.bg : it.scheme.staticReminder?.en}
           </div>
@@ -428,8 +338,10 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
   // after a divider and dimmed — mirrors the owner's lifecycle grouping.
   // a scheme that is not held is over for the laboratory too (О9, 3.2)
   const isOver = (st: string) => st === "closed" || st === "not_held";
-  const activeItems = items.filter((it) => !isOver(it.scheme.status));
-  const doneItems = items.filter((it) => isOver(it.scheme.status));
+  // finished by the participation's own state (5.5) — scored, N/R, or ended — else by the scheme's
+  const over = (it: Item) => it.view ? it.view.finished : isOver(it.scheme.status);
+  const activeItems = items.filter((it) => !over(it));
+  const doneItems = items.filter((it) => over(it));
   const participatingContent = items.length === 0 ? (
     <EmptyState title={tr("lab.noSchemesTitle")} body={tr("lab.noSchemesBody")} />
   ) : (
@@ -482,6 +394,8 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 22 }}>
           <h1 className="section-title" style={{ fontSize: 30 }}>{tr("lab.welcomePrefix")} {lab.name}</h1>
         </div>
+        {/* what asks for action now — a deadline, a delivery, a document (5.5; design §4) */}
+        {views.length > 0 && <div style={{ marginBottom: 20 }}><ActionItems lang={lang === "bg" ? "bg" : "en"} views={views.filter((v) => !v.finished)} /></div>}
 
         <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
           {/* left: tabbed scheme browser (participating · open · past) */}
