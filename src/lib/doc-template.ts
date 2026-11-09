@@ -1,4 +1,6 @@
 import type { Scheme, Lang, DocOptions } from "./types";
+import { refreshAccreditation } from "./accreditation-mark";
+import { refreshInstruction } from "./docs/instruction-common";
 import type { Skin } from "../skins/types";
 import { getDoc } from "./documents";
 import { BODY_START, BODY_END, stripBodyMarkers, withSkin } from "./doc-shell";
@@ -99,6 +101,11 @@ export function docPrintHtml(
   // (placed in mm) land in the exact same spot in the PDF as in the editor. The body
   // is user-authored HTML, so it's sanitized here too (defense in depth alongside the
   // save-time sanitize + the render route's no-script CSP).
-  const wrapped = `<div class="pts-docbody" style="position:relative">\n${sanitizeDocHtml(stripCoverMark(editedBody))}\n</div>`;
+  // the accreditation marks and sentence of the scheme's status NOW, not of when the
+  // body was saved (3.9 review)
+  // …and a saved Instruction its contacts from the team as it is now, with Реш. 150's
+  // sentence (3.11 review)
+  const refreshed = refreshAccreditation(stripCoverMark(editedBody), s, lang);
+  const wrapped = `<div class="pts-docbody" style="position:relative">\n${sanitizeDocHtml(key === "instruction" ? refreshInstruction(refreshed, s, lang) : refreshed)}\n</div>`;
   return stripBodyMarkers(full.slice(0, start) + "\n" + wrapped + "\n" + full.slice(b.end));
 }

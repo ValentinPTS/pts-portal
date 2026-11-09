@@ -1,9 +1,13 @@
 // Live checks for the auto lists (F 7.2.1-4/-5/-6):
 // bottom "Автоматични списъци" section, no lifecycle status, excluded from
 // progress, editor without Готов, manager customization honored + resettable.
+// Against a LOCAL dev server (in-memory store):
+//   BASE=http://localhost:3000 node scripts/verify-lists.mjs
+// Updated 2026-11-05: default port 3000, the manager persona, and the builder's
+// start chooser waited for (it renders after hydration — checking once missed it).
 import { chromium } from "playwright";
 
-const BASE = process.env.BASE ?? "http://localhost:3200";
+const BASE = process.env.BASE ?? "http://localhost:3000";
 const S = "26-01-T-1";
 let pass = 0, fail = 0;
 const t = (name, ok, extra = "") => {
@@ -35,6 +39,8 @@ async function waitAutoPills(n) {
   return (await page.getByText("Автоматичен ⟳").count()) === n;
 }
 
+await go(`${BASE}/dev/persona?role=manager`);
+
 // 1. Scheme page: lists live ONLY in the bottom section, marked automatic.
 await go(`${BASE}/schemes/${S}`);
 await page.getByText("Автоматични списъци").waitFor();
@@ -54,9 +60,11 @@ t("progress: total is 12 (lists excluded)", /\/\s*12|от\s*12|12\s*док/.test
 
 // 2. Editor for a list: no Готов button; for the plan: it's there.
 await go(`${BASE}/schemes/${S}/build/registered`);
-const starter = page.getByRole("button", { name: /Шаблон по подразбиране/ });
-if (await starter.isVisible().catch(() => false)) await starter.click();
-await page.locator('[contenteditable="true"]').first().waitFor();
+const editor = page.locator('[contenteditable="true"]').first();
+const starter = page.getByRole("button", { name: /Шаблон по подразбиране|Default template/ });
+await editor.or(starter).first().waitFor();
+if (await starter.isVisible()) await starter.click();
+await editor.waitFor();
 t("editor(list): no Готов button", (await page.getByRole("button", { name: /Маркирай като готов|Готов ✓/ }).count()) === 0);
 
 // 3. Customize the list (manager) → save → scheme page shows "Персонализиран".

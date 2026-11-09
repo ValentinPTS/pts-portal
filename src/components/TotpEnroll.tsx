@@ -6,7 +6,8 @@ import { useLang } from "@/components/LangProvider";
 
 type Enroll = { factorId?: string; qr?: string; secret?: string; error?: string };
 
-export default function TotpEnroll() {
+// `after`: where to go once it is set — a participant's user back to its review (4.4)
+export default function TotpEnroll({ after }: { after?: "/lab/confirm" } = {}) {
   const { t } = useLang();
   const [enroll, setEnroll] = useState<Enroll | null>(null);
   const [busy, setBusy] = useState(false);
@@ -51,6 +52,7 @@ export default function TotpEnroll() {
       )}
       <form action={verifyFn} className="mt-3">
         <input type="hidden" name="factorId" value={enroll.factorId ?? ""} />
+        {after && <input type="hidden" name="after" value={after} />}
         <label className="block text-sm" style={{ color: "var(--muted)" }}>
           {t("totp.step2")}
           <input

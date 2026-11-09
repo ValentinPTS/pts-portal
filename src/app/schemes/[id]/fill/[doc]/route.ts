@@ -1,12 +1,15 @@
 import type { NextRequest } from "next/server";
+import { requireCap, mayNow, mayViewDoc, requireDocView } from "@/lib/access";
 import { getScheme, updateScheme } from "@/lib/store";
-import { getDoc } from "@/lib/documents";
+import { getDoc, isListDoc, isRestrictedDoc, savedDocBody } from "@/lib/documents";
 import { withSkin, stripBodyMarkers, esc } from "@/lib/doc-shell";
 import { withFormCtx } from "@/lib/form-fields";
 import { docPrintHtml, docDefaultBody } from "@/lib/doc-template";
 import { hydrateFormBody, retagFormBody } from "@/lib/form-hydrate";
 import { resolveSkinAsync } from "@/skins";
-import { requireStaff, requireWriter } from "@/lib/roles";
+import { requireStaff } from "@/lib/roles";
+import { logActivity } from "@/lib/activity";
+import { docImgSrc } from "@/lib/image-hosts";
 
 // The Fill view for a document: renders it with real, editable form controls
 // inside a <form>, with a Save bar. POST persists the field values to the scheme
@@ -18,9 +21,16 @@ const FIELD_ID = /^[A-Za-z0-9_]{1,60}$/;
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string; doc: string }> }) {
   await requireStaff(); // read/render — any internal role
   const { id, doc } = await ctx.params;
+  await requireCap("codes.view", id); // in THIS scheme, by the role model (2.4)
   const scheme = await getScheme(id);
   const def = getDoc(doc);
   if (!scheme || !def?.render) return new Response("Not found", { status: 404 });
+  // Same name guard as the print routes (§4.2): F 7.2.1-6 is refused outright, and
+  // a saved participant list (it may carry names) is used for a manager only.
+  const reveal = await mayNow("names.view", id);
+  if (isRestrictedDoc(doc) && !reveal) return new Response("Forbidden — only a manager may open this list (ISO/IEC 17043 §4.2).", { status: 403 });
+  if (!(await mayViewDoc(doc, id))) return new Response("Forbidden — the Order is for the staff it assigns roles to (Реш. 149).", { status: 403 }); // Реш. 149, 2.6
+  if (reveal && doc === "results-coded") await logActivity("names.viewed", { schemeId: id, subject: "doc:results-coded", summary: "Laboratory names shown with their codes — F 7.2.1-6 (fill view)" });
 
   const lang = req.nextUrl.searchParams.get("lang") === "en" ? "en" : "bg";
   const saved = req.nextUrl.searchParams.get("saved") === "1";
@@ -39,7 +49,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
   // re-hydrated into live inputs via the data-ff identity they carry
   // (lib/form-hydrate). Only when nothing was built does it fall back to the
   // auto template rendered directly in fill mode.
-  const savedBody = scheme.docs?.[doc]?.[lang] ?? "";
+  const savedBody = isListDoc(doc) && !reveal ? "" : savedDocBody(scheme, doc)?.[lang] ?? "";
   const composed = !!savedBody.trim();
   // Bodies saved before data-ff existed get their control identity re-attached
   // from the template (retagFormBody) so they hydrate into live inputs too.
@@ -162,18 +172,21 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
       // through the sanitizer in the document body (inline handler, injected
       // <script>) is blocked. Fonts/images/self-fetch match the print routes.
       "content-security-policy":
-        `default-src 'none'; script-src 'nonce-${nonce}'; img-src 'self' data: https:; ` +
-        `style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; ` +
+        `default-src 'none'; script-src 'nonce-${nonce}'; img-src ${docImgSrc()}; ` +
+        `style-src 'unsafe-inline' 'self'; font-src 'self'; ` +
         `connect-src 'self'; form-action 'self'; frame-ancestors 'self'`,
     },
   });
 }
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string; doc: string }> }) {
-  await requireWriter(); // saving filled values is a write — auditor blocked
   const { id, doc } = await ctx.params;
+  await requireCap("scheme.edit", id); // saving filled values: the scheme's editors (2.4)
+  if (isRestrictedDoc(doc)) await requireCap("names.view", id); // F 7.2.1-6 (part 0.2)
+  await requireDocView(doc, id); // the Order (Реш. 149, 2.6)
   const scheme = await getScheme(id);
-  if (!scheme) return new Response("Not found", { status: 404 });
+  // only a real document's values — never an invented key in formData
+  if (!scheme || !getDoc(doc)) return new Response("Not found", { status: 404 });
 
   const form = await req.formData();
   const values: Record<string, string> = {};

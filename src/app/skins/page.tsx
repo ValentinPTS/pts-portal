@@ -7,6 +7,7 @@ import DeleteSkinButton from "@/components/DeleteSkinButton";
 import DefaultCoverCard from "@/components/DefaultCoverCard";
 import { getServerT } from "@/lib/i18n-server";
 import { requireStaff } from "@/lib/roles";
+import { getViewer, schemesFor } from "@/lib/access";
 
 const BUILTIN = new Set(SKINS.map((s) => s.meta.id));
 
@@ -19,7 +20,9 @@ export default async function SkinsPage({ searchParams }: { searchParams: Promis
   const type: "T" | "C" = t === "C" ? "C" : "T";
   const skins = await skinsForTypeAsync(type);
   const defId = await getDefaultSkinIdAsync(type);
-  const sample = (await listSchemeSummaries()).find((s) => s.type === type);
+  // a preview through a scheme this person may open — another's print would refuse (2.4)
+  const scope = schemesFor(await getViewer(), "codes.view");
+  const sample = (await listSchemeSummaries()).find((s) => s.type === type && (scope === "all" || scope.includes(s.id)));
   const defaultCover = await getDefaultCoverImage();
   const { tr } = await getServerT();
 

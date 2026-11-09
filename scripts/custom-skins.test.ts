@@ -54,7 +54,9 @@ ok("non-allow-listed font rejected", ef.fonts.heading === basePreset("classic").
 // 4. Logo URL allow-list: javascript: rejected, https + /brand kept.
 ok("javascript: logo rejected", sanitizeSkinData({ name: "x", base: "classic", logo: "javascript:alert(1)" }, "i").logo === "default");
 ok("data: logo rejected", sanitizeSkinData({ name: "x", base: "classic", logo: "data:text/html,<script>" }, "i").logo === "default");
-ok("https logo kept", sanitizeSkinData({ name: "x", base: "classic", logo: "https://cdn.example.com/logo.png" }, "i").logo === "https://cdn.example.com/logo.png");
+// part 1.12: a logo only from the portal's own places (every viewer fetches it)
+ok("https logo from PTS's own site kept", sanitizeSkinData({ name: "x", base: "classic", logo: "https://ptsbg.eu/logo.png" }, "i").logo === "https://ptsbg.eu/logo.png");
+ok("https logo from anywhere else refused", sanitizeSkinData({ name: "x", base: "classic", logo: "https://cdn.example.com/logo.png" }, "i").logo !== "https://cdn.example.com/logo.png");
 ok("/brand logo kept", sanitizeSkinData({ name: "x", base: "classic", logo: "/brand/alt.png" }, "i").logo === "/brand/alt.png");
 ok("logo with quote rejected", sanitizeSkinData({ name: "x", base: "classic", logo: 'https://x/"onerror=1' }, "i").logo === "default");
 

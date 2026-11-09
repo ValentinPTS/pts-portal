@@ -1,5 +1,6 @@
 import type { Scheme, SchemeStatus } from "./types";
 import { t as trans, type UiLang } from "./i18n";
+import { nextSchemeNumber, nextSeq, readSchemeNumber, type Activity, type NumberSpec } from "./scheme-number";
 
 // Helpers for the folder-explorer navigation: Type → Year → Scheme → Documents.
 export type FolderType = "T" | "C";
@@ -22,11 +23,11 @@ export const ACCENT: Record<FolderType, { accent: string; soft: string; line: st
 // lightweight SchemeSummary (store.ts) — so list/nav pages can avoid loading the
 // full document payload. Only display helpers that need titles take a full Scheme.
 type HasNumber = { number: string };
-type SchemeRef = { number: string; type: FolderType };
 
+// the year a number starts in — today's form and the archive's alike (3.1)
 export function schemeYear(s: HasNumber): string {
-  const m = s.number.match(/(\d{2})\/\d{2}-/);
-  return m ? `20${m[1]}` : "—";
+  const r = readSchemeNumber(s.number);
+  return r ? `20${r.yy}` : "—";
 }
 export function schemeName(s: Scheme): string {
   return (s.name && s.name.trim()) || s.titleEn || s.titleBg || s.number;
@@ -34,12 +35,12 @@ export function schemeName(s: Scheme): string {
 
 // distinct years (desc) present for a type
 // Lifecycle buckets for grouping scheme lists (owner explorer + lab portal):
-// coming = being prepared (draft, incl. announced), current = actively worked
+// coming = being prepared (draft), current = actively worked
 // (enrolment open → reporting), finished = closed/reported.
 export type Lifecycle = "current" | "coming" | "finished";
 export const LIFECYCLE_ORDER: Lifecycle[] = ["current", "coming", "finished"];
 export function lifecycleOf(st: SchemeStatus): Lifecycle {
-  return st === "draft" ? "coming" : st === "closed" ? "finished" : "current";
+  return st === "draft" ? "coming" : st === "closed" || st === "not_held" ? "finished" : "current";
 }
 export function lifecycleMeta(lc: Lifecycle, lang: UiLang = "en"): { label: string; color: string } {
   const color = lc === "current" ? "#57823c" : lc === "coming" ? "#9a6b22" : "#666666";
@@ -50,8 +51,10 @@ const STATUS: Record<SchemeStatus, { label: string; tone: keyof typeof TONE }> =
   draft: { label: "Draft", tone: "gray" },
   open: { label: "Open", tone: "amber" },
   running: { label: "In progress", tone: "amber" },
-  report: { label: "Reporting", tone: "blue" },
-  closed: { label: "Reported", tone: "green" },
+  processing: { label: "Processing", tone: "blue" },
+  report: { label: "Report issued", tone: "blue" },
+  closed: { label: "Closed", tone: "green" },
+  not_held: { label: "Not held", tone: "gray" },
 };
 export const TONE = {
   green: { fg: "#456b2c", bg: "#e3eeda" },
@@ -64,14 +67,23 @@ export function statusChip(st: SchemeStatus, lang: UiLang = "en"): { label: stri
   return { label: trans(lang, `status.${st}`), ...TONE[s.tone] };
 }
 
-// next official number/id for a new project of this type + year (e.g. PTS 26/04-T-1)
-export function nextProject<T extends SchemeRef>(schemes: T[], type: FolderType, year: string): { id: string; number: string } {
-  const yy = year.slice(2);
-  let maxMid = 0;
-  for (const s of schemes.filter((x) => x.type === type && schemeYear(x) === year)) {
-    const m = s.number.match(/\/(\d+)-/);
-    if (m) maxMid = Math.max(maxMid, parseInt(m[1], 10));
-  }
-  const mid = String(maxMid + 1).padStart(2, "0");
-  return { id: `${yy}-${mid}-${type}-1`, number: `PTS ${yy}/${mid}-${type}-1` };
+// next official number/id for a new project of this kind, activity and NA in this
+// month: PTS|ILC YY/MM[-NA]-X-N, N counting within the month and the activity, Т/С
+// and T/C alike (plan parts 0.14, 3.1; N15). Pass every scheme, archived ones
+// included — their numbers are never handed out again (0.9).
+export function nextProject(schemes: HasNumber[], spec: NumberSpec, year: string, month: number): { id: string; number: string } {
+  return nextSchemeNumber(schemes.map((s) => s.number), spec, year, month);
+}
+
+/** What the new-scheme dialog needs to compose a number as PTS picks the kind, the
+ *  activity and NA: this month, the series, and the next sequence per activity the
+ *  folder offers (testing: T and S; calibration: C). */
+export interface DialogNumbering { yy: string; mm: string; simulation: boolean; next: Partial<Record<Activity, number>> }
+export function dialogNumbering(schemes: HasNumber[], type: FolderType, year: string, month: number, simulation: boolean): DialogNumbering {
+  const numbers = schemes.map((s) => s.number);
+  const acts: Activity[] = type === "C" ? ["C"] : ["T", "S"];
+  return {
+    yy: year.slice(-2), mm: String(month).padStart(2, "0"), simulation,
+    next: Object.fromEntries(acts.map((a) => [a, nextSeq(numbers, a, year, month, simulation)])),
+  };
 }

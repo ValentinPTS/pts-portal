@@ -1,6 +1,6 @@
 import type { Scheme, Lang } from "../types";
 import { esc, pick, wrapDoc, docHeader, footer } from "../doc-shell";
-import { fRating, fCheck, fRadio, fText, fLines } from "../form-fields";
+import { fRating, fCheck, fText, fLines } from "../form-fields";
 
 const FORM = "F 8.6-2";
 
@@ -14,8 +14,9 @@ export const EXTRA_CSS = `
   .fbintro{background:var(--green-soft);border-radius:6px;padding:9px 12px;margin:6px 0 12px;font-family:var(--sans);font-size:10pt;}
   .fbq{margin:16px 0;page-break-inside:avoid;}
   .fbq .qn{font-family:var(--sans);font-weight:700;font-size:10.5pt;}
-  .fbq .help{font-style:italic;color:var(--muted);font-size:9.5pt;margin:3px 0;}
   .fbq .scalewrap{display:flex;justify-content:center;margin:10px 0 4px;}
+  /* a note under a question — none since П19–П22 went, kept for bodies saved before */
+  .fbq .help{font-style:italic;color:var(--muted);font-size:9.5pt;margin:3px 0;}
   .opt-row{margin:5px 0;}
 `;
 
@@ -31,17 +32,16 @@ export function renderFeedback(s: Scheme, lang: Lang): string {
     `<div class="opt-row">${fCheck(`${id}_yes`, L("Yes", "Да"))}</div>` +
     `<div class="opt-row">${fCheck(`${id}_no`, L("No", "Не"))}</div>` +
     `<div class="opt-row">${fCheck(`${id}_other`, `${L("Other", "Друго")}:`)} ${fText(`${id}_other_text`, 240)}</div>`;
-  const yesNoRb = (id: string) =>
-    `<div class="opt-row">${fRadio(id, [["yes", L("Yes", "Да")], ["no", L("No", "Не")], ["other", L("Other", "Друго")]], true)}</div>` +
-    `<div class="opt-row">${L("Other", "Друго")}: ${fText(`${id}_other_text`, 240)}</div>`;
 
-  const q = (n: number, en: string, bg: string, control: string, help?: [string, string]) => `
+  const q = (n: number, en: string, bg: string, control: string) => `
     <div class="fbq">
       <div class="qn">${n}. ${L(en, bg)}</div>
-      ${help ? `<div class="help">${L(help[0], help[1])}</div>` : ""}
       ${control}
     </div>`;
 
+  // П19–П22 (the two «did you receive it by e-mail» questions and their notes) are
+  // gone: PTS dropped them on 31.10.2026, and the sheet is anonymous (Реш. 92). The
+  // later questions keep their field ids (q6, q7) so saved answers still fit.
   const survey = `
     ${q(1,
       `How do you assess the level of communication during the conduct of Proficiency Testing № ${s.number}?`,
@@ -53,22 +53,10 @@ export function renderFeedback(s: Scheme, lang: Lang): string {
       "Бихте ли използвали отново услугите на РТ провайдър PTS Bulgaria при „ПТС България“ ООД, особено след получаване на акредитация?",
       yesNoCb("q3"))}
     ${q(4,
-      "Did you receive your auto-generated certificate of participation by email?",
-      "Получихте ли по имейл Вашия автоматично генериран сертификат за участие?",
-      yesNoRb("q4"),
-      ["Write your email and laboratory name in case you have not received your certificate of participation.",
-       "Напишете имейл и име на лабораторията, в случай че не сте получили своя сертификат за участие."])}
-    ${q(5,
-      `Did you receive the Final Report on Proficiency Testing № ${s.number} by email?`,
-      `Получихте ли по имейл окончателния доклад от изпитване за пригодност № ${s.number}?`,
-      yesNoRb("q5"),
-      ["Write your email and laboratory name in case you have not received the Final Report.",
-       "Напишете имейл и име на лабораторията, в случай че не сте получили окончателния доклад."])}
-    ${q(6,
       `Suggest products and parameters that you would like to be the subject of Proficiency Testing in ${nextYear}.`,
       `Предложете продукти и характеристики, които да са обекти на изпитване за пригодност през ${nextYear} г.`,
       fLines("q6", 3))}
-    ${q(7,
+    ${q(5,
       "Write your comments, notes, remarks, recommendations and suggestions for improving the level of service provided:",
       "Напишете своите коментари, бележки, забележки, препоръки и предложения за подобряване нивото на предоставяната услуга:",
       fLines("q7", 4))}`;

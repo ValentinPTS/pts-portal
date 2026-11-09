@@ -12,18 +12,19 @@ dedicated PTS Supabase account** (not the default one):
 
 3. **Copy the credentials** — project → **Settings → API**:
    - **Project URL** (e.g. `https://xxxx.supabase.co`)
-   - the **publishable / anon** key
+   - the **secret** key (`sb_secret_…`, Project Settings → API Keys) — server-side only, never in the browser
 
 4. **Add them to the app** — create a file `portal/.env.local` (do NOT commit it):
    ```
    NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
-   SUPABASE_KEY=<your publishable/anon key>
+   SUPABASE_KEY=<your secret key>
    ```
 
 5. **Restart** `npm run dev`. The app now reads/writes your database; the example scheme
    seeds itself automatically on first load. Schemes you create or edit now survive restarts.
 
-> **Security note (Phase 1):** the migration's RLS policies are intentionally permissive because
-> the table holds only non-confidential **scheme definitions** and the app is server-side + owner-only.
-> Before any **participant** data is stored, we replace these with authenticated, per-owner policies
-> and switch to a secret server key (Phase 2). See [SECURITY.md](SECURITY.md).
+> **Security note:** every table has row-level security ON with no policies, and since
+> migration 0018 the browser-key roles (anon, authenticated) hold no rights at all — so the
+> publishable key reads nothing. The app reads and writes only on the server, with the secret
+> key. Apply migrations in order; the build on Vercel refuses to deploy while one is missing
+> (`scripts/check-migrations.mjs`). See [SECURITY.md](SECURITY.md).

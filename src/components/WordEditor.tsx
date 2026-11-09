@@ -23,8 +23,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { saveDocHtmlAction, translateDocHtmlAction, translateAction, addLibraryItemAction, saveDocTemplateAction, deleteDocTemplateAction, uploadCoverImageAction, setDocReadyAction } from "@/lib/actions";
+
+// the documents that name laboratories (lib/documents: LIST_DOCS with names + NAME_CODE_DOCS)
+const NAMES_DOCS = new Set(["registered", "results-coded", "certificate"]);
 import { useLang } from "@/components/LangProvider";
-import { FONTS_HREF, scopeCss } from "@/lib/doc-css";
+import { scopeCss } from "@/lib/doc-css";
+import { BRAND_FONTS, fontHref } from "@/lib/doc-fonts";
 import { sanitizeDocHtml } from "@/lib/sanitize-html";
 import { formulaToMathML, PT_FORMULAS } from "@/lib/formula";
 import { categoryLabel, groupByCategory } from "@/lib/element-categories";
@@ -57,8 +61,9 @@ type Unit = "mm" | "cm" | "px";
 const TEXT_COLORS = ["#456b2c", "#57823c", "#6e925a", "#8fa97e", "#9e2b2b", "#cf4911", "#9a6b22", "#2f6f8f", "#1a1a1a", "#3e3e3e", "#666666", "#ffffff"];
 const TEXT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28];
 // Font choices for the toolbar picker. The two brand webfonts are loaded in the
-// editor AND the print/PDF shell (FONTS_HREF); the rest are system fonts present
-// in every browser incl. the Playwright Chromium that renders the PDFs.
+// editor AND the print/PDF shell (BRAND_FONTS, served by the portal itself); the
+// rest are system fonts present in every browser incl. the Playwright Chromium
+// that renders the PDFs.
 const FONT_FAMILIES: { label: string; css: string }[] = [
   { label: "PT Serif", css: "'PT Serif', Georgia, serif" },
   { label: "Sofia Sans Condensed", css: "'Sofia Sans Condensed', Arial, sans-serif" },
@@ -1042,7 +1047,33 @@ export default function WordEditor({
     refreshGuides();
     const r = () => { place(); };
     window.addEventListener("resize", r);
-    return () => window.removeEventListener("resize", r);
+    // Pagination measures block heights, so whatever changes them AFTER this first
+    // pass must run it again. Pictures arrive after the text — the title page's logo,
+    // embroidery and cover photo — and so do the web fonts; without this the seams
+    // stayed where the page was before they had height (the Plan's sheet 1 ~257px
+    // past A4, every later seam off) until the first keystroke. `load` does not
+    // bubble, so it is caught in the capture phase: that covers every picture ever in
+    // the body (inserted, pasted, after a language switch), and a broken one
+    // (`error`) changes the height too. Unchanged geometry costs nothing — the pass
+    // returns early on the same signature.
+    const body = ref.current;
+    const onPicture = (e: Event) => { if ((e.target as Element | null)?.tagName === "IMG") schedulePaginate(); };
+    body?.addEventListener("load", onPicture, true);
+    body?.addEventListener("error", onPicture, true);
+    let live = true;
+    document.fonts?.ready.then(() => { if (live) refreshGuides(); });
+    // …and once just after the fill effect's 150ms safety net, which can refill a body
+    // that dev double-mounting left empty AFTER the pass above (called from here, not
+    // there: that effect sits above refreshGuides, and the compiler's lint gives up on
+    // the whole component over the forward reference).
+    const settle = setTimeout(() => { if (live) refreshGuides(); }, 200);
+    return () => {
+      live = false;
+      clearTimeout(settle);
+      window.removeEventListener("resize", r);
+      body?.removeEventListener("load", onPicture, true);
+      body?.removeEventListener("error", onPicture, true);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started]);
 
@@ -1461,7 +1492,7 @@ export default function WordEditor({
   async function translate() {
     const { nb } = fold();
     setBusy("tr");
-    const r = await translateDocHtmlAction(nb);
+    const r = await translateDocHtmlAction(nb, docKey);
     setBusy("");
     if (r.error) return alert(L("Превод: ", "Translation: ") + r.error);
     const clean = sanitizeDocHtml(r.html ?? "");
@@ -1655,7 +1686,7 @@ export default function WordEditor({
     return (
       <>
         <style>{EDITOR_CSS + COVER_CSS + scopeCss(extraCss, ".we-page")}</style>
-        <link rel="stylesheet" href={FONTS_HREF} />
+        {BRAND_FONTS.map((f) => <link key={f} rel="stylesheet" href={fontHref(f)} />)}
         <div className="card p-5" style={{ borderLeft: "4px solid var(--green-dark)", maxWidth: 640 }}>
           <div className="font-bold" style={{ color: "var(--green-dark)", fontSize: 18 }}>{L(`Започни „${docNameEn}“ от…`, `Start “${docNameEn}” from…`)}</div>
           <div className="flex gap-2 mt-4 flex-wrap">
@@ -1715,7 +1746,7 @@ export default function WordEditor({
   return (
     <div>
       <style>{EDITOR_CSS + COVER_CSS + scopeCss(extraCss, ".we-page")}</style>
-      <link rel="stylesheet" href={FONTS_HREF} />
+      {BRAND_FONTS.map((f) => <link key={f} rel="stylesheet" href={fontHref(f)} />)}
       <input ref={fileRef} type="file" accept="image/*" hidden onChange={onImage} />
       <input ref={replaceRef} type="file" accept="image/*" hidden onChange={onReplaceImage} />
 
@@ -1751,7 +1782,8 @@ export default function WordEditor({
         {(["bg", "en"] as const).map((l) => (
           <button key={l} className="btn" onClick={() => switchLang(l)} style={lang === l ? { background: "var(--green-soft)", color: "var(--green-dark)", borderColor: "var(--green-line)" } : {}}>{l === "bg" ? "БГ" : "EN"}</button>
         ))}
-        <button className="btn" onClick={translate} disabled={busy === "tr"} title={L("Преведи целия документ BG→EN", "Translate the whole document BG→EN")}>{busy === "tr" ? L("Превеждане…", "Translating…") : "⇄ BG → EN"}</button>
+        {/* the lists and the certificate name laboratories: never sent out for translation (1.12; refused on the server too) */}
+        <button className="btn" onClick={translate} disabled={busy === "tr" || NAMES_DOCS.has(docKey)} title={NAMES_DOCS.has(docKey) ? L("Документ с имена на лаборатории не се превежда навън", "A document naming laboratories is not sent out for translation") : L("Преведи целия документ BG→EN", "Translate the whole document BG→EN")}>{busy === "tr" ? L("Превеждане…", "Translating…") : "⇄ BG → EN"}</button>
         <button className="btn" onClick={downloadPdf} disabled={busy === "pdf"}>{busy === "pdf" ? "…" : "⬇ PDF"}</button>
         <button className="btn" onClick={preview ? closePreview : openPreview} disabled={busy === "prev"}
           style={preview ? { background: "var(--green-soft)", color: "var(--green-dark)", borderColor: "var(--green-line)" } : {}}

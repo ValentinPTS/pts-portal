@@ -21,6 +21,8 @@
 
 // script/style/noscript/template carry executable or layout-hijacking content — drop
 // the whole element including its contents.
+
+import { imageUrlAllowed } from "./image-hosts";
 const DANGER_BLOCK = /<(script|style|noscript|template)\b[^>]*>[\s\S]*?<\/\1>/gi;
 // the same tags plus other never-in-a-document elements, as bare/unclosed tags.
 const DANGER_TAG = /<\/?(?:script|style|iframe|object|embed|link|meta|base|form|noscript|template|frame|frameset|applet)\b[^>]*>/gi;
@@ -76,8 +78,11 @@ function urlValueSafe(raw: string, isHref: boolean): boolean {
     .toLowerCase();
   if (v.startsWith("data:")) return !isHref && v.startsWith("data:image/");
   const m = /^([a-z][a-z0-9+.-]*):/.exec(v);
-  if (!m) return true; // relative / anchor / query — no scheme, safe
-  return SAFE_URL_SCHEME.has(m[1]);
+  if (!m) return !v.startsWith("//"); // relative / anchor / query — no scheme, safe (never protocol-relative)
+  if (!SAFE_URL_SCHEME.has(m[1])) return false;
+  // a picture is fetched by every viewer: only from the portal's own places (1.12)
+  if (!isHref && (m[1] === "http" || m[1] === "https")) return imageUrlAllowed(decodeEntities(raw).trim());
+  return true;
 }
 
 export function sanitizeDocHtml(html: string | null | undefined): string {

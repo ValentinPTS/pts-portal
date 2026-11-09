@@ -1,5 +1,7 @@
 import type { Scheme, Lang } from "../types";
-import { pick, wrapDoc, docHeader, sec, footer } from "../doc-shell";
+import { instructionContacts, writtenInstructionsNote } from "./instruction-common";
+import { esc, pick, wrapDoc, docHeader, sec, footer } from "../doc-shell";
+import { usesM1, m1Sections, m1Fields } from "../m1-render";
 
 const FORM = "F 7.3.5-1";
 
@@ -41,8 +43,8 @@ export function renderInstructionC(s: Scheme, lang: Lang): string {
       "Обектът на изпитване за пригодност се изпраща на първия участник в сроковете по Плана (F 7.2.1-1) и Поканата (F 7.2.1-2). Всеки участник се уведомява по имейл/куриер — осигурете лице за получаване на обекта."
     )}
     ${li(
-      "Each participant has a maximum of 3 working days to complete the measurements, then forwards the item to the next participant (address provided by e-mail), in suitable packaging via a reliable, fast courier.",
-      "Всеки участник разполага с максимум 3 работни дни за измерванията, след което препраща обекта към следващия участник (адресът се изпраща по имейл), в подходяща опаковка чрез надеждна и бърза куриерска фирма."
+      "Each participant has a maximum of 3 working days to complete the measurements, then forwards the item to the next participant (whose address is shown in the participant portal or sent by e-mail), in suitable packaging via a reliable, fast courier.",
+      "Всеки участник разполага с максимум 3 работни дни за измерванията, след което препраща обекта към следващия участник (адресът му се вижда в портала за участници или се изпраща по имейл), в подходяща опаковка чрез надеждна и бърза куриерска фирма."
     )}
     ${li(
       "On receipt, immediately check the packaging and the physical condition of the item, and complete the Protocol for PT Item Receipt (F 7.3.4-1). In case of loss, delay or damage, notify PTS Bulgaria by e-mail at once.",
@@ -151,25 +153,34 @@ export function renderInstructionC(s: Scheme, lang: Lang): string {
   </ul>`;
 
   // 11 — Contacts
-  const s11 = `<div class="contacts">
-    <div class="person"><div class="nm">eng. Valentin Belovski</div><div class="ro">${L(
-      "PT Scheme Manager",
-      "Ръководител на схемата"
-    )}</div></div>
-    <div class="person"><div class="nm">eng. Nadya Vladimirova</div><div class="ro">${L(
-      "Technical Expert in Calibration",
-      "Технически експерт по калибриране"
-    )}</div></div>
-    <div class="cline">📞 00359 897 50 39 80</div>
-    <div class="cline">✉ office@ptsbg.eu</div>
-  </div>`;
+  // the contacts from the scheme's team (3.11, N19)
+  const s11 = instructionContacts(s, lang);
 
   // Note: 6 is intentionally near-empty when scheme data is present but points
   // are referenced in §9; keep `points` available for callers/templates.
   void points;
 
+  // a scheme made after 3.10: M1's 11 points (lib/m1-render). Points 3–9 are the
+  // scheme's own (M1): the scheme's text when it has it, else a mark to fill — never
+  // the fixed example text above, written for another instrument
+  if (usesM1(s)) {
+    const own = (n: number) => { const c0 = s.clauses?.[`m1.instruction.${n}`]; return c0 ? `<p>${esc(pick(lang, c0.en, c0.bg))}</p>` : ""; };
+    const m1 = m1Sections("instruction", s, lang, {
+      legacy: { 3: own(3), 4: own(4), 5: own(5), 6: own(6), 7: own(7), 8: own(8), 9: own(9) },
+      // the manager and the technical expert, from the team (3.11 review)
+      fields: m1Fields(s, lang, { contact: instructionContacts(s, lang) }),
+    });
+    return wrapDoc(lang, `${s.number} — Instruction (Calibration)`, [
+      docHeader(s, lang, "INSTRUCTION FOR THE PARTICIPANTS", "ИНСТРУКЦИЯ ЗА УЧАСТНИЦИТЕ"),
+      writtenInstructionsNote(lang, true), // Реш. 150 (3.11)
+      m1,
+      footer(s, FORM),
+    ].join("\n"));
+  }
+
   const body = [
     docHeader(s, lang, "INSTRUCTION FOR THE PARTICIPANTS", "ИНСТРУКЦИЯ ЗА УЧАСТНИЦИТЕ"),
+    writtenInstructionsNote(lang, true), // Реш. 150 (3.11)
     sec(1, "Number and name of the PT scheme", "Номер и наименование на схемата", lang, s1),
     sec(
       2,

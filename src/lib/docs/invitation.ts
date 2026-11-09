@@ -1,5 +1,6 @@
 import type { Scheme, Lang, Clause } from "../types";
 import { esc, pick, wrapDoc, cover, sec, footer } from "../doc-shell";
+import { transitRisk } from "./transit";
 
 const FORM = "F 7.2.1-2";
 const cl = (lang: Lang, c?: Clause) => (c ? esc(pick(lang, c.en, c.bg)) : "");
@@ -54,10 +55,6 @@ export function renderInvitation(s: Scheme, lang: Lang): string {
           )}</td></tr>`
       )
       .join("")}</tbody></table>
-    <div class="example">${L(
-      "Example scheme data — illustrative figures only; the official prices are set per scheme in the Application (F 7.2.1-3). The structure (per characteristic: “First sample” / “Second and each additional sample”) is the fixed part.",
-      "Примерни данни за схемата — стойностите са илюстративни; официалните цени се определят за всяка схема в Заявката (Ф 7.2.1-3). Структурата (за всяка характеристика: „Първа проба“ / „Втора и всяка следваща проба“) е фиксираната част."
-    )}</div>
     <div class="note">${L(
       "Prices are net; 20% VAT is added in accordance with the applicable Bulgarian legislation.",
       "Цените са нето; към тях се начислява 20 % ДДС, съгласно действащото българско законодателство."
@@ -69,8 +66,8 @@ export function renderInvitation(s: Scheme, lang: Lang): string {
   )}</div>
     <ul>
       <li>${L(
-        "The number of participations (samples / laboratory codes) shall be defined in the submitted “Application for Participation” (F 7.2.1-3), completed either in PDF format or via the online system on our website.",
-        "Броят участия (проби / лабораторни кодове) се определя в подадената „Заявка за участие“ (Ф 7.2.1-3), попълнена във формат PDF или чрез онлайн системата на нашия сайт."
+        "The number of participations (samples / laboratory codes) shall be defined in the submitted “Application for Participation” (F 7.2.1-3) — in PDF format sent by e-mail, or through the participant portal where applying there is open for the scheme.",
+        "Броят участия (проби / лабораторни кодове) се определя в подадената „Заявка за участие“ (Ф 7.2.1-3) — във формат PDF, изпратена по имейл, или през портала за участници, когато заявяването там е отворено за схемата."
       )}</li>
       <li>${L(
         "If one participation is declared and all selected characteristics are assigned to that participation, this counts as one participation (one laboratory code / one sample set).",
@@ -97,8 +94,8 @@ export function renderInvitation(s: Scheme, lang: Lang): string {
         "След извършване на плащането се издава електронна фактура, която се изпраща на същия електронен адрес."
       )}</li>
       <li>${L(
-        "Only participants who have paid the participation fee will be included in the proficiency testing.",
-        "Само участници, за които е постъпило плащане по съответната заявка, ще бъдат включени в изпитването за пригодност."
+        "Payment is not a condition for dispatch: the item is sent according to the schedule. The final report and the certificate of participation are provided once payment for the application has been received.",
+        "Плащането не е условие за изпращане: обектът се изпраща по графика. Окончателният доклад и сертификатът за участие се предоставят след постъпване на плащането по съответната заявка."
       )}</li>
     </ul>`;
 
@@ -149,6 +146,7 @@ export function renderInvitation(s: Scheme, lang: Lang): string {
     `<div class="body">${invoicing}</div>`,
     `<div class="body">${notifications}</div>`,
     `<div class="body">${delivery}</div>`,
+    `<div class="body">${transitRisk(lang)}</div>`,
     `<div class="body">${ptItems}</div>`,
     sec(5, "Applying for participation", "Заявяване на участие", lang, `<p>${cl(lang, s.clauses.applying)}</p>`),
     sec(6, "Contacts", "Контакти", lang, `<p>${cl(lang, s.clauses.contacts)}</p>`),

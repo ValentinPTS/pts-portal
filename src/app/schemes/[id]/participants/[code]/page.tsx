@@ -1,14 +1,24 @@
 import Link from "next/link";
+import { mayNow, requireCap } from "@/lib/access";
 import { notFound } from "next/navigation";
 import { getScheme } from "@/lib/store";
-import { listParticipants } from "@/lib/participants";
+import { listParticipants, withoutIdentity } from "@/lib/participants";
+import { namesFor } from "@/lib/identities";
 import { listCaseEvents } from "@/lib/case-events";
-import { addCaseEventAction, deleteCaseEventAction } from "@/lib/actions";
-import { canRevealNames, getCurrentRole, requireStaff } from "@/lib/roles";
+import { LAB_RECORDER, redactCaseEventForStaff } from "@/lib/redact";
+import { addCaseEventAction, voidCaseEventAction } from "@/lib/actions";
+import { requireStaff } from "@/lib/roles";
+import { logActivity } from "@/lib/activity";
 import LabInvoicePanel from "@/components/LabInvoicePanel";
+import { invoiceProblem } from "@/lib/announcement-model";
 import { getServerT } from "@/lib/i18n-server";
 import { DOCUMENTS } from "@/lib/documents";
 import type { CaseEventKind } from "@/lib/types";
+import { schemeNowMs, sofiaToday } from "@/lib/clock";
+import { resultsDeadline, chainWindow, deadlineState, resultsSubmittedAt } from "@/lib/deadlines-model";
+import { holidaySet } from "@/lib/holidays";
+import { fmtSchemeDate } from "@/lib/scheme-dates";
+import ExtensionForm from "@/components/ExtensionForm";
 
 // Participant case file (Phase RT3) — the auditor's per-lab view, by CODE. Dated
 // timeline of milestones (auto + manual), the identity (name revealed to managers
@@ -33,10 +43,11 @@ export default async function CaseFilePage({
   params, searchParams,
 }: {
   params: Promise<{ id: string; code: string }>;
-  searchParams: Promise<{ reveal?: string; kind?: string; from?: string }>;
+  searchParams: Promise<{ reveal?: string; kind?: string; from?: string; void?: string }>;
 }) {
   await requireStaff(); // read gate: manager/staff/auditor only
   const { id, code: rawCode } = await params;
+  await requireCap("codes.view", id); // in THIS scheme, by the role model (2.4)
   const code = decodeURIComponent(rawCode);
   const sp = await searchParams;
   // arriving from the traceability matrix: pre-select the clicked step + return there
@@ -45,18 +56,31 @@ export default async function CaseFilePage({
 
   const s = await getScheme(id);
   if (!s) notFound();
-  const p = (await listParticipants(id)).find((x) => x.code === code);
-  if (!p) notFound();
+  const coded = (await listParticipants(id)).find((x) => x.code === code);
+  if (!coded) notFound();
 
   const { lang, tr } = await getServerT();
-  const role = await getCurrentRole();
-  const canReveal = canRevealNames(role); // manager only
+  const canReveal = await mayNow("names.view", id); // the scheme manager and the coding expert, here (Реш. 93, 2.4)
   const revealed = canReveal && sp.reveal === "1";
+  // who is behind this code only when a manager asks to see it — an opening, on record (2.3)
+  const p = revealed ? (await namesFor(id, [coded]))[0] : withoutIdentity(coded);
+  if (revealed) await logActivity("names.viewed", { schemeId: id, targetCode: code, subject: `participant:${code}`, summary: "Laboratory name shown for one code — its case file" });
 
-  const events = await listCaseEvents(id, code);
+  // A non-manager never sees a lab's e-mail or the name of a file it uploaded (N4).
+  // voided steps included: they stay in the file, struck through (part 0.9)
+  const events = (await listCaseEvents(id, code, { includeVoided: true })).map((e) => (canReveal ? e : redactCaseEventForStaff(e)));
   const reported = s.scoring?.results?.[code] ?? {};
   const reportedCount = Object.keys(reported).length;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = sofiaToday(schemeNowMs(s)); // the round's Bulgarian day (1.3)
+  // this participant's deadlines (3.4), on the round's clock
+  const nowMs = schemeNowMs(s);
+  const rd = resultsDeadline(s, code);
+  const resultsAt = resultsSubmittedAt(s, code, coded.status); // the first file, on the round's clock
+  const resultsState = deadlineState(rd.at, resultsAt, nowMs);
+  const stop = [...(s.chain?.stops ?? [])].reverse().find((x) => x.kind === "lab" && x.code === code && x.receivedAt);
+  const win = s.type === "C" && stop ? chainWindow(s, stop, await holidaySet()) : null;
+  const winState = win ? deadlineState(win.due, stop?.sentAt, nowMs) : "none";
+  const canExtend = (await mayNow("order.manage", id)) && (s.status === "open" || s.status === "running");
 
   const labelStyle = { fontSize: 12, color: "var(--muted)" } as const;
   const inputCls = "w-full rounded px-2 py-1 text-sm";
@@ -68,6 +92,9 @@ export default async function CaseFilePage({
         ← {tr("case.back")}
       </Link>
 
+      {(sp.void === "reason" || sp.void === "failed") && (
+        <div className="card p-3 mt-3 text-sm" style={{ background: "#fbeeee", border: "1px solid #e3c8c8", color: "#8f2f2f" }}>{tr(sp.void === "reason" ? "case.voidNeedsReason" : "case.voidFailed")}</div>
+      )}
       <div className="flex items-center gap-3 mt-2 flex-wrap">
         <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>{tr("case.title")}</h1>
         <span className="font-mono font-bold text-lg" style={{ color: "var(--green-dark)" }}>{code}</span>
@@ -97,6 +124,39 @@ export default async function CaseFilePage({
         {!canReveal && <p className="mt-2" style={labelStyle}>{tr("case.revealHint")}</p>}
       </div>
 
+      {/* deadlines (3.4): the results deadline and, in a calibration chain, the window —
+          with their extensions; overdue is a state, never a block (Zadanie §9) */}
+      <div className="card mt-4 p-4" data-deadlines>
+        <h2 className="font-bold" style={{ color: "var(--green-dark)" }}>{lang === "bg" ? "Срокове" : "Deadlines"}</h2>
+        <div className="grid mt-2" style={{ gridTemplateColumns: "minmax(140px, 220px) 1fr", gap: "6px 12px", fontSize: 14 }}>
+          <div style={labelStyle}>{lang === "bg" ? "За резултатите" : "For the results"}</div>
+          <div data-deadline="resultsDue" data-state={resultsState}>
+            {rd.at ? fmtSchemeDate(rd.at) : "—"}
+            {rd.ext && <span style={labelStyle}> · {lang === "bg" ? `удължен по Заповед № ${rd.ext.orderNo}` : `extended by Order No. ${rd.ext.orderNo}`}</span>}
+            {resultsState === "overdue" && <b style={{ color: "#8f2f2f" }}> · {lang === "bg" ? "просрочен" : "overdue"}</b>}
+            {resultsState === "late" && <span style={{ color: "#9a6b22" }}> · {lang === "bg" ? "подадени след срока" : "submitted after the deadline"}</span>}
+          </div>
+          {win && (
+            <>
+              <div style={labelStyle}>{lang === "bg" ? "Уредът — да се предаде до" : "The instrument — to hand on by"}</div>
+              <div data-deadline="chain" data-state={winState}>
+                {fmtSchemeDate(win.due)}
+                <span style={labelStyle}> · {win.ext ? (lang === "bg" ? `удължен по Заповед № ${win.ext.orderNo}` : `extended by Order No. ${win.ext.orderNo}`) : (lang === "bg" ? `${win.days} работни дни от получаването (${fmtSchemeDate(win.received)})` : `${win.days} working days from the receipt (${fmtSchemeDate(win.received)})`)}</span>
+                {winState === "overdue" && <b style={{ color: "#8f2f2f" }}> · {lang === "bg" ? "просрочен" : "overdue"}</b>}
+              </div>
+            </>
+          )}
+        </div>
+        {(s.extensions ?? []).filter((e) => e.code === code).length > 0 && (
+          <ul className="text-sm mt-3" data-extensions style={{ paddingLeft: 18 }}>
+            {(s.extensions ?? []).filter((e) => e.code === code).map((e) => (
+              <li key={e.id}>{fmtSchemeDate(e.day)} · {e.key === "chain" ? (lang === "bg" ? "прозорецът" : "the window") : (lang === "bg" ? "резултатите" : "the results")} → <b>{fmtSchemeDate(e.until)}</b> · {lang === "bg" ? "Заповед №" : "Order No."} {e.orderNo} {lang === "bg" ? "от" : "of"} {fmtSchemeDate(e.orderDate)} — {e.reason}</li>
+            ))}
+          </ul>
+        )}
+        {canExtend && <ExtensionForm schemeId={id} code={code} lang={lang === "bg" ? "bg" : "en"} calibration={s.type === "C"} />}
+      </div>
+
       {/* The proforma invoice is addressed to this laboratory by name, so only a
           manager may handle it (§4.2) — the same line the identity reveal draws. */}
       {canReveal && (
@@ -107,6 +167,9 @@ export default async function CaseFilePage({
           fileName={s.labDocs?.[code]?.proforma?.name}
           uploadedAt={s.labDocs?.[code]?.proforma?.uploadedAt}
           paidAt={s.paidAt?.[code]}
+          notHeld={s.status === "not_held"}
+          // a proforma only after the second announcement, to one on its final list (5.2; Реш. 65)
+          notYet={s.status === "not_held" ? undefined : invoiceProblem(s, coded!) ?? undefined}
         />
       )}
 
@@ -121,9 +184,9 @@ export default async function CaseFilePage({
               <tr><td className="p-3" style={{ color: "var(--muted)" }}>{tr("case.noEvents")}</td></tr>
             )}
             {events.map((e) => (
-              <tr key={e.id} style={{ borderTop: "1px solid var(--line)", verticalAlign: "top" }}>
-                <td className="p-2" style={{ width: 110, color: "var(--muted)", whiteSpace: "nowrap" }}>{fmtDate(e.at)}</td>
-                <td className="p-2">
+              <tr key={e.id} style={{ borderTop: "1px solid var(--line)", verticalAlign: "top", opacity: e.voidedAt ? 0.6 : 1 }}>
+                <td className="p-2" style={{ width: 110, color: "var(--muted)", whiteSpace: "nowrap", textDecoration: e.voidedAt ? "line-through" : undefined }}>{fmtDate(e.at)}</td>
+                <td className="p-2" style={{ textDecoration: e.voidedAt ? "line-through" : undefined }}>
                   <span style={{ fontWeight: 700, color: "var(--green-dark)" }}>{tr(`casekind.${e.kind}`)}</span>
                   <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: "#fff", background: e.source === "auto" ? "var(--green-light)" : "var(--info)", borderRadius: 999, padding: "1px 7px" }}>
                     {e.source === "auto" ? tr("case.auto") : tr("case.manual")}
@@ -135,15 +198,22 @@ export default async function CaseFilePage({
                   )}
                   {e.ref && <span style={{ marginLeft: 8 }}>· {e.ref}</span>}
                   {e.note && <div style={{ color: "var(--muted)", fontSize: 13 }}>{e.note}</div>}
-                  {e.recordedBy && <div style={{ color: "var(--muted)", fontSize: 11 }}>{tr("case.recordedBy")}: {e.recordedBy}</div>}
+                  {e.recordedBy && <div style={{ color: "var(--muted)", fontSize: 11 }}>{tr("case.recordedBy")}: {e.recordedBy === LAB_RECORDER ? tr("case.byLab") : e.recordedBy}</div>}
+                  {e.voidedAt && (
+                    <div style={{ color: "var(--red)", fontSize: 11, textDecoration: "none", display: "inline-block" }}>
+                      {tr("case.voided")} {fmtDate(e.voidedAt.slice(0, 10))}{e.voidedBy ? ` · ${e.voidedBy}` : ""} — {e.voidReason}
+                    </div>
+                  )}
                 </td>
-                <td className="p-2" style={{ width: 90, textAlign: "right" }}>
-                  {canReveal && e.source === "manual" && (
-                    <form action={deleteCaseEventAction}>
+                <td className="p-2" style={{ width: 210, textAlign: "right" }}>
+                  {/* a manual step recorded by mistake is voided with a reason — never deleted */}
+                  {canReveal && e.source === "manual" && !e.voidedAt && (
+                    <form action={voidCaseEventAction} className="flex gap-1 justify-end">
                       <input type="hidden" name="id" value={e.id} />
                       <input type="hidden" name="schemeId" value={id} />
                       <input type="hidden" name="code" value={code} />
-                      <button type="submit" className="btn btn-sm" style={{ fontSize: 11, padding: "3px 8px", borderColor: "var(--red)", color: "var(--red)" }}>{tr("case.remove")}</button>
+                      <input name="reason" required maxLength={300} placeholder={tr("case.voidReason")} className="rounded px-2 py-1" style={{ border: "1px solid var(--line)", fontSize: 11, width: 110 }} />
+                      <button type="submit" className="btn btn-sm" style={{ fontSize: 11, padding: "3px 8px", borderColor: "var(--red)", color: "var(--red)" }}>{tr("case.void")}</button>
                     </form>
                   )}
                 </td>

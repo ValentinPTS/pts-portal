@@ -1,11 +1,15 @@
 import Link from "next/link";
+import { mayNow, requireCap } from "@/lib/access";
 import { notFound } from "next/navigation";
 import { getScheme } from "@/lib/store";
 import { listParticipants } from "@/lib/participants";
+import { namesFor } from "@/lib/identities";
 import { listCaseEvents } from "@/lib/case-events";
+import { redactCaseEventForStaff } from "@/lib/redact";
 import { getDoc } from "@/lib/documents";
 import { getServerT } from "@/lib/i18n-server";
-import { canRevealNames, getCurrentRole, requireStaff } from "@/lib/roles";
+import { requireStaff } from "@/lib/roles";
+import { logActivity } from "@/lib/activity";
 import type { CaseEvent, CaseEventKind } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -28,11 +32,16 @@ const ddmm = (iso: string) => (iso?.length >= 10 ? `${iso.slice(8, 10)}.${iso.sl
 export default async function TraceabilityPage({ params }: { params: Promise<{ id: string }> }) {
   await requireStaff(); // read gate: manager/staff/auditor only
   const { id } = await params;
+  await requireCap("codes.view", id); // in THIS scheme, by the role model (2.4)
   const s = await getScheme(id);
   if (!s) notFound();
-  const [participants, events] = await Promise.all([listParticipants(id), listCaseEvents(id)]);
+  const [coded, rawEvents] = await Promise.all([listParticipants(id), listCaseEvents(id)]);
+  const participants = await namesFor(id, coded); // names only for a manager, on record (2.3)
   const { lang, tr } = await getServerT();
-  const reveal = canRevealNames(await getCurrentRole());
+  const reveal = await mayNow("names.view", id); // dispatch with identities: the scheme manager or the coding expert (D18)
+  if (reveal && participants.length) await logActivity("names.viewed", { schemeId: id, subject: "page:traceability", summary: "Laboratory names shown with their codes — traceability matrix" });
+  // A non-manager never sees a lab's e-mail or uploaded file name in a tooltip (N4).
+  const events = reveal ? rawEvents : rawEvents.map(redactCaseEventForStaff);
 
   // events arrive newest-first → the first match per (code, kind) is the latest
   const latest = new Map<string, CaseEvent>();
@@ -97,7 +106,8 @@ export default async function TraceabilityPage({ params }: { params: Promise<{ i
                     const e = cells[i];
                     // a file the lab itself uploaded for this milestone (📎 opens it)
                     const slot = m.kind === "receipt_confirmed" ? "protocol" : m.kind === "results_returned" ? "results" : null;
-                    const up = slot ? s.labUploads?.[p.code]?.[slot] : undefined;
+                    // the lab's own signed file names it — manager only, like the file itself
+                    const up = slot && reveal ? s.labUploads?.[p.code]?.[slot] : undefined;
                     if (e) {
                       const tip = [docName(e.docKey), e.ref, e.note, e.recordedBy, e.source === "auto" ? "auto" : ""]
                         .filter(Boolean).join(" · ");

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { AUTH_ENABLED, getSessionUser, isOwnerEmail, createServerSupabase } from "@/lib/auth";
 import { signOutAction } from "@/lib/auth-actions";
 import TotpEnroll from "@/components/TotpEnroll";
+import PasswordForm from "@/components/PasswordForm";
 import BackLink from "@/components/BackLink";
 import { getServerT } from "@/lib/i18n-server";
 
@@ -59,6 +60,12 @@ export default async function AccountPage() {
           <TotpEnroll />
         </div>
       )}
+
+      {/* part 1.5: one's own password, changed here */}
+      <div className="mt-6" data-change-password>
+        <h2 className="text-lg font-bold" style={{ color: "var(--green-dark)" }}>{tr("account.changePassword")}</h2>
+        <PasswordForm mode="change" />
+      </div>
 
       <form action={signOutAction} className="mt-6">
         <button type="submit" className="btn">{tr("common.signOut")}</button>

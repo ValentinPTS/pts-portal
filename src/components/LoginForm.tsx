@@ -69,6 +69,10 @@ export default function LoginForm({ next, denied, audience = "owner" }: { next: 
           </label>
           {signIn.error && <p className="text-sm mt-2" style={{ color: "var(--red)" }}>{signIn.error}</p>}
           <button type="submit" className="btn btn-primary mt-4 w-full justify-center">{t("login.signIn")}</button>
+          {/* part 1.5: a person who forgot it gets a link, on either door */}
+          <a href={`/auth/forgot?area=${isLab ? "lab" : "team"}`} className="block text-center text-sm mt-3" style={{ color: "var(--muted)", textDecoration: "underline" }}>
+            {lang === "bg" ? "Забравена парола?" : "Forgot your password?"}
+          </a>
         </form>
       )}
 

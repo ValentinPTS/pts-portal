@@ -199,10 +199,12 @@ function fieldHtml(s: Scheme, key: string, lang: Lang, participants: Participant
       const p = s.partner;
       return `<div class="partner">${p.logo ? `<img src="${esc(p.logo)}" alt="">` : ""}<div><b>${L(p.nameEn, p.nameBg)}</b><div class="muted">${L(p.locationEn, p.locationBg)}</div><ul>${(lang === "bg" ? p.servicesBg : p.servicesEn).map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div></div>`;
     }
+    // Codes only, for every role: whatever is inserted ends up in a document body,
+    // and a name next to a code there would travel with every copy (§4.2).
     case "participants":
       return participants.length
-        ? `<table class="ptable"><thead><tr><th>№</th><th>${L("Code", "Код")}</th><th>${L("Laboratory", "Лаборатория")}</th></tr></thead><tbody>${participants
-            .map((p, i) => `<tr><td>${i + 1}</td><td>${esc(p.code)}</td><td>${esc(p.labName)}</td></tr>`)
+        ? `<table class="ptable"><thead><tr><th>№</th><th>${L("Code", "Код")}</th></tr></thead><tbody>${participants
+            .map((p, i) => `<tr><td>${i + 1}</td><td>${esc(p.code)}</td></tr>`)
             .join("")}</tbody></table>`
         : `<p class="muted">${L("No participants yet.", "Все още няма участници.")}</p>`;
     case "scores": {

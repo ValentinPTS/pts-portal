@@ -15,8 +15,10 @@
  *
  * Everything absent from this list is internal and can never reach a laboratory,
  * whatever the owner clicks:
- *   • order, plan, stat-project — the provider's own planning papers (his words:
- *     "the stat project nobody sees it and the заповед also nobody sees it")
+ *   • order, stat-project — the provider's own planning papers (his words:
+ *     "the stat project nobody sees it and the заповед also nobody sees it"). The plan
+ *     was here too until D15 (5.4): the assignment makes it public for a started
+ *     scheme, prices included, and readable before applying.
  *   • registered, registered-coded, results-coded — the participant registers.
  *     §4.2: these hold the whole cohort, and one of them maps names to codes.
  *   • application — the заявка is a public form at /apply, not a handout.
@@ -26,6 +28,7 @@
  * for the one laboratory it was issued to. Different act, different gate.
  */
 export const SENDABLE_DOCS: string[] = [
+  "plan",         // План на схемата — public for a started scheme, readable before applying (D15, 5.4)
   "invitation",   // Покана за участие
   "declaration",  // Декларация за конфиденциалност (C — labs sign and return it)
   "protocol",     // Протокол за получаване
@@ -157,6 +160,35 @@ export function hasCohortNames(html: string): boolean {
   return found;
 }
 
+// ── Portal-computed scores in a saved body (Реш. 135, plan part 0.6) ─────────
+// The editor's «scores» field bakes the engine's z / ζ / Eₙ tables (with verdicts
+// and assigned values), their charts and the "not official" note into a body as
+// static HTML. None of it may reach a laboratory. The tables are recognised by a
+// score header cell — ζ for testing, Eₙ for calibration — which no form a lab fills
+// in carries; the charts by the engine's own class; the note by its class.
+const SCORE_HEADER = /<th[^>]*>\s*(?:ζ|E<sub>n<\/sub>|Eₙ)\s*<\/th>/i;
+const SCORE_CHART = /<svg class="chart"[\s\S]*?<\/svg>/gi;
+const UNOFFICIAL_NOTE = /<p class="unofficial"[^>]*>[\s\S]*?<\/p>/gi;
+
+/** Does this saved body carry portal-computed scores? Used to warn at release time. */
+export function hasPortalScores(html: string): boolean {
+  if (!html) return false;
+  if (/<svg class="chart"/i.test(html) || /<p class="unofficial"/i.test(html)) return true;
+  let found = false;
+  if (/<table/i.test(html)) mapTables(html, (t) => { if (SCORE_HEADER.test(t)) found = true; return t; });
+  return found;
+}
+
+/** Replace portal-computed score tables with a visible note; drop their charts. */
+export function stripPortalScores(html: string, lang: "bg" | "en"): string {
+  if (!html) return html;
+  const note = lang === "bg"
+    ? "[Оценките, изчислени от портала, не се предоставят на участниците. Официалните оценки са в окончателния доклад.]"
+    : "[Scores computed by the portal are not provided to participants. The official scores are in the final report.]";
+  const out = html.replace(SCORE_CHART, "").replace(UNOFFICIAL_NOTE, "");
+  return /<table/i.test(out) ? mapTables(out, (t) => (SCORE_HEADER.test(t) ? `<p class="muted">${note}</p>` : t)) : out;
+}
+
 /** Replace any participants table with a visible note. Safe to call on any body. */
 export function stripCohortNames(html: string, lang: "bg" | "en"): string {
   if (!html || !/<table/i.test(html)) return html;
@@ -172,6 +204,10 @@ export interface LabFetchContext {
   sent?: Record<string, string>; // scheme.sentToParticipants — docKey → ISO timestamp
   reported: boolean;             // the round reached report/closed
   hasCert: boolean;              // a certificate is issued for THIS participation
+  // PTS uploaded the report FILE. The portal's own rendered report carries scores
+  // the portal computed, which never reach a participant (Реш. 135, part 0.6) — so
+  // a lab gets the report only as the file PTS issued.
+  officialReport: boolean;
 }
 
 /**
@@ -183,7 +219,7 @@ export interface LabFetchContext {
  * certificate), never anything inferred from dates or phase state.
  */
 export function canLabFetchDoc(docKey: string, ctx: LabFetchContext): boolean {
-  if (docKey === "report") return ctx.reported;
+  if (docKey === "report") return ctx.reported && ctx.officialReport;
   if (docKey === "certificate") return ctx.hasCert;
   return isSendableDoc(docKey) && !!ctx.sent?.[docKey];
 }

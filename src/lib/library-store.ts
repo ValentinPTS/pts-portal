@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { getDb } from "./supabase";
+import { getDb, noMemoryFallback } from "./supabase";
 
 // The owner's saved snippet library (global). Supabase when configured, else
 // in-memory (same graceful-fallback pattern as the participant store).
@@ -17,6 +17,7 @@ const memStore = globalThis as unknown as { __ptsLibraryMem?: LibraryItem[] };
 const mem: LibraryItem[] = memStore.__ptsLibraryMem ?? (memStore.__ptsLibraryMem = []);
 let warned = false;
 function warn(e: unknown) {
+  noMemoryFallback("library", e); // on a deployment: an error, not memory (1.1)
   if (warned) return;
   warned = true;
   console.warn("[library] Supabase unavailable — in-memory fallback:", (e as Error)?.message ?? e);

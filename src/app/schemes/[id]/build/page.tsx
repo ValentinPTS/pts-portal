@@ -1,7 +1,8 @@
 import Link from "next/link";
+import { mayNow, requireCap, mayViewDoc } from "@/lib/access";
 import { notFound } from "next/navigation";
 import { getScheme } from "@/lib/store";
-import { DOCUMENTS } from "@/lib/documents";
+import { DOCUMENTS, isRestrictedDoc, ORDER_DOC } from "@/lib/documents";
 import { getServerT } from "@/lib/i18n-server";
 import { requireStaff } from "@/lib/roles";
 
@@ -12,9 +13,15 @@ export default async function BuildIndex({
 }) {
   await requireStaff(); // read gate: manager/staff/auditor only
   const { id } = await params;
+  await requireCap("codes.view", id); // in THIS scheme, by the role model (2.4)
   const s = await getScheme(id);
   if (!s) notFound();
   const { lang, tr } = await getServerT();
+  // F 7.2.1-6 (names ↔ codes) is a manager's — no card that only leads to a refusal
+  const canReveal = await mayNow("names.view", id);
+  // …and the Order to the staff it assigns roles to (Реш. 149, 2.6)
+  const seesOrder = await mayViewDoc(ORDER_DOC, id);
+  const docs = DOCUMENTS.filter((d) => (canReveal || !isRestrictedDoc(d.key)) && (seesOrder || d.key !== ORDER_DOC));
 
   return (
     <div>
@@ -29,7 +36,7 @@ export default async function BuildIndex({
       </p>
 
       <div className="mt-5 grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 16 }}>
-        {DOCUMENTS.map((d, i) => {
+        {docs.map((d, i) => {
           const started = !!s.composed?.[d.key]?.length;
           return (
             <Link
@@ -56,9 +63,11 @@ export default async function BuildIndex({
                 >
                   {i + 1}
                 </span>
-                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", background: "var(--canvas)", borderRadius: 6, padding: "3px 8px" }}>
-                  {d.formNumber}
-                </span>
+                {d.formNumber && (
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", background: "var(--canvas)", borderRadius: 6, padding: "3px 8px" }}>
+                    {d.formNumber}
+                  </span>
+                )}
               </div>
               <div className="font-bold" style={{ color: "var(--green-dark)", fontSize: 16, marginTop: 6 }}>
                 {lang === "bg" ? d.nameBg : d.nameEn}

@@ -19,16 +19,16 @@ ok("getLab by id", (await getLab(lab.id))?.name === "Acme Testing Ltd.");
 const other = await addLab({ email: "other@lab.bg", name: "Other Lab" });
 ok("listLabs has both", (await listLabs()).length >= 2);
 
-await addParticipant({ schemeId: ids[0], labName: "Acme Testing Ltd.", labId: lab.id });
-await addParticipant({ schemeId: ids[1] ?? ids[0], labName: "Acme Testing Ltd.", labId: lab.id });
-await addParticipant({ schemeId: ids[0], labName: "Other Lab", labId: other.id });
+await addParticipant({ schemeId: ids[0], labName: "Acme Testing Ltd.", labId: lab.id }, "test");
+await addParticipant({ schemeId: ids[1] ?? ids[0], labName: "Acme Testing Ltd.", labId: lab.id }, "test");
+await addParticipant({ schemeId: ids[0], labName: "Other Lab", labId: other.id }, "test");
 
-const mine = await listParticipationsForLab(lab.id);
+const mine = await listParticipationsForLab(lab.id, { actor: "test", purpose: "lab.own" });
 ok("lab sees its own participations (2)", mine.length === 2);
 ok("scoping — only this lab's rows", mine.every((p) => p.labId === lab.id));
 ok("each participation has a code", mine.every((p) => !!p.code && p.code.length >= 3));
-ok("other lab is isolated (1)", (await listParticipationsForLab(other.id)).length === 1);
-ok("unknown lab → none", (await listParticipationsForLab("nope")).length === 0);
+ok("other lab is isolated (1)", (await listParticipationsForLab(other.id, { actor: "test", purpose: "lab.own" })).length === 1);
+ok("unknown lab → none", (await listParticipationsForLab("nope", { actor: "test", purpose: "lab.own" })).length === 0);
 
 const schemes = await getSchemesByIds([ids[0], ids[0], "does-not-exist", ids[1] ?? ids[0]].filter(Boolean));
 ok("getSchemesByIds dedupes + drops unknown", schemes.length === new Set([ids[0], ids[1] ?? ids[0]]).size);

@@ -1,26 +1,36 @@
 import Link from "next/link";
+import { isProvisional } from "@/lib/coding-model";
+import { inFinalRound } from "@/lib/announcement-model";
+import { writtenInstructions } from "@/lib/docs/instruction-common";
 import { requireLab } from "@/lib/lab-auth";
-import { listParticipationsForLab } from "@/lib/participants";
+import { isStarted, listVisibleParticipations } from "@/lib/visibility";
+import { ONLINE_APPLICATIONS_OPEN, PDF_APPLICATION_URL } from "@/lib/online-applications";
 import { listCaseEvents } from "@/lib/case-events";
 import { listSchemes } from "@/lib/store";
-import { metricsForScheme, scoreMetric } from "@/lib/scoring";
 import { statusChip } from "@/lib/folders";
 import { computeLabPhases, fmtPhaseDate, canLabUploadNow, LAB_UPLOAD_SLOTS } from "@/lib/lab-phases";
-import { releasedDocs, LAB_DOC_SLOTS } from "@/lib/doc-release";
+import { amendmentLine } from "@/lib/amendments-model";
+import { LAB_DOC_SLOTS } from "@/lib/doc-release";
+import { docsFor } from "@/lib/release-model";
 import { labState, positionOf, nextStopFor, estimatedWaitDays, describeWait, isIncomingFor } from "@/lib/chain";
-import { listParticipants } from "@/lib/participants";
+import { listParticipants, withIdentities } from "@/lib/participants";
+import { actorNow } from "@/lib/identities";
 import DeviceChainCard from "@/components/DeviceChainCard";
 import type { Scheme } from "@/lib/types";
-import { DATE_LABELS, fmtSchemeDate, setDates } from "@/lib/scheme-dates";
+import { DATE_LABELS, fmtSchemeDate, setDates, isPast } from "@/lib/scheme-dates";
+import { resultsDeadline, deadlineState, chainWindow, resultsSubmittedAt } from "@/lib/deadlines-model";
+import { holidaySet } from "@/lib/holidays";
 import { getDoc } from "@/lib/documents";
 import { labUploadDocAction } from "@/lib/actions";
 import { signOutLabAction } from "@/lib/auth-actions";
-import { listForLab } from "@/lib/notifications";
+import { listForLab, withReadState, readerKey } from "@/lib/notifications";
 import { EmptyState } from "@/components/States";
 import LabSchemeTabs from "@/components/LabSchemeTabs";
 import LanguageToggle from "@/components/LanguageToggle";
 import NotificationBell from "@/components/NotificationBell";
 import { getServerT } from "@/lib/i18n-server";
+import { labCertificate } from "@/lib/cert-number";
+import { schemeNowMs } from "@/lib/clock";
 
 export const dynamic = "force-dynamic";
 
@@ -49,38 +59,38 @@ async function chainViewFor(scheme: Scheme, code: string, lang: "bg" | "en") {
       };
     } else {
       // ONE lookup, for ONE code — never the whole participant list into the view
-      const np = (await listParticipants(scheme.id)).find((x) => x.code === ns.code);
+      // names travel, codes don't: the holder sees where the device goes next — an
+      // opening for dispatch by this laboratory, on record (2.3)
+      const one = (await listParticipants(scheme.id)).filter((x) => x.code === ns.code);
+      const np = one.length ? (await withIdentities(one, scheme.id, { actor: await actorNow(), purpose: "dispatch" }))[0] : undefined;
       next = { kind: "lab", name: np?.labName, address: np?.deliveryAddress, contact: np?.contact, phone: np?.phone };
     }
   }
+  // its own window while it holds the instrument (3.4)
+  let handOnBy: { dueText: string; days: number; orderNo?: string; overdue: boolean } | undefined;
+  if (state === "holding") {
+    const stop = chain.stops.find((s) => s.kind === "lab" && s.code === code && !!s.receivedAt && !s.sentAt);
+    const w = stop ? chainWindow(scheme, stop, await holidaySet()) : null;
+    if (w) handOnBy = { dueText: fmtSchemeDate(w.due), days: w.days, orderNo: w.ext?.orderNo, overdue: isPast(w.due, schemeNowMs(scheme)) };
+  }
   return {
+    handOnBy,
     state,
     position: positionOf(chain, code),
     wait: describeWait(estimatedWaitDays(chain, code), lang),
     started: !!chain.dispatchedAt,
+    closed: !!chain.returnedAt,
     incoming: isIncomingFor(chain, code),
     next,
   };
 }
 
-type Verdict = "ok" | "warn" | "action";
-const VCHIP: Record<Verdict, { bg: string; fg: string }> = {
-  ok: { bg: "#e3eeda", fg: "#456b2c" },
-  warn: { bg: "#faf2e0", fg: "#9a6b22" },
-  action: { bg: "#fbeae1", fg: "#cf4911" },
-};
-function rank(v: string | null): Verdict | null {
-  if (v === "satisfactory" || v === "A") return "ok";
-  if (v === "warning") return "warn";
-  if (v === "action" || v === "N") return "action";
-  return null;
-}
 
 // The lab-facing phase timeline logic lives in lib/lab-phases.ts (pure, tested);
 // this page only renders it.
 
 export default async function LabDashboard({ searchParams }: { searchParams: Promise<{ e?: string }> }) {
-  const { lab } = await requireLab();
+  const { lab, userId } = await requireLab();
   const { lang, tr } = await getServerT();
   const err = (await searchParams).e;
   const errText = err === "locked"
@@ -88,22 +98,25 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
     : err === "upload"
       ? (lang === "bg" ? "Качването не бе прието — използвайте PDF/PNG/JPG до 15 MB." : "Upload not accepted — use a PDF/PNG/JPG up to 15 MB.")
       : "";
-  const parts = await listParticipationsForLab(lab.id);
+  // only participations in schemes that have started (Реш. 147, part 0.3)
+  const parts = await listVisibleParticipations(lab.id);
   const myIds = new Set(parts.map((p) => p.schemeId));
-  const notifications = await listForLab(lab.id, 30);
-  const todayIso = new Date().toISOString().slice(0, 10);
   // One fetch of all schemes serves BOTH the lab's own rounds (for its scores/docs)
   // and the public buckets it may browse — avoids a second targeted query for rows we
   // already have. Drafts are internal WIP and never shown to labs (confidentiality);
   // running/report rounds a lab isn't in are closed to new applicants, so not listed.
   const allSchemes = await listSchemes();
+  // Nor a notice about a scheme that has not started — its number alone would tell.
+  const unstarted = new Set(allSchemes.filter((s) => !isStarted(s)).map((s) => s.id));
+  // a failed read of the feed shows none, logged — the lab's page still opens (1.1)
+  // read as THIS sign-in read it (4.6, N28)
+  const notifications = await withReadState((await listForLab(lab.id, 30).catch((e) => { console.error("[lab] notification feed:", (e as Error)?.message ?? e); return []; }))
+    .filter((n) => !n.schemeId || !unstarted.has(n.schemeId)), readerKey.labAccount(userId)).catch(() => []);
   const schemes = allSchemes.filter((s) => myIds.has(s.id));
   const byId = new Map(schemes.map((s) => [s.id, s] as const));
   const openToJoin = allSchemes.filter((s) => s.status === "open" && !myIds.has(s.id));
-  // Upcoming = a scheme the provider has explicitly ANNOUNCED to labs but not yet
-  // opened (still draft). Only announced drafts appear — unannounced drafts stay
-  // internal, so WIP never leaks. It becomes applyable once its status is Open.
-  const upcoming = allSchemes.filter((s) => s.announced && s.status === "draft" && !myIds.has(s.id));
+  // No «upcoming» list: a scheme that has not started is not shown to labs at all
+  // (Реш. 147) — the announced-draft tab is gone (part 0.3).
   const pastSchemes = allSchemes.filter((s) => s.status === "closed" && !myIds.has(s.id));
 
   const schemeName = (s: (typeof schemes)[number]) => s.name?.trim() || (lang === "bg" ? s.titleBg : s.titleEn) || s.number;
@@ -114,32 +127,33 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
       if (!scheme) return null;
       // the participation's own timeline — dates the phases below (auto + manual)
       const events = await listCaseEvents(p.schemeId, p.code);
-      const isCal = scheme.type === "C";
-      const scores = metricsForScheme(scheme)
-        .map((m) => {
-          const row = scoreMetric(scheme, m.key).rows.find((r) => r.code === p.code);
-          if (!row || row.verdict === null) return null;
-          const val = isCal ? row.en : row.z ?? row.zeta;
-          const sym = isCal ? "Eₙ" : row.z !== null ? "z" : "ζ";
-          return { label: lang === "bg" ? m.labelBg : m.labelEn, text: val === null || val === undefined ? "—" : `${sym} = ${val.toFixed(2)}`, v: rank(row.verdict) };
-        })
-        .filter((x): x is { label: string; text: string; v: Verdict | null } => !!x);
-      const rs = scores.map((s) => s.v);
-      const overall: Verdict | null = rs.includes("action") ? "action" : rs.includes("warn") ? "warn" : rs.includes("ok") ? "ok" : null;
+      // No score of any kind is computed or shown here: the portal's engine never
+      // reaches a participant (Реш. 135, part 0.6). The lab reads its scores in the
+      // report PTS issues; from part 7.5 also from the values imported from 2.0.
       // The results deadline comes from the scheme's WORKING dates, not from the
       // schedule the owner prints into the Plan — that one is document content and
       // was never meant to drive the portal. Absent = not decided yet, shown as no
       // deadline rather than guessed at.
-      const deadline = fmtSchemeDate(scheme.dates?.resultsDue);
+      // Its OWN deadline (3.4): its individual extension, else the scheme's — with the
+      // hour and zone when it has one; overdue is said, never a block (Zadanie §9).
+      const rd = resultsDeadline(scheme, p.code);
+      const state = deadlineState(rd.at, resultsSubmittedAt(scheme, p.code, p.status), schemeNowMs(scheme));
+      const deadline = rd.at
+        ? fmtSchemeDate(rd.at)
+          + (rd.ext ? (lang === "bg" ? ` — удължен по Заповед № ${rd.ext.orderNo}` : ` — extended by Order No. ${rd.ext.orderNo}`) : "")
+          + (state === "overdue" ? (lang === "bg" ? " — срокът е изтекъл; свържете се с PTS" : " — the deadline has passed; contact PTS") : "")
+        : "";
       return {
-        p, scheme, scores, overall, events,
+        p, scheme, events,
         // this participation's own proforma, if the provider has put one there
         invoice: scheme.labDocs?.[p.code]?.proforma,
         // the calibration chain, resolved for THIS laboratory only
         chain: await chainViewFor(scheme, p.code, lang),
-        completed: scheme.status === "closed",
+        completed: scheme.status === "closed" || scheme.status === "not_held",
         reported: scheme.status === "report" || scheme.status === "closed",
-        hasCert: !!scheme.certificates?.[p.code],
+        // the report reaches the lab only as the file PTS issued (Реш. 135)
+        officialReport: !!scheme.uploads?.report,
+        hasCert: !!labCertificate(scheme.certificates, p.code),
         deadline,
       };
     })))
@@ -197,7 +211,11 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
                 // or the upload form; locked (read-only) once the round is scored.
                 const slot = ph.uploadSlot;
                 const up = it.scheme.labUploads?.[it.p.code]?.[slot];
-                const open = canLabUploadNow(it.p.status);
+                // …and the scheme's state (3.2): no results from processing on, nothing
+                // in a scheme closed or not held — the same rule the upload action keeps
+                const st = it.scheme.status;
+                const open = canLabUploadNow(it.p.status) && st !== "not_held" && st !== "closed"
+                  && !(slot === "results" && (st === "processing" || st === "report"));
                 return (
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
                     {up && (
@@ -236,23 +254,13 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
     );
   };
 
-  const resultBlock = (scores: Item["scores"], overall: Verdict | null, awaiting: string) => (
+  // What the lab sees about its result: never a number or a verdict from the
+  // portal (Реш. 135) — only where the official one is.
+  const resultBlock = (it: Item, awaiting: string) => (
     <div style={{ background: "#f7faf8", borderRadius: 10, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
-      {overall ? (
-        <>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>{tr("lab.yourResult")}</span>
-            <span className="chip" style={{ background: VCHIP[overall].bg, color: VCHIP[overall].fg }}>{tr(`verdict.${overall}`)}</span>
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px" }}>
-            {scores.map((s, i) => (
-              <span key={i} style={{ fontSize: 12.5, color: "var(--muted)" }}>{s.label}: <b style={{ color: s.v ? VCHIP[s.v].fg : "var(--ink)" }}>{s.text}</b></span>
-            ))}
-          </div>
-        </>
-      ) : (
-        <span style={{ fontSize: 13, color: "var(--muted)" }}>{awaiting}</span>
-      )}
+      <span style={{ fontSize: 13, color: "var(--muted)" }}>
+        {it.reported ? (it.officialReport ? tr("lab.resultInReport") : tr("lab.reportComing")) : awaiting}
+      </span>
     </div>
   );
 
@@ -265,7 +273,7 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
     return (
       <div style={{ display: "flex", gap: "6px 18px", flexWrap: "wrap", padding: "8px 12px", background: "#f7faf8", borderRadius: 10 }}>
         {rows.map(({ key, at }) => {
-          const past = at < todayIso;
+          const past = isPast(at, schemeNowMs(it.scheme)); // its hour in Bulgaria, on the round's clock (1.3, 3.4)
           return (
             <span key={key} style={{ fontSize: 12.5, color: "var(--muted)" }}>
               {lang === "bg" ? DATE_LABELS[key].bg : DATE_LABELS[key].en}:{" "}
@@ -287,13 +295,23 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
       return def ? (lang === "bg" ? def.nameBg : def.nameEn) : key;
     };
     const rows = [
-      ...releasedDocs(it.scheme.sentToParticipants).map((r) => ({ key: r.key, label: docLabel(r.key), at: r.at.slice(0, 10), href: `/lab/doc/${it.scheme.id}/${r.key}?lang=${lang}` })),
-      ...(it.reported ? [{ key: "report", label: tr("lab.finalReport"), at: "", href: `/lab/doc/${it.scheme.id}/report?lang=${lang}` }] : []),
+      // each with the edition the laboratory holds (part 3.0)
+      // what reaches THIS participation — to every participant, or to it alone (5.4) — with its edition
+      ...docsFor(it.scheme, { participantIds: [it.p.id] }).map((r) => {
+        const ed = r.editionNo ? { id: r.editionId, no: r.editionNo } : undefined;
+        // an amendment's edition says so beside it — an uploaded PDF cannot be stamped (3.3)
+        const am = ed ? (it.scheme.amendments ?? []).find((a) => a.editions?.[r.key as "plan" | "invitation"]?.id === ed.id) : undefined;
+        const amLine = am ? ` — ${amendmentLine(lang === "bg" ? "bg" : "en", am, am.editions?.[r.key as "plan" | "invitation"]?.replaces)}` : "";
+        const own = r.level === "participation" ? (lang === "bg" ? " — само за вашето участие" : " — for your participation alone") : "";
+        return { key: r.key, label: docLabel(r.key) + (ed ? ` (${lang === "bg" ? "ред." : "ed."} № ${ed.no})` : "") + amLine + own, at: r.at.slice(0, 10), href: `/lab/doc/${it.scheme.id}/${r.key}?lang=${lang}&p=${encodeURIComponent(it.p.id)}` };
+      }),
+      ...(it.reported && it.officialReport ? [{ key: "report", label: tr("lab.finalReport"), at: "", href: `/lab/doc/${it.scheme.id}/report?lang=${lang}` }] : []),
       ...(it.hasCert ? [{ key: "certificate", label: tr("lab.certificate"), at: "", href: `/lab/doc/${it.scheme.id}/certificate?lang=${lang}` }] : []),
       // addressed to this laboratory alone, so it comes from its own route
       // ?p= names the participation: a lab that applied twice to one scheme has an
       // invoice per code, and the link must fetch the one this card is showing.
-      ...(it.invoice ? [{ key: "proforma", label: lang === "bg" ? LAB_DOC_SLOTS.proforma.bg : LAB_DOC_SLOTS.proforma.en, at: it.invoice.uploadedAt.slice(0, 10), href: `/lab/labdoc/${it.scheme.id}/proforma?p=${encodeURIComponent(it.p.id)}` }] : []),
+      // a proforma from before the scheme was declared not held is kept, and says so (О9)
+      ...(it.invoice ? [{ key: "proforma", label: (lang === "bg" ? LAB_DOC_SLOTS.proforma.bg : LAB_DOC_SLOTS.proforma.en) + (it.scheme.status === "not_held" ? (lang === "bg" ? " — схемата не се състои, нищо не се фактурира" : " — the scheme is not held, nothing is invoiced") : ""), at: it.invoice.uploadedAt.slice(0, 10), href: `/lab/labdoc/${it.scheme.id}/proforma?p=${encodeURIComponent(it.p.id)}` }] : []),
     ];
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -326,13 +344,18 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
     const st = statusChip(it.scheme.status, lang);
     const awaiting = it.deadline ? `${tr("lab.awaitingResults")} · ${tr("lab.deadline")} ${it.deadline}` : tr("lab.awaitingResults");
     return (
-      <div key={it.p.id} className="card" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div key={it.p.id} data-lab-card={it.scheme.id} className="card" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 17 }}>{schemeName(it.scheme)}</div>
             <div style={{ fontSize: 13, color: "var(--muted)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <span>{it.scheme.number}</span>
-              <span className="chip" style={{ background: "var(--green-dark)" }}>{tr("lab.yourCode")} · {it.p.code}</span>
+              {/* before the coding act (5.3) an application has no code — never its provisional reference */}
+              {isProvisional(it.p.code)
+                ? (inFinalRound(it.scheme, it.p)
+                  ? <span className="chip" data-code-to-come style={{ background: "var(--muted)" }}>{lang === "bg" ? "Кодът предстои — тегли се след затваряне на заявяването" : "Your code is to come — drawn after applications close"}</span>
+                  : <span className="chip" data-not-going-on style={{ background: "var(--muted)" }}>{lang === "bg" ? "Участието не продължава" : "The participation goes no further"}</span>)
+                : <span className="chip" style={{ background: "var(--green-dark)" }}>{tr("lab.yourCode")} · {it.p.code}</span>}
             </div>
           </div>
           <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, color: st.fg, background: st.bg }}>{st.label}</span>
@@ -357,23 +380,34 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
             total={it.chain.position?.total}
             wait={it.chain.wait}
             started={it.chain.started}
+            closed={it.chain.closed}
             incoming={it.chain.incoming}
             next={it.chain.next}
+            handOnBy={it.chain.handOnBy}
           />
         )}
+        {/* Реш. 150 (3.11): information, never a block — the decided sentence, by the
+            scheme's kind, while the scheme runs and until the laboratory's results are in */}
+        {(it.scheme.status === "open" || it.scheme.status === "running") && it.p.status !== "submitted" && it.p.status !== "scored" && (
+          <div data-written-instructions style={{ fontSize: 13, color: "var(--muted)" }}>
+            {lang === "bg" ? writtenInstructions(it.scheme.type).bg : writtenInstructions(it.scheme.type).en}
+          </div>
+        )}
+        {/* the scheme's one static reminder (А3, 3.6) — while it is running */}
+        {(it.scheme.status === "open" || it.scheme.status === "running") && (lang === "bg" ? it.scheme.staticReminder?.bg : it.scheme.staticReminder?.en) && (
+          <div data-static-reminder style={{ fontSize: 13, background: "#f7faf8", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 12px" }}>
+            <b>{lang === "bg" ? "Напомняне: " : "Reminder: "}</b>{lang === "bg" ? it.scheme.staticReminder?.bg : it.scheme.staticReminder?.en}
+          </div>
+        )}
         {docsFromProvider(it)}
-        {resultBlock(it.scores, it.overall, awaiting)}
+        {resultBlock(it, awaiting)}
       </div>
     );
   };
 
-  const browseCard = (s: (typeof allSchemes)[number], mode: "open" | "upcoming" | "past") => {
+  const browseCard = (s: (typeof allSchemes)[number], mode: "open" | "past") => {
     const range = dateRange(s);
-    // Upcoming rounds are still Draft internally — show labs a friendly "Upcoming"
-    // chip, never the raw internal status.
-    const chip = mode === "upcoming"
-      ? { label: lang === "bg" ? "Предстои" : "Upcoming", bg: "var(--green-soft)", fg: "var(--green-dark)" }
-      : statusChip(s.status, lang);
+    const chip = statusChip(s.status, lang);
     return (
       <div key={s.id} className="card" style={{ padding: 18, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 200 }}>
@@ -381,7 +415,10 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
           <div style={{ fontSize: 13, color: "var(--muted)" }}>{s.number}{range ? ` · ${range}` : ""}</div>
         </div>
         <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, color: chip.fg, background: chip.bg }}>{chip.label}</span>
-        {mode === "open" && <Link href={`/apply/${s.id}`} className="btn btn-primary btn-sm">{tr("lab.applyToParticipate")}</Link>}
+        {mode === "open" && (ONLINE_APPLICATIONS_OPEN
+          ? <Link href={`/apply/${s.id}`} className="btn btn-primary btn-sm">{tr("lab.applyToParticipate")}</Link>
+          // part 0.4: applications go by the PDF form in the transition (Реш. 1)
+          : <a href={PDF_APPLICATION_URL} target="_blank" rel="noopener" className="btn btn-sm">{tr("lab.applyWithPdf")}</a>)}
       </div>
     );
   };
@@ -389,8 +426,10 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
   // ── tab contents (rendered server-side, toggled by the client tab shell) ──────
   // The lab's own rounds: active work first, finished (reported) ones grouped
   // after a divider and dimmed — mirrors the owner's lifecycle grouping.
-  const activeItems = items.filter((it) => it.scheme.status !== "closed");
-  const doneItems = items.filter((it) => it.scheme.status === "closed");
+  // a scheme that is not held is over for the laboratory too (О9, 3.2)
+  const isOver = (st: string) => st === "closed" || st === "not_held";
+  const activeItems = items.filter((it) => !isOver(it.scheme.status));
+  const doneItems = items.filter((it) => isOver(it.scheme.status));
   const participatingContent = items.length === 0 ? (
     <EmptyState title={tr("lab.noSchemesTitle")} body={tr("lab.noSchemesBody")} />
   ) : (
@@ -411,11 +450,6 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
     <p style={{ fontSize: 13, color: "var(--muted)" }}>{tr("lab.noOpen")}</p>
   ) : (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>{openToJoin.map((s) => browseCard(s, "open"))}</div>
-  );
-  const upcomingContent = upcoming.length === 0 ? (
-    <p style={{ fontSize: 13, color: "var(--muted)" }}>{lang === "bg" ? "Няма предстоящи схеми." : "No upcoming schemes announced yet."}</p>
-  ) : (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>{upcoming.map((s) => browseCard(s, "upcoming"))}</div>
   );
   const pastContent = pastSchemes.length === 0 ? (
     <p style={{ fontSize: 13, color: "var(--muted)" }}>{lang === "bg" ? "Няма минали схеми." : "No past schemes yet."}</p>
@@ -456,7 +490,6 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
               tabs={[
                 { key: "participating", label: tr("lab.participatingNow"), count: items.length, content: participatingContent },
                 { key: "open", label: lang === "bg" ? "Отворени" : "Open", count: openToJoin.length, content: openContent },
-                { key: "upcoming", label: lang === "bg" ? "Предстоящи" : "Upcoming", count: upcoming.length, content: upcomingContent },
                 { key: "past", label: lang === "bg" ? "Минали" : "Past", count: pastSchemes.length, content: pastContent },
               ]}
             />

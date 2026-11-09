@@ -20,8 +20,11 @@ export interface ChainNext {
 }
 
 export default function DeviceChainCard({
-  schemeId, lang, state, position, total, wait, started, incoming, next,
+  schemeId, lang, state, position, total, wait, started, closed, incoming, next, handOnBy,
 }: {
+  /** its own window while it holds the instrument (3.4): the day it ends, in working
+   *  days from its receipt — or its extension; overdue said, never a block */
+  handOnBy?: { dueText: string; days: number; orderNo?: string; overdue: boolean };
   schemeId: string;
   lang: "bg" | "en";
   state: "waiting" | "holding" | "done";
@@ -29,6 +32,8 @@ export default function DeviceChainCard({
   total?: number;
   wait?: string;
   started: boolean;
+  /** PTS has closed the chain — the device is back; nothing more is recorded. */
+  closed?: boolean;
   /** Nobody is holding it and this is the next stop due — it is travelling HERE. */
   incoming?: boolean;
   next: ChainNext | null;
@@ -44,10 +49,20 @@ export default function DeviceChainCard({
     startTransition(async () => {
       const r = await fn();
       setBusy(false);
-      if (r?.error) { alert(r.error); return; }
+      if (r?.error) { alert(problem(r.error)); return; }
       router.refresh();
     });
   }
+
+  // what the server's refusal means for this laboratory (lib/chain.ts stampProblem)
+  const problem = (code: string) => ({
+    "no-stop": L("Нямате спирка, която чака уреда.", "You have no stop waiting for the device."),
+    "not-dispatched": L("Уредът още не е тръгнал от PTS.", "The device has not left PTS yet."),
+    order: L("Уредът още не е отбелязан при спирките преди вас. Ако вече е при вас, обадете се на PTS — те ще го отбележат.",
+             "The device has not yet been recorded at the stops before you. If it is already with you, call PTS and they will record it."),
+    closed: L("Веригата е приключена.", "The chain is finished."),
+    "not-received": L("Първо потвърдете, че уредът е пристигнал.", "First confirm the device has arrived."),
+  } as Record<string, string>)[code] ?? L("Не успяхме да го запишем. Опитайте пак или се обадете на PTS.", "That could not be recorded. Try again, or call PTS.");
 
   const shell: React.CSSProperties = {
     borderRadius: 10, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6,
@@ -74,17 +89,23 @@ export default function DeviceChainCard({
           </div>
         )}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
-          <button className="btn btn-primary btn-sm" style={{ fontSize: 12 }} disabled={busy}
+          <button className="btn btn-primary btn-sm" style={{ fontSize: 12 }} disabled={busy || closed}
             onClick={() => run(() => labHandOverDeviceAction(schemeId), L(
               "Потвърждавате, че сте изпратили уреда нататък. Да продължа ли?",
               "This confirms you have sent the device on. Continue?"))}>
             ✓ {L("Предадох уреда", "I have sent it on")}
           </button>
         </div>
-        <span style={{ fontSize: 11.5, color: "var(--muted)" }}>
-          {L("Няма срок — задръжте уреда толкова, колкото ви е нужно.",
-             "There is no deadline — keep the device as long as you need.")}
-        </span>
+        {handOnBy ? (
+          <span data-chain-window style={{ fontSize: 12, color: handOnBy.overdue ? "#8f2f2f" : "var(--muted)", fontWeight: handOnBy.overdue ? 700 : 400 }}>
+            {handOnBy.orderNo
+              ? L(`Срок за предаване: ${handOnBy.dueText} — удължен по Заповед № ${handOnBy.orderNo}.`, `To hand on by: ${handOnBy.dueText} — extended by Order No. ${handOnBy.orderNo}.`)
+              : L(`Срок за предаване: ${handOnBy.dueText} (${handOnBy.days} работни дни от получаването).`, `To hand on by: ${handOnBy.dueText} (${handOnBy.days} working days from the receipt).`)}
+            {handOnBy.overdue && L(" Срокът е изтекъл — свържете се с PTS. Порталът не блокира нищо.", " The deadline has passed — contact PTS. The portal blocks nothing.")}
+          </span>
+        ) : (
+          <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{L("Порталът не блокира нищо.", "The portal blocks nothing.")}</span>
+        )}
       </div>
     );
   }
@@ -112,12 +133,16 @@ export default function DeviceChainCard({
                 ? L(`Уредът е при друг участник — ${wait} до вас.`, `The device is with another participant — ${wait} until it reaches you.`)
                 : L("Уредът е при друг участник.", "The device is with another participant.")}
         </span>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
-          <button className="btn btn-sm" style={{ fontSize: 12 }} disabled={busy}
-            onClick={() => run(() => labConfirmDeviceReceiptAction(schemeId))}>
-            {L("Уредът пристигна при мен", "The device has arrived")}
-          </button>
-        </div>
+        {/* only once the device has left PTS, and while the chain is open — a press
+            before that would record an arrival that cannot have happened */}
+        {started && !closed && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
+            <button className="btn btn-sm" style={{ fontSize: 12 }} disabled={busy}
+              onClick={() => run(() => labConfirmDeviceReceiptAction(schemeId))}>
+              {L("Уредът пристигна при мен", "The device has arrived")}
+            </button>
+          </div>
+        )}
         <span style={{ fontSize: 11.5, color: "var(--muted)" }}>
           {L("Приблизително — не е срок и нищо не зависи от него.",
              "An estimate — not a deadline, and nothing depends on it.")}

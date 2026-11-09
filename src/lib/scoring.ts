@@ -84,7 +84,7 @@ export function buildScoring(
       const value = num(`r_${mi}_${pi}_value`);
       if (value === null) return; // no result entered for this lab/metric
       const entry: ResultEntry = { value, u: num(`r_${mi}_${pi}_u`) ?? 0 };
-      // individual determinations I/II/III (F 7.2.1-6) — positional, blanks = null
+      // individual determinations I/II/III (F 7.2.1-5) — positional, blanks = null
       const det = [0, 1, 2].map((k) => num(`r_${mi}_${pi}_d${k}`));
       if (det.some((d) => d !== null)) entry.determinations = det;
       (results[code] ??= {})[m.key] = entry;
@@ -302,8 +302,10 @@ export function scoreMetric(
 
     if (assigned) {
       if (isCal) {
-        en = enScore(entry.value, assigned.xpt, entry.u, assigned.u);
-        if (!Number.isNaN(en)) {
+        // no U reported (a blank is stored as 0) → no Eₙ: «If the expanded
+        // uncertainty U is not reported for a point, an Eₙ-score cannot be calculated»
+        en = entry.u > 0 ? enScore(entry.value, assigned.xpt, entry.u, assigned.u) : null;
+        if (en !== null && !Number.isNaN(en)) {
           verdict = verdictEn(en);
           ok = verdict === "A";
         }
@@ -311,8 +313,8 @@ export function scoreMetric(
         // σpt = max(s* / entered σ, σpt,min floor) — ISO 13528 / Stat project §7.4
         const sigmaEff = Math.max(assigned.sigma || 0, sigmaFloor(s, key));
         if (sigmaEff > 0) z = zScore(entry.value, assigned.xpt, sigmaEff);
-        if (entry.u > 0 || assigned.u > 0)
-          zeta = zetaScore(entry.value, assigned.xpt, entry.u, assigned.u);
+        // «Participants who did not report an uncertainty are not evaluated by ζ»
+        if (entry.u > 0) zeta = zetaScore(entry.value, assigned.xpt, entry.u, assigned.u);
         const primary = z ?? zeta;
         if (primary !== null && !Number.isNaN(primary)) {
           verdict = verdictZ(primary);
@@ -341,6 +343,17 @@ function verdictCell(lang: Lang, v: ScoredRow["verdict"]): string {
  * Testing Final Report §9 body — one block per parameter that has data.
  * Returns "" when nothing has been scored yet (caller keeps its placeholder).
  */
+// Реш. 135 (plan part 0.6): no score the portal computes reaches a participant.
+// The official scores come from PTS_Analysis; the engine here is a working check
+// for staff. Wherever its scores are printed — the portal's own report, an
+// inserted «scores» field — they say so, so a copy sent by mistake says it too.
+export function unofficialNote(lang: Lang): string {
+  const t = lang === "bg"
+    ? "Работен вариант: оценките по-долу са изчислени от портала и не са официални. Официалните оценки са в доклада, издаден от PTS."
+    : "Working copy: the scores below were computed by the portal and are not official. The official scores are in the report issued by PTS.";
+  return `<p class="unofficial" style="border:1px solid #e6d9a8;background:#fdf6e3;color:#7a5c00;border-radius:6px;padding:6px 10px;font-family:var(--sans);font-size:9pt;margin:8px 0;">${t}</p>`;
+}
+
 export function reportResultsTesting(s: Scheme, lang: Lang): string {
   const L = (en: string, bg: string) => esc(pick(lang, en, bg));
   const blocks: string[] = [];
@@ -380,7 +393,7 @@ export function reportResultsTesting(s: Scheme, lang: Lang): string {
         <th>u(x<sub>i</sub>)</th><th>z</th><th>ζ</th><th>${L("Evaluation", "Оценка")}</th>
       </tr></thead><tbody>${body}</tbody></table>${chart}`);
   }
-  return blocks.join("\n");
+  return blocks.length ? unofficialNote(lang) + blocks.join("\n") : "";
 }
 
 /**
@@ -440,5 +453,5 @@ export function reportResultsCalibration(s: Scheme, lang: Lang): string {
         <th>D</th><th>E<sub>n</sub></th><th>${L("Eval", "Оценка")}</th>
       </tr></thead><tbody>${rowsHtml.join("")}</tbody></table>${chart}`);
   });
-  return blocks.join("\n");
+  return blocks.length ? unofficialNote(lang) + blocks.join("\n") : "";
 }

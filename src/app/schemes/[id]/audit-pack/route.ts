@@ -1,11 +1,15 @@
 import type { NextRequest } from "next/server";
+import { mayNow, requireCap } from "@/lib/access";
 import { getScheme } from "@/lib/store";
-import { listParticipants } from "@/lib/participants";
+import { listParticipants, withoutIdentity } from "@/lib/participants";
+import { namesFor } from "@/lib/identities";
 import { listCaseEvents } from "@/lib/case-events";
+import { redactCaseEventForStaff } from "@/lib/redact";
 import { getDoc } from "@/lib/documents";
 import { metricsForScheme, scoreMetric, sigmaFloor } from "@/lib/scoring";
 import { esc, pick } from "@/lib/doc-shell";
-import { requireStaff, canRevealNames, getCurrentRole } from "@/lib/roles";
+import { requireStaff } from "@/lib/roles";
+import { logActivity } from "@/lib/activity";
 
 // Audit-pack export (Phase RT4) — a clean, printable per-scheme report to hand the
 // SNAS/Bratislava auditor: for every participant CODE, the dated timeline + the
@@ -19,9 +23,10 @@ function fmtDate(d: string): string {
   return m ? `${m[3]}.${m[2]}.${m[1]}` : esc(d);
 }
 
-export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+async function serve(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   await requireStaff();
   const { id } = await ctx.params;
+  await requireCap("codes.view", id); // in THIS scheme, by the role model (2.4)
   const scheme = await getScheme(id);
   if (!scheme) return new Response("Not found", { status: 404 });
 
@@ -46,15 +51,18 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     return `<b class="bad">${L("Action", "Действие")}</b>`;
   };
 
-  const role = await getCurrentRole();
-  const wantNames = req.nextUrl.searchParams.get("names") === "1";
-  const showNames = canRevealNames(role) && wantNames; // managers only
+    const wantNames = req.nextUrl.searchParams.get("names") === "1";
+  const showNames = wantNames && (await mayNow("names.view", id)); // the scheme manager and the coding expert (2.4)
+  if (showNames) await logActivity("names.viewed", { schemeId: id, subject: "audit-pack", summary: "Laboratory names shown with their codes — the audit pack" });
 
-  const participants = await listParticipants(id);
+  // names only when a manager asked for them — an opening, on record (2.3)
+  const participants = showNames ? await namesFor(id, await listParticipants(id)) : (await listParticipants(id)).map(withoutIdentity);
   // One scheme-wide query, grouped by code — instead of one round-trip per
   // participant (which serialized N DB calls before any bytes were sent). The
   // full-scheme fetch is newest-first; each code's slice is re-sorted below.
-  const allEvents = await listCaseEvents(id);
+  // Without names, also without a lab's e-mail or uploaded file name (N4).
+  // voided steps are part of the record — included, and marked (part 0.9)
+  const allEvents = (await listCaseEvents(id, undefined, { includeVoided: true })).map((e) => (showNames ? e : redactCaseEventForStaff(e)));
   const eventsByCode = new Map<string, typeof allEvents>();
   for (const e of allEvents) {
     const arr = eventsByCode.get(e.code);
@@ -108,11 +116,16 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       ? events.map((e) => {
           const doc = e.docKey ? getDoc(e.docKey) : undefined;
           const refCell = [doc ? L(doc.nameEn, doc.nameBg) : "", e.ref ?? ""].filter(Boolean).join(" · ");
+          // a voided step stays in the pack, struck through, with who/when/why
+          const strike = e.voidedAt ? ' style="text-decoration:line-through;color:#888"' : "";
+          const voided = e.voidedAt
+            ? `<div style="color:#a33;text-decoration:none">${L("voided", "анулирано")} ${fmtDate(e.voidedAt.slice(0, 10))}${e.voidedBy ? ` · ${esc(e.voidedBy)}` : ""} — ${esc(e.voidReason ?? "")}</div>`
+            : "";
           return `<tr>
-          <td class="d">${fmtDate(e.at)}</td>
-          <td>${L(kindEn(e.kind), kindBg(e.kind))}</td>
-          <td>${esc(refCell)}</td>
-          <td>${esc(e.note ?? "")}</td>
+          <td class="d"${strike}>${fmtDate(e.at)}</td>
+          <td${strike}>${L(kindEn(e.kind), kindBg(e.kind))}</td>
+          <td${strike}>${esc(refCell)}</td>
+          <td>${esc(e.note ?? "")}${voided}</td>
           <td class="s">${e.source === "auto" ? L("auto", "авт.") : L("manual", "ръчно")}</td>
         </tr>`;
         }).join("")
@@ -205,4 +218,14 @@ function kindBg(k: string): string {
     receipt_confirmed: "Потвърдено получаване", results_returned: "Върнати резултати", scored: "Оценени резултати",
     report_issued: "Издаден доклад / сертификат", other: "Друго",
   } as Record<string, string>)[k] ?? k;
+}
+
+// Every download through this gate is in the journal (part 1.9): who, what, when.
+export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const res = await serve(req, ctx);
+  if (res.status === 200 || res.status === 206) {
+    const p = await ctx.params;
+    await logActivity("file.downloaded", { schemeId: p.id, subject: "audit-pack", summary: "The audit pack exported" });
+  }
+  return res;
 }

@@ -1,14 +1,18 @@
 import type { Scheme, Lang, DocOptions } from "../types";
 import { esc, pick, wrapDoc, docHeader, footer } from "../doc-shell";
 
-// The two participant lists, faithful to the provider's NEW standard workbook
-// (sheet name = official form code):
+// The two NAMED participant lists:
 //   • F 7.2.1-4 «Списък на заявилите участие / List of applied participants» —
 //     registration & logistics (named): delivery address, contact, participations,
 //     laboratory activity, courier. Identical columns for T and C schemes.
-//   • F 7.2.1-5 «Кодиран списък на участниците / Encrypted list of participants» —
+//   • F 7.2.1-6 «Кодиран списък на резултатите / Encrypted list of results» —
 //     name ↔ lab code + sample code, one row PER CHARACTERISTIC the lab registered
-//     for (rowspan groups), each with its standard code.
+//     for (rowspan groups), each with its standard code. Manager only.
+// PTS's form TITLES are swapped against their CONTENT (assignment of 31.10.2026,
+// §4 «Внимание към двата кодирани списъка»): the list «of participants» (-5) has
+// codes and results and no names; the list «of results» (-6) has the names. Until
+// PTS renames them the content governs, so the name↔code mapping is F 7.2.1-6 and
+// the codes-and-results list (results-coded.ts) is F 7.2.1-5 (plan part 0.2).
 // Both are built from the live participant list passed in opts.participants
 // (resolved by the print route) plus the scheme's own scope/object data.
 // NB: the source workbook's title contains a typo («Кординиран») — rendered here
@@ -28,7 +32,8 @@ export const EXTRA_CSS = `
 
 // RT1 — confidentiality (§4.2). When the viewer is not a manager, the print route
 // passes revealNames:false and identifying fields collapse to a masked placeholder;
-// the participant code (F 7.2.1-5) stays, so staff can still work by code.
+// the participant code stays. (F 7.2.1-6 is refused to non-managers outright by the
+// routes — the masking here is only the second line of defence.)
 function maskCell(reveal: boolean, value: string, lang: Lang): string {
   return reveal ? esc(value) : `<span class="masked">${esc(pick(lang, "confidential", "конфиденциално"))}</span>`;
 }
@@ -60,7 +65,7 @@ function compiledBy(s: Scheme, lang: Lang): string {
   </div>`;
 }
 
-// "Laboratory activity" (F 7.2.1-4/-5) — per participant on the form, but in
+// "Laboratory activity" (F 7.2.1-4/-6) — per participant on the form, but in
 // practice every lab in a round does the round's activity, so derive from type.
 function activityLabel(s: Scheme, lang: Lang): string {
   return esc(pick(lang, s.type === "C" ? "Calibration" : "Testing", s.type === "C" ? "Калибриране" : "Изпитване"));
@@ -115,8 +120,8 @@ export function renderRegistered(s: Scheme, lang: Lang, opts?: DocOptions): stri
   return wrapDoc(lang, `${s.number} — List of Applied Participants`, body, EXTRA_CSS);
 }
 
-// ── F 7.2.1-5 — Encrypted (coded) list: name ↔ codes + per-characteristic scope ──
-const FORM2 = "F 7.2.1-5";
+// ── F 7.2.1-6 — Encrypted list «of results»: name ↔ codes + per-characteristic scope ──
+const FORM2 = "F 7.2.1-6";
 
 // One row per characteristic for a participant. `chosen` = indexes into
 // s.parameters the lab registered for (absent/empty → all, so older participants
@@ -142,7 +147,7 @@ function charRows(s: Scheme, lang: Lang, chosen?: number[]): { char: string; std
   }));
 }
 
-export function renderRegisteredCoded(s: Scheme, lang: Lang, opts?: DocOptions): string {
+export function renderNamesToCodes(s: Scheme, lang: Lang, opts?: DocOptions): string {
   const L = (en: string, bg: string) => esc(pick(lang, en, bg));
   const ps = opts?.participants ?? [];
   const reveal = opts?.revealNames !== false;
@@ -174,7 +179,7 @@ export function renderRegisteredCoded(s: Scheme, lang: Lang, opts?: DocOptions):
         .join("")
     : `<tr><td class="empty" colspan="8">${L("No participants registered yet.", "Все още няма регистрирани участници.")}</td></tr>`;
 
-  const body = `${header(s, lang, "ENCRYPTED LIST OF PARTICIPANTS", "КОДИРАН СПИСЪК НА УЧАСТНИЦИТЕ")}
+  const body = `${header(s, lang, "ENCRYPTED LIST OF RESULTS", "КОДИРАН СПИСЪК НА РЕЗУЛТАТИТЕ")}
     <p>${L(
       `Name-to-code mapping for proficiency testing No. ${s.number}. The laboratory code is the only identifier used in all downstream documents and the public Register; the mapping is confidential to PTS Bulgaria.`,
       `Съответствие име ↔ код за изпитване за пригодност № ${s.number}. Кодът на лабораторията е единственият идентификатор във всички последващи документи и в публичния Регистър; съответствието е конфиденциално и известно само на PTS Bulgaria.`
@@ -197,5 +202,5 @@ export function renderRegisteredCoded(s: Scheme, lang: Lang, opts?: DocOptions):
     ${compiledBy(s, lang)}
     ${footer(s, FORM2)}`;
 
-  return wrapDoc(lang, `${s.number} — Encrypted List of Participants`, body, EXTRA_CSS);
+  return wrapDoc(lang, `${s.number} — Encrypted List of Results`, body, EXTRA_CSS);
 }

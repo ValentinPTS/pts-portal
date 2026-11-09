@@ -16,7 +16,7 @@ import { uploadLabDocAction, removeLabDocAction, setParticipantPaidAction } from
 const ACCEPT = "application/pdf,image/png,image/jpeg";
 
 export default function LabInvoicePanel({
-  schemeId, code, lang, fileName, uploadedAt, paidAt,
+  schemeId, code, lang, fileName, uploadedAt, paidAt, notHeld = false, notYet,
 }: {
   schemeId: string;
   code: string;
@@ -24,6 +24,10 @@ export default function LabInvoicePanel({
   fileName?: string;
   uploadedAt?: string;
   paidAt?: string;
+  // the scheme is not held: nothing is invoiced (О9, Реш. 129, part 3.2)
+  notHeld?: boolean;
+  // not invoiced yet: before the second announcement, or not on its final list (5.2; Реш. 65)
+  notYet?: "before-second" | "not-final";
 }) {
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const router = useRouter();
@@ -113,7 +117,17 @@ export default function LabInvoicePanel({
             </span>
           </>
         ) : (
-          <>
+          notHeld ? (
+            <span data-not-invoiced style={{ color: "var(--muted)", fontSize: 12 }}>
+              {L("Схемата не се състои — нищо не се фактурира.", "The scheme is not held — nothing is invoiced.")}
+            </span>
+          ) : notYet ? (
+            <span data-not-invoiced-yet={notYet} style={{ color: "var(--muted)", fontSize: 12 }}>
+              {notYet === "before-second"
+                ? L("Проформа се издава само след второто обявяване (Реш. 65).", "A proforma is issued only after the second announcement (Реш. 65).")
+                : L("Участието не е в окончателния списък — не продължава и не се фактурира.", "The participation is not on the final list — it goes no further and is not invoiced.")}
+            </span>
+          ) : <>
             <button className="btn btn-primary btn-sm" style={{ fontSize: 12 }} onClick={() => fileRef.current?.click()}>
               ＋ {L("Качи проформа", "Upload proforma")}
             </button>

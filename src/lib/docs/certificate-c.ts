@@ -1,7 +1,11 @@
 import type { Scheme, Lang, DocOptions } from "../types";
+import { marksHtml } from "../accreditation-mark";
 import { esc, pick, wrapDoc, footer } from "../doc-shell";
+import { looksLikeSimNumber } from "../environment";
 
-const FORM = "proposed";
+// An issued document, not a form of the management system: no form number, and
+// the old "proposed" placeholder is gone (Q23, Реш. 100).
+const FORM = "";
 
 // Calibration variant of the decorative Certificate of Participation. Mirrors
 // the proposed design in poc/calibration-certificate-preview.html: green frame,
@@ -93,10 +97,7 @@ export function renderCertificateC(s: Scheme, lang: Lang, opts?: DocOptions): st
 
     <div class="chars"><b>${L("Quantities:", "Величини:")}</b> <span>${scope}</span></div>
 
-    <div class="marks">
-      <img class="ilac" src="/brand/ilac-mra.jpg" alt="ilac-MRA">
-      <div class="snasbox"><img src="/brand/snas.png" alt="SNAS"><div>${L("Reg. No.", "Рег. №")} ${esc(s.regNo)}</div></div>
-    </div>
+    ${marksHtml(s, lang)}
 
     <div class="spacer"></div>
     <img class="emb" src="/brand/embroidery-border.png" alt="">
@@ -106,7 +107,10 @@ export function renderCertificateC(s: Scheme, lang: Lang, opts?: DocOptions): st
     </div>
     <div class="certno">${L("Certificate No.", "Сертификат №")} ${certNo}</div>
     <div class="issued">${L("Issued by PT Provider PTS Bulgaria at Proficiency Testing Solutions Bulgaria Ltd", "Издаден от организатора на изпитване за пригодност PTS Bulgaria към „ПТС България“ ООД")}</div>
-    <div class="reg">${L("Published in the Register at www.ptsbg.eu", "Публикуван в Регистъра на www.ptsbg.eu")}</div>
+    <div class="reg">${looksLikeSimNumber(s.number)
+      // a simulation round's «certificate» is never in the register (Реш. 130, 1.2)
+      ? L("SIMULATION — not a certificate, not in the Register", "СИМУЛАЦИЯ — не е сертификат и не е в Регистъра")
+      : L("Published in the Register at www.ptsbg.eu", "Публикуван в Регистъра на www.ptsbg.eu")}</div>
   </div>
   ${footer(s, FORM)}`;
 

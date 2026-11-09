@@ -1,14 +1,19 @@
 import { randomUUID } from "crypto";
 import type { Lab, LabStatus } from "./types";
-import { getDb } from "./supabase";
+import { getDb, noMemoryFallback } from "./supabase";
 
 // Laboratory accounts (Phase 2b). Permanent, one per lab, identified by email.
 // Supabase when configured, else in-memory — same graceful fallback as the rest.
 // Email is always stored + queried lower-cased so it's a stable identity key.
 
-const mem = new Map<string, Lab>();
+// Shared across every server entry point (RSC pages, route handlers, actions), as
+// the scheme and participant stores are: a module-local map gave a route handler
+// its own empty copy in dev — a lab made there was unknown to the pages (1.4).
+const memStore = globalThis as unknown as { __ptsLabMem?: Map<string, Lab> };
+const mem: Map<string, Lab> = memStore.__ptsLabMem ?? (memStore.__ptsLabMem = new Map());
 let warned = false;
 function warn(e: unknown) {
+  noMemoryFallback("labs", e); // on a deployment: an error, not memory (1.1)
   if (warned) return;
   warned = true;
   console.warn("[labs] Supabase unavailable — in-memory fallback:", (e as Error)?.message ?? e);
@@ -77,11 +82,28 @@ export async function getLabByEmail(email: string): Promise<Lab | null> {
   }
 }
 
-export async function addLab(input: {
-  email: string; name: string; accreditationCert?: string; contactPerson?: string; phone?: string;
-  registeredAddress?: string; eik?: string; vat?: string; mol?: string; authUserId?: string;
-}): Promise<Lab> {
-  const lab: Lab = {
+// Fail-CLOSED twins for the approval guard (part 0.5): getLabByEmail and addLab
+// fall back to memory on a database error, which is right for reading pages but
+// would let a guard pass on a transient error, or report an account that was never
+// written. These throw instead.
+export async function labEmailInUse(email: string): Promise<boolean> {
+  const key = norm(email);
+  const db = getDb();
+  if (!db) return [...mem.values()].some((l) => l.email === key);
+  const { data, error } = await db.from("labs").select("id").eq("email", key).maybeSingle();
+  if (error) throw error;
+  return !!data;
+}
+export async function addLabOrThrow(input: Parameters<typeof addLab>[0]): Promise<Lab> {
+  const db = getDb();
+  if (!db) return addLab(input);
+  const lab = buildLab(input);
+  const { error } = await db.from("labs").insert(toRow(lab));
+  if (error) throw error;
+  return lab;
+}
+function buildLab(input: Parameters<typeof addLab>[0]): Lab {
+  return {
     id: randomUUID(),
     email: norm(input.email),
     name: input.name,
@@ -96,6 +118,13 @@ export async function addLab(input: {
     authUserId: input.authUserId,
     createdAt: new Date().toISOString(),
   };
+}
+
+export async function addLab(input: {
+  email: string; name: string; accreditationCert?: string; contactPerson?: string; phone?: string;
+  registeredAddress?: string; eik?: string; vat?: string; mol?: string; authUserId?: string;
+}): Promise<Lab> {
+  const lab = buildLab(input);
   const db = getDb();
   if (!db) {
     mem.set(lab.id, lab);

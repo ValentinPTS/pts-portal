@@ -1,13 +1,12 @@
 import type { Scheme, Lang } from "../../../lib/types";
 import type { Skin } from "../../types";
 import { DOC_CSS, esc, pick, contactsBar, coverImgTag } from "../../../lib/doc-shell";
+import { footerLine } from "../../../lib/doc-css";
+import { BRAND_FONTS } from "../../../lib/doc-fonts";
 
 // "Modern" — a cleaner, sans-led look: a green header band on the cover, a left
 // accent rule on section headings instead of the red underline, airier spacing.
 // Built on the shared document CSS + theme overrides (same semantic markup).
-const FONTS_HREF =
-  "https://fonts.googleapis.com/css2?family=PT+Serif:wght@400;700&family=Sofia+Sans+Condensed:wght@400;600;700;800&display=swap";
-
 const OVERRIDES = `
   :root{--green:#357a4f;--green-dark:#2b6744;--green-soft:#eef4f0;--red:#2b6744;--line:#e2e6e4;}
   .mcover{break-after:page;page-break-after:always;padding-bottom:18px;}
@@ -39,13 +38,13 @@ function cover(s: Scheme, lang: Lang, docTitleEn: string, docTitleBg: string, _o
   </div>`;
 }
 function footer(s: Scheme, formNumber: string): string {
-  return `<div class="docfooter">${esc(s.revision)} · ${esc(formNumber)} · ${esc(s.revisionDate)}</div>`;
+  return `<div class="docfooter">${footerLine(s.revision, formNumber, s.revisionDate)}</div>`;
 }
 
 export const modernSkin: Skin = {
   meta: { id: "modern", name: "Modern", description: "Cleaner sans layout with a side accent and airy spacing.", types: ["T", "C"] },
   css: DOC_CSS + OVERRIDES,
-  fontsHref: FONTS_HREF,
+  fonts: BRAND_FONTS,
   cover,
   footer,
 };

@@ -33,12 +33,19 @@ export const RS_CSS = `
 
 // Calibration Results Sheet — same chrome as the testing one (Workstream 2),
 // keeping the calibration-specific tables: one per load direction, one row per
-// calibration point (result X_lab + expanded uncertainty). Improvised until the
-// real calibration Results Sheet is provided.
+// calibration point (result X_lab + expanded uncertainty). A scheme without load
+// directions — mass, temperature, humidity, every new calibration scheme — gets ONE
+// table (E3.a / N18). Improvised until the real Results Sheet per M2 (part 6.2).
 export function renderResultsC(s: Scheme, lang: Lang): string {
   const L = (en: string, bg: string) => esc(pick(lang, en, bg));
   const c = s.calibration;
   const unit = c ? esc(c.unit) : "";
+  const inUnit = (label: string) => (unit ? `${label} (${unit})` : label);
+  // the directions are optional; without them there is one table, index 0 — the
+  // pseudo-direction scoring.ts uses too, so field result_0_<pt> meets metric "0:<pt>"
+  const hasDirs = !!c && c.directionsEn.length > 0;
+  // the method's name only — «ISO 376», not «ISO 376 — direct comparison method (…)»
+  const method = c ? L(...([c.methodEn, c.methodBg].map((m) => m.split(" — ")[0].trim()) as [string, string])) : "";
   const assigned = L("/to be filled in by the PT Provider/", "/попълва се от РТ провайдъра/");
 
   const scheme = `<div class="rs-scheme"><span class="lbl">${L(
@@ -58,19 +65,31 @@ export function renderResultsC(s: Scheme, lang: Lang): string {
   const warn = (en: string, bg: string) => `<div class="rs-warn">${ICO_WARN}<span>${L(en, bg)}</span></div>`;
   const warnings = `<div class="rs-warns">
     ${warn("Please refer to the 'Instructions for the Participants' (F 7.3.5-1).", "Вижте „Инструкция за участниците“ (Ф 7.3.5-1).")}
-    ${warn("Report a result and expanded uncertainty for every calibration point and load direction for which you registered.", "Докладвайте резултат и разширена неопределеност за всяка точка на калибриране и посока на натоварване, за които сте заявили участие.")}
-    ${warn("The travelling device is provided solely for the purposes of the proficiency testing scheme; calibrate it in accordance with your own procedure (ISO 376).", "Пътуващото устройство се предоставя единствено за целите на схемата за изпитване за пригодност; калибрирайте го съгласно собствената си методика (ISO 376).")}
+    ${hasDirs
+      ? warn("Report a result and expanded uncertainty for every calibration point and load direction for which you registered.", "Докладвайте резултат и разширена неопределеност за всяка точка на калибриране и посока на натоварване, за които сте заявили участие.")
+      : warn("Report a result and expanded uncertainty for every calibration point for which you registered.", "Докладвайте резултат и разширена неопределеност за всяка точка на калибриране, за която сте заявили участие.")}
+    <div class="rs-warn">${ICO_WARN}<span>${L(
+      "The travelling device is provided solely for the purposes of the proficiency testing scheme; calibrate it in accordance with your own procedure",
+      "Пътуващото устройство се предоставя единствено за целите на схемата за изпитване за пригодност; калибрирайте го съгласно собствената си методика",
+    )}${method ? ` (${method})` : ""}.</span></div>
   </div>`;
 
-  const directionsEn = c ? c.directionsEn : [];
-  const directionsBg = c ? c.directionsBg : [];
+  const directionsEn = hasDirs ? c!.directionsEn : [""];
+  const directionsBg = hasDirs ? c!.directionsBg : [""];
   const points = c ? c.points : [];
+  // the caption names the measured quantity, then the direction if there is one —
+  // «Сила, опън»; a word in capitals (an acronym) keeps its case
+  const lowerFirst = (w: string) => (/^\p{Lu}\p{Ll}/u.test(w) ? w[0].toLocaleLowerCase(lang) + w.slice(1) : w);
+  const caption = (i: number, dirEn: string, dirBg: string) => {
+    const what = [c ? pick(lang, c.quantityEn, c.quantityBg) : "", lowerFirst(pick(lang, dirEn, dirBg))].filter(Boolean).join(", ");
+    return `${L(`Table ${i + 1}`, `Таблица ${i + 1}`)}${what ? ` — ${esc(what)}` : ""}`;
+  };
 
   const tables =
-    directionsEn.length && points.length
+    points.length
       ? directionsEn
           .map((dirEn, i) => {
-            const dirBg = directionsBg[i] ?? dirEn;
+            const dirBg = directionsBg[i] || dirEn;
             const rows = points
               .map(
                 (pt, j) => `<tr>
@@ -80,10 +99,10 @@ export function renderResultsC(s: Scheme, lang: Lang): string {
       </tr>`
               )
               .join("\n");
-            return `<div class="rs-tcap">${L(`Table ${i + 1} — ${dirEn} force`, `Таблица ${i + 1} — ${dirBg} сила`)}</div>
+            return `<div class="rs-tcap">${caption(i, dirEn, dirBg)}</div>
     <table class="rtable"><thead><tr>
-      <th>${L(`Calibration point (${unit})`, `Точка на калибриране (${unit})`)}</th>
-      <th>${L(`Result X_lab (${unit})`, `Резултат X_lab (${unit})`)}</th>
+      <th>${inUnit(L("Calibration point", "Точка на калибриране"))}</th>
+      <th>${inUnit(L("Result X_lab", "Резултат X_lab"))}</th>
       <th>${L("**Expanded Uncertainty U (k=2, P≈95%)", "**Разширена неопределеност U (k=2, P≈95%)")}</th>
     </tr></thead><tbody>
 ${rows}
@@ -91,13 +110,13 @@ ${rows}
           })
           .join("\n")
       : `<p class="muted">${L(
-          "Calibration points / load directions are not set for this scheme yet — add them in Edit scheme data, then the result tables appear here.",
-          "Точките на калибриране / посоките на натоварване още не са зададени за тази схема — добавете ги в редактирането на данните, след което таблиците ще се появят тук."
+          "The calibration points are not set for this scheme yet — add them in Edit scheme data, then the result table appears here.",
+          "Точките на калибриране още не са зададени за тази схема — добавете ги в редактирането на данните, след което таблицата ще се появи тук."
         )}</p>`;
 
   const notes = `<div class="rs-notes">* ${L(
-    "Calibration is performed per the laboratory's own procedure — ISO 376 (direct comparison). Each calibration point is loaded according to the method; report the mean result per point.",
-    "Калибрирането се извършва по собствената методика на лабораторията — ISO 376 (пряко сравнение). Всяка точка се натоварва съгласно метода; докладвайте средния резултат за точката."
+    "Calibration is performed per the laboratory's own procedure; report the mean result for each calibration point.",
+    "Калибрирането се извършва по собствената методика на лабораторията; докладвайте средния резултат за всяка точка на калибриране."
   )}</div>
     <div class="rs-notes">** ${L(
       "If the expanded uncertainty U is not reported for a point, an Eₙ-score cannot be calculated for it. The expanded uncertainty shall be reported in accordance with Clause 6 of the Instruction for Participants.",

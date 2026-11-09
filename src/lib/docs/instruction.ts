@@ -1,4 +1,5 @@
 import type { Scheme, Lang } from "../types";
+import { instructionContacts, writtenInstructionsNote } from "./instruction-common";
 import { pick, wrapDoc, docHeader, sec, footer } from "../doc-shell";
 
 const FORM = "F 7.3.5-1";
@@ -165,17 +166,12 @@ export function renderInstruction(s: Scheme, lang: Lang): string {
     )}
   </ul>`;
 
-  const s11 = `<div class="contacts">
-    <div class="person"><div class="nm">Eng. Valentin Belovski</div><div class="ro">${L(
-      "PT Scheme Manager",
-      "Ръководител на схемата"
-    )}</div></div>
-    <div class="cline">📞 0897 50 39 80</div>
-    <div class="cline">✉ office@ptsbg.eu</div>
-  </div>`;
+  // the contacts from the scheme's team (3.11, N19)
+  const s11 = instructionContacts(s, lang);
 
   const body = [
     docHeader(s, lang, "INSTRUCTION FOR PARTICIPANTS", "ИНСТРУКЦИЯ ЗА УЧАСТНИЦИТЕ"),
+    writtenInstructionsNote(lang, false), // Реш. 150 (3.11)
     sec(1, "Number and name of the PT scheme", "Номер и наименование на схемата", lang, s1),
     sec(2, "Dispatch of the proficiency testing items", "Информация относно изпращането на обекта", lang, s2),
     sec(3, "Handling of the proficiency testing item", "Манипулиране с обекта", lang, s3),

@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { useLang } from "@/components/LangProvider";
 import {
   setStaffRoleAction, setStaffStatusAction, setLabStatusAction, addStaffAction,
-  inviteStaffAction, inviteLabByIdAction, addLabAction,
+  inviteStaffAction, inviteLabByIdAction, addLabAction, resetTwoFactorAction,
 } from "@/lib/actions";
 import type { StaffRole, StaffStatus, LabStatus } from "@/lib/types";
 
@@ -19,12 +19,20 @@ export type UserRow =
 type Filter = "all" | "staff" | "labs";
 const STAFF_ROLES: StaffRole[] = ["manager", "staff", "auditor"];
 
-export default function UsersTable({ rows, authEnabled }: { rows: UserRow[]; authEnabled: boolean }) {
+// The invitation to a laboratory is shown in full before «Изпрати» (part 1.8, Реш.
+// 138); its key goes back with the click, so the server sends that text or nothing.
+export type InvitePreview = { subject: string; body: string; key: string };
+
+// PTS's own people are the head's to manage (part 2.2, Реш. 141); laboratories stay
+// a manager's. A control nobody here may use is not shown.
+export default function UsersTable({ rows, authEnabled, canReset2fa = false, canManagePeople = true, canManageLabs = true, invite }: { rows: UserRow[]; authEnabled: boolean; canReset2fa?: boolean; canManagePeople?: boolean; canManageLabs?: boolean; invite: InvitePreview }) {
   const { t } = useLang();
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>("all");
   const [pending, start] = useTransition();
   const [err, setErr] = useState("");
+  const [said, setSaid] = useState("");
+  const [previewFor, setPreviewFor] = useState<string | null>(null); // the lab whose invitation is open
   // add-staff form
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -69,7 +77,7 @@ export default function UsersTable({ rows, authEnabled }: { rows: UserRow[]; aut
     start(async () => {
       const res = await addLabAction(fd);
       if (res?.error) { setErr(res.error); return; }
-      setErr(""); setLabEmail(""); setLabName("");
+      setErr(""); setLabEmail(""); setLabName(""); setSaid(t("users.labAddedInvite"));
       router.refresh();
     });
   }
@@ -109,14 +117,15 @@ export default function UsersTable({ rows, authEnabled }: { rows: UserRow[]; aut
       <div className="flex items-center gap-2 mt-4">
         {tab("all", t("users.filter.all"))}
         {tab("staff", t("users.filter.staff"))}
-        {tab("labs", t("users.filter.labs"))}
+        {canManageLabs && tab("labs", t("users.filter.labs"))}
         {pending && <span style={{ fontSize: 12, color: "var(--muted)" }}>…</span>}
       </div>
 
       {err && <p className="mt-3" style={{ color: "var(--red)", fontSize: 13 }}>{err}</p>}
+      {said && <p className="mt-3" role="status" style={{ color: "var(--green-dark)", fontSize: 13 }}>{said}</p>}
 
       <div className="card mt-3 overflow-hidden">
-        <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+        <table data-users-table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "var(--green-soft)", color: "var(--green-dark)" }}>
               <th className="text-left p-2">{t("users.col.name")}</th>
@@ -147,7 +156,18 @@ export default function UsersTable({ rows, authEnabled }: { rows: UserRow[]; aut
                       <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: "#fff", background: "var(--green-light)", borderRadius: 999, padding: "2px 8px" }}>{t("users.founder")}</span>
                     </td>
                     <td className="p-2">{statusPill(true)}</td>
-                    <td className="p-2" style={{ color: "var(--muted)", fontSize: 12 }} title={t("users.founderHint")}>🔒</td>
+                    <td className="p-2" style={{ color: "var(--muted)", fontSize: 12 }} title={t("users.founderHint")}>
+                      <div className="flex items-center gap-2 justify-end">
+                        {canReset2fa && (
+                          // the head of the PT provider only (Реш. 95), journalled
+                          <button className="btn btn-sm" data-reset-2fa disabled={pending} style={{ fontSize: 12, padding: "5px 10px" }}
+                            onClick={() => window.confirm(t("users.reset2faConfirm")) && run(() => resetTwoFactorAction("founder", r.email))}>
+                            {t("users.reset2fa")}
+                          </button>
+                        )}
+                        <span>🔒</span>
+                      </div>
+                    </td>
                   </tr>
                 );
               }
@@ -155,24 +175,60 @@ export default function UsersTable({ rows, authEnabled }: { rows: UserRow[]; aut
               if (r.kind === "lab") {
                 const active = r.status === "active";
                 return (
-                  <tr key={key} style={{ borderTop: "1px solid var(--line)" }}>
+                  <Fragment key={key}>
+                  <tr style={{ borderTop: "1px solid var(--line)" }}>
                     <td className="p-2">{r.name || "—"}{you}</td>
                     <td className="p-2">{r.email}</td>
                     <td className="p-2"><span style={{ color: "var(--muted)" }}>{t("users.type.lab")}</span></td>
                     <td className="p-2">{statusPill(active)}</td>
                     <td className="p-2">
                       <div className="flex items-center gap-2 justify-end">
-                        <button className="btn btn-sm" disabled={pending} style={{ fontSize: 12, padding: "5px 10px" }}
-                          onClick={() => run(() => inviteLabByIdAction(r.id))}>
+                        {canManageLabs && <>
+                        <button className="btn btn-sm" data-invite-open disabled={pending} style={{ fontSize: 12, padding: "5px 10px" }}
+                          onClick={() => { setErr(""); setSaid(""); setPreviewFor(previewFor === r.id ? null : r.id); }}>
                           {t("users.invite")}
                         </button>
+                        {canReset2fa && (
+                        // the head of the PT provider only (Реш. 95), journalled
+                        <button className="btn btn-sm" data-reset-2fa disabled={pending} style={{ fontSize: 12, padding: "5px 10px" }}
+                          onClick={() => window.confirm(t("users.reset2faConfirm")) && run(() => resetTwoFactorAction("lab", r.id))}>
+                          {t("users.reset2fa")}
+                        </button>
+                      )}
                         <button className="btn btn-sm" disabled={pending} style={{ fontSize: 12, padding: "5px 10px", borderColor: active ? "var(--red)" : "var(--line)", color: active ? "var(--red)" : "var(--ink)" }}
                           onClick={() => run(() => setLabStatusAction(r.id, (active ? "inactive" : "active") as LabStatus))}>
                           {active ? t("users.deactivate") : t("users.activate")}
                         </button>
+                        </>}
                       </div>
                     </td>
                   </tr>
+                  {previewFor === r.id && (
+                    // the exact invitation, then «Изпрати» (part 1.8)
+                    <tr data-invite-preview>
+                      <td colSpan={5} className="p-3" style={{ background: "var(--green-soft)" }}>
+                        <div className="text-xs font-bold" style={{ color: "var(--green-dark)" }}>{t("users.inviteExact")} · {r.email}</div>
+                        <div className="text-sm mt-1"><b>{t("users.inviteSubject")}:</b> {invite.subject}</div>
+                        <pre className="text-xs mt-2 p-2" style={{ whiteSpace: "pre-wrap", background: "#fff", border: "1px solid var(--line)", borderRadius: 6 }}>{invite.body}</pre>
+                        <div className="flex gap-2 mt-2">
+                          <button className="btn btn-primary btn-sm" data-invite-send disabled={pending}
+                            onClick={() => {
+                              setErr(""); setSaid("");
+                              start(async () => {
+                                const res = await inviteLabByIdAction(r.id, invite.key);
+                                if (res?.error) { setErr(res.error); return; }
+                                setPreviewFor(null); setSaid(t("users.inviteSent"));
+                                router.refresh();
+                              });
+                            }}>
+                            {t("users.inviteSend")}
+                          </button>
+                          <button className="btn btn-sm" disabled={pending} onClick={() => setPreviewFor(null)}>{t("users.inviteCancel")}</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               }
 
@@ -185,7 +241,7 @@ export default function UsersTable({ rows, authEnabled }: { rows: UserRow[]; aut
                   <td className="p-2">
                     <select
                       value={r.role}
-                      disabled={pending}
+                      disabled={pending || !canManagePeople || !!r.you}
                       onChange={(e) => run(() => setStaffRoleAction(r.id, e.target.value as StaffRole))}
                       style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px", fontSize: 13, background: "#fff" }}
                     >
@@ -195,14 +251,25 @@ export default function UsersTable({ rows, authEnabled }: { rows: UserRow[]; aut
                   <td className="p-2">{statusPill(active)}</td>
                   <td className="p-2">
                     <div className="flex items-center gap-2 justify-end">
+                      {canManagePeople && (
                       <button className="btn btn-sm" disabled={pending} style={{ fontSize: 12, padding: "5px 10px" }}
                         onClick={() => run(() => inviteStaffAction(r.email))}>
                         {t("users.invite")}
                       </button>
+                      )}
+                      {canReset2fa && (
+                        // the head of the PT provider only (Реш. 95), journalled
+                        <button className="btn btn-sm" data-reset-2fa disabled={pending} style={{ fontSize: 12, padding: "5px 10px" }}
+                          onClick={() => window.confirm(t("users.reset2faConfirm")) && run(() => resetTwoFactorAction("staff", r.id))}>
+                          {t("users.reset2fa")}
+                        </button>
+                      )}
+                      {canManagePeople && !r.you && (
                       <button className="btn btn-sm" disabled={pending} style={{ fontSize: 12, padding: "5px 10px", borderColor: active ? "var(--red)" : "var(--line)", color: active ? "var(--red)" : "var(--ink)" }}
-                        onClick={() => run(() => setStaffStatusAction(r.id, (active ? "inactive" : "active") as StaffStatus))}>
+                        onClick={() => window.confirm(t(active ? "people.deactivateConfirm" : "people.activateConfirm")) && run(() => setStaffStatusAction(r.id, (active ? "inactive" : "active") as StaffStatus))}>
                         {active ? t("users.deactivate") : t("users.activate")}
                       </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -212,7 +279,8 @@ export default function UsersTable({ rows, authEnabled }: { rows: UserRow[]; aut
         </table>
       </div>
 
-      {/* add staff */}
+      {/* add staff — the head of the PT provider (Реш. 141) */}
+      {canManagePeople ? <>
       <h2 className="text-lg font-bold mt-7 mb-1 pb-1" style={{ color: "var(--green-dark)", borderBottom: "2px solid var(--red)" }}>
         {t("users.addTitle")}
       </h2>
@@ -231,8 +299,10 @@ export default function UsersTable({ rows, authEnabled }: { rows: UserRow[]; aut
           </select></label>
         <button type="submit" className="btn btn-primary" disabled={pending}>{t("users.addButton")}</button>
       </form>
+      </> : <p className="text-xs mt-4" data-people-head-only style={{ color: "var(--muted)" }}>{t("people.headOnly")}</p>}
 
       {/* add laboratory (creates a lab account + sends a portal invite) */}
+      {canManageLabs && <>
       <h2 className="text-lg font-bold mt-7 mb-1 pb-1" style={{ color: "var(--green-dark)", borderBottom: "2px solid var(--red)" }}>
         {t("users.addLabTitle")}
       </h2>
@@ -246,6 +316,7 @@ export default function UsersTable({ rows, authEnabled }: { rows: UserRow[]; aut
             className="w-full rounded px-2 py-1 text-sm" style={{ border: "1px solid var(--line)", background: "#fff" }} /></label>
         <button type="submit" className="btn btn-primary" disabled={pending}>{t("users.addLabButton")}</button>
       </form>
+      </>}
     </div>
   );
 }

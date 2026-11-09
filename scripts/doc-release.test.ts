@@ -4,19 +4,23 @@
 import {
   SENDABLE_DOCS, isSendableDoc, canLabFetchDoc, releasedDocs, LAB_DOC_SLOTS, isLabDocSlot,
   hasCohortNames, stripCohortNames,
+  hasPortalScores, stripPortalScores,
 } from "../src/lib/doc-release.ts";
+import { unofficialNote } from "../src/lib/scoring.ts";
 import { ALL_DOC_KEYS } from "../src/lib/doc-stages.ts";
 
 let pass = 0, fail = 0;
 const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.error("✗ " + n); } };
 
-const NOTHING = { reported: false, hasCert: false };
+const NOTHING = { reported: false, hasCert: false, officialReport: false };
 
 // ── the allow-list ───────────────────────────────────────────────────────────
 ok("every sendable key is a real document", SENDABLE_DOCS.every((k) => ALL_DOC_KEYS.includes(k)));
 
 // §4.2 and the owner's own words: these never reach a laboratory, whatever is clicked.
-for (const key of ["order", "plan", "stat-project", "registered", "registered-coded", "results-coded", "application"]) {
+// the plan is released since D15 (5.4): public for a started scheme, readable before applying
+ok("the plan can be released (D15)", isSendableDoc("plan"));
+for (const key of ["order", "stat-project", "registered", "registered-coded", "results-coded", "application"]) {
   ok(`${key} can never be released`, !isSendableDoc(key));
   ok(`${key} is unfetchable even if a stray timestamp exists`,
     !canLabFetchDoc(key, { ...NOTHING, sent: { [key]: "2026-07-31T09:00:00Z" } }));
@@ -34,10 +38,13 @@ ok("releasing one document does not release another",
   !canLabFetchDoc("results", { ...NOTHING, sent: { instruction: "2026-07-31T09:00:00Z" } }));
 
 ok("the report waits for the round to be reported", !canLabFetchDoc("report", NOTHING));
-ok("the report opens when reported", canLabFetchDoc("report", { reported: true, hasCert: false }));
+ok("the report opens when reported AND PTS uploaded it", canLabFetchDoc("report", { reported: true, hasCert: false, officialReport: true }));
+// Реш. 135 (part 0.6): the portal's own rendered report carries portal-computed scores
+ok("a reported round without PTS's file gives no report", !canLabFetchDoc("report", { reported: true, hasCert: false, officialReport: false }));
+ok("an uploaded file before reporting gives no report", !canLabFetchDoc("report", { reported: false, hasCert: false, officialReport: true }));
 ok("the certificate waits until issued for THIS code", !canLabFetchDoc("certificate", NOTHING));
-ok("the certificate opens once issued", canLabFetchDoc("certificate", { reported: false, hasCert: true }));
-ok("reporting the round does not open the certificate", !canLabFetchDoc("certificate", { reported: true, hasCert: false }));
+ok("the certificate opens once issued", canLabFetchDoc("certificate", { reported: false, hasCert: true, officialReport: false }));
+ok("reporting the round does not open the certificate", !canLabFetchDoc("certificate", { reported: true, hasCert: false, officialReport: true }));
 
 ok("an unknown key is never fetchable", !canLabFetchDoc("no-such-doc", { ...NOTHING, sent: { "no-such-doc": "x" } }));
 
@@ -122,6 +129,25 @@ ok("stripping is idempotent",
 }
 ok("unbalanced markup is returned rather than mangled",
   stripCohortNames("<p>a</p><table><tr><td>oops", "bg") === "<p>a</p><table><tr><td>oops");
+
+// ── Реш. 135 (part 0.6): the portal's own scores never reach a laboratory ──
+const zTable = `<h3 class="sub">Strength — z-scores</h3><table class="ptable"><thead><tr><th>Lab code</th><th>xᵢ</th><th>z</th><th>ζ</th><th>Evaluation</th></tr></thead><tbody><tr><td>261101</td><td>51.0</td><td>1.00</td><td>0.80</td><td>Satisfactory</td></tr></tbody></table><svg class="chart" viewBox="0 0 10 10"><text>261101</text></svg>`;
+const enTable = `<table class="ptable"><thead><tr><th>Point</th><th>Lab code</th><th>E<sub>n</sub></th></tr></thead><tbody><tr><td>40</td><td>256101</td><td>0.35</td></tr></tbody></table>`;
+const scored = `<p>Dear participant,</p>${unofficialNote("en")}${zTable}<p>Regards</p>`;
+ok("scores in a body are detected", hasPortalScores(scored) && hasPortalScores(enTable));
+const outS = stripPortalScores(scored, "en");
+ok("score values removed", !outS.includes("1.00") && !outS.includes("0.80") && !outS.includes("Satisfactory"));
+ok("score chart removed", !outS.includes("<svg"));
+ok("the unofficial note removed with them", !outS.includes('class="unofficial"'));
+ok("a visible note takes their place", outS.includes("not provided to participants"));
+ok("the rest of the letter kept", outS.includes("Dear participant") && outS.includes("Regards"));
+ok("Eₙ table removed (bg note)", !stripPortalScores(enTable, "bg").includes("0.35") && stripPortalScores(enTable, "bg").includes("не се предоставят"));
+// what labs legitimately receive is left alone — prose naming the scores, and form tables
+const prose = "<p>If U is not reported, no ζ-score is calculated; an Eₙ-score likewise.</p>";
+ok("prose about ζ / Eₙ is not a score table", !hasPortalScores(prose) && stripPortalScores(prose, "en") === prose);
+const form = `<table><thead><tr><th>I</th><th>II</th><th>III</th><th>Mean value</th><th>U</th></tr></thead><tbody><tr><td></td></tr></tbody></table>`;
+ok("a results form table is not a score table", !hasPortalScores(form) && stripPortalScores(form, "en") === form);
+ok("empty bodies pass through", stripPortalScores("", "bg") === "" && !hasPortalScores(""));
 
 console.log(`doc-release.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

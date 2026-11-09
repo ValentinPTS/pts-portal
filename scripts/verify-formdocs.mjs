@@ -1,9 +1,15 @@
 // Live round-trip for the form-doc WYSIWYG fix (заявка / application):
 // edit in the Word editor → lock (Fill view) shows the EDITS with live inputs →
 // fill-save persists → composed print draws the value → Готов button works.
+// Against a LOCAL dev server (in-memory store):
+//   BASE=http://localhost:3000 node scripts/verify-formdocs.mjs
+// Updated 2026-11-05: default port 3000, the manager persona, and the builder's
+// start chooser waited for (it renders after hydration — checking once missed it),
+// then the editor's body (filled in an effect after mount). Restart the dev server
+// for a clean run: this marks the заявка «Готов», so a second run finds it ready.
 import { chromium } from "playwright";
 
-const BASE = process.env.BASE ?? "http://localhost:3100";
+const BASE = process.env.BASE ?? "http://localhost:3000";
 const S = "26-01-T-1";
 let pass = 0, fail = 0;
 const t = (name, ok, extra = "") => {
@@ -16,13 +22,18 @@ const page = await browser.newPage();
 page.setDefaultTimeout(60000);
 const go = (url) => page.goto(url, { waitUntil: "domcontentloaded", timeout: 90000 });
 
+await go(`${BASE}/dev/persona?role=manager`);
+
 // 1. Edit the заявка in the Word editor and save.
 await go(`${BASE}/schemes/${S}/build/application`);
 // a fresh document greets with the "Започни от…" chooser — start from the template
-const starter = page.getByRole("button", { name: /Шаблон по подразбиране/ });
-if (await starter.isVisible().catch(() => false)) await starter.click();
+// (one saved by an earlier run opens straight in the editor)
 const ed = page.locator('[contenteditable="true"]').first();
+const starter = page.getByRole("button", { name: /Шаблон по подразбиране|Default template/ });
+await ed.or(starter).first().waitFor();
+if (await starter.isVisible()) await starter.click();
 await ed.waitFor();
+await page.waitForFunction(() => (document.querySelector('[contenteditable="true"]')?.innerText ?? "").trim().length > 0);
 await ed.click({ position: { x: 200, y: 40 } });
 await page.keyboard.press("Control+Home").catch(() => {});
 await page.keyboard.type("EDIT-MARKER-77 ");

@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { getDb } from "./lib/supabase";
+import { isSharedMailbox } from "./lib/provider-people";
+import { entityUserByAuth } from "./lib/entity-users";
 
 // Next 16 "proxy" (formerly middleware; Node.js runtime). Refreshes the Supabase
 // session cookie and gates access by ROLE:
@@ -23,7 +25,7 @@ function ownerEmails(): string[] {
 }
 function isOwner(email: string | undefined | null): boolean {
   const e = (email ?? "").toLowerCase();
-  return !!e && ownerEmails().includes(e);
+  return !!e && !isSharedMailbox(e) && ownerEmails().includes(e);
 }
 
 // Is this signed-in user allowed to READ the owner area? Founders always; otherwise
@@ -33,7 +35,7 @@ function isOwner(email: string | undefined | null): boolean {
 async function isInternalUser(email: string | undefined | null): Promise<boolean> {
   if (isOwner(email)) return true;
   const e = (email ?? "").toLowerCase();
-  if (!e) return false;
+  if (!e || isSharedMailbox(e)) return false; // never a person or a role (Реш. 139)
   const db = getDb();
   if (!db) return false;
   try {
@@ -51,7 +53,7 @@ async function isInternalUser(email: string | undefined | null): Promise<boolean
 // invisible bounce loop to /lab/login.
 async function isActiveLab(email: string | undefined | null): Promise<boolean> {
   const e = (email ?? "").toLowerCase();
-  if (!e) return false;
+  if (!e || isSharedMailbox(e)) return false;
   const db = getDb();
   if (!db) return false;
   try {
@@ -61,6 +63,15 @@ async function isActiveLab(email: string | undefined | null): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// …or a participant's user of a legal entity (4.4), by its sign-in account (linked at the
+// invitation) — the laboratory's own opening, on record (0034). Only to send it to its
+// side; the page's own gate decides what it may see.
+async function isParticipantUser(authUserId: string | undefined): Promise<boolean> {
+  if (!getDb() || !authUserId) return false;
+  const u = await entityUserByAuth(authUserId, `auth:${authUserId}`).catch(() => null);
+  return !!u && u.state !== "inactive";
 }
 
 export async function proxy(request: NextRequest) {
@@ -97,9 +108,18 @@ export async function proxy(request: NextRequest) {
     },
   });
 
+  // account e-mail links and their pages (part 1.5): an invited or resetting person
+  // has no session yet — or a fresh one before any role or 2FA — so no area gate,
+  // and no session refresh here (the page's own action sets the session)
+  const authPath = request.nextUrl.pathname;
+  if (authPath === "/auth" || authPath.startsWith("/auth/")) return response;
+
   const {
-    data: { user },
+    data: { user: authUser },
   } = await supabase.auth.getUser();
+  // An unconfirmed e-mail counts as signed out — the same rule as getSessionUser
+  // and sign-in (part 0.5), so the proxy and the pages never disagree.
+  const user = authUser?.email_confirmed_at ? authUser : null;
 
   const path = request.nextUrl.pathname;
   const isLogin = path === "/login" || path.startsWith("/login/");
@@ -118,14 +138,14 @@ export async function proxy(request: NextRequest) {
   // is INTERNAL-users-only AND requires completed 2FA. A signed-in user who isn't
   // internal (a lab) is sent to its portal; an internal user who hasn't passed 2FA
   // is sent to /account to enrol/verify — so the admin area can't even be READ at
-  // aal1. (apply/api/static/brand are excluded by the matcher below.)
+  // aal1. (apply/api/static/brand/fonts are excluded by the matcher below.)
   const ownerArea = !isLabArea && !isLogin && !isLabLogin;
   if (ownerArea) {
     if (!(await isInternalUser(user.email))) {
       const to = request.nextUrl.clone();
       // A real lab → its portal; a signed-in account with NO role yet → back to the
       // owner login with a clear "not authorized" message (no silent /lab bounce).
-      if (await isActiveLab(user.email)) { to.pathname = "/lab"; to.search = ""; }
+      if ((await isActiveLab(user.email)) || (await isParticipantUser(user.id))) { to.pathname = "/lab"; to.search = ""; }
       else { to.pathname = "/login"; to.search = "?denied=1"; }
       return NextResponse.redirect(to);
     }
@@ -146,9 +166,10 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // run on everything except static assets, public brand images, the public
-  // application flow (/apply = scheme заявка, /register = lab-account request), and
-  // API routes (which self-guard). Role checks live above (owner area vs lab) and in
-  // requireOwner()/requireLab() for mutations.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|brand|apply|register|api).*)"],
+  // run on everything except static assets, public brand images, the documents'
+  // fonts (/fonts/ — a lab's document and the PDF renderer load them with no owner
+  // session), the public application flow (/apply = scheme заявка, /register =
+  // lab-account request), and API routes (which self-guard). Role checks live above
+  // (owner area vs lab) and in requireOwner()/requireLab() for mutations.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|brand|fonts/|apply|register|api).*)"],
 };

@@ -48,7 +48,7 @@ export const forceCalibration: Scheme = {
     methodBg: "ISO 376 — метод на пряко сравнение (опън и натиск)",
     feeEn: "Flat fee per scheme, independent of the number of calibration points; 50% of the price for each additional laboratory code. Prices are net; +20% VAT for Bulgarian participants.",
     feeBg: "Единна такса за схема, независимо от броя точки на калибриране; 50% от цената за всеки допълнителен лабораторен код. Цените са нето; за български участници +20% ДДС.",
-    stabilityFormula: "u_stab = |X_ref1 − X_ref2| / √3",
+    stabilityFormula: "u_stab = |X_ref1 − X_ref2| / (2·√3)",
     enCriterionEn: "Eₙ = (X_lab − X_ref) / √(U_lab² + U_ref²); satisfactory (A) when |Eₙ| ≤ 1.00, otherwise unsatisfactory (N).",
     enCriterionBg: "Eₙ = (X_lab − X_ref) / √(U_lab² + U_ref²); удовлетворително (A) при |Eₙ| ≤ 1,00, в противен случай неудовлетворително (N).",
   },
@@ -93,8 +93,8 @@ export const forceCalibration: Scheme = {
       bg: "Устройството се транспортира от участниците в подходяща опаковка чрез надеждна и бърза куриерска фирма (3–7 работни дни). Всеки участник потвърждава получаването с Протокол за получаване на обект (Ф 7.3.4-1).",
     },
     homogeneity: {
-      en: "Stability of the travelling device is assessed by the reference laboratory by calibrating it before and after circulation; u_stab = |X_ref1 − X_ref2| / √3 (rectangular distribution).",
-      bg: "Стабилността на пътуващото устройство се оценява от референтната лаборатория чрез калибриране преди и след обиколката; u_stab = |X_ref1 − X_ref2| / √3 (правоъгълно разпределение).",
+      en: "Stability of the travelling device is assessed by the reference laboratory by calibrating it before and after circulation; u_stab = |X_ref1 − X_ref2| / (2·√3) (rectangular distribution).",
+      bg: "Стабилността на пътуващото устройство се оценява от референтната лаборатория чрез калибриране преди и след обиколката; u_stab = |X_ref1 − X_ref2| / (2·√3) (правоъгълно разпределение).",
     },
     reporting: {
       en: "Results are reported by the deadline in clause 10 via the Results Sheet (F 7.2.1-7), in mV/V and kN.",
@@ -121,8 +121,8 @@ export const forceCalibration: Scheme = {
       bg: "След окончателния доклад участниците получават Формуляр за обратна връзка (Ф 8.6-2) за оценка на удовлетвореност, потребности и очаквания.",
     },
     applying: {
-      en: "Participation is requested via the Application for Participation (F 7.2.1-3). A participation certificate is generated automatically and published in the Register.",
-      bg: "Участието се заявява чрез Заявка за участие (Ф 7.2.1-3). Сертификат за участие се генерира автоматично и се публикува в Регистъра.",
+      en: "Participation is requested with the Application for Participation (F 7.2.1-3) — in PDF format sent by e-mail, or through the participant portal where applying there is open for the scheme. PTS may enter, on a laboratory's behalf, an application received by e-mail or on paper. The certificate of participation is issued by PTS after the final report is approved and is entered in the Register section of www.ptsbg.eu.",
+      bg: "Участието се заявява със Заявка за участие (Ф 7.2.1-3) — във формат PDF, изпратена по имейл, или през портала за участници, когато заявяването там е отворено за схемата. PTS може да въведе от името на лабораторията заявка, получена по имейл или на хартия. Сертификатът за участие се издава от PTS след одобряване на окончателния доклад и се вписва в раздел „Регистър“ на www.ptsbg.eu.",
     },
     financial: {
       en: "Financial conditions are specified in the Invitation (F 7.2.1-2). A flat fee applies regardless of the number of calibration points; 50% for each additional laboratory code. Prices are net; 20% VAT is added for Bulgarian participants.",

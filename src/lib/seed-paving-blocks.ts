@@ -159,8 +159,8 @@ export const pavingBlocks: Scheme = {
       bg: "След окончателния доклад участниците получават Формуляр за обратна връзка (Ф 8.6-2) за оценка на удовлетвореност, потребности и очаквания.",
     },
     applying: {
-      en: "Participation is requested via the Application for Participation (F 7.2.1-3). A participation certificate is generated automatically and published in the Register.",
-      bg: "Участието се заявява чрез Заявка за участие (Ф 7.2.1-3). Сертификат за участие се генерира автоматично и се публикува в Регистъра.",
+      en: "Participation is requested with the Application for Participation (F 7.2.1-3) — in PDF format sent by e-mail, or through the participant portal where applying there is open for the scheme. PTS may enter, on a laboratory's behalf, an application received by e-mail or on paper. The certificate of participation is issued by PTS after the final report is approved and is entered in the Register section of www.ptsbg.eu.",
+      bg: "Участието се заявява със Заявка за участие (Ф 7.2.1-3) — във формат PDF, изпратена по имейл, или през портала за участници, когато заявяването там е отворено за схемата. PTS може да въведе от името на лабораторията заявка, получена по имейл или на хартия. Сертификатът за участие се издава от PTS след одобряване на окончателния доклад и се вписва в раздел „Регистър“ на www.ptsbg.eu.",
     },
     financial: {
       en: "Financial conditions are specified in the Invitation (F 7.2.1-2). Prices are net; 20% VAT is added for Bulgarian participants.",

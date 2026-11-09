@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { issueCertificateAction } from "@/lib/actions";
+import { looksLikeSimNumber } from "@/lib/environment";
 import { useLang } from "@/components/LangProvider";
 
-type Participant = { code: string; labName: string; certNo?: string; certDate?: string };
+type Participant = { code: string; labName?: string; certNo?: string; certDate?: string };
 
 export default function DocViewer({
   id,
@@ -12,17 +13,23 @@ export default function DocViewer({
   number,
   name,
   participants = [],
+  canIssue = false,
 }: {
   id: string;
   doc: string;
   number: string;
   name: string;
   participants?: Participant[];
+  canIssue?: boolean; // issuing a certificate is a manager act (issueCertificateAction)
 }) {
   const { t } = useLang();
   const [lang, setLang] = useState<"en" | "bg">("en");
   const [busy, setBusy] = useState(false);
   const [participant, setParticipant] = useState(""); // "" = blank/template
+  // the answer to the last save: an error, or the number as it was stored
+  const [certMsg, setCertMsg] = useState<{ ok: boolean; key: string; n: string } | null>(null);
+  const [certBusy, setCertBusy] = useState(false);
+  const certInFlight = useRef(false); // a second click/Enter while saving is ignored
 
   const sel = participants.find((p) => p.code === participant);
   const partQuery = participant ? `&p=${encodeURIComponent(participant)}` : "";
@@ -71,7 +78,7 @@ export default function DocViewer({
         {participants.length > 0 && (
           <select
             value={participant}
-            onChange={(e) => setParticipant(e.target.value)}
+            onChange={(e) => { setParticipant(e.target.value); setCertMsg(null); }}
             className="btn"
             style={{ background: "#fff" }}
             title={t("dv.issueForLab")}
@@ -79,7 +86,7 @@ export default function DocViewer({
             <option value="">{t("dv.blankTemplate")}</option>
             {participants.map((p) => (
               <option key={p.code} value={p.code}>
-                {p.code} · {p.labName}
+                {p.labName ? `${p.code} · ${p.labName}` : p.code}
               </option>
             ))}
           </select>
@@ -89,23 +96,49 @@ export default function DocViewer({
         </button>
       </div>
 
-      {/* certificate issuance — assign/store the number + date for the selected lab */}
-      {doc === "certificate" && participant && (
+      {/* certificate — the number as the ptsbg.eu register holds it, typed by PTS
+          (the portal makes none up: PTS, 02.11.2026, condition 1), + the date */}
+      {doc === "certificate" && participant && canIssue && (
         <form
-          action={issueCertificateAction}
+          // onSubmit, not action={…}: React resets a form after its action, and a
+          // refused number would wipe what was typed
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (certInFlight.current) return;
+            const fd = new FormData(e.currentTarget);
+            certInFlight.current = true;
+            setCertBusy(true);
+            setCertMsg(null);
+            try {
+              const r = await issueCertificateAction(fd);
+              setCertMsg("error" in r ? { ok: false, key: `dv.certErr.${r.error}`, n: number } : { ok: true, key: "dv.certSaved", n: r.no });
+            } finally {
+              certInFlight.current = false;
+              setCertBusy(false);
+            }
+          }}
+          data-cert-form
           className="flex items-center gap-2 mb-3 text-sm flex-wrap card p-2"
           style={{ background: "var(--green-soft)" }}
         >
           <input type="hidden" name="schemeId" value={id} />
           <input type="hidden" name="code" value={participant} />
-          <span style={{ color: "var(--muted)" }}>{t("dv.certNo")}</span>
-          <b style={{ color: sel?.certNo ? "var(--green-dark)" : "var(--muted)" }}>
-            {sel?.certNo ?? t("dv.notIssued")}
-          </b>
+          <label style={{ color: "var(--muted)" }}>
+            {t("dv.certNo")}{" "}
+            <input
+              key={`${participant}-${sel?.certNo ?? "new"}`}
+              name="no"
+              required
+              defaultValue={sel?.certNo ?? ""}
+              placeholder={`${number}-12345`}
+              className="rounded px-2 py-1"
+              style={{ border: "1px solid var(--line)", background: "#fff", width: 230 }}
+            />
+          </label>
           <label className="ml-2" style={{ color: "var(--muted)" }}>
             {t("dv.issueDate")}{" "}
             <input
-              key={sel?.certDate ?? "new"}
+              key={`${participant}-${sel?.certDate ?? "new"}`}
               name="date"
               defaultValue={sel?.certDate ?? ""}
               placeholder="dd.mm.yyyy"
@@ -113,9 +146,24 @@ export default function DocViewer({
               style={{ border: "1px solid var(--line)", background: "#fff", width: 110 }}
             />
           </label>
-          <button type="submit" className="btn">
-            {sel?.certNo ? t("dv.saveDate") : t("dv.issueAuto")}
+          {looksLikeSimNumber(number) ? (
+            // a simulation round: nothing is entered in the register (Реш. 130, 1.2)
+            <span className="ml-2" style={{ color: "#7a2e0e", fontWeight: 600 }}>{t("dv.simulationCert")}</span>
+          ) : (
+            <label className="ml-2 inline-flex items-center gap-1" style={{ color: "var(--ink)" }}>
+              <input key={`reg-${participant}`} type="checkbox" name="inRegister" />
+              {t("dv.inRegister")}
+            </label>
+          )}
+          <button type="submit" className="btn" disabled={certBusy}>
+            {t("dv.saveCert")}
           </button>
+          <div className="w-full" style={{ fontSize: 12, color: "var(--muted)" }}>{t("dv.certHelp")}</div>
+          {certMsg && (
+            <div className="w-full" role={certMsg.ok ? "status" : "alert"} style={{ fontSize: 12.5, color: certMsg.ok ? "var(--green-dark)" : "var(--red)", fontWeight: 600 }}>
+              {t(certMsg.key).replace("{n}", certMsg.n)}
+            </div>
+          )}
         </form>
       )}
 

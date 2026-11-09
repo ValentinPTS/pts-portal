@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import type { Notification, NotifyKind } from "./types";
-import { getDb } from "./supabase";
+import { getDb, noMemoryFallback, dropOnDeployment } from "./supabase";
 
 // The notification OUTBOX (Phase 1). Supabase when configured, else in-memory —
 // the same graceful fallback as every other store here. See migration
@@ -13,11 +13,18 @@ import { getDb } from "./supabase";
 //
 // §4.2: a notification may carry the participant CODE. Never put a laboratory
 // name in one — the code is the only identifier that travels.
+//
+// Реш. 138 (part 0.8): a notice to a LABORATORY is recorded held. It reaches the
+// lab's portal and the transport only once a person has released it from the list
+// of held notices, after seeing its exact text (releaseNotice). Until part 1.8
+// brings approved templates, that includes the day-before reminder. Notices to the
+// provider itself are not held. See migration 0016_notification_release.sql.
 
 const memStore = globalThis as unknown as { __ptsNotifyMem?: Notification[] };
 const mem: Notification[] = memStore.__ptsNotifyMem ?? (memStore.__ptsNotifyMem = []);
 let warned = false;
 function warn(e: unknown) {
+  noMemoryFallback("notifications", e); // on a deployment: an error, not memory (1.1)
   if (warned) return;
   warned = true;
   console.warn("[notifications] Supabase unavailable — in-memory fallback:", (e as Error)?.message ?? e);
@@ -29,6 +36,15 @@ function toRow(n: Notification) {
     lab_id: n.labId ?? null, scheme_id: n.schemeId ?? null, code: n.code ?? null,
     bg: n.bg, en: n.en, href: n.href ?? null,
     created_at: n.createdAt, read_at: n.readAt ?? null, emailed_at: n.emailedAt ?? null,
+    // only when set: a fresh notice then inserts even where migration 0016 has not
+    // been applied yet (its reads then fall back, showing and sending nothing held)
+    ...(n.releasedAt ? { released_at: n.releasedAt, released_by: n.releasedBy ?? null } : {}),
+    ...(n.withheldAt ? { withheld_at: n.withheldAt, withheld_by: n.withheldBy ?? null } : {}),
+  } as {
+    id: string; kind: string; audience: string; lab_id: string | null; scheme_id: string | null;
+    code: string | null; bg: string; en: string; href: string | null; created_at: string;
+    read_at: string | null; emailed_at: string | null; released_at?: string | null;
+    released_by?: string | null; withheld_at?: string | null; withheld_by?: string | null;
   };
 }
 type Row = ReturnType<typeof toRow>;
@@ -38,10 +54,31 @@ function fromRow(r: Row): Notification {
     labId: r.lab_id ?? undefined, schemeId: r.scheme_id ?? undefined, code: r.code ?? undefined,
     bg: r.bg ?? "", en: r.en ?? "", href: r.href ?? undefined,
     createdAt: r.created_at ?? "", readAt: r.read_at ?? undefined, emailedAt: r.emailed_at ?? undefined,
+    releasedAt: r.released_at ?? undefined, releasedBy: r.released_by ?? undefined,
+    withheldAt: r.withheld_at ?? undefined, withheldBy: r.withheld_by ?? undefined,
   };
 }
 
+// May this notice be seen in the portal? Provider notices always; a laboratory's
+// only once released and never if withheld.
+export const isOut = (n: Notification): boolean =>
+  n.audience === "provider" || (!!n.releasedAt && !n.withheldAt);
+
+// May a transport e-mail it? As isOut — except the backlog migration 0016 marked
+// released for the portal only: no person saw it, so it never goes out by e-mail.
+export const BACKFILL_RELEASE = "migration-0016";
+export const isDeliverable = (n: Notification): boolean =>
+  isOut(n) && (n.audience === "provider" || n.releasedBy !== BACKFILL_RELEASE);
+
 const newestFirst = (a: Notification, b: Notification) => (b.createdAt || "").localeCompare(a.createdAt || "");
+
+// a template's approval releases a LABORATORY reminder only (part 1.8)
+function build(input: Parameters<typeof notify>[0]): Notification {
+  const { releasedByTemplate, ...rest } = input;
+  const createdAt = new Date().toISOString();
+  const byTemplate = !!releasedByTemplate && rest.audience === "lab" && rest.kind === "results.due" && releasedByTemplate.startsWith("template:");
+  return { id: randomUUID(), createdAt, ...rest, ...(byTemplate ? { releasedAt: createdAt, releasedBy: releasedByTemplate } : {}) };
+}
 
 /**
  * Raise a notification. Never throws — a notice failing to record must not roll
@@ -57,12 +94,11 @@ export async function notify(input: {
   schemeId?: string;
   code?: string;
   href?: string;
+  // part 1.8: only the reminder job passes this — an approved template's approval
+  // ("template:<kind>@v<n> (approved by …)"); the notice is then out at once
+  releasedByTemplate?: string;
 }): Promise<Notification | null> {
-  const n: Notification = {
-    id: randomUUID(),
-    createdAt: new Date().toISOString(),
-    ...input,
-  };
+  const n = build(input);
   const db = getDb();
   if (!db) {
     mem.push(n);
@@ -73,10 +109,55 @@ export async function notify(input: {
     if (error) throw error;
     return n;
   } catch (e) {
+    // never throws (above): on a deployment the notice is lost and logged, the
+    // action that raised it stands; locally it goes to memory as before
+    if (dropOnDeployment("notifications", e)) return null;
     warn(e);
     mem.push(n);
     return n;
   }
+}
+
+/** Every notice of one round, oldest first — for the round export (part 1.10).
+ *  A database error throws: an export is whole, or it is not made. */
+export async function listNoticesForScheme(schemeId: string): Promise<Notification[]> {
+  const db = getDb();
+  const oldest = (a: Notification, b: Notification) => (a.createdAt || "").localeCompare(b.createdAt || "");
+  if (!db) return mem.filter((n) => n.schemeId === schemeId).sort(oldest);
+  const out: Notification[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db.from("notifications").select("*").eq("scheme_id", schemeId).order("created_at", { ascending: true }).order("id", { ascending: true }).range(from, from + 999);
+    if (error) throw error;
+    out.push(...((data ?? []) as Row[]).map(fromRow));
+    if ((data ?? []).length < 1000) return out;
+  }
+}
+
+/** Is there already a notice of this kind for this participation whose text names
+ *  this (a deadline's date — every reminder text must hold {date})? The reminder
+ *  job's guard against raising one twice, even across an edit of its words (1.8). */
+export async function noticeExists(q: { kind: NotifyKind; labId?: string; schemeId: string; code?: string; bgIncludes: string }): Promise<boolean> {
+  const db = getDb();
+  if (!db) return mem.some((n) => n.kind === q.kind && n.labId === q.labId && n.schemeId === q.schemeId && n.code === q.code && n.bg.includes(q.bgIncludes));
+  const pattern = `%${q.bgIncludes.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  // a participation linked by its copy has no laboratory account (4.6)
+  let query = db.from("notifications").select("id").eq("kind", q.kind).eq("scheme_id", q.schemeId).like("bg", pattern).limit(1);
+  query = q.labId ? query.eq("lab_id", q.labId) : query.is("lab_id", null);
+  query = q.code ? query.eq("code", q.code) : query.is("code", null);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []).length > 0;
+}
+
+/** As notify(), but a notice that could not be recorded is an error — for the
+ *  reminder job, which must not stamp a round «reminded» when nobody was. */
+export async function notifyOrThrow(input: Parameters<typeof notify>[0]): Promise<Notification> {
+  const db = getDb();
+  if (!db) return (await notify(input))!;
+  const n = build(input);
+  const { error } = await db.from("notifications").insert(toRow(n));
+  if (error) throw new Error(`[notifications] reminder not recorded: ${error.message}`, { cause: error });
+  return n;
 }
 
 /** The provider's feed — everything addressed to PTS, newest first. */
@@ -96,15 +177,17 @@ export async function listForProvider(limit = 50): Promise<Notification[]> {
   }
 }
 
-/** One laboratory's feed. Scoped by lab id server-side — never by anything the client sends. */
+/** One laboratory's feed — RELEASED notices only (Реш. 138). Scoped by lab id
+ *  server-side — never by anything the client sends. */
 export async function listForLab(labId: string, limit = 50): Promise<Notification[]> {
-  const fromMem = () => mem.filter((n) => n.audience === "lab" && n.labId === labId).sort(newestFirst).slice(0, limit);
+  const fromMem = () => mem.filter((n) => n.audience === "lab" && n.labId === labId && isOut(n)).sort(newestFirst).slice(0, limit);
   const db = getDb();
   if (!db) return fromMem();
   try {
     const { data, error } = await db
       .from("notifications").select("*")
       .eq("audience", "lab").eq("lab_id", labId)
+      .not("released_at", "is", null).is("withheld_at", null)
       .order("created_at", { ascending: false }).limit(limit);
     if (error) throw error;
     return (data ?? []).map((r) => fromRow(r as Row));
@@ -114,55 +197,164 @@ export async function listForLab(labId: string, limit = 50): Promise<Notificatio
   }
 }
 
-/** How many unread — for the little count next to the bell. */
-export async function unreadCount(audience: "provider" | "lab", labId?: string): Promise<number> {
-  const list = audience === "provider" ? await listForProvider(200) : labId ? await listForLab(labId, 200) : [];
-  return list.filter((n) => !n.readAt).length;
+// ── read state, per person (plan part 4.6, N28) ───────────────────────────────
+// A notice read by one person is no longer «read» for everyone: each reader has its own
+// read — PTS's people by their e-mail, a laboratory account or a participant's user by
+// its id (never a name) — set once (migration 0036). The notice's own read_at (the
+// first read by anyone, before 4.6) is no longer what the bell shows.
+export const readerKey = {
+  staff: (email: string) => `staff:${email.trim().toLowerCase()}`,
+  labAccount: (authUserId: string) => `lab-account:${authUserId}`,
+  participant: (entityUserId: string) => `entityuser:${entityUserId}`,
+};
+const memReads = (globalThis as unknown as { __ptsReadsMem?: { notificationId: string; reader: string; readAt: string }[] });
+const reads = memReads.__ptsReadsMem ?? (memReads.__ptsReadsMem = []);
+
+/** When this reader read each of these notices (none: unread for them). */
+export async function readsFor(reader: string, ids: readonly string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (!reader || !ids.length) return out;
+  const fromMem = () => { for (const r of reads) if (r.reader === reader && ids.includes(r.notificationId)) out.set(r.notificationId, r.readAt); return out; };
+  const db = getDb();
+  if (!db) return fromMem();
+  try {
+    const { data, error } = await db.from("notification_reads").select("notification_id,read_at").eq("reader", reader).in("notification_id", [...ids]);
+    if (error) throw error;
+    for (const r of (data ?? []) as { notification_id: string; read_at: string }[]) out.set(r.notification_id, r.read_at);
+    return out;
+  } catch (e) {
+    if (dropOnDeployment("notifications", e)) return out; // the bell is never worth the page: unread, said by the count
+    warn(e);
+    return fromMem();
+  }
 }
 
-/**
- * Mark a whole feed read. Best-effort: failing to mark read is never worth an error.
- * A failed write falls back to memory exactly as the reads do — otherwise an
- * unreachable database would leave the two halves disagreeing, with the feed
- * served from memory and the read state written nowhere.
- */
-export async function markAllRead(audience: "provider" | "lab", labId?: string): Promise<void> {
+/** The feed as THIS reader sees it: read where they read it — or where it was read
+ *  before 4.6 (the notice's own read_at, written no more: frozen then, review). */
+export async function withReadState(items: Notification[], reader: string): Promise<Notification[]> {
+  const r = await readsFor(reader, items.map((n) => n.id));
+  return items.map((n) => ({ ...n, readAt: r.get(n.id) ?? n.readAt }));
+}
+
+/** This reader has read these notices — set once each; best-effort, never an error. */
+export async function markRead(reader: string, ids: readonly string[]): Promise<void> {
+  if (!reader || !ids.length) return;
   const at = new Date().toISOString();
-  const inMem = () => {
-    for (const n of mem) {
-      if (n.audience === audience && (audience === "provider" || n.labId === labId) && !n.readAt) n.readAt = at;
-    }
-  };
+  const inMem = () => { for (const id of ids) if (!reads.some((r) => r.reader === reader && r.notificationId === id)) reads.push({ notificationId: id, reader, readAt: at }); };
   const db = getDb();
   if (!db) return inMem();
   try {
-    let q = db.from("notifications").update({ read_at: at }).is("read_at", null).eq("audience", audience);
-    if (audience === "lab") q = q.eq("lab_id", labId ?? "");
-    const { error } = await q;
+    const { error } = await db.from("notification_reads").upsert(ids.map((id) => ({ notification_id: id, reader, read_at: at })), { onConflict: "notification_id,reader", ignoreDuplicates: true });
     if (error) throw error;
   } catch (e) {
+    if (dropOnDeployment("notifications", e)) return;
     warn(e);
     inMem();
   }
 }
 
+/** The released notices of these participations (scheme + code) — a participant's user's
+ *  feed (4.6): never a held or withheld one, never another participation's. */
+export async function listForParticipations(pairs: readonly { schemeId: string; code: string }[], limit = 50): Promise<Notification[]> {
+  if (!pairs.length) return [];
+  const key = new Set(pairs.map((p) => `${p.schemeId}\u0000${p.code}`));
+  const mine = (n: Notification) => n.audience === "lab" && isOut(n) && !!n.schemeId && !!n.code && key.has(`${n.schemeId}\u0000${n.code}`);
+  const fromMem = () => mem.filter(mine).sort(newestFirst).slice(0, limit);
+  const db = getDb();
+  if (!db) return fromMem();
+  try {
+    // by scheme AND code in the query — no other participation's notices crowd them out (review)
+    const { data, error } = await db.from("notifications").select("*")
+      .eq("audience", "lab").in("scheme_id", [...new Set(pairs.map((p) => p.schemeId))]).in("code", [...new Set(pairs.map((p) => p.code))])
+      .not("released_at", "is", null).is("withheld_at", null)
+      .order("created_at", { ascending: false }).limit(Math.max(limit * 4, 200));
+    if (error) throw error;
+    return (data ?? []).map((r) => fromRow(r as Row)).filter(mine).slice(0, limit);
+  } catch (e) {
+    warn(e);
+    return fromMem();
+  }
+}
+
 /**
- * Everything a transport still has to deliver, oldest first. Phase 2 reads this;
- * nothing calls it yet. Kept here so the outbox is complete on its own terms.
+ * Everything a transport still has to deliver, oldest first — never a held or a
+ * withheld laboratory notice (Реш. 138, part 0.8).
  */
 export async function listUndelivered(limit = 100): Promise<Notification[]> {
-  const fromMem = () => mem.filter((n) => !n.emailedAt).sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || "")).slice(0, limit);
+  const fromMem = () => mem.filter((n) => !n.emailedAt && isDeliverable(n)).sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || "")).slice(0, limit);
   const db = getDb();
   if (!db) return fromMem();
   try {
     const { data, error } = await db
       .from("notifications").select("*")
-      .is("emailed_at", null).order("created_at", { ascending: true }).limit(limit);
+      .is("emailed_at", null).is("withheld_at", null)
+      .or(`audience.eq.provider,and(released_at.not.is.null,released_by.neq.${BACKFILL_RELEASE})`)
+      .order("created_at", { ascending: true }).limit(limit);
+    if (error) throw error;
+    // belt and braces: the rule is applied again to whatever came back
+    return (data ?? []).map((r) => fromRow(r as Row)).filter(isDeliverable);
+  } catch (e) {
+    warn(e);
+    return fromMem();
+  }
+}
+
+/** The laboratory notices waiting for a person — oldest first, with their exact text. */
+/** One notice, by id — whichever list it is in (part 2.4: deciding one is checked in
+ *  its own scheme). A database error is an error, never «not found». */
+export async function getNotice(id: string): Promise<Notification | null> {
+  const db = getDb();
+  if (!db) return mem.find((n) => n.id === id) ?? null;
+  const { data, error } = await db.from("notifications").select("*").eq("id", id).maybeSingle();
+  if (error) throw error;
+  return data ? fromRow(data as Row) : null;
+}
+
+export async function listHeld(limit = 200): Promise<Notification[]> {
+  const fromMem = () => mem
+    .filter((n) => n.audience === "lab" && !n.releasedAt && !n.withheldAt)
+    .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || "")).slice(0, limit);
+  const db = getDb();
+  if (!db) return fromMem();
+  try {
+    const { data, error } = await db
+      .from("notifications").select("*")
+      .eq("audience", "lab").is("released_at", null).is("withheld_at", null)
+      .order("created_at", { ascending: true }).limit(limit);
     if (error) throw error;
     return (data ?? []).map((r) => fromRow(r as Row));
   } catch (e) {
     warn(e);
     return fromMem();
+  }
+}
+
+/**
+ * A person decides about one held notice: release it (it appears in the lab's
+ * portal and goes to the transport) or withhold it (it is never sent; the row
+ * stays). Only a still-held laboratory notice changes; returns whether it did.
+ */
+export async function decideNotice(id: string, decision: "release" | "withhold", by: string): Promise<boolean> {
+  const at = new Date().toISOString();
+  const patch = decision === "release" ? { releasedAt: at, releasedBy: by } : { withheldAt: at, withheldBy: by };
+  const inMem = () => {
+    const n = mem.find((x) => x.id === id && x.audience === "lab" && !x.releasedAt && !x.withheldAt);
+    if (!n) return false;
+    Object.assign(n, patch);
+    return true;
+  };
+  const db = getDb();
+  if (!db) return inMem();
+  try {
+    const row = decision === "release" ? { released_at: at, released_by: by } : { withheld_at: at, withheld_by: by };
+    const { data, error } = await db.from("notifications").update(row)
+      .eq("id", id).eq("audience", "lab").is("released_at", null).is("withheld_at", null)
+      .select("id");
+    if (error) throw error;
+    return (data ?? []).length > 0;
+  } catch (e) {
+    warn(e);
+    return inMem();
   }
 }
 
@@ -182,4 +374,10 @@ export async function markDelivered(id: string): Promise<void> {
     warn(e);
     inMem();
   }
+}
+
+/** The coding act (5.3), in memory: a participation's notices follow its new code (the
+ *  database does it with the participation, 0040). */
+export function recodeMemNotifications(schemeId: string, codes: Readonly<Record<string, string>>): void {
+  for (const n of mem) if (n.schemeId === schemeId && n.code && Object.hasOwn(codes, n.code)) n.code = codes[n.code];
 }

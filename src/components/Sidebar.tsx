@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { listSchemesInFolder } from "@/lib/store";
 import { listFolders, ancestry } from "@/lib/folder-tree";
-import { FolderIcon, FileIcon, HomeIcon, GridIcon } from "@/components/FileIcons";
+import { FolderIcon, FileIcon, HomeIcon } from "@/components/FileIcons";
 import { TYPE_SLUG, typeLabel, schemeName, ACCENT, type FolderType } from "@/lib/folders";
 import { getServerT } from "@/lib/i18n-server";
+import { getViewer, schemesFor } from "@/lib/access";
 import type { Folder } from "@/lib/types";
 
 type Active = { type?: FolderType; folderId?: string; schemeId?: string };
@@ -40,8 +41,10 @@ export default async function Sidebar({ active }: { active: Active }) {
   }
   // schemes shown under the currently-open folder (root = folderId undefined while a
   // type is open but no folder selected)
+  // …only the schemes this person works in, as the lists beside it (2.4)
+  const scope = schemesFor(await getViewer(), "codes.view");
   const openFolderSchemes = openType
-    ? await listSchemesInFolder(openType, active.folderId ?? null)
+    ? (await listSchemesInFolder(openType, active.folderId ?? null)).filter((s) => scope === "all" || scope.includes(s.id))
     : [];
 
   function renderFolders(type: FolderType, parentId: string | null, depth: number): React.ReactNode {
@@ -93,10 +96,7 @@ export default async function Sidebar({ active }: { active: Active }) {
             </div>
           );
         })}
-        <div style={{ height: 12 }} />
-        <div style={{ height: 1, background: "var(--line)", margin: "0 8px" }} />
-        <div style={{ height: 8 }} />
-        <Row href="/skins" label={tr("nav.skins")} icon={<GridIcon />} />
+        {/* the skins: on the administrative panel's rail, under «Още» (2.7) */}
       </div>
     </aside>
   );

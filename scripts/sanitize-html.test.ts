@@ -75,8 +75,13 @@ ok("keeps http links", has(sanitizeDocHtml(`<a href="https://ptsbg.eu">site</a>`
 ok("keeps mailto links", has(sanitizeDocHtml(`<a href="mailto:x@y.bg">m</a>`), "mailto:x@y.bg"));
 ok("keeps data:image base64 (inline images)",
   has(sanitizeDocHtml(`<img src="data:image/png;base64,iVBORw0KGgo=">`), "data:image/png;base64,iVBORw0KGgo="));
-ok("keeps https image URLs (uploaded photos)",
-  has(sanitizeDocHtml(`<img src="https://x.supabase.co/a.png" style="width:60mm">`), "https://x.supabase.co/a.png"));
+// part 1.12: a picture only from the portal's own places — its storage, ptsbg.eu
+process.env.NEXT_PUBLIC_SUPABASE_URL = "https://x.supabase.co";
+ok("keeps the portal's uploaded photos (its own storage)",
+  has(sanitizeDocHtml(`<img src="https://x.supabase.co/storage/v1/object/public/skin-assets/a.png" style="width:60mm">`), "https://x.supabase.co/storage/v1/object/public/skin-assets/a.png"));
+ok("drops a picture from anywhere else (a viewer's browser is never sent there)",
+  !has(sanitizeDocHtml(`<img src="https://tracker.example.net/p.gif">`), "tracker.example.net"));
+delete process.env.NEXT_PUBLIC_SUPABASE_URL;
 ok("preserves HTML comment markers (BODY/COVER)",
   has(sanitizeDocHtml(`<!--PTS:CV-->\n<p>x</p>`), "<!--PTS:CV-->"));
 

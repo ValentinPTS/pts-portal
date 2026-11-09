@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listOpenSchemes } from "@/lib/store";
 import { getServerT } from "@/lib/i18n-server";
 import { typeLabel } from "@/lib/folders";
+import { ONLINE_APPLICATIONS_OPEN, PDF_APPLICATION_URL } from "@/lib/online-applications";
 
 // Render per-request so the open-scheme list reflects live data (not frozen at
 // build) and the build doesn't call Supabase while compiling.
@@ -22,6 +23,12 @@ export default async function ApplyHome() {
         {tr("apply.openSchemes")}
       </p>
       <div className="mx-auto mt-3" style={{ width: 60, height: 3, background: "var(--green)" }} />
+      {!ONLINE_APPLICATIONS_OPEN && (
+        <div className="mt-6 mx-auto text-center" style={{ maxWidth: 620, color: "#f0c98a" }}>
+          <p>{tr("apply.closedBody")}</p>
+          <a href={PDF_APPLICATION_URL} target="_blank" rel="noopener" className="btn btn-primary mt-3 inline-flex">{tr("apply.pdfLink")}</a>
+        </div>
+      )}
 
       {open.length === 0 ? (
         <div className="mt-10 text-center" style={{ color: "#aab59c" }}>
@@ -57,7 +64,7 @@ export default async function ApplyHome() {
                 {tr("apply.object")} {lang === "bg" ? s.objectBg : s.objectEn} · {tr("apply.min")} {s.minParticipants} {tr("apply.participants")}
               </div>
               <div className="mt-3" style={{ color: "var(--green-light)", fontWeight: 700 }}>
-                {tr("apply.applyCta")}
+                {ONLINE_APPLICATIONS_OPEN ? tr("apply.applyCta") : tr("apply.detailsCta")}
               </div>
             </Link>
           ))}

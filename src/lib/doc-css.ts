@@ -13,6 +13,12 @@ export const esc = (s: string) =>
 
 export const pick = (lang: Lang, en: string, bg: string) => (lang === "bg" ? bg : en);
 
+// The footer line every skin prints: revision · form number · revision date. An
+// issued document that is not a form of the management system (the certificate,
+// Q23 / Реш. 100) passes no form number, and its slot is left out.
+export const footerLine = (revision: string, formNumber: string, revisionDate: string) =>
+  [revision, formNumber, revisionDate].filter(Boolean).map(esc).join(" · ");
+
 // Invisible markers that delimit the editable BODY of every document — the region
 // between the cover/head and the footer. The builder extracts what's between them
 // as the editable content, and re-injects the edited body back here for the PDF,
@@ -47,10 +53,6 @@ export function scopeCss(css: string, scope: string): string {
     brace + sels.split(",").map((s) => (s.trim() ? `${scope} ${s.trim()}` : s)).filter(Boolean).join(",") + "{");
   return scoped.replace(/\u0000(\d+)\u0000/g, (_m, i: string) => blocks[+i]);
 }
-
-// Web-font stylesheet for the built-in skins (PT Serif body + Sofia Sans headings).
-export const FONTS_HREF =
-  "https://fonts.googleapis.com/css2?family=PT+Serif:wght@400;700&family=Sofia+Sans+Condensed:wght@400;600;700;800&display=swap";
 
 // The shared document stylesheet — the strict PTS brand. Skins layer their own
 // overrides on top of this (same semantic markup: h2.sec, .ptable, .team, …), so

@@ -1,15 +1,19 @@
 import { randomUUID } from "crypto";
 import type { LabApplication, LabApplicationStatus, LabRegion, VatStatus } from "./types";
-import { getDb } from "./supabase";
+import { getDb, noMemoryFallback } from "./supabase";
 
 // Store for public lab-account applications (onboarding). Same graceful pattern as
 // labs.ts/staff.ts: Supabase when configured, else in-memory. Written only by the
 // server (public submit action + manager review) using the service-role client;
 // RLS is on with no public policy, so the browser can never touch this table.
 
-const mem = new Map<string, LabApplication>();
+// shared across every server entry point, as the other stores are (a module-local
+// copy hid entries written from another bundle in dev — part 1.4/1.5)
+const memStore = globalThis as unknown as { __ptsLabAppMem?: Map<string, LabApplication> };
+const mem: Map<string, LabApplication> = memStore.__ptsLabAppMem ?? (memStore.__ptsLabAppMem = new Map());
 let warned = false;
 function warn(e: unknown) {
+  noMemoryFallback("lab-applications", e); // on a deployment: an error, not memory (1.1)
   if (warned) return;
   warned = true;
   console.warn("[lab-applications] Supabase unavailable — in-memory fallback:", (e as Error)?.message ?? e);
@@ -159,4 +163,22 @@ export async function setLabApplicationReview(
   }
   const cur = mem.get(id);
   if (cur) mem.set(id, { ...cur, status: patch.status, rejectReason: patch.rejectReason, reviewedBy: patch.reviewedBy, reviewedAt });
+}
+
+/** Remove a rejected registration whose six years are over (4.7, Zadanie §10) — the
+ *  database refuses any other (migration 0037); memory the same. Returns its stored
+ *  documents' keys, for the caller to remove too; throws when it may not be removed. */
+export async function removeLabApplication(id: string, nowMs: number = Date.now()): Promise<string[]> {
+  const { retentionOver } = await import("./retention-model");
+  const db = getDb();
+  if (db) {
+    const { data, error } = await db.from("lab_applications").delete().eq("id", id).select("doc_paths");
+    if (error) throw new Error(`The registration could not be removed: ${error.message}`, { cause: error });
+    return ((data ?? []) as { doc_paths: string[] | null }[]).flatMap((r) => r.doc_paths ?? []);
+  }
+  const cur = mem.get(id);
+  if (!cur) return [];
+  if (!retentionOver({ status: cur.status, reviewedAt: cur.reviewedAt }, nowMs)) throw new Error("The registration could not be removed: lab_applications: a registration is kept — a rejected one six years from its rejection (Zadanie §10)");
+  mem.delete(id);
+  return cur.docPaths ?? [];
 }

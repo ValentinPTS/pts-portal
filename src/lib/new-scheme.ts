@@ -74,10 +74,12 @@ export function blankScheme(opts: {
             points: [],
             directionsEn: [], directionsBg: [],
             referenceLabEn: "", referenceLabBg: "", referenceLabLocEn: "", referenceLabLocBg: "",
-            methodEn: "ISO 376 — direct comparison method", methodBg: "ISO 376 — метод на пряко сравнение",
+            // no default method: ISO 376 is force only, and a humidity or mass scheme
+            // must not inherit it (E3.a) — PTS types the scheme's own
+            methodEn: "", methodBg: "",
             feeEn: "Flat fee per scheme, independent of the number of calibration points; 50% for each additional laboratory code. Prices net; +20% VAT for Bulgarian participants.",
             feeBg: "Единна такса за схема, независимо от броя точки на калибриране; 50% за всеки допълнителен лабораторен код. Цените са нето; за български участници +20% ДДС.",
-            stabilityFormula: "u_stab = |X_ref1 − X_ref2| / √3",
+            stabilityFormula: "u_stab = |X_ref1 − X_ref2| / (2·√3)",
             enCriterionEn: "Eₙ = (X_lab − X_ref) / √(U_lab² + U_ref²); satisfactory (A) when |Eₙ| ≤ 1.00, otherwise unsatisfactory (N).",
             enCriterionBg: "Eₙ = (X_lab − X_ref) / √(U_lab² + U_ref²); удовлетворително (A) при |Eₙ| ≤ 1,00, в противен случай неудовлетворително (N).",
           }

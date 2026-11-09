@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { cache } from "react";
 import { createServerClient } from "@supabase/ssr";
+import { isSharedMailbox } from "./provider-people";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Owner authentication & authorization (Phase 2).
@@ -31,6 +32,8 @@ export function ownerEmails(): string[] {
 
 export function isOwnerEmail(email: string | null | undefined): boolean {
   if (!email) return false;
+  // a shared mailbox is never a founder, even if it is still in OWNER_EMAILS (Реш. 139)
+  if (isSharedMailbox(email)) return false;
   const list = ownerEmails();
   return list.length > 0 && list.includes(email.toLowerCase());
 }
@@ -65,6 +68,13 @@ export interface OwnerSession {
   userId: string;
   email: string;
   aal2: boolean; // has completed 2FA this session
+  // signed in with a temporary password a manager handed out: it must be changed
+  // before anything else (part 1.5). In app_metadata — the user cannot write it —
+  // set at creation, cleared by the server when a new password is set.
+  mustChangePassword: boolean;
+  // an authenticator is enrolled but not yet passed this session (aal1 of an aal2
+  // account): nothing but the code step is open to it
+  needsAal2: boolean;
 }
 
 // Memoized per request (React cache): the root layout's header, the page's
@@ -79,8 +89,17 @@ export const getSessionUser = cache(async (): Promise<OwnerSession | null> => {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return null;
+  // An unconfirmed e-mail is no session at all (part 0.5) — the same rule as at
+  // sign-in, so a session that predates it cannot carry on.
+  if (!user || !user.email_confirmed_at) return null;
+  // a shared mailbox is no session in the portal however one was made — a link, a
+  // session from before part 1.6 (Реш. 139); every role and lab check reads this
+  if (isSharedMailbox(user.email)) return null;
   const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-  return { userId: user.id, email: (user.email ?? "").toLowerCase(), aal2: aal?.currentLevel === "aal2" };
+  return {
+    userId: user.id, email: (user.email ?? "").toLowerCase(), aal2: aal?.currentLevel === "aal2",
+    mustChangePassword: user.app_metadata?.must_change_password === true,
+    needsAal2: aal?.nextLevel === "aal2" && aal?.currentLevel !== "aal2",
+  };
 });
 

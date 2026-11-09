@@ -1,6 +1,8 @@
 import type { Scheme, Lang } from "../lib/types";
 import type { Skin, SchemeType } from "./types";
-import { DOC_CSS, esc, pick } from "../lib/doc-css";
+import { DOC_CSS, esc, pick, footerLine } from "../lib/doc-css";
+import { imageUrlAllowed } from "../lib/image-hosts";
+import { fontLinks } from "../lib/doc-fonts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Data-driven (user-created) skins.
@@ -62,11 +64,11 @@ export interface CustomSkinData {
   elements: CoverEl[];
 }
 
-// ── Font allow-list (only fonts we actually load from Google Fonts) ──────────
+// ── Font allow-list (only fonts the portal serves itself: public/fonts) ─────
 export interface FontDef {
   id: string;        // display name + CSS family head
   css: string;       // full font-family stack
-  g: string;         // Google Fonts css2 `family=` spec
+  g: string;         // the Google Fonts css2 `family=` spec its copy was mirrored with (scripts/mirror-fonts.mjs)
   kind: "heading" | "body" | "both";
 }
 export const FONTS: FontDef[] = [
@@ -225,8 +227,8 @@ function validFont(id: unknown, list: FontDef[], fallback: string): string {
 function fontCss(id: string, list: FontDef[]): string {
   return (list.find((f) => f.id === id) ?? list[0]).css;
 }
-function fontSpec(id: string): string {
-  return (FONTS.find((f) => f.id === id) ?? FONTS[0]).g;
+function fontId(id: string, list: FontDef[]): string {
+  return (list.find((f) => f.id === id) ?? list[0]).id;
 }
 function validAlign(a: unknown): Align {
   return a === "left" || a === "center" || a === "right" ? a : "center";
@@ -244,7 +246,8 @@ function safeLogo(raw: unknown, fallback: string): string {
   const v = String(raw ?? "").trim();
   if (!v || v === "default") return "default";
   if (/^\/brand\/[\w-]+\.(png|jpe?g|svg|webp)$/i.test(v)) return v;
-  if (v.length <= 400 && /^https:\/\/[\w.-]+(:\d+)?(\/[\w./%~+-]*)?$/.test(v)) return v;
+  // a logo is fetched by every viewer: only from the portal's own places (1.12)
+  if (v.length <= 400 && /^https:\/\/[\w.-]+(:\d+)?(\/[\w./%~+-]*)?$/.test(v) && imageUrlAllowed(v)) return v;
   return fallback;
 }
 function logoSrc(logo: string): string {
@@ -323,9 +326,9 @@ function sanitizeElements(raw: unknown, fallback: CoverEl[]): CoverEl[] {
 }
 
 // ── Pure render helpers (shared by compileSkin + the editor's live preview) ───
-export function skinFontsHref(data: CustomSkinData): string {
-  const specs = [...new Set([fontSpec(data.fonts.heading), fontSpec(data.fonts.body)])];
-  return `https://fonts.googleapis.com/css2?${specs.map((s) => "family=" + s).join("&")}&display=swap`;
+// the skin's two families, each an allow-listed one (the live preview passes unchecked data)
+export function skinFonts(data: CustomSkinData): string[] {
+  return [...new Set([fontId(data.fonts.heading, HEADING_FONTS), fontId(data.fonts.body, BODY_FONTS)])];
 }
 
 const DENSITY_GAP: Record<Density, string> = { compact: "4px", normal: "8px", airy: "14px" };
@@ -394,7 +397,7 @@ function coverHtml(
 }
 
 function footerHtml(_data: CustomSkinData, s: Scheme, formNumber: string): string {
-  return `<div class="docfooter">${esc(s.revision)} · ${esc(formNumber)} · ${esc(s.revisionDate)}</div>`;
+  return `<div class="docfooter">${footerLine(s.revision, formNumber, s.revisionDate)}</div>`;
 }
 
 // Compile stored skin DATA into a live Skin object (used by the render path).
@@ -409,7 +412,7 @@ export function compileSkin(data: CustomSkinData): Skin {
       types,
     },
     css: skinCss(data),
-    fontsHref: skinFontsHref(data),
+    fonts: skinFonts(data),
     cover: (s, lang, en, bg, opts) => coverHtml(data, s, lang, en, bg, opts),
     footer: (s, formNumber) => footerHtml(data, s, formNumber),
     // carry the embroidery side border only when this skin shows the embroidery
@@ -456,9 +459,7 @@ export function previewDocHtml(data: CustomSkinData, lang: Lang = "bg"): string 
   const side = data.elements.some((e) => e.key === "embroidery" && e.shown)
     ? `<div class="doc-side" aria-hidden="true"></div>` : "";
   return `<!DOCTYPE html><html lang="${lang === "bg" ? "bg" : "en"}"><head><meta charset="utf-8">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="${skinFontsHref(data)}" rel="stylesheet">
+${fontLinks(skinFonts(data))}
 <style>${skinCss(data)}</style></head>
 <body>${side}<div class="page">${cover}${sampleBody(lang)}</div></body></html>`;
 }

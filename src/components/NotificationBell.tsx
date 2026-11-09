@@ -110,7 +110,8 @@ export default function NotificationBell({ items }: { items: Notification[] }) {
     if (unread > 0) {
       setCleared(true);
       startTransition(() => {
-        void markNotificationsReadAction();
+        // what this person was shown — no more (4.6 review)
+        void markNotificationsReadAction(items.map((n) => n.id));
       });
     }
   };

@@ -1,13 +1,18 @@
 import type { NextRequest } from "next/server";
+import { mayNow, requireCap, mayViewDoc } from "@/lib/access";
 import { getScheme } from "@/lib/store";
-import { getDoc, isFormDoc, isListDoc } from "@/lib/documents";
-import { listParticipants } from "@/lib/participants";
+import { getDoc, isFormDoc, isListDoc, isRestrictedDoc, savedDocBody, usableForDoc, showsIdentities } from "@/lib/documents";
+import { listParticipants, withIdentities, withoutIdentity } from "@/lib/participants";
+import { inRound } from "@/lib/application-model";
+import { actorNow } from "@/lib/identities";
 import { docPrintHtml, docDefaultBody } from "@/lib/doc-template";
 import { drawFormBody, retagFormBody } from "@/lib/form-hydrate";
 import { getRevision } from "@/lib/doc-revisions";
-import { canRevealNamesNow, requireStaff } from "@/lib/roles";
+import { requireStaff } from "@/lib/roles";
 import { resolveSkinAsync } from "@/skins";
 import type { DocOptions } from "@/lib/types";
+import { logActivity } from "@/lib/activity";
+import { docImgSrc } from "@/lib/image-hosts";
 
 // Renders the owner-built (Word-editor) document: the saved body HTML re-injected
 // into the document's own branded shell (cover/head + footer + its CSS). Used by
@@ -27,6 +32,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
   if (!isInternal) await requireStaff();
 
   const { id, doc } = await ctx.params;
+  if (!isInternal) await requireCap("codes.view", id); // in THIS scheme, by the role model (2.4)
   const scheme = await getScheme(id);
   const def = getDoc(doc);
   if (!scheme || !def || !def.render) return new Response("Not found", { status: 404 });
@@ -41,8 +47,19 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
   // auditor/staff can never coax names out this way).
   const reveal = isInternal
     ? req.headers.get("x-reveal") === "1"
-    : await canRevealNamesNow();
-  const ps = await listParticipants(id);
+    : await mayNow("names.view", id);
+  // F 7.2.1-6 is the name↔code mapping itself: refused, not masked (part 0.2).
+  if (isRestrictedDoc(doc) && !reveal) return new Response("Forbidden — only a manager may open this list (ISO/IEC 17043 §4.2).", { status: 403 });
+  // the Order (Реш. 149, 2.6); under the internal token /api/pdf has asked already
+  if (!isInternal && !(await mayViewDoc(doc, id))) return new Response("Forbidden — the Order is for the staff it assigns roles to (Реш. 149).", { status: 403 });
+  // who is behind the codes only when it may be shown — an opening, on record (2.3);
+  // under the internal token, the caller /api/pdf names is the one asking
+  // the round's documents list the participations in it — never one refused, annulled or withdrawn (5.1)
+  const coded = (await listParticipants(id)).filter(inRound);
+  const ps = reveal && showsIdentities(doc)
+    ? await withIdentities(coded, id, { actor: (isInternal && req.headers.get("x-actor")) || (await actorNow()), purpose: "names.view" })
+    : coded.map(withoutIdentity);
+  if (!isInternal && reveal && doc === "results-coded" && ps.length) await logActivity("names.viewed", { schemeId: id, subject: "doc:results-coded", summary: "Laboratory names shown with their codes — F 7.2.1-6 (composed)" });
   const opts: DocOptions = {
     revealNames: reveal,
     participants: ps.map((p) => ({
@@ -56,10 +73,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
   // current saved body, falling back to the faithful default so it's never blank.
   const isList = isListDoc(doc);
   const revId = req.nextUrl.searchParams.get("rev");
-  let saved = scheme.docs?.[doc]?.[lang] ?? "";
+  let saved = savedDocBody(scheme, doc)?.[lang] ?? "";
   if (revId) {
     const rev = await getRevision(revId);
-    if (rev && rev.schemeId === id && rev.docKey === doc) saved = rev[lang] ?? "";
+    // a coded-list revision from before the swap is the other list's content
+    if (rev && rev.schemeId === id && rev.docKey === doc) saved = usableForDoc(doc, rev) ? rev[lang] ?? "" : "";
   }
   // The participant lists are data-driven. A manager's saved CUSTOMIZATION is
   // honoured; for anyone else they render fresh from the live data (masked per
@@ -87,7 +105,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
       // Strict CSP (see /doc/[doc]/print): the owner-built body is rich HTML, so
       // block scripts while allowing the fonts/images documents legitimately use.
       "content-security-policy":
-        "default-src 'none'; img-src 'self' data: https:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; frame-ancestors 'self'",
+        `default-src 'none'; img-src ${docImgSrc()}; style-src 'unsafe-inline' 'self'; font-src 'self'; frame-ancestors 'self'`,
       "x-content-type-options": "nosniff",
     },
   });

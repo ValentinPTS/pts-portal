@@ -1,11 +1,15 @@
 import Link from "next/link";
+import { mayNow, requireCap } from "@/lib/access";
 import { notFound } from "next/navigation";
 import { getScheme } from "@/lib/store";
 import { listParticipants } from "@/lib/participants";
+import { isProvisional } from "@/lib/coding-model";
+import { namesFor } from "@/lib/identities";
 import { metricsForScheme, scoreMetric, scoringStamp, type ScoredRow } from "@/lib/scoring";
 import { saveScoringAction, autoAssignAction } from "@/lib/actions";
 import { getServerT } from "@/lib/i18n-server";
 import { requireStaff } from "@/lib/roles";
+import { logActivity } from "@/lib/activity";
 
 const inputCls = "w-full rounded px-2 py-1 text-sm";
 const inputStyle = { border: "1px solid var(--line)", background: "#fff" } as const;
@@ -44,12 +48,21 @@ export default async function ResultsPage({
 }) {
   await requireStaff(); // read gate: manager/staff/auditor only
   const { id } = await params;
+  await requireCap("results.read", id); // in THIS scheme, by the role model (2.4)
   const { err, warn, n } = await searchParams;
   const s = await getScheme(id);
   if (!s) notFound();
-  const participants = await listParticipants(id);
+  // results only for a coded participation — an application has none before the coding act (5.3)
+  const participants = await namesFor(id, (await listParticipants(id)).filter((p) => !isProvisional(p.code))); // names only for a manager, on record (2.3)
   const metrics = metricsForScheme(s);
   const isCal = s.type === "C";
+  // Blind evaluation (§4.2, N1): staff and auditors enter and read results by code
+  // only; the laboratory column exists for a manager alone.
+  const reveal = await mayNow("names.view", id);
+  // who may save here: results entered or processed; the consensus value: processed (2.4)
+  const canSave = (await mayNow("results.enter", id)) || (await mayNow("results.process", id));
+  const canProcess = await mayNow("results.process", id);
+  if (reveal && participants.length) await logActivity("names.viewed", { schemeId: id, subject: "page:results", summary: "Laboratory names shown with their codes — the results page" });
   const { lang, tr } = await getServerT();
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
 
@@ -64,6 +77,10 @@ export default async function ResultsPage({
       <p className="text-sm" style={{ color: "var(--muted)" }}>
         {tr(isCal ? "results.subtitleCal" : "results.subtitleTest")}
       </p>
+      {/* Реш. 135 (part 0.6): the engine is a staff working check — never official */}
+      <div className="card p-3 mt-3 text-sm" style={{ background: "#fdf6e3", border: "1px solid #e6d9a8", color: "#7a5c00" }}>
+        <b>{tr("results.unofficialTitle")}</b> {tr("results.unofficialBody")}
+      </div>
 
       {err === "conflict" && (
         <div className="card p-3 mt-3 text-sm" style={{ background: "#fbeeee", border: "1px solid #e3c8c8", color: "#8f2f2f" }}>
@@ -142,13 +159,16 @@ export default async function ResultsPage({
                   <thead>
                     <tr style={{ background: "var(--green-soft)", color: "var(--green-dark)" }}>
                       <th className="text-left p-2">{tr("col.code")}</th>
-                      <th className="text-left p-2">{tr("col.laboratory")}</th>
-                      {/* individual determinations I/II/III (F 7.2.1-6) — optional */}
+                      {reveal && <th className="text-left p-2">{tr("col.laboratory")}</th>}
+                      {/* individual determinations I/II/III (F 7.2.1-5) — optional */}
                       <th className="text-left p-2" style={{ width: 76 }}>I</th>
                       <th className="text-left p-2" style={{ width: 76 }}>II</th>
                       <th className="text-left p-2" style={{ width: 76 }}>III</th>
                       <th className="text-left p-2" style={{ width: 110 }}>{isCal ? "X_lab" : "Result xᵢ"}</th>
-                      <th className="text-left p-2" style={{ width: 110 }}>{isCal ? "U_lab" : "u(xᵢ)"}</th>
+                      <th className="text-left p-2" style={{ width: 110 }} title={tr(isCal ? "results.uLabTitle" : "results.uHintTitle")}>
+                        {isCal ? "U_lab" : "u(xᵢ)"}
+                        {!isCal && <div data-u-hint style={{ fontSize: 11, fontWeight: 400, color: "var(--muted)" }}>{tr("results.uHint")}</div>}
+                      </th>
                       {isCal ? (
                         <th className="text-right p-2" style={{ width: 70 }}>Eₙ</th>
                       ) : (
@@ -167,7 +187,7 @@ export default async function ResultsPage({
                       return (
                         <tr key={p.id} style={{ borderTop: "1px solid var(--line)" }}>
                           <td className="p-2 font-mono font-bold" style={{ color: "var(--green-dark)" }}>{p.code}</td>
-                          <td className="p-2" style={{ color: "var(--muted)" }}>{p.labName}</td>
+                          {reveal && <td className="p-2" style={{ color: "var(--muted)" }}>{p.labName}</td>}
                           <td className="p-1"><NumCell name={`r_${mi}_${pi}_d0`} def={fv(stored?.determinations?.[0] ?? undefined)} /></td>
                           <td className="p-1"><NumCell name={`r_${mi}_${pi}_d1`} def={fv(stored?.determinations?.[1] ?? undefined)} /></td>
                           <td className="p-1"><NumCell name={`r_${mi}_${pi}_d2`} def={fv(stored?.determinations?.[2] ?? undefined)} /></td>
@@ -192,8 +212,8 @@ export default async function ResultsPage({
           })}
 
           <div className="flex gap-3 flex-wrap">
-            <button type="submit" className="btn btn-primary">{tr("results.save")}</button>
-            {!isCal && (
+            {canSave && <button type="submit" className="btn btn-primary">{tr("results.save")}</button>}
+            {!isCal && canProcess && (
               <button
                 type="submit"
                 formAction={autoAssignAction}

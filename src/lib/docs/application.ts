@@ -67,8 +67,8 @@ export function renderApplication(s: Scheme, lang: Lang): string {
     <div class="fld">${fText("contact_3", 420)}</div>`;
 
   const warn = `<p class="imp">${L(
-    "The application date is the date on which the completed Application for Participation is received at the e-mail address above.",
-    "Датата на заявката е датата, на която попълнената Заявка за участие е получена на посочения по-горе имейл адрес."
+    "The application date is the date on which the completed Application for Participation is received at the e-mail address above or submitted through the participant portal.",
+    "Датата на заявката е датата, на която попълнената Заявка за участие е получена на посочения по-горе имейл адрес или е подадена през портала за участници."
   )}</p>`;
 
   const body = [

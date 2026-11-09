@@ -51,8 +51,11 @@ export function renderOrder(s: Scheme, lang: Lang): string {
           .join("")}</ul></div>`
     );
   }
-  // external providers — testing: the partner lab(s); calibration: the reference lab
-  const providers = isCal
+  // external providers — the scheme's list when it keeps one (3.13 review: the Order and
+  // the plan name the same); else testing: the partner lab(s); calibration: the reference lab
+  const providers = s.externalProviders?.length
+    ? `<ul>${s.externalProviders.map((p) => `<li>${esc(p.name)}${p.servicesBg || p.servicesEn ? ` — ${esc(lang === "bg" ? p.servicesBg || p.servicesEn : p.servicesEn || p.servicesBg)}` : ""}</li>`).join("")}</ul>`
+    : isCal
     ? s.calibration && (s.calibration.referenceLabEn || s.calibration.referenceLabBg)
       ? `<ul><li>${L(s.calibration.referenceLabEn, s.calibration.referenceLabBg)} — ${L(
           "calibration of the travelling device (reference values)",
@@ -86,7 +89,7 @@ export function renderOrder(s: Scheme, lang: Lang): string {
     </div>
     <div class="otitle">${L("ORDER", "ЗАПОВЕД")}</div>
     <div class="odate">${L("dated", "от")} ${esc(s.orderDate ?? "____________")}</div>
-    <div class="orel">${L("Regarding: Planning of proficiency testing", "Относно: Планиране на изпитване на пригодност")}</div>
+    <div class="orel">${L("Regarding: Planning of proficiency testing", "Относно: Планиране на изпитване за пригодност")}</div>
     <div class="odecl">${L("I DETERMINE", "ОПРЕДЕЛЯМ")}:</div>
     ${numbered}
     <div class="osign">

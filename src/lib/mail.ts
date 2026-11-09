@@ -11,17 +11,28 @@
 // transport on later delivers everything raised in the meantime rather than
 // starting from zero.
 //
-// The provider does not control DNS for ptsbg.eu, so the from-address is expected
-// to be a SINGLE VERIFIED SENDER (both providers verify one address by e-mailing a
-// link to it — no DNS records involved). That is why MAIL_FROM is required rather
-// than derived from a domain.
+// The sender (part 1.7): the domain ptsbg.eu, verified at the provider through DNS
+// records that Webface / Creativiso add (DKIM and a bounce subdomain — the existing
+// MX and SPF of ptsbg.eu are not touched; docs/participant-portal/ZADANIE-ANTON-BG.md).
+// Resend sends ONLY from a verified domain. Until the records exist, the fallback is
+// a SINGLE VERIFIED SENDER — one address confirmed by a link e-mailed to it, no DNS
+// — which SendGrid offers and Resend does not. Either way MAIL_FROM is required
+// rather than derived from a domain.
 //
 // Env:
-//   MAIL_PROVIDER = "resend" | "sendgrid"   (unset = disabled)
+//   MAIL_PROVIDER = "resend" | "sendgrid"   (unset or anything else = disabled)
 //   MAIL_API_KEY  = the provider's key
-//   MAIL_FROM     = the verified sender, e.g. "PTS Bulgaria <ptsolutionsbg@gmail.com>"
+//   MAIL_FROM     = the sender, e.g. "PTS Bulgaria <portal@ptsbg.eu>"
+//   MAIL_REPLY_TO = where replies go, e.g. office@ptsbg.eu (unset = to the sender).
+//                   E-mail stays the official channel for questions (Реш. 116), and a
+//                   shared mailbox may receive mail — it is only never a login (Реш. 139).
 //   PTS_NOTIFY_EMAIL = where the provider's own notices go
+//
+// In the TEST environment (PTS_ENVIRONMENT=test, part 1.2) mail goes only to
+// @ptsbg.eu — the simulated laboratories' test mailboxes (D21) — never to a real one.
 // ─────────────────────────────────────────────────────────────────────────────
+
+import { mailAllowedHere } from "./environment";
 
 export type MailResult = { ok: true } | { ok: false; skipped?: true; error: string };
 
@@ -31,10 +42,40 @@ export interface MailMessage {
   text: string;
 }
 
-const provider = () => (process.env.MAIL_PROVIDER ?? "").trim().toLowerCase();
+const PROVIDERS = ["resend", "sendgrid"] as const;
+type Provider = (typeof PROVIDERS)[number];
+// an unknown name is no provider: the key is never posted to another vendor's API
+const provider = (): Provider | null => {
+  const p = (process.env.MAIL_PROVIDER ?? "").trim().toLowerCase();
+  return (PROVIDERS as readonly string[]).includes(p) ? (p as Provider) : null;
+};
 
 export function isMailConfigured(): boolean {
   return !!provider() && !!process.env.MAIL_API_KEY && !!process.env.MAIL_FROM;
+}
+
+const addressOf = (from: string) => (from.match(/<([^>]+)>/)?.[1] ?? from).trim().toLowerCase();
+const replyTo = () => {
+  const r = (process.env.MAIL_REPLY_TO ?? "").trim();
+  return looksLikeEmail(r) ? r : "";
+};
+
+/** What the system check shows (1.7) — never the key, only whether it is set. */
+export function mailSetup(env: Record<string, string | undefined> = process.env) {
+  const raw = (env.MAIL_PROVIDER ?? "").trim().toLowerCase();
+  const from = (env.MAIL_FROM ?? "").trim();
+  const address = from ? addressOf(from) : "";
+  return {
+    // an unknown value is never echoed: it may be a key pasted into the wrong variable
+    provider: (PROVIDERS as readonly string[]).includes(raw) ? raw : raw ? "unknown" : "",
+    keySet: !!env.MAIL_API_KEY,
+    from,
+    // the portal's own domain, or a temporary single sender somewhere else
+    fromOnPtsbg: /@ptsbg\.eu$/.test(address),
+    replyTo: (env.MAIL_REPLY_TO ?? "").trim(),
+    replyToValid: looksLikeEmail((env.MAIL_REPLY_TO ?? "").trim()), // else sendEmail leaves it out
+    notifyInbox: (env.PTS_NOTIFY_EMAIL ?? "").trim(),
+  };
 }
 
 /** Where the provider's own notices go. Empty = the owner gets no e-mail yet. */
@@ -58,6 +99,8 @@ export function looksLikeEmail(v: string): boolean {
 export async function sendEmail(msg: MailMessage): Promise<MailResult> {
   if (!isMailConfigured()) return { ok: false, skipped: true, error: "mail not configured" };
   if (!looksLikeEmail(msg.to)) return { ok: false, error: `bad recipient: ${msg.to}` };
+  // the test environment writes to PTS's own mailboxes only (the address is not logged)
+  if (!mailAllowedHere(msg.to)) return { ok: false, skipped: true, error: "test environment: only @ptsbg.eu is mailed" };
 
   const key = process.env.MAIL_API_KEY!;
   const from = process.env.MAIL_FROM!;
@@ -68,7 +111,10 @@ export async function sendEmail(msg: MailMessage): Promise<MailResult> {
           headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
           body: JSON.stringify({
             personalizations: [{ to: [{ email: msg.to }] }],
-            from: { email: from.replace(/^.*<|>.*$/g, "") || from, name: from.replace(/\s*<.*$/, "") },
+            from: from.includes("<")
+              ? { email: from.replace(/^.*<|>.*$/g, "") || from, name: from.replace(/\s*<.*$/, "") }
+              : { email: from.trim() },
+            ...(replyTo() ? { reply_to: { email: replyTo() } } : {}),
             subject: msg.subject,
             content: [{ type: "text/plain", value: msg.text }],
           }),
@@ -76,7 +122,7 @@ export async function sendEmail(msg: MailMessage): Promise<MailResult> {
       : await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-          body: JSON.stringify({ from, to: [msg.to], subject: msg.subject, text: msg.text }),
+          body: JSON.stringify({ from, to: [msg.to], subject: msg.subject, text: msg.text, ...(replyTo() ? { reply_to: replyTo() } : {}) }),
         });
 
     if (!res.ok) {

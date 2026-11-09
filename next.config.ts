@@ -24,6 +24,14 @@ const nextConfig: NextConfig = {
     // lab application, which is honeypot- + per-IP-rate-limited, so this doesn't open
     // a meaningful DoS surface; all other actions are auth-gated.
     serverActions: { bodySizeLimit: "16mb" },
+
+    // WHY THE DEV DISK CACHE IS OFF. Next 16.1+ keeps a Turbopack cache for `next dev`
+    // in .next/dev/cache, and on 16.2.x it never prunes: it keeps every task it ever
+    // compiled (vercel/next.js#94915). Long dev sessions with many edits and browser
+    // checks grew it to 252 GB on 5–6 Nov 2026 and filled the disk. Off, each dev start
+    // compiles cold — a few seconds per route on first visit. Revisit on 16.4+, which
+    // adds `turbopackGc` to collect unreachable work.
+    turbopackFileSystemCacheForDev: false,
   },
 
   // Baseline security headers applied to every response.
@@ -45,6 +53,15 @@ const nextConfig: NextConfig = {
             value: "max-age=63072000; includeSubDomains; preload",
           },
         ],
+      },
+      {
+        // The documents' font files (public/fonts/<family>/…, scripts/mirror-fonts.mjs).
+        // public/ is served with max-age=0, so every document opening would re-ask
+        // for each one; a file's name carries its source version (v19-latin-400.woff2),
+        // so a changed font is a new name and the old one can be kept for good. The
+        // stylesheets one level up (/fonts/<family>.css) keep the default.
+        source: "/fonts/:family/:file",
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
       },
       {
         // App-wide baseline CSP — EVERYWHERE except the document render/fill routes,

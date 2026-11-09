@@ -2,12 +2,16 @@
   "name": "portal",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/prebuild.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "zsh ./scripts/run-tests.sh"
+    "test": "node scripts/run-tests.mjs"
   },
   "dependencies": {
     "@sparticuz/chromium": "^149.0.0",

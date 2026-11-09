@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import type { Folder } from "./types";
-import { getDb } from "./supabase";
+import { getDb, noMemoryFallback } from "./supabase";
 
 // Real-folder store for the explorer tree. Supabase when configured, else in-memory
 // — the same graceful fallback as the other stores. See migration 0012_folders.sql.
@@ -9,9 +9,13 @@ import { getDb } from "./supabase";
 
 type FType = "T" | "C";
 
-const mem: Folder[] = [];
+// shared across every server entry point, as the other stores are (a module-local
+// copy hid entries written from another bundle in dev — part 1.4/1.5)
+const memStore = globalThis as unknown as { __ptsFolderMem?: Folder[] };
+const mem: Folder[] = memStore.__ptsFolderMem ?? (memStore.__ptsFolderMem = []);
 let warned = false;
 function warn(e: unknown) {
+  noMemoryFallback("folders", e); // on a deployment: an error, not memory (1.1)
   if (warned) return;
   warned = true;
   console.warn("[folders] Supabase unavailable — in-memory fallback:", (e as Error)?.message ?? e);

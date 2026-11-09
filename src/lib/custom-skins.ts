@@ -1,4 +1,4 @@
-import { getDb } from "./supabase";
+import { getDb, noMemoryFallback } from "./supabase";
 import { sanitizeSkinData, type CustomSkinData } from "../skins/custom";
 
 // Storage for user-created (custom) skins + the persisted per-type default skin.
@@ -15,6 +15,7 @@ const memSkins = new Map<string, CustomSkinData>();
 const memSettings = new Map<string, string>();
 let warned = false;
 function warn(e: unknown) {
+  noMemoryFallback("skins", e); // on a deployment: an error, not memory (1.1)
   if (warned) return;
   warned = true;
   console.warn("[skins] Supabase unavailable — in-memory fallback:", (e as Error)?.message ?? e);

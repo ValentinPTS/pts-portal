@@ -55,6 +55,9 @@ ok("testing report: shows code", tHtml.includes("261101"));
 ok("testing report: shows z=1.00", tHtml.includes("1.00"));
 ok("testing report: has z-score chart", tHtml.includes("<svg") && tHtml.includes("±2") && tHtml.includes("±3"));
 ok("testing report: empty when no scoring", reportResultsTesting(base({ type: "T", parameters: t.parameters }), "en") === "");
+// Реш. 135 (part 0.6): wherever the portal prints its own scores, it says they are not official
+ok("testing report: says the scores are not official", tHtml.includes("not official"));
+ok("testing report (bg): says the scores are not official", reportResultsTesting(t, "bg").includes("не са официални"));
 
 // ── CALIBRATION: Tension/Compression × points 20,40 ──────────────────────────
 const c = base({
@@ -90,6 +93,7 @@ ok("cal report: code shown", cHtml.includes("256101"));
 ok("cal report: N (unsatisfactory) marked", cHtml.includes("unsatisfactory"));
 ok("cal report: has Eₙ chart", cHtml.includes("<svg") && cHtml.includes("±1"));
 ok("cal report: empty when no scoring", reportResultsCalibration(base({ type: "C", calibration: c.calibration }), "en") === "");
+ok("cal report: says the scores are not official", cHtml.includes("not official"));
 
 // ── buildScoring: the exact form round-trip the save action performs ─────────
 // Simulate the form the page renders for the testing scheme `t` above:
@@ -208,6 +212,21 @@ ok("describe: names the code and the before→after", describeScoringChanges(ch,
 ok("describe: caps a bulk save", describeScoringChanges(
   Array.from({ length: 40 }, (_, i) => ({ what: "value", metricKey: "0", code: `L${i}`, before: 1, after: 2 })), M0)
   .includes("more"));
+
+// No uncertainty reported (a blank is stored as 0) → no ζ and no Eₙ, as the
+// Statistical project and the Results Sheet say; z still stands (review of 0.13).
+{
+  const tNoU: Scheme = structuredClone(t);
+  tNoU.scoring!.results["261101"]["0"] = { value: 102, u: 0 };
+  const r = scoreMetric(tNoU, "0").rows.find((x) => x.code === "261101")!;
+  ok("no u: no ζ", r.zeta === null);
+  ok("no u: z still computed", near(r.z!, 1));
+  const cNoU: Scheme = structuredClone(c);
+  const code = Object.keys(cNoU.scoring!.results)[0];
+  cNoU.scoring!.results[code]["0:0"] = { ...cNoU.scoring!.results[code]["0:0"], u: 0 };
+  const e = scoreMetric(cNoU, "0:0").rows.find((x) => x.code === code)!;
+  ok("no U_lab: no Eₙ, no verdict", e.en === null && e.verdict === null);
+}
 
 console.log(`scoring.test: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

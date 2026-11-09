@@ -3,9 +3,15 @@
 // prove the locked Fill view is still interactive (retagFormBody re-attaches
 // identity), values persist, print draws them, and reopening the editor serves
 // the body re-tagged so the next save makes it permanent.
+// Against a LOCAL dev server (in-memory store):
+//   BASE=http://localhost:3000 node scripts/verify-retag.mjs
+// Updated 2026-11-05: default port 3000, the manager persona, and the builder's
+// start chooser waited for (it renders after hydration — checking once missed it),
+// then the editor's body (filled in an effect after mount — stripping before it
+// arrived found 0 tags when the заявка was already saved, e.g. by verify-formdocs).
 import { chromium } from "playwright";
 
-const BASE = process.env.BASE ?? "http://localhost:3200";
+const BASE = process.env.BASE ?? "http://localhost:3000";
 const S = "26-01-T-1";
 let pass = 0, fail = 0;
 const t = (name, ok, extra = "") => {
@@ -17,13 +23,24 @@ const browser = await chromium.launch();
 const page = await browser.newPage();
 page.setDefaultTimeout(60000);
 const go = (url) => page.goto(url, { waitUntil: "domcontentloaded", timeout: 90000 });
+// The editor fills its body in an effect AFTER it mounts, so the editable box is
+// visible (and empty) for a moment — wait for the document itself before touching
+// it. A saved заявка (e.g. after verify-formdocs) opens straight onto that moment.
+const bodyLoaded = () => page.waitForFunction(() => {
+  const b = document.querySelector('[contenteditable="true"]');
+  return !!b && b.childElementCount > 0 && b.innerText.trim().length > 0;
+});
+
+await go(`${BASE}/dev/persona?role=manager`);
 
 // 1. Make the saved заявка legacy: strip all data-ff in the editor and save.
 await go(`${BASE}/schemes/${S}/build/application`);
-const starter = page.getByRole("button", { name: /Шаблон по подразбиране/ });
-if (await starter.isVisible().catch(() => false)) await starter.click();
 const ed = page.locator('[contenteditable="true"]').first();
+const starter = page.getByRole("button", { name: /Шаблон по подразбиране|Default template/ });
+await ed.or(starter).first().waitFor();
+if (await starter.isVisible()) await starter.click();
 await ed.waitFor();
+await bodyLoaded();
 const stripped = await page.evaluate(() => {
   const body = document.querySelector('[contenteditable="true"]');
   let n = 0;
@@ -52,6 +69,7 @@ t("print: legacy body draws the fill value", (await page.content()).includes("LE
 // 4. Editor serves the body re-tagged; saving persists the identity.
 await go(`${BASE}/schemes/${S}/build/application`);
 await ed.waitFor();
+await bodyLoaded();
 const tags = await page.evaluate(() => document.querySelector('[contenteditable="true"]').querySelectorAll("[data-ff]").length);
 t("editor: reopened legacy body is re-tagged", tags >= stripped - 1, `tags=${tags} (was ${stripped})`);
 

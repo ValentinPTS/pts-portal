@@ -2,14 +2,16 @@ import type { Scheme, Lang, DocOptions } from "../types";
 import { esc, pick, wrapDoc, docHeader, footer } from "../doc-shell";
 import { metricsForScheme } from "../scoring";
 
-// F 7.2.1-6 «Кодиран списък на резултатите / Encrypted list of results» — NEW in
-// the provider's 2026 standard workbook. One section PER CHARACTERISTIC (the
-// workbook keeps them as separate sheets z1/z2/z4; the owner chose one document
-// with a section per characteristic, 2026-07-08). Codes only — no lab names —
-// so it is publishable/shareable without breaking §4.2. Per row: laboratory code,
-// sample code, individual determinations I/II/III, mean value, uncertainty.
-// Data: scheme.scoring.results (mean/u/determinations) + participants (codes).
-const FORM = "F 7.2.1-6";
+// F 7.2.1-5 «Кодиран списък на участниците / Encrypted list of participants» —
+// codes and results, NO names: the document handed to the statistics expert
+// (П 7.4.1 т. 4.1). PTS's titles are swapped against the content (assignment of
+// 31.10.2026, §4) and the content governs, so this list carries -5 and the
+// name↔code mapping (registered.ts) carries -6 (plan part 0.2). One section PER
+// CHARACTERISTIC (the workbook keeps them as separate sheets z1/z2/z4; the owner
+// chose one document with a section per characteristic, 2026-07-08). Per row:
+// laboratory code, sample code, determinations I/II/III, mean value, uncertainty.
+// Data: scheme.scoring.results (mean/u/determinations) + participants (codes only).
+const FORM = "F 7.2.1-5";
 
 const ROMAN = ["I", "II", "III", "IV", "V", "VI"];
 
@@ -29,7 +31,7 @@ function teamRole(s: Scheme, re: RegExp): { name: string; roleEn: string; roleBg
   return s.team.find((m) => re.test(m.roleBg + m.roleEn));
 }
 
-export function renderResultsCoded(s: Scheme, lang: Lang, opts?: DocOptions): string {
+export function renderCodesAndResults(s: Scheme, lang: Lang, opts?: DocOptions): string {
   const L = (en: string, bg: string) => esc(pick(lang, en, bg));
   const ps = opts?.participants ?? [];
   const sampleByCode = new Map(ps.map((p) => [p.code, p.sampleCode ?? ""]));
@@ -75,7 +77,10 @@ export function renderResultsCoded(s: Scheme, lang: Lang, opts?: DocOptions): st
             <th class="c" rowspan="2">${L("Sample code", "Код на пробата")}</th>
             <th class="c" colspan="${detCount}">${L("Results", "Резултати")}</th>
             <th class="c" rowspan="2">${L("Mean value", "Средна стойност")}</th>
-            <th class="c" rowspan="2">${L("Uncertainty (k=2, P=95%)", "Неопределеност (к=2, Р=95%)")}</th>
+            <th class="c" rowspan="2">${s.type === "C"
+              ? L("Uncertainty (k=2, P=95%)", "Неопределеност (к=2, Р=95%)")
+              // testing: the scoring column holds the standard u = U/k (0.13, N16)
+              : L("Standard uncertainty u (= U/k)", "Стандартна неопределеност u (= U/k)")}</th>
           </tr>
           <tr>${Array.from({ length: detCount }, (_, k) => `<th class="c">${ROMAN[k] ?? k + 1}</th>`).join("")}</tr>
         </thead><tbody>${rows}</tbody></table>
@@ -95,10 +100,10 @@ export function renderResultsCoded(s: Scheme, lang: Lang, opts?: DocOptions): st
     }</div>
   </div>`;
 
-  const body = `${docHeader(s, lang, "ENCRYPTED LIST OF RESULTS", "КОДИРАН СПИСЪК НА РЕЗУЛТАТИТЕ")}
+  const body = `${docHeader(s, lang, "ENCRYPTED LIST OF PARTICIPANTS", "КОДИРАН СПИСЪК НА УЧАСТНИЦИТЕ")}
     ${sections || `<p class="empty">${L("No characteristics defined for this scheme yet.", "Все още няма дефинирани характеристики за тази схема.")}</p>`}
     ${signs}
     ${footer(s, FORM)}`;
 
-  return wrapDoc(lang, `${s.number} — Encrypted List of Results`, body, EXTRA_CSS);
+  return wrapDoc(lang, `${s.number} — Encrypted List of Participants`, body, EXTRA_CSS);
 }

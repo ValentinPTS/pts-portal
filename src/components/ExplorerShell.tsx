@@ -35,7 +35,8 @@ export default function ExplorerShell({
 
       <div style={{ flex: 1, display: "flex", alignItems: "stretch", background: "var(--bg)" }}>
         <Sidebar active={active} />
-        <main style={{ flex: 1, minWidth: 0, padding: "24px 28px" }}>{children}</main>
+        {/* a section, not a second <main> — the app's chrome has the main (2.7) */}
+        <div style={{ flex: 1, minWidth: 0, padding: "24px 28px" }}>{children}</div>
       </div>
     </div>
   );

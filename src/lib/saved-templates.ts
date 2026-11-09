@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { getDb } from "./supabase";
+import { getDb, noMemoryFallback } from "./supabase";
 
 // Saved whole-document templates (the builder's "save your own template").
 // Supabase when configured, else in-memory — same graceful fallback as the
@@ -13,9 +13,13 @@ export interface SavedTemplate {
   en: string;
 }
 
-const mem: SavedTemplate[] = [];
+// shared across every server entry point, as the other stores are (a module-local
+// copy hid entries written from another bundle in dev — part 1.4/1.5)
+const memStore = globalThis as unknown as { __ptsTemplateMem?: SavedTemplate[] };
+const mem: SavedTemplate[] = memStore.__ptsTemplateMem ?? (memStore.__ptsTemplateMem = []);
 let warned = false;
 function warn(e: unknown) {
+  noMemoryFallback("templates", e); // on a deployment: an error, not memory (1.1)
   if (warned) return;
   warned = true;
   console.warn("[templates] Supabase unavailable — in-memory fallback:", (e as Error)?.message ?? e);
@@ -60,6 +64,21 @@ export async function addSavedTemplate(input: { docKey: string; type: "T" | "C";
     mem.push(item);
   }
   return item;
+}
+
+// Which document a template belongs to — so its deletion can be guarded like an
+// edit of that document. undefined when there is no such template.
+export async function getSavedTemplateDocKey(id: string): Promise<string | undefined> {
+  const db = getDb();
+  if (!db) return mem.find((t) => t.id === id)?.docKey;
+  try {
+    const { data, error } = await db.from("doc_templates").select("doc_key").eq("id", id).maybeSingle();
+    if (error) throw error;
+    return (data as { doc_key?: string } | null)?.doc_key ?? undefined;
+  } catch (e) {
+    warn(e);
+    return mem.find((t) => t.id === id)?.docKey;
+  }
 }
 
 export async function deleteSavedTemplate(id: string): Promise<void> {

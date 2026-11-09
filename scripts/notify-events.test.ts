@@ -5,7 +5,7 @@ import {
   notifyApplicationReceived, notifyApplicationApproved, notifyApplicationRejected,
   notifyReceiptConfirmed, notifyResultsReturned, notifyReportIssued,
 } from "../src/lib/notify-events.ts";
-import { listForProvider, listForLab } from "../src/lib/notifications.ts";
+import { listForProvider, listForLab, listHeld, decideNotice } from "../src/lib/notifications.ts";
 
 let pass = 0, fail = 0;
 const t = (name: string, ok: boolean, extra = "") => { if (ok) pass++; else { fail++; console.error("FAIL:", name, extra); } };
@@ -27,6 +27,11 @@ await notifyApplicationApproved(undefined, "S1", NUM, CODE);
 await notifyReportIssued(undefined, "S1", NUM, CODE);
 
 const prov = await listForProvider(50);
+// Реш. 138 (part 0.8): lab notices are held until a person releases them — the lab
+// sees nothing yet; the held ones are what it WILL see, once released
+t("held: the lab sees nothing before a release", (await listForLab(LAB, 50)).length === 0);
+const held = await listHeld(50);
+for (const h of held) await decideNotice(h.id, "release", "test");
 const lab = await listForLab(LAB, 50);
 const all = [...prov, ...lab];
 

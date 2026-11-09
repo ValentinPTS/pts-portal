@@ -53,6 +53,7 @@ function AppCard({ app }: { app: PendingAppView }) {
   const L = (en: string, bgTxt: string) => (bg ? bgTxt : en);
   const [done, setDone] = useState<null | "approved" | "rejected">(null);
   const [showReject, setShowReject] = useState(false);
+  const [reasonText, setReasonText] = useState("");
   const [copied, setCopied] = useState(false);
 
   const [aState, approve, aPending] = useActionState<ApproveState, FormData>(
@@ -166,15 +167,19 @@ function AppCard({ app }: { app: PendingAppView }) {
           ) : (
             <form action={reject} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
               <input type="hidden" name="id" value={app.id} />
-              <input name="reason" placeholder={L("Reason (optional)", "Причина (по избор)")} maxLength={500}
-                className="rounded px-2 py-1" style={{ border: "1px solid var(--line)", fontSize: 13, minWidth: 200 }} />
+              {/* the reason is kept with it six years (4.7, Zadanie §10) — required; kept as typed when refused */}
+              <label style={{ display: "grid", gap: 2 }}>
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>{L("Reason (kept 6 years) *", "Причина (пази се 6 години) *")}</span>
+                <input name="reason" required minLength={3} maxLength={500} value={reasonText} onChange={(e) => setReasonText(e.target.value)}
+                  className="rounded px-2 py-1" style={{ border: "1px solid var(--line)", fontSize: 13, minWidth: 200 }} />
+              </label>
               <button type="submit" disabled={rPending} className="btn btn-primary" style={{ fontSize: 13, background: "#b4291f" }}>
                 {rPending ? L("Rejecting…", "Отхвърляне…") : L("Confirm reject", "Потвърди")}
               </button>
             </form>
           )}
           {(aState.error || rState.error) && (
-            <span className="text-sm" style={{ color: "var(--red)" }}>{aState.error || rState.error}</span>
+            <span role="alert" className="text-sm" style={{ color: "var(--red)" }}>{aState.error || rState.error}</span>
           )}
         </div>
       )}

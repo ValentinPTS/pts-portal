@@ -1,10 +1,11 @@
 import Link from "next/link";
+import { requireCap, mayNow, requireDocView } from "@/lib/access";
 import { notFound } from "next/navigation";
 import { getScheme } from "@/lib/store";
-import { getDoc } from "@/lib/documents";
+import { getDoc, isRestrictedDoc } from "@/lib/documents";
 import { listRevisions } from "@/lib/doc-revisions";
 import { approveDocRevisionAction, restoreDocRevisionAction } from "@/lib/actions";
-import { getCurrentRole, requireStaff } from "@/lib/roles";
+import { requireStaff } from "@/lib/roles";
 import { getServerT } from "@/lib/i18n-server";
 
 // Document version history (Phase RT5, §8.3). Lists every saved revision: who saved
@@ -28,14 +29,17 @@ export default async function DocHistoryPage({
 }) {
   await requireStaff(); // read gate: manager/staff/auditor only
   const { id, doc } = await params;
+  await requireCap("codes.view", id); // in THIS scheme, by the role model (2.4)
+  if (isRestrictedDoc(doc)) await requireCap("names.view", id); // F 7.2.1-6 = names ↔ codes (part 0.2)
+  await requireDocView(doc, id); // the Order: the staff it assigns roles to (Реш. 149, 2.6)
   const s = await getScheme(id);
-  if (!s) notFound();
   const def = getDoc(doc);
+  if (!s || !def) notFound();
   const { lang, tr } = await getServerT();
   const revisions = await listRevisions(id, doc);
-  const role = await getCurrentRole();
-  const isManager = role === "manager";
-  const isWriter = role === "manager" || role === "staff";
+  // approving a revision and restoring one: the scheme's editors (2.4)
+  const isManager = await mayNow("scheme.edit", id);
+  const isWriter = isManager;
   const docName = (lang === "bg" ? def?.nameBg : def?.nameEn) ?? doc;
 
   return (

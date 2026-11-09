@@ -102,11 +102,11 @@ export default function RegisterForm({ errorCode }: { errorCode?: string }) {
 
         <div className="grid gap-3 mt-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
           <label className="block text-sm" style={{ color: "var(--muted)" }}>
-            {L("Accreditation body", "Орган по акредитация")}
+            {L("Accreditation body (if any)", "Орган по акредитация (ако имате)")}
             <input name="accreditationBody" maxLength={160} className={input} style={inputStyle} />
           </label>
           <label className="block text-sm" style={{ color: "var(--muted)" }}>
-            {L("Accreditation certificate №", "Сертификат за акредитация №")}
+            {L("Accreditation certificate № (if any)", "Сертификат за акредитация № (ако имате)")}
             <input name="accreditationNo" maxLength={120} className={input} style={inputStyle} />
           </label>
         </div>
@@ -116,8 +116,8 @@ export default function RegisterForm({ errorCode }: { errorCode?: string }) {
           <div className="mt-4 p-3 rounded" style={{ background: "var(--green-soft)", border: "1px solid var(--line)" }}>
             <p className="text-xs" style={{ color: "var(--muted)" }}>
               {L(
-                "EU laboratory — we verify your ЕИК and VAT automatically. A person still reviews your accreditation before approval.",
-                "Лаборатория в ЕС — проверяваме ЕИК и ДДС автоматично. Акредитацията се преглежда от служител преди одобрение.",
+                "EU laboratory — we verify your ЕИК and VAT automatically. A person still reviews the registration before approval. Accreditation is not a condition for registering.",
+                "Лаборатория в ЕС — проверяваме ЕИК и ДДС автоматично. Регистрацията се преглежда от служител преди одобрение. Акредитацията не е условие за регистрация.",
               )}
             </p>
             <div className="grid gap-3 mt-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
@@ -138,8 +138,8 @@ export default function RegisterForm({ errorCode }: { errorCode?: string }) {
           <div className="mt-4 p-3 rounded" style={{ background: "var(--green-soft)", border: "1px solid var(--line)" }}>
             <p className="text-xs" style={{ color: "var(--muted)" }}>
               {L(
-                "Outside the EU — please attach your accreditation certificate / scope and business registration. PTS verifies these manually.",
-                "Извън ЕС — моля, прикачете сертификат за акредитация / обхват и фирмена регистрация. PTS ги проверява ръчно.",
+                "Outside the EU — please attach your business registration and, if you have one, your accreditation certificate / scope. PTS verifies these manually.",
+                "Извън ЕС — моля, прикачете фирмена регистрация и, ако имате, сертификат за акредитация / обхват. PTS ги проверява ръчно.",
               )}
             </p>
             <div className="text-sm mt-2" style={{ color: "var(--ink)", fontWeight: 600 }}>

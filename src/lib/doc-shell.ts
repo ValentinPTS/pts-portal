@@ -1,7 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Scheme, Lang } from "./types";
 import type { Skin } from "../skins/types";
-import { esc, pick, BODY_START, BODY_END, DOC_CSS, FONTS_HREF } from "./doc-css";
+import { esc, pick, footerLine, BODY_START, BODY_END, DOC_CSS } from "./doc-css";
+import { BRAND_FONTS, fontLinks } from "./doc-fonts";
 
 // Shared branding shell for ALL generated documents. The look is provided by the
 // active SKIN (see src/skins); the built-in "Classic" skin below is the strict PTS
@@ -9,7 +10,7 @@ import { esc, pick, BODY_START, BODY_END, DOC_CSS, FONTS_HREF } from "./doc-css"
 // compose these helpers unchanged — cover()/footer()/wrapDoc() delegate to whatever
 // skin is active for the current render (set via withSkin()).
 //
-// The pure primitives (esc, pick, body markers, DOC_CSS, FONTS_HREF) live in
+// The pure primitives (esc, pick, body markers, DOC_CSS) live in
 // doc-css.ts so the client-side skin editor can share them without bundling this
 // module's node:async_hooks dependency. Re-exported here for the existing importers.
 export { esc, pick, BODY_START, BODY_END, stripBodyMarkers, DOC_CSS } from "./doc-css";
@@ -63,7 +64,7 @@ export function coverImgTag(s: Scheme): string {
 export const classicSkin: Skin = {
   meta: { id: "classic", name: "Classic", description: "The current PTS brand — green cover band, red rules, PT Serif body.", types: ["T", "C"] },
   css: DOC_CSS,
-  fontsHref: FONTS_HREF,
+  fonts: BRAND_FONTS,
   cover: classicCover,
   footer: classicFooter,
   sideBorder: true, // the PTS brand always carries the embroidery side border
@@ -85,9 +86,7 @@ export function wrapDoc(lang: Lang, titleAttr: string, bodyHTML: string, extraCs
 <head>
 <meta charset="utf-8">
 <title>${esc(titleAttr)}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="${sk.fontsHref}" rel="stylesheet">
+${fontLinks(sk.fonts)}
 <style>${sk.css}${extraCss}</style>
 </head>
 <body>${sk.sideBorder !== false ? `<div class="doc-side" aria-hidden="true"></div>` : ""}<div class="page">${bodyHTML}</div></body>
@@ -153,7 +152,7 @@ export function heading(en: string, bg: string, lang: Lang): string {
 }
 
 function classicFooter(s: Scheme, formNumber: string): string {
-  return `<div class="docfooter">${esc(s.revision)} · ${esc(formNumber)} · ${esc(s.revisionDate)}</div>`;
+  return `<div class="docfooter">${footerLine(s.revision, formNumber, s.revisionDate)}</div>`;
 }
 
 // Footer for the active skin, preceded by the body-end marker.

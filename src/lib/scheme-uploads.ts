@@ -33,23 +33,29 @@ export async function ensureSchemeDocsBucket(db: SupabaseClient): Promise<void> 
 // Stream one uploaded file to the caller — shared by the auth-gated viewer routes
 // (owner doc uploads AND lab uploads). Handles both real storage paths and the
 // dev data:-URL fallback. The CALLER does authorization; this only moves bytes.
-export async function uploadedDocResponse(up: UploadedDoc, download: boolean): Promise<Response> {
-  let bytes: Uint8Array;
-  let mime = up.mime || "application/octet-stream";
+/** The bytes of an uploaded file (and its type), or null when it is not there. */
+export async function uploadedDocBytes(up: UploadedDoc): Promise<{ bytes: Uint8Array; mime: string } | null> {
   if (up.path.startsWith("data:")) {
     // dev fallback — the file is stored inline as a data: URL
     const m = up.path.match(/^data:([^;]+);base64,(.*)$/);
-    if (!m) return new Response("Not found", { status: 404 });
-    mime = m[1];
-    bytes = new Uint8Array(Buffer.from(m[2], "base64"));
-  } else {
-    const db = getDb();
-    if (!db) return new Response("Not found", { status: 404 });
-    const { data, error } = await db.storage.from(SCHEME_DOC_BUCKET).download(up.path);
-    if (error || !data) return new Response("Not found", { status: 404 });
-    bytes = new Uint8Array(await data.arrayBuffer());
+    return m ? { bytes: new Uint8Array(Buffer.from(m[2], "base64")), mime: m[1] } : null;
   }
-  const safeName = (up.name || "document").replace(/[^\w.\-]+/g, "_");
+  const db = getDb();
+  if (!db) return null;
+  const { data, error } = await db.storage.from(SCHEME_DOC_BUCKET).download(up.path);
+  if (error || !data) return null;
+  return { bytes: new Uint8Array(await data.arrayBuffer()), mime: up.mime || "application/octet-stream" };
+}
+
+export async function uploadedDocResponse(up: UploadedDoc, download: boolean): Promise<Response> {
+  const got = await uploadedDocBytes(up);
+  if (!got) return new Response("Not found", { status: 404 });
+  return uploadedBytesResponse(got.bytes, got.mime, up.name, download);
+}
+
+/** Serve a file's bytes as the uploads are served. */
+export function uploadedBytesResponse(bytes: Uint8Array, mime: string, name: string, download: boolean): Response {
+  const safeName = (name || "document").replace(/[^\w.\-]+/g, "_");
   // copy into a fresh (plain-ArrayBuffer-backed) array so the Response body type is exact
   const out = new Uint8Array(bytes.byteLength);
   out.set(bytes);

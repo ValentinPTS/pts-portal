@@ -1,0 +1,37 @@
+# The four gates on every push and pull request (plan part 1.11): types, lint, the
+# tests, the build. The same four run again inside every Vercel build
+# (scripts/prebuild.mjs), so only a green build ever reaches the site.
+#
+# No secrets here: the tests run in memory, and the build without a database.
+name: gates
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: types
+        run: npx tsc --noEmit
+      - name: lint
+        run: npm run lint
+      - name: tests (in memory, no secrets)
+        run: npm test
+      - name: build (no database)
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ""
+          SUPABASE_KEY: ""
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ""

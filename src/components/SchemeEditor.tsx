@@ -7,7 +7,16 @@ import { updateSchemeAction } from "@/lib/actions";
 import CoverPhotoField from "@/components/CoverPhotoField";
 import { useLang } from "@/components/LangProvider";
 import { calibrationSlotsBroken, effectiveDirections } from "@/lib/param-remap";
+import { ONLINE_APPLICATIONS_OPEN } from "@/lib/online-applications";
 import type { CalibrationData, Parameter, PriceRow, ScheduleItem, SchemeStatus } from "@/lib/types";
+import { markerLabels, readSchemeNumber, schemeMarkers, statedByNumber, type Activity, type SchemeKind } from "@/lib/scheme-number";
+import { STATE_LABEL } from "@/lib/lifecycle-model";
+import { ENGINE_FIELDS, characteristicLabel } from "@/lib/characteristics-model";
+import { DEFAULT_SHARE_PCT, fmtEur, fullPrice, parseCents, parseShare, sharePrice, type Commercial } from "@/lib/commercial-model";
+import { SHIPMENT_SUGGESTIONS, MAX_ITEMS, type SchemeLists } from "@/lib/scheme-lists-model";
+import { markState } from "@/lib/accreditation-mark";
+import type { M1Block } from "@/lib/m1-render";
+import { META_GAP_TEXT, type ExternalProvider } from "@/lib/scheme-meta";
 
 // The reworked "Edit scheme data" view. Focused on what the owner actually
 // manages per round: the essentials (number, name, photo), OPENING the scheme,
@@ -24,12 +33,16 @@ import type { CalibrationData, Parameter, PriceRow, ScheduleItem, SchemeStatus }
 export interface SchemeEditorInit {
   id: string;
   number: string;
+  type: "T" | "C";
+  // what the number carries, as kept (Реш. 102, 3.1)
+  kind?: SchemeKind;
+  activity?: Activity;
+  accredited?: boolean;
   titleEn: string;
   titleBg: string;
   objectEn: string;
   objectBg: string;
   status: SchemeStatus;
-  announced: boolean;
   coverImage?: string;
   coverImageWidth?: number;
   coverImageAlign?: "left" | "center" | "right";
@@ -42,22 +55,45 @@ export interface SchemeEditorInit {
   // editor can WARN before submitting — the server would otherwise have to refuse
   // the save and send him back here with every other edit on this form lost.
   calDataSlots?: [number, number][];
+  staticReminder?: { bg: string; en: string };
+  commercial?: Commercial;
+  /** the lists in force (a calibration scheme's Instruction checks until it saves its own) */
+  lists?: SchemeLists;
+  /** a refusal came back for a field in «Разширени настройки» — open it (3.7 review) */
+  openAdvanced?: boolean;
+  /** certificates are issued: the number and its status stay (3.9 review) */
+  certsIssued?: boolean;
+  /** a calibration scheme on M1: its own texts for the documents, with what they hold (3.10) */
+  m1Blocks?: (M1Block & { bg: string; en: string })[];
+  /** the design data and the external providers (3.13) */
+  period?: string;
+  externalProviders?: ExternalProvider[];
+  designApproved?: string;
+  reportDate?: string;
+  /** what the plan's point 3 names with no list kept (3.13 review) */
+  legacyProviders?: Omit<ExternalProvider, "id">[];
+  /** what 2.0 still needs, or holds in a way that proves nothing */
+  metaGaps?: string[];
+  /** the plan is saved in the document editor — a list added here is not in it */
+  planSaved?: boolean;
 }
 
 type SchedRow = ScheduleItem & { uid: number };
 // sigma is kept as the RAW STRING while editing (parsed only on the server):
 // parsing per keystroke through a controlled input eats decimal separators —
 // typing "0,5" would collapse to 5.
-type ParamRow = Omit<Parameter, "sigmaMin"> & { uid: number; orig: number | null; sigma: string };
+// the 3.6 numbers too (step, guard limits, determinations) — raw strings while editing
+type ParamRow = Omit<Parameter, "sigmaMin"> & { uid: number; orig: number | null; sigma: string; stepS: string; gminS: string; gmaxS: string; detS: string };
+const numS = (n: number | undefined) => (n === undefined || n === null ? "" : String(n));
 
 const inputCls = "w-full rounded px-2 py-1 text-sm";
 const inputStyle = { border: "1px solid var(--line)", background: "#fff" } as const;
+// This page opens a scheme or takes it back to draft; every later state is an act on
+// the scheme page (part 3.2, lib/lifecycle-model) — the first announcement, the start
+// of processing, the report, closing the records.
 const STATUSES: { value: SchemeStatus; bg: string; en: string }[] = [
   { value: "draft", bg: "Чернова", en: "Draft" },
   { value: "open", bg: "Отворена", en: "Open" },
-  { value: "running", bg: "Провежда се", en: "Running" },
-  { value: "report", bg: "Докладване", en: "Reporting" },
-  { value: "closed", bg: "Затворена", en: "Closed" },
 ];
 
 // Text pasted from Word/PDF often drags in invisible junk (control chars,
@@ -203,13 +239,12 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
 
   const [sched, setSched] = useState<SchedRow[]>(() => init.schedule.map((s, i) => ({ ...s, uid: i })));
   const [params, setParams] = useState<ParamRow[]>(() =>
-    init.parameters.map((p, i) => ({ ...p, sigma: p.sigmaMin != null ? String(p.sigmaMin) : "", uid: i, orig: i }))
+    init.parameters.map((p, i) => ({ ...p, sigma: p.sigmaMin != null ? String(p.sigmaMin) : "", stepS: numS(p.step), gminS: numS(p.guardMin), gmaxS: numS(p.guardMax), detS: numS(p.determinations), uid: i, orig: i }))
   );
   const [status, setStatus] = useState<SchemeStatus>(init.status);
-  // controlled (not defaultChecked): the checkbox unmounts while status is
-  // "open", and an uncontrolled remount would silently revert the owner's toggle
-  const [announced, setAnnounced] = useState(init.announced);
   const [copied, setCopied] = useState(false);
+  // the number as typed: what it states is shown as the number's, the rest is chosen
+  const [num, setNum] = useState(init.number);
 
   // Calibration schemes have NO standards — the device/quantity/points ARE the
   // scheme (they feed all C documents and the заявка). Controlled so the live
@@ -250,7 +285,7 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
   }
   function addParam() {
     setParams((p) => [...p, {
-      uid: nextUid(), orig: null, sigma: "",
+      uid: nextUid(), orig: null, sigma: "", stepS: "", gminS: "", gmaxS: "", detS: "",
       standardEn: "", standardBg: "", characteristicEn: "", characteristicBg: "",
       rangeEn: "", rangeBg: "", specimensEn: "", specimensBg: "",
     }]);
@@ -320,11 +355,13 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
         </span>
         <input
           name="number"
-          defaultValue={init.number}
+          value={num}
+          onChange={(e) => setNum(e.target.value)}
           className="rounded px-3 py-2 text-sm font-bold"
           style={{ border: "1px solid var(--green-line)", background: "var(--green-soft)", color: "var(--green-dark)", maxWidth: 320, fontFamily: "var(--font-sans)" }}
         />
       </label>
+      <NumberMarkers number={num} init={init} L={L} lang={lang === "bg" ? "bg" : "en"} />
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
         <Field label={L("Заглавие (БГ)", "Title (BG)")} name="titleBg" def={init.titleBg} />
         <Field label={L("Заглавие (EN)", "Title (EN)")} name="titleEn" def={init.titleEn} />
@@ -340,6 +377,16 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
         {L("Отваряне на схемата", "Opening the scheme")}
       </SectionTitle>
       <input type="hidden" name="status" value={status} />
+      <input type="hidden" name="statusFrom" value={init.status} />
+      {init.status !== "draft" && init.status !== "open" ? (
+        <div className="card p-4" data-state-elsewhere>
+          <p className="text-sm">
+            {L("Състояние: ", "State: ")}<b>{L(STATE_LABEL[init.status].bg, STATE_LABEL[init.status].en)}</b>.{" "}
+            {L("Оттук нататък състоянието се сменя с актовете в «Етапи» на страницата на схемата.", "From here on the state changes by the acts under «Stages» on the scheme page.")}{" "}
+            <Link href={`/schemes/${init.id}#stages`} style={{ color: "var(--green-dark)", fontWeight: 700 }}>{L("Към етапите →", "To the stages →")}</Link>
+          </p>
+        </div>
+      ) : (
       <div className="card p-4" style={{ background: status === "open" ? "var(--green-soft)" : "#fff" }}>
         <div className="flex gap-2 flex-wrap">
           {STATUSES.map((st) => {
@@ -362,7 +409,13 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
             );
           })}
         </div>
-        {status === "open" ? (
+        {status === "open" && !ONLINE_APPLICATIONS_OPEN ? (
+          // part 0.4: open = accepting PDF applications; the portal form is off
+          <p className="mt-3 text-xs" style={{ color: "var(--muted)" }}>
+            {L("Отворена: лабораториите кандидатстват с PDF формуляра, а Вие ги добавяте от «Участници». Онлайн заявките в портала засега са изключени.",
+               "Open: laboratories apply with the PDF form and you add them under «Participants». Online applications in the portal are switched off for now.")}
+          </p>
+        ) : status === "open" ? (
           <div className="mt-3 flex items-center gap-2 flex-wrap text-sm">
             <span style={{ color: "var(--green-dark)", fontWeight: 700 }}>
               {L("Схемата приема заявки:", "The scheme is accepting applications:")}
@@ -372,20 +425,19 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
               {copied ? L("Копирано ✓", "Copied ✓") : L("Копирай линка", "Copy link")}
             </button>
           </div>
-        ) : (
-          <label className="flex items-start gap-2 mt-3">
-            <input type="checkbox" checked={announced} onChange={(e) => setAnnounced(e.target.checked)} style={{ marginTop: 3 }} />
-            <span className="text-sm" style={{ color: "var(--ink)" }}>
-              {L("Обяви на лабораториите", "Announce to labs")}
-              <span className="block text-xs" style={{ color: "var(--muted)" }}>
-                {L("Схемата се показва в таб „Предстоящи“ на портала за лаборатории още докато е чернова. Заявки се приемат едва при статус „Отворена“.",
-                   "Shows the scheme in the lab portal's “Upcoming” tab while still a draft. Applications are only accepted once the status is “Open”.")}
-              </span>
-            </span>
-          </label>
-        )}
-        <input type="hidden" name="announced" value={announced ? "on" : ""} />
+        ) : status === "draft" ? (
+          // Реш. 147: a scheme that has not started is invisible to labs and the
+          // public — there is no "announce while draft" any more (part 0.3).
+          <p className="mt-3 text-xs" style={{ color: "var(--muted)" }}>
+            {L("Докато е чернова, схемата не се вижда от лабораториите и от публиката — нито в списък, нито на адрес.",
+               "While a draft, the scheme is invisible to laboratories and the public — in no list and at no address.")}
+          </p>
+        ) : null}
+        <p className="mt-2 text-xs" style={{ color: "var(--muted)" }}>
+          {L("Следващите състояния — първото обявяване, обработката, докладът — са актове в «Етапи» на страницата на схемата.", "The later states — the first announcement, processing, the report — are acts under «Stages» on the scheme page.")}
+        </p>
       </div>
+      )}
 
       {/* ── Schedule ──────────────────────────────────────────────── */}
       <SectionTitle hint={L("Зелените календари, които участниците виждат в Поканата (§3) и Плана (§10) — в този ред.",
@@ -496,7 +548,7 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
           <input type="hidden" name="paramCount" value={params.length} />
           <div className="grid gap-4">
             {params.map((p, i) => (
-              <div key={p.uid} className="card p-3" style={p.orig === null ? { borderColor: "var(--green-line)", background: "var(--green-soft)" } : {}}>
+              <div key={p.uid} data-char-row={i} className="card p-3" style={p.orig === null ? { borderColor: "var(--green-line)", background: "var(--green-soft)" } : {}}>
                 <div className="flex items-center gap-2 mb-2">
                   <span style={{ width: 26, height: 26, borderRadius: 7, background: "#e7f0e6", color: "#3d6b47", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12 }}>{i + 1}</span>
                   <span className="text-sm font-bold" style={{ color: "var(--green-dark)" }}>
@@ -505,6 +557,7 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
                   {p.orig === null && (
                     <span className="text-xs rounded-full px-2" style={{ background: "#e3eeda", color: "#456b2c", fontWeight: 700 }}>{L("нов", "new")}</span>
                   )}
+                  {p.id && <span className="text-xs font-mono" data-char-id={p.id} title={L("Постоянен идентификатор — не се сменя", "Stable id — it never changes")} style={{ color: "var(--muted)" }}>{p.id}</span>}
                   <div style={{ marginLeft: "auto" }}>
                     <RowCtl
                       onUp={() => setParams((s) => move(s, i, -1))}
@@ -548,6 +601,40 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
                   <FieldS label={L("σpt,min — долен праг за σ (по избор)", "σpt,min — proficiency-SD floor (optional)")} value={p.sigma} placeholder={L("напр. 0,05", "e.g. 0.05")}
                     onChange={(v) => setParams((s) => patchRow(s, i, { sigma: v }))} />
                 </DestGroup>
+                {/* 3.6: for the processing — what a lab is shown, and what only 2.0 reads */}
+                <DestGroup title={L("За обработката — единица, стъпка, защитни граници, U, група, определяния", "For the processing — unit, step, guard limits, U, group, determinations")} cols="repeat(auto-fit, minmax(130px, 1fr))">
+                  <FieldS label={L("Мерна единица", "Unit")} value={p.unit ?? ""} placeholder="%" onChange={(v) => setParams((s) => patchRow(s, i, { unit: v }))} />
+                  <FieldS label={L("Стъпка на докладване", "Reporting step")} value={p.stepS} placeholder="0,1" onChange={(v) => setParams((s) => patchRow(s, i, { stepS: v }))} />
+                  <FieldS label={L("Долна защитна граница", "Lower guard limit")} value={p.gminS} placeholder="0" onChange={(v) => setParams((s) => patchRow(s, i, { gminS: v }))} />
+                  <FieldS label={L("Горна защитна граница", "Upper guard limit")} value={p.gmaxS} placeholder="10" onChange={(v) => setParams((s) => patchRow(s, i, { gmaxS: v }))} />
+                  <label className="block">
+                    <span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Брой определяния (до 3)", "Determinations (up to 3)")}</span>
+                    <select value={p.detS} onChange={(e) => setParams((s) => patchRow(s, i, { detS: e.target.value }))} className={inputCls} style={inputStyle}>
+                      <option value="">—</option><option value="1">1</option><option value="2">2</option><option value="3">3</option>
+                    </select>
+                  </label>
+                  <FieldS label={L("Статистическа група (БГ)", "Statistical group (BG)")} value={p.group ?? ""} onChange={(v) => setParams((s) => patchRow(s, i, { group: v }))} />
+                  <FieldS label={L("Статистическа група (EN)", "Statistical group (EN)")} value={p.groupEn ?? ""} onChange={(v) => setParams((s) => patchRow(s, i, { groupEn: v }))} />
+                  <label className="flex items-center gap-2 text-sm" style={{ paddingTop: 16 }}>
+                    <input type="checkbox" checked={!!p.uRequired} onChange={(e) => setParams((s) => patchRow(s, i, { uRequired: e.target.checked }))} />
+                    {L("U е задължителна", "U is required")}
+                  </label>
+                </DestGroup>
+                <details className="mb-2" data-engine-fields>
+                  <summary className="text-xs font-bold cursor-pointer" style={{ color: "var(--green-dark)" }}>{L("Полета за PTS_Analysis 2.0 — пазят се както са въведени и не се показват на лабораториите", "Fields for PTS_Analysis 2.0 — kept as entered, never shown to laboratories")}</summary>
+                  <div className="grid gap-2 mt-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+                    {ENGINE_FIELDS.map((k) => (
+                      <FieldS key={k} label={k} value={p.engine?.[k] ?? ""} onChange={(v) => setParams((s) => patchRow(s, i, { engine: { ...(s[i].engine ?? {}), [k]: v } }))} />
+                    ))}
+                  </div>
+                </details>
+                <div className="text-xs mb-2" data-lab-view style={{ color: "var(--muted)" }}>
+                  {L("Лабораторията вижда: ", "The laboratory sees: ")}
+                  <b style={{ color: "var(--ink)" }}>{characteristicLabel(p, lang === "bg" ? "bg" : "en")}</b>
+                  {p.unit ? ` · ${p.unit}` : ""}
+                  {p.detS ? ` · ${L(`${p.detS} определяния`, `${p.detS} determinations`)}` : ""}
+                  {p.uRequired ? ` · ${L("U задължителна", "U required")}` : ""}
+                </div>
                 {/* live previews — click a part to jump to its field */}
                 <div className="grid gap-2 mt-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
                   <PreviewApply
@@ -570,6 +657,8 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
                   />
                 </div>
                 <input type="hidden" name={`param_${i}_orig`} value={p.orig === null ? "" : String(p.orig)} />
+                {/* the stable id: the save matches the row by it, not by its place (3.6 review) */}
+                <input type="hidden" name={`param_${i}_id`} value={p.id ?? ""} />
                 <input type="hidden" name={`param_${i}_stdBg`} value={p.standardBg} />
                 <input type="hidden" name={`param_${i}_stdEn`} value={p.standardEn} />
                 <input type="hidden" name={`param_${i}_chBg`} value={p.characteristicBg} />
@@ -579,6 +668,15 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
                 <input type="hidden" name={`param_${i}_spBg`} value={p.specimensBg} />
                 <input type="hidden" name={`param_${i}_spEn`} value={p.specimensEn} />
                 <input type="hidden" name={`param_${i}_sigmaMin`} value={p.sigma} />
+                <input type="hidden" name={`param_${i}_unit`} value={p.unit ?? ""} />
+                <input type="hidden" name={`param_${i}_step`} value={p.stepS} />
+                <input type="hidden" name={`param_${i}_gmin`} value={p.gminS} />
+                <input type="hidden" name={`param_${i}_gmax`} value={p.gmaxS} />
+                <input type="hidden" name={`param_${i}_det`} value={p.detS} />
+                <input type="hidden" name={`param_${i}_group`} value={p.group ?? ""} />
+                <input type="hidden" name={`param_${i}_groupEn`} value={p.groupEn ?? ""} />
+                <input type="hidden" name={`param_${i}_ureq`} value={p.uRequired ? "on" : ""} />
+                {ENGINE_FIELDS.map((k) => <input key={k} type="hidden" name={`param_${i}_eng_${k}`} value={p.engine?.[k] ?? ""} />)}
               </div>
             ))}
           </div>
@@ -589,20 +687,34 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
       )}
 
       {/* ── Advanced (the calibration fields live in the MAIN section above) ── */}
-      <details className="mt-8">
+      <details className="mt-8" open={init.openAdvanced || undefined}>
         <summary className="cursor-pointer text-sm font-bold py-2" style={{ color: "var(--green-dark)" }}>
           {init.prices.length
             ? L("Разширени настройки (мин. участници · цени)", "Advanced settings (min. participants · prices)")
             : L("Разширени настройки (мин. участници)", "Advanced settings (min. participants)")}
         </summary>
 
-        <div className="mt-2 mb-4" style={{ maxWidth: 240 }}>
-          <Field label={L("Минимален брой участници", "Minimum participants")} name="minParticipants" def={String(init.minParticipants)} />
+        <CommercialFields init={init.commercial} min={init.minParticipants} characteristics={params.length} L={L} lang={lang === "bg" ? "bg" : "en"} />
+        <ListsFields init={init.lists} L={L} />
+        {init.m1Blocks && <M1Texts blocks={init.m1Blocks} L={L} />}
+        <MetaFields init={init} L={L} />
+        {/* ONE static reminder per scheme (А3, 3.6) — shown to the participants */}
+        <div className="grid gap-3 mb-4" data-static-reminder style={{ gridTemplateColumns: "1fr 1fr" }}>
+          <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Напомняне към участниците (БГ) — едно за схемата", "Reminder to the participants (BG) — one per scheme")}</span>
+            <textarea name="staticReminderBg" defaultValue={init.staticReminder?.bg ?? ""} maxLength={600} rows={2} className={inputCls} style={inputStyle} /></label>
+          <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Напомняне (EN)", "Reminder (EN)")}</span>
+            <textarea name="staticReminderEn" defaultValue={init.staticReminder?.en ?? ""} maxLength={600} rows={2} className={inputCls} style={inputStyle} /></label>
         </div>
 
         {init.prices.length > 0 && (
           <>
             <SectionTitle>{L("Цени (§21)", "Prices (§21)")}</SectionTitle>
+            <p className="text-xs mb-2" style={{ color: "var(--muted)" }}>{L("Тази таблица се печата в документите така, както е написана. Изчислението на цените ползва полетата «Цени и участници» по-горе.", "This table is printed in the documents as written. The price calculation uses the «Prices and participants» fields above.")}</p>
+            {init.commercial?.base !== undefined && (
+              <p className="text-xs mb-2" data-two-price-sources style={{ background: "#fdf6e3", border: "1px solid #ecd9a6", color: "#7a5a12", borderRadius: 6, padding: "4px 8px" }}>
+                {L("Цените са на две места: тази таблица (в документите) и «Цени и участници» (за изчислението). Проверете, че казват едно и също.", "The prices are in two places: this table (in the documents) and «Prices and participants» (for the calculation). Check that they say the same.")}
+              </p>
+            )}
             <div className="grid gap-2">
               {init.prices.map((pr, i) => (
                 <div key={i} className="grid gap-2" style={{ gridTemplateColumns: "1fr 1fr 120px 120px" }}>
@@ -619,5 +731,288 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
 
       <SaveBar id={init.id} label={L("Запази промените", "Save changes")} cancel={L("Отказ", "Cancel")} />
     </form>
+  );
+}
+
+// The design data and the external providers (part 3.13): what PTS_Analysis 2.0's
+// Scheme_meta and External_providers need. The dates come from the lifecycle (stage 4,
+// the report act) and are shown, not typed; the period is written as the report
+// writes it; the providers are who supplies what — the plan's point 3 when listed.
+type ProvRow = ExternalProvider & { key: number };
+let provKey = 0;
+function MetaFields({ init, L }: { init: SchemeEditorInit; L: (bg: string, en: string) => string }) {
+  const [rows, setRows] = useState<ProvRow[]>(() => (init.externalProviders ?? []).map((p) => ({ ...p, key: ++provKey })));
+  const set = (key: number, k: keyof ExternalProvider, v: string) => setRows((x) => x.map((r) => (r.key === key ? { ...r, [k]: v } : r)));
+  const shown = (v?: string) => (v ? v.split("-").reverse().join(".") : L("— още няма —", "— not yet —"));
+  return (
+    <div className="mt-2 mb-4" data-meta>
+      <input type="hidden" name="metaPosted" value="1" />
+      <SectionTitle hint={L("Каквото PTS_Analysis 2.0 чете за схемата (Scheme_meta, External_providers).", "What PTS_Analysis 2.0 reads about the scheme (Scheme_meta, External_providers).")}>{L("Данни за проекта и външни доставчици", "Design data and external providers")}</SectionTitle>
+      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+        <div className="text-sm" data-design-approved><span className="block text-xs" style={{ color: "var(--muted)" }}>{L("Статистическият проект утвърден (етап 4)", "Statistical design approved (stage 4)")}</span>{shown(init.designApproved)}</div>
+        <div className="text-sm" data-report-date><span className="block text-xs" style={{ color: "var(--muted)" }}>{L("Дата на окончателния доклад", "Date of the final report")}</span>{shown(init.reportDate)}</div>
+        <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Период на провеждане — както се изписва в доклада", "Period — as the report writes it")}</span>
+          <input name="period" defaultValue={init.period ?? ""} maxLength={120} placeholder={L("напр. март – май 2026", "e.g. March – May 2026")} className={inputCls} style={inputStyle} /></label>
+      </div>
+      {!!init.metaGaps?.length && (
+        <p className="text-xs mt-2" data-meta-gaps style={{ background: "#fdf6e3", border: "1px solid #ecd9a6", color: "#7a5a12", borderRadius: 6, padding: "4px 8px" }}>
+          {L("За PTS_Analysis 2.0 още липсва или не доказва: ", "PTS_Analysis 2.0 still lacks, or holds without proof: ")}{init.metaGaps.map((g) => (META_GAP_TEXT[g] ? L(META_GAP_TEXT[g].bg, META_GAP_TEXT[g].en) : g)).join("; ")}.
+        </p>
+      )}
+      <div className="text-sm font-bold mt-3" style={{ color: "var(--green-dark)" }}>{L("Външни доставчици", "External providers")}</div>
+      <p className="text-xs" data-providers-hint style={{ color: "var(--muted)" }}>
+        {L("Списъкът е т. 3 на плана и на заповедта — той замества това, което т. 3 показва сега. Без списък т. 3 и листът за 2.0 показват ", "The list is the plan's and the Order's point 3 — it replaces what point 3 shows now. With no list, point 3 and the 2.0 sheet show ")}
+        {init.legacyProviders?.length ? init.legacyProviders.map((p) => p.name).join(", ") : L("никого", "nobody")}.
+        {init.planSaved && <b> {L("Планът е редактиран в редактора на документи: впишете промяната и там.", "The plan was edited in the document editor: make the change there too.")}</b>}
+      </p>
+      <input type="hidden" name="provCount" value={rows.length} />
+      <div className="grid gap-2 mt-1">
+        {rows.map((r, i) => (
+          <div key={r.key} className="grid gap-2 items-end" data-provider-row={i} style={{ gridTemplateColumns: "1.2fr 1.2fr 1.3fr 1.3fr auto" }}>
+            <input type="hidden" name={`prov_${i}_id`} value={r.id} />
+            <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Наименование", "Name")}</span><input name={`prov_${i}_name`} value={r.name} maxLength={200} onChange={(e) => set(r.key, "name", e.target.value)} className={inputCls} style={inputStyle} /></label>
+            <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Адрес", "Address")}</span><input name={`prov_${i}_address`} value={r.address} maxLength={300} onChange={(e) => set(r.key, "address", e.target.value)} className={inputCls} style={inputStyle} /></label>
+            <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Услуги (БГ)", "Services (BG)")}</span><input name={`prov_${i}_svcBg`} value={r.servicesBg} maxLength={500} onChange={(e) => set(r.key, "servicesBg", e.target.value)} className={inputCls} style={inputStyle} /></label>
+            <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Услуги (EN)", "Services (EN)")}</span><input name={`prov_${i}_svcEn`} value={r.servicesEn} maxLength={500} onChange={(e) => set(r.key, "servicesEn", e.target.value)} className={inputCls} style={inputStyle} /></label>
+            <button type="button" className="btn btn-sm" aria-label={L("Премахни доставчика", "Remove the provider")} onClick={() => setRows((x) => x.filter((y) => y.key !== r.key))}>✕</button>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2 mt-2" style={{ flexWrap: "wrap" }}>
+        <button type="button" className="btn btn-sm" onClick={() => setRows((x) => (x.length >= 20 ? x : [...x, { key: ++provKey, id: "", name: "", address: "", servicesBg: "", servicesEn: "" }]))}>＋ {L("Добави доставчик", "Add a provider")}</button>
+        {!rows.length && !!init.legacyProviders?.length && (
+          <button type="button" className="btn btn-sm" data-take-legacy onClick={() => setRows(init.legacyProviders!.map((p) => ({ ...p, id: "", key: ++provKey })))}>{L("Вземи от т. 3", "Take from point 3")}</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// A calibration scheme's own texts for its documents on M1 (part 3.10): the points M1
+// leaves to each scheme, written here once — the plan, the instruction take them; an
+// empty one is a mark «за попълване» there, and the document is not issued until it is
+// filled.
+function M1Texts({ blocks, L }: { blocks: (M1Block & { bg: string; en: string })[]; L: (bg: string, en: string) => string }) {
+  return (
+    <div className="mt-2 mb-4" data-m1-texts>
+      <input type="hidden" name="m1BlocksPosted" value="1" />
+      <SectionTitle hint={L("Точките, които M1 оставя на всяка схема. Празна точка излиза в документа като «[за попълване]» и документът не се издава, докато не е попълнена. Ако документът вече е редактиран в редактора на документи, впишете промяната и там.", "The points M1 leaves to each scheme. An empty one shows in the document as «[to be filled in]», and the document is not issued until it is filled. If the document was already edited in the document editor, make the change there too.")}>{L("Текстове за документите (M1)", "Texts for the documents (M1)")}</SectionTitle>
+      <div className="grid gap-3">
+        {blocks.map((b) => (
+          <div key={b.key} data-m1-block={b.key} className="grid gap-1">
+            <span className="text-xs" style={{ color: "var(--muted)" }}><b>{L(b.where.bg, b.where.en)} — {L(b.titleBg, b.titleEn)}</b>{b.guideBg ? <> · {L(b.guideBg, b.guideEn)}</> : null}</span>
+            <div className="grid gap-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
+              {b.short ? (
+                <>
+                  <input name={`m1c_${b.key}_bg`} defaultValue={b.bg} maxLength={4000} placeholder="БГ" className={inputCls} style={inputStyle} />
+                  <input name={`m1c_${b.key}_en`} defaultValue={b.en} maxLength={4000} placeholder="EN" className={inputCls} style={inputStyle} />
+                </>
+              ) : (
+                <>
+                  <textarea name={`m1c_${b.key}_bg`} defaultValue={b.bg} maxLength={4000} rows={3} placeholder="БГ" className={inputCls} style={inputStyle} />
+                  <textarea name={`m1c_${b.key}_en`} defaultValue={b.en} maxLength={4000} rows={3} placeholder="EN" className={inputCls} style={inputStyle} />
+                </>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// The per-scheme lists (part 3.8): what travels with the objects, what the participant
+// checks on receipt (the online Ф 7.3.4-1, 5.6), and «accreditation required» — it
+// warns, never refuses (Реш. 108). Rows in both languages; each keeps its id.
+type ListRow = { key: number; id: string; bg: string; en: string };
+let listKey = 0;
+const toRows = (items?: { id: string; bg: string; en: string }[]): ListRow[] => (items ?? []).map((i) => ({ key: ++listKey, ...i }));
+function ListEditor({ pfx, title, hint, rows, setRows, suggestions, L }: {
+  pfx: "ship" | "rcpt"; title: string; hint: string; rows: ListRow[]; setRows: (f: (r: ListRow[]) => ListRow[]) => void;
+  suggestions?: { bg: string; en: string }[]; L: (bg: string, en: string) => string;
+}) {
+  const add = (bg = "", en = "") => setRows((r) => (r.length >= MAX_ITEMS ? r : [...r, { key: ++listKey, id: "", bg, en }]));
+  return (
+    <div className="mb-4" data-list={pfx}>
+      <div className="text-sm font-bold" style={{ color: "var(--green-dark)" }}>{title}</div>
+      <p className="text-xs mb-1" style={{ color: "var(--muted)" }}>{hint}</p>
+      <input type="hidden" name={`${pfx}Count`} value={rows.length} />
+      <div className="grid gap-2">
+        {rows.map((r, i) => (
+          <div key={r.key} className="grid gap-2 items-end" data-list-row={i} style={{ gridTemplateColumns: "1fr 1fr auto" }}>
+            <input type="hidden" name={`${pfx}_${i}_id`} value={r.id} />
+            <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>БГ</span>
+              <input name={`${pfx}_${i}_bg`} value={r.bg} maxLength={200} onChange={(e) => { const v = e.target.value; setRows((x) => x.map((y) => (y.key === r.key ? { ...y, bg: v } : y))); }} className={inputCls} style={inputStyle} /></label>
+            <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>EN</span>
+              <input name={`${pfx}_${i}_en`} value={r.en} maxLength={200} onChange={(e) => { const v = e.target.value; setRows((x) => x.map((y) => (y.key === r.key ? { ...y, en: v } : y))); }} className={inputCls} style={inputStyle} /></label>
+            <button type="button" className="btn btn-sm" aria-label={L("Премахни реда", "Remove the row")} onClick={() => setRows((x) => x.filter((y) => y.key !== r.key))}>✕</button>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2 mt-2" style={{ flexWrap: "wrap" }}>
+        <button type="button" className="btn btn-sm" onClick={() => add()} disabled={rows.length >= MAX_ITEMS}>＋ {L("Добави ред", "Add a row")}</button>
+        {suggestions?.filter((x) => !rows.some((r) => r.bg === x.bg)).map((x) => (
+          <button key={x.bg} type="button" className="btn btn-sm" data-suggest={x.en} onClick={() => add(x.bg, x.en)} style={{ color: "var(--muted)" }}>＋ {L(x.bg, x.en)}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+function ListsFields({ init, L }: { init?: SchemeLists; L: (bg: string, en: string) => string }) {
+  const [ship, setShip] = useState<ListRow[]>(() => toRows(init?.shipmentDocs));
+  const [rcpt, setRcpt] = useState<ListRow[]>(() => toRows(init?.receiptChecks));
+  return (
+    <div className="mt-2 mb-4" data-scheme-lists>
+      <input type="hidden" name="listsPosted" value="1" />
+      <SectionTitle hint={L("За тази схема. Ползват се при изпращането и в протокола за получаване (Ф 7.3.4-1).", "For this scheme. Used at dispatch and in the receipt protocol (F 7.3.4-1).")}>{L("Списъци на схемата", "Scheme lists")}</SectionTitle>
+      <ListEditor pfx="ship" rows={ship} setRows={setShip} suggestions={SHIPMENT_SUGGESTIONS} L={L}
+        title={L("Документи към пратката", "Shipment documents")}
+        hint={L("Какво пътува с обектите. Изпращащият ги вижда като списък за проверка.", "What travels with the objects. The sender sees them as a checklist.")} />
+      <ListEditor pfx="rcpt" rows={rcpt} setRows={setRcpt} L={L}
+        title={L("Проверки при получаване", "Receipt checks")}
+        hint={L("Какво проверява участникът при получаване, в протокола Ф 7.3.4-1. При калибриране започва с проверките от Инструкцията.", "What the participant checks on receipt, on the F 7.3.4-1 protocol. A calibration scheme starts with its Instruction's checks.")} />
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="accreditationRequired" defaultChecked={!!init?.accreditationRequired} />
+        {L("Изисква се акредитация — само предупреждава, не отказва заявка (Реш. 108)", "Accreditation required — warns only, never refuses an application (Реш. 108)")}
+      </label>
+    </div>
+  );
+}
+
+// The scheme's commercial fields (Реш. 153, part 3.7) and its participant numbers, with
+// what they make: the full price for 1 and for all the characteristics, and what a
+// second and later participation pays — the share OF the full price, shown as a sum
+// next to the discount it means, so 40 can never be read as «40 % off».
+const centsToInput = (c: number | undefined) => c === undefined ? "" : c % 100 === 0 ? String(c / 100) : `${Math.floor(c / 100)},${String(c % 100).padStart(2, "0")}`;
+function CommercialFields({ init, min, characteristics, L, lang }: {
+  init?: Commercial; min: number; characteristics: number; L: (bg: string, en: string) => string; lang: "bg" | "en";
+}) {
+  const [base, setBase] = useState(centsToInput(init?.base));
+  const [step, setStep] = useState(centsToInput(init?.step));
+  const [share, setShare] = useState(init?.sharePct === undefined ? "" : String(init.sharePct).replace(".", ","));
+  const c: Commercial = { base: parseCents(base) ?? undefined, step: parseCents(step) ?? undefined };
+  // the same reading as the save (3.7 review) — a preview never promises what is refused
+  const shRead = share.trim() === "" ? DEFAULT_SHARE_PCT : parseShare(share);
+  const shareOk = shRead !== null;
+  const sh = shRead ?? DEFAULT_SHARE_PCT;
+  const withShare: Commercial = { ...c, sharePct: shareOk ? sh : undefined };
+  const ns = [...new Set([1, Math.max(1, characteristics)])];
+  const eur = (x: number | null) => (x === null ? "—" : fmtEur(x, lang));
+  return (
+    <div className="mt-2 mb-4" data-commercial>
+      <SectionTitle hint={L("Цените са на схемата, не общи (Реш. 153). Суми в евро.", "Prices belong to the scheme, not a global setting (Реш. 153). Amounts in euro.")}>{L("Цени и участници", "Prices and participants")}</SectionTitle>
+      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))" }}>
+        <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Базова цена — за една характеристика, €", "Base price — for one characteristic, €")}</span>
+          <input name="com_base" value={base} onChange={(e) => setBase(e.target.value)} inputMode="decimal" className={inputCls} style={inputStyle} /></label>
+        <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Стъпка — за всяка следваща характеристика, €", "Step — for each further characteristic, €")}</span>
+          <input name="com_step" value={step} onChange={(e) => setStep(e.target.value)} inputMode="decimal" className={inputCls} style={inputStyle} /></label>
+        <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L(`Второ и следващо участие плаща … % от пълната цена (празно = ${DEFAULT_SHARE_PCT})`, `A 2nd and later participation pays … % of the full price (blank = ${DEFAULT_SHARE_PCT})`)}</span>
+          <input name="com_share" value={share} onChange={(e) => setShare(e.target.value)} inputMode="decimal" placeholder={String(DEFAULT_SHARE_PCT)} className={inputCls} style={inputStyle} /></label>
+        <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Добавка за доставка до Малта, Кипър и Ирландия, €", "Delivery add-on for Malta, Cyprus and Ireland, €")}</span>
+          <input name="com_addon" defaultValue={centsToInput(init?.addOnMtCyIe)} inputMode="decimal" className={inputCls} style={inputStyle} /></label>
+        <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Минимален брой участници", "Minimum participants")}</span>
+          <input name="minParticipants" defaultValue={String(min)} inputMode="numeric" className={inputCls} style={inputStyle} /></label>
+        <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Максимален брой участници — лабораториите не го виждат", "Maximum participants — not shown to laboratories")}</span>
+          <input name="com_max" defaultValue={init?.maxParticipants === undefined ? "" : String(init.maxParticipants)} inputMode="numeric" className={inputCls} style={inputStyle} /></label>
+      </div>
+      <div className="text-xs mt-2" data-price-preview style={{ color: "var(--muted)" }}>
+        {c.base === undefined ? L("Въведете базова цена, за да видите цените.", "Enter a base price to see the prices.") : (
+          <>
+            {ns.map((n) => (
+              <div key={n}>
+                {L(`${n} ${n === 1 ? "характеристика" : "характеристики"}: пълна цена ${eur(fullPrice(c, n))}`, `${n} characteristic${n === 1 ? "" : "s"}: full price ${eur(fullPrice(c, n))}`)}
+                {shareOk && L(` · второ и следващо участие — ${sh} % от нея = ${eur(sharePrice(withShare, n))} (отстъпка ${+(100 - sh).toFixed(2)} %)`, ` · a 2nd and later participation — ${sh} % of it = ${eur(sharePrice(withShare, n))} (a discount of ${+(100 - sh).toFixed(2)} %)`)}
+              </div>
+            ))}
+            {!shareOk && <div style={{ color: "#8f2f2f" }}>{L("Делът е число над 0 и до 100.", "The share is a number above 0 and up to 100.")}</div>}
+          </>
+        )}
+        <div>{L("Доставката в ЕС (без Малта, Кипър и Ирландия) и на Балканите не се плаща; за другите държави — оферти. При собствен куриер се фактурира само участието.", "Delivery in the EU (without Malta, Cyprus and Ireland) and the Balkans is not charged; other countries — offers. With the participant's own courier only the participation is invoiced.")}</div>
+      </div>
+      <div className="grid gap-3 mt-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
+        <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Адрес за собствен куриер (БГ) — празен, докато не се уточни градът", "Own-courier pickup address (BG) — empty until the city is settled")}</span>
+          <input name="com_pickupBg" defaultValue={init?.pickupBg ?? ""} maxLength={300} className={inputCls} style={inputStyle} /></label>
+        <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Адрес за собствен куриер (EN)", "Own-courier pickup address (EN)")}</span>
+          <input name="com_pickupEn" defaultValue={init?.pickupEn ?? ""} maxLength={300} className={inputCls} style={inputStyle} /></label>
+      </div>
+    </div>
+  );
+}
+
+// The kind, the activity and the accreditation status (Реш. 102, part 3.1). What the
+// number states is the number's — shown, not chosen; the rest PTS chooses here: an
+// archive number such as «PTS 23/01» states none of them, a «SIM» one not its kind.
+function NumberMarkers({ number, init, L, lang }: { number: string; init: SchemeEditorInit; L: (bg: string, en: string) => string; lang: "bg" | "en" }) {
+  const reading = readSchemeNumber(number);
+  const stated = statedByNumber(number, init.type);
+  // the number's markers over the kept ones; the kept ones where it says nothing
+  const fromNumber = schemeMarkers({ number, type: init.type });
+  const labels = markerLabels(fromNumber, lang);
+  const sel = "rounded px-2 py-1 text-sm";
+  // the choices as they stand on the form — the preview below follows them (3.9 review)
+  const [kindNow, setKindNow] = useState(init.kind ?? "");
+  const [accNow, setAccNow] = useState(init.accredited === undefined ? "" : init.accredited ? "yes" : "NA");
+  const box = (key: "kind" | "activity" | "accredited", title: string, control: React.ReactNode) => (
+    <label className="block" data-marker={key} data-stated={stated[key] ? "number" : "chosen"}>
+      <span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{title}</span>
+      {stated[key] ? (
+        <span className="text-sm">
+          <b>{labels[key]}</b>{" "}
+          <span style={{ color: "var(--muted)" }}>
+            {key === "activity" && init.type === "C" && !reading?.activity ? L("— схема за калибриране", "— a calibration scheme") : L("— от номера", "— from the number")}
+          </span>
+        </span>
+      ) : control}
+    </label>
+  );
+  return (
+    <div className="card p-3 mb-3" data-number-markers style={{ background: "#fff" }}>
+      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+        {box("kind", L("Вид", "Kind"),
+          <select name="kind" value={kindNow} onChange={(e) => setKindNow(e.target.value)} className={sel} style={inputStyle}>
+            <option value="">{L("— не е посочено —", "— not stated —")}</option>
+            <option value="PTS">{L("Изпитване за пригодност (PTS)", "Proficiency testing (PTS)")}</option>
+            <option value="ILC">{L("Междулабораторно сравнение (ILC)", "Interlaboratory comparison (ILC)")}</option>
+          </select>)}
+        {box("activity", L("Дейност", "Activity"),
+          <select name="activity" defaultValue={init.activity ?? ""} className={sel} style={inputStyle}>
+            <option value="">{L("— не е посочено —", "— not stated —")}</option>
+            <option value="T">{L("Изпитване (T)", "Testing (T)")}</option>
+            <option value="S">{L("Вземане на проби (S)", "Sampling (S)")}</option>
+          </select>)}
+        {box("accredited", L("Акредитация", "Accreditation"),
+          <select name="accredited" value={accNow} onChange={(e) => setAccNow(e.target.value)} className={sel} style={inputStyle}>
+            <option value="">{L("— не е посочено —", "— not stated —")}</option>
+            <option value="yes">{L("В обхвата на акредитацията", "Within the accredited scope")}</option>
+            <option value="NA">{L("Извън обхвата на акредитацията (NA)", "Outside the accredited scope (NA)")}</option>
+          </select>)}
+      </div>
+      <p className="text-xs mt-2" style={{ color: "var(--muted)" }}>
+        {reading
+          ? reading.form === "old"
+            ? L("Стар номер от архива — приема се както е написан. Каквото номерът не казва, изберете тук.", "An archive number — accepted as written. What the number does not say, choose here.")
+            : L("Видът, дейността и NA се вземат от номера и се пазят като отделни полета.", "The kind, the activity and NA are taken from the number and kept as fields of their own.")
+          : L("Порталът не разчита този номер: PTS|ILC ГГ/ММ[-NA]-T|S|C-пореден, или стара форма от архива.", "The portal cannot read this number: PTS|ILC YY/MM[-NA]-T|S|C-sequence, or an old archive form.")}
+      </p>
+      {/* what the documents carry (3.9): the number's status, else the one chosen and saved */}
+      {(() => {
+        const st = init.certsIssued
+          ? markState({ number: init.number, type: init.type, kind: init.kind, accredited: init.accredited })
+          : markState({ number, type: init.type, kind: kindNow === "PTS" || kindNow === "ILC" ? kindNow : undefined, accredited: accNow === "" ? undefined : accNow === "yes" });
+        if (st === "sim") return <p className="text-xs mt-1" data-mark-state="sim" style={{ color: "var(--muted)" }}>{L("Симулационен кръг: документите не носят знак за акредитация.", "A simulation round: the documents carry no accreditation mark.")}</p>;
+        return st === "unset" ? (
+          <p className="text-xs mt-1" data-mark-state="unset" style={{ background: "#fdf6e3", border: "1px solid #ecd9a6", color: "#7a5a12", borderRadius: 6, padding: "4px 8px" }}>
+            {L("Статутът на акредитация не е посочен: докладът и сертификатът няма да носят знак за акредитация, докато не го изберете и запазите.", "The accreditation status is not stated: the report and the certificate carry no accreditation mark until you choose it and save.")}
+          </p>
+        ) : (
+          <p className="text-xs mt-1" data-mark-state={st} style={{ color: "var(--muted)" }}>
+            {st === "mark"
+              ? L("Докладът и сертификатът носят знаците на ILAC-MRA и SNAS с регистрационния номер на акредитацията.", "The report and the certificate carry the ILAC-MRA and SNAS marks with the accreditation's registration number.")
+              : L("Без знак за акредитация: докладът и сертификатът казват изрично, че схемата е извън обхвата (NA). Междулабораторното сравнение (ILC) е извън обхвата по определение.", "No accreditation mark: the report and the certificate say explicitly that the scheme is outside the scope (NA). An interlaboratory comparison (ILC) is outside the scope by definition.")}
+            {init.certsIssued && <> {L("Издадени са сертификати: номерът и статутът остават такива.", "Certificates are issued: the number and the status stay as they are.")}</>}
+          </p>
+        );
+      })()}
+    </div>
   );
 }

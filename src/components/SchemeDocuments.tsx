@@ -21,6 +21,10 @@ export interface DocRow {
   viewHref?: string;      // lists: the live auto view (preview + PDF)
   sendable?: boolean;     // one of the documents participants may receive
   sentAt?: string;        // dd.mm.yyyy when it was released to them (absent = not sent)
+  sentCopy?: boolean;     // the edition they were sent is on record and can be opened (part 3.0)
+  edition?: { no: number; date: string }; // the latest edition (3.0)
+  sentEdition?: number;   // the edition the participants hold
+  editionsHref?: string;  // the document's editions; absent: it has none (the lists, the certificate)
 }
 export interface DocStageView { key: string; label: string; docs: DocRow[] }
 
@@ -83,18 +87,41 @@ export default function SchemeDocuments({ schemeId, lang, stages, lists = [] }: 
   // asks first and reports how many participations were told.
   function setSent(d: DocRow, sent: boolean) {
     setMenuKey(null);
+    // the plan, sent, is also public — on the scheme's page, before applying (D15, 5.4)
+    const pub = d.key === "plan";
     const ask = sent
-      ? L(`Да изпратя ли „${d.name}“ на участниците? Те ще го видят в портала и ще получат известие.`,
-          `Send “${d.name}” to the participants? They will see it in their portal and be notified.`)
-      : L(`Да спра ли споделянето на „${d.name}“? Участниците няма да го виждат повече.`,
-          `Stop sharing “${d.name}”? The participants will no longer see it.`);
+      ? L(`Да изпратя ли „${d.name}“ на участниците? Те ще го видят в портала и ще получат известие.${pub ? " Планът става и публичен — на страницата на схемата в сайта, преди заявяването." : ""}`,
+          `Send “${d.name}” to the participants? They will see it in their portal and be notified.${pub ? " The plan also becomes public — on the scheme's page, before applying." : ""}`)
+      : L(`Да спра ли споделянето на „${d.name}“? Участниците няма да го виждат повече.${pub ? " Планът престава да е и публичен." : ""}`,
+          `Stop sharing “${d.name}”? The participants will no longer see it.${pub ? " The plan stops being public too." : ""}`);
     if (!window.confirm(ask)) return;
     setBusyKey(d.key);
     startTransition(async () => {
-      const r = await setDocSentAction(schemeId, d.key, sent);
+      let r = await setDocSentAction(schemeId, d.key, sent);
+      // changed since its latest edition: it goes out as the next one, with what
+      // changed and why (part 3.0 — a change is never silent)
+      if (r?.needsNote) {
+        const reason = window.prompt(L(
+          `„${d.name}“ е променен след редакция № ${r.needsNote.since} и ще се изпрати като редакция № ${r.needsNote.no}. Какво е променено и защо?`,
+          `“${d.name}” has changed since edition No. ${r.needsNote.since} and will go out as edition No. ${r.needsNote.no}. What changed, and why?`,
+        ));
+        if (!reason?.trim()) { setBusyKey(null); return; }
+        const scope = window.prompt(L("Обхват — кои части (по желание):", "Scope — which parts (optional):")) ?? "";
+        r = await setDocSentAction(schemeId, d.key, sent, { reason, scope });
+      }
       setBusyKey(null);
       if (r?.error) { alert(r.error); return; }
+      if (r?.stillTargeted) {
+        alert(L(`Споделянето с всички е спряно. Остават ${r.stillTargeted} изпращания само до едно участие или потребител — оттеглят се от «Редакции».`,
+          `Sharing with everyone is stopped. ${r.stillTargeted} release(s) to one participation or one user remain — withdraw them in «Editions».`));
+      }
       // It went out either way — this only tells him what they will actually see.
+      if (r?.scoresWithheld) {
+        alert(L(
+          `„${d.name}“ е изпратен. Съдържа оценки, изчислени от портала — те НЕ се показват на лабораториите (Реш. 135). Те виждат на тяхно място бележка.`,
+          `“${d.name}” has been sent. It contains scores computed by the portal — those are NOT shown to the laboratories (Decision 135). They see a note in their place.`,
+        ));
+      }
       if (r?.namesWithheld) {
         alert(L(
           `„${d.name}“ е изпратен. Съдържа таблица с имената на участниците — тя НЕ се показва на лабораториите (поверително, §4.2). Те виждат на нейно място бележка.`,
@@ -148,7 +175,7 @@ export default function SchemeDocuments({ schemeId, lang, stages, lists = [] }: 
                 : d.active === "built" ? { bg: "#eef3ea", bd: "#cbd9be", fg: "#57823c", ext: "DOC" }
                 : { bg: "var(--surface-2,#f5f8f2)", bd: "var(--line)", fg: "#98a291", ext: "—" };
               return (
-                <div key={d.key} style={{ position: "relative", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", opacity: busy ? 0.6 : 1 }}>
+                <div key={d.key} data-doc-row={d.key} style={{ position: "relative", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", opacity: busy ? 0.6 : 1 }}>
                   {/* file glyph */}
                   <span style={{ width: 34, height: 40, flex: "0 0 auto", borderRadius: 5, position: "relative", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 5, background: tone.bg, border: `1px solid ${tone.bd}` }}>
                     <span style={{ fontSize: 8, fontWeight: 800, color: tone.fg }}>{tone.ext}</span>
@@ -158,7 +185,11 @@ export default function SchemeDocuments({ schemeId, lang, stages, lists = [] }: 
                     <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                       <span>{d.form}</span>
                       {d.active === "uploaded" && d.uploadName && (<><span>·</span><span style={{ color: "#2f6f8f", fontWeight: 600 }}>📎 {d.uploadName}</span></>)}
-                      {d.sentAt && (<><span>·</span><span style={{ color: "#3d6b47", fontWeight: 700 }}>📨 {L("изпратен", "sent")} {d.sentAt}</span></>)}
+                      {d.edition && d.editionsHref && (<><span>·</span><Link href={d.editionsHref} data-edition-label={d.edition.no} title={L("Всички редакции на документа", "Every edition of the document")} style={{ color: "var(--muted)", fontWeight: 600 }}>{L("ред.", "ed.")} № {d.edition.no} · {d.edition.date}</Link></>)}
+                      {d.sentAt && (<><span>·</span>{d.sentCopy
+                        // opens exactly what the participants hold — its edition — whatever was edited since
+                        ? <a href={`/schemes/${schemeId}/released/${d.key}?lang=${lang}`} target="_blank" rel="noreferrer" title={L("Отвори редакцията, която участниците получиха", "Open the edition the participants received")} style={{ color: "#3d6b47", fontWeight: 700 }}>📨 {L("изпратен", "sent")} {d.sentAt}{d.sentEdition ? ` (${L("ред.", "ed.")} № ${d.sentEdition})` : ""} ↗</a>
+                        : <span style={{ color: "#3d6b47", fontWeight: 700 }}>📨 {L("изпратен", "sent")} {d.sentAt}</span>}</>)}
                       {d.hasBuilt && d.hasUpload && (
                         <>
                           <span>·</span>

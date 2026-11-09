@@ -34,8 +34,11 @@ t("walked the source tree", files.length > 50, `found ${files.length} files`);
 const actions = new Set<string>();
 for (const f of files) {
   const src = read(f);
-  if (!src.includes("logActivity(")) continue;
+  if (!src.includes("logActivity(") && !src.includes("logAs(")) continue;
   for (const m of src.matchAll(/logActivity\(\s*"([^"]+)"/g)) actions.add(m[1]);
+  // part 1.9: an entry with an explicit actor — logAs({ … }, "action" | x ? "a" : "b")
+  for (const m of src.matchAll(/logAs\(\{[^}]*\},\s*"([^"]+)"/g)) actions.add(m[1]);
+  for (const m of src.matchAll(/logAs\(\{[^}]*\},\s*\w+\s*\?\s*"([^"]+)"\s*:\s*"([^"]+)"/g)) { actions.add(m[1]); actions.add(m[2]); }
   // some call sites choose the action with a ternary — catch both literals
   for (const m of src.matchAll(/logActivity\(\s*\w+\s*\?\s*"([^"]+)"\s*:\s*"([^"]+)"/g)) {
     actions.add(m[1]);
@@ -56,7 +59,11 @@ t("parsed the act.* dictionary", labels.size > 20, `parsed ${labels.size}`);
 const missing = [...actions].filter((a) => !labels.has(a)).sort();
 t("every logged action has an act.* label", missing.length === 0, `missing: ${missing.join(", ")}`);
 
-const orphans = [...labels.keys()].filter((l) => !actions.has(l)).sort();
+// Retired actions: no longer logged, but old journal lines still carry them, so
+// their labels stay (part 0.9: schemes are archived and timeline steps voided,
+// never deleted).
+const RETIRED = new Set(["scheme.deleted", "case.removed"]);
+const orphans = [...labels.keys()].filter((l) => !actions.has(l) && !RETIRED.has(l)).sort();
 t("no orphan act.* labels", orphans.length === 0, `orphans: ${orphans.join(", ")}`);
 
 const blank = [...labels].filter(([, v]) => !v.bg.trim() || !v.en.trim()).map(([k]) => k).sort();

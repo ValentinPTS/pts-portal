@@ -3,6 +3,18 @@
 // across all documents and both languages — eliminating the copy-paste drift
 // found in the real files (see ../../PROJECT-ANATOMY.md).
 
+import type { SchemeKind, Activity } from "./scheme-number";
+import type { Lifecycle } from "./lifecycle-model";
+import type { CodingRecord } from "./coding-model";
+import type { TargetRelease } from "./release-model";
+import type { Amendment } from "./amendments-model";
+import type { Extension } from "./deadlines-model";
+import type { Batch } from "./batches-model";
+import type { EngineField, CharacteristicVersion } from "./characteristics-model";
+import type { Commercial } from "./commercial-model";
+import type { SchemeLists } from "./scheme-lists-model";
+import type { ExternalProvider } from "./scheme-meta";
+
 export type Lang = "en" | "bg";
 
 // Optional per-render context. The route resolves participant data and passes it
@@ -22,16 +34,19 @@ export interface DocOptions {
     participations?: number;
     courier?: string; // F 7.2.1-4 "Вид на куриера"
     sampleCode?: string; // F 7.2.1-5/-6 "Код на пробата"
-    characteristics?: number[]; // F 7.2.1-5 — indexes into Scheme.parameters this lab registered for
+    characteristics?: number[]; // F 7.2.1-6 — indexes into Scheme.parameters this lab registered for
   }[];
-  // RT1 — when false, the participant lists (F 7.2.1-4 / -5) hide real names,
+  // RT1 — when false, the participant lists (F 7.2.1-4 / -6) hide real names,
   // contacts and addresses; only the code remains. Only a manager sees names
   // (§4.2 confidentiality). Defaults to true (build mode / older callers).
   revealNames?: boolean;
 }
 
 // Scheme lifecycle. "open" = visible to labs online (apply); see PROJECT-ANATOMY.md.
-export type SchemeStatus = "draft" | "open" | "running" | "report" | "closed";
+// The scheme's state (part 3.2, lib/lifecycle-model): preparation; open for
+// applications; running after the first announcement; processing; the report issued;
+// the records closed — or not held, at the first announcement (О9, Реш. 129).
+export type SchemeStatus = "draft" | "open" | "running" | "processing" | "report" | "closed" | "not_held";
 
 // A participating laboratory. Identified everywhere by its random `code`; the
 // name/contact are admin-only (ISO confidentiality). Status follows the journey.
@@ -45,28 +60,45 @@ export type ParticipantStatus =
   | "submitted"
   | "scored";
 
-export interface Participant {
+// A participation, CODED — what everyone at PTS works with (part 2.3, Н1). Who is
+// behind the code is its ParticipantIdentity, kept apart in the identity store
+// (lib/identity-store.ts, migration 0024) and opened only through it, on record.
+export interface CodedParticipant {
   id: string;
   schemeId: string;
-  code: string; // random, unique within the scheme
+  code: string; // by the code rule (lib/code-rule, 3.12) — unique within the scheme, never reused
+  participations: number; // how many times this lab has participated (F 7.2.1-4)
+  courier?: string; // F 7.2.1-4 "Вид на куриера" — Спиди БГ / Спиди EN / Поща/Fedex
+  sampleCode?: string; // F 7.2.1-5/-6 "Код на пробата" — the coded PT item sent to this lab
+  // F 7.2.1-6 — which scheme characteristics (indexes into Scheme.parameters) this
+  // lab registered for. Kept from the application's selections at approval; absent
+  // (or empty) = all characteristics, so older participants keep rendering fully.
+  characteristics?: number[];
+  // the application's participations per characteristic (5.1; key: the characteristic's
+  // index, value 1–10) — the objects are computed from it (lib/application-model);
+  // absent on an older participation: one of each of its characteristics
+  selections?: Record<string, number>;
+  // out of the round (5.1): refused with a category and a reason, annulled or withdrawn
+  // with its source — set once, never changed (migration 0039)
+  standing?: import("./application-model").Standing;
+  status: ParticipantStatus;
+}
+
+// Who is behind a code — the code ↔ laboratory mapping (2.3)
+export interface ParticipantIdentity {
   labName: string;
   contact: string;
   email: string;
   phone: string;
   country: string;
   deliveryAddress: string; // address the PT items are shipped to (F 7.2.1-4)
-  participations: number; // how many times this lab has participated (F 7.2.1-4)
-  courier?: string; // F 7.2.1-4 "Вид на куриера" — Спиди БГ / Спиди EN / Поща/Fedex
-  sampleCode?: string; // F 7.2.1-5/-6 "Код на пробата" — the coded PT item sent to this lab
-  // F 7.2.1-5 — which scheme characteristics (indexes into Scheme.parameters) this
-  // lab registered for. Kept from the application's selections at approval; absent
-  // (or empty) = all characteristics, so older participants keep rendering fully.
-  characteristics?: number[];
-  status: ParticipantStatus;
   // Phase 2b: links this participation to the lab's permanent account (lib/labs.ts).
-  // Absent for older/owner-added participants until linked. Indexed for the lab portal.
+  // Absent for older/owner-added participants until linked.
   labId?: string;
 }
+
+// a participation WITH its identity — only ever from the identity store
+export type Participant = CodedParticipant & ParticipantIdentity;
 
 // Phase 2b — a laboratory's PERMANENT account (one per lab, reused across schemes).
 // Identity key = email (the login). Owns many Participations (participants rows).
@@ -90,7 +122,7 @@ export interface Lab {
 // Phase RT1 — internal staff roles & access control (ISO/IEC 17043:2023 §5, §6.2).
 // A StaffUser is an internal portal user (not a lab). The role decides what they
 // may see/do; only a "manager" may reveal the real name behind a participant code
-// (the confidential F 7.2.1-5 mapping, §4.2). "lab" is NOT a staff role — labs
+// (the confidential F 7.2.1-6 mapping, §4.2). "lab" is NOT a staff role — labs
 // are a separate account type (see Lab above) — but the effective role union used
 // across the app (lib/roles.ts) includes it.
 export type StaffRole = "manager" | "staff" | "auditor";
@@ -102,6 +134,9 @@ export interface StaffUser {
   role: StaffRole;
   status: StaffStatus;
   createdAt: string;
+  // part 2.1: quality manager or software administrator (the head is named in
+  // PROVIDER_HEAD_EMAILS) — lib/role-model.ts
+  permanentRole?: "quality" | "software_admin";
 }
 
 // A real folder in the explorer tree. Lives under a type root (T/C); parentId null
@@ -160,6 +195,10 @@ export interface CaseEvent {
   // which portal document the event refers to (lib/documents.ts key, e.g.
   // "instruction") — proves WHICH document was sent/received (migration 0014)
   docKey?: string;
+  // Part 0.9 (N23): never deleted — voided, with who, when and why (migration 0017)
+  voidedAt?: string;
+  voidedBy?: string;
+  voidReason?: string;
 }
 
 // Phase RT2 — one entry in the append-only activity log (§7.5.1 / §8.4). Records
@@ -174,6 +213,12 @@ export interface ActivityEvent {
   schemeId?: string; // scope, for per-scheme filtering
   targetCode?: string; // participant code / opaque id when relevant (never a name)
   summary: string; // human-readable, code-only
+  // part 1.9
+  actorId?: string;   // the account that acted (its login's id), as it was then
+  actorName?: string; // the person's name at the time; a laboratory is only «laboratory»
+  subject?: string;   // what was acted on, "kind:id"
+  before?: unknown;   // what changed, as data — never a laboratory's name
+  after?: unknown;
 }
 
 // A self-service application (заявка) submitted by a lab against an open scheme.
@@ -260,6 +305,13 @@ export type NotifyKind =
   | "results.returned"       // → provider: lab sent its results back
   | "results.due"            // → lab: reminder, one day before
   | "report.issued"          // → lab: report/certificate ready
+  | "scheme.not_held"        // → lab: the scheme is not held (О9, part 3.2)
+  | "scheme.amended"         // → lab: the scheme was amended by an order (part 3.3)
+  | "deadline.extended"      // → lab: its own deadline extended, by an order (part 3.4)
+  | "participation.refused"  // → lab: its application refused, with category and reason (part 5.1)
+  | "scheme.announced"       // → lab: first announcement — the scheme runs (part 5.2)
+  | "scheme.final_list"      // → lab: second announcement — its own characteristics that run and drop (part 5.2)
+  | "participation.coded"    // → lab: its code, drawn at the coding act, and its objects (part 5.3)
   | "device.moved";          // → lab: the calibration device is coming to you
 
 export interface Notification {
@@ -275,18 +327,39 @@ export interface Notification {
   createdAt: string;
   readAt?: string;   // in-app read state
   emailedAt?: string; // set by the transport once it actually goes out (Phase 2)
+  // Part 0.8 (Реш. 138): a notice to a laboratory is HELD until a person releases
+  // it — seen in no portal and sent by no transport before releasedAt is set. A
+  // withheld one is never sent; it stays as the record. Provider notices aren't held.
+  releasedAt?: string;
+  releasedBy?: string;
+  withheldAt?: string;
+  withheldBy?: string;
 }
 
 // ── The calibration chain ────────────────────────────────────────────────────
 // The device's journey as an ORDERED LIST OF STOPS. A stop is either a
 // participating laboratory (by CODE — never a name) or the reference laboratory,
 // which may appear once, twice (start and end, which is what the stability
-// formula u_stab = |X_ref1 − X_ref2| / √3 implies) or not at all. Modelling it as
+// formula u_stab = |X_ref1 − X_ref2| / (2·√3) implies) or not at all. Modelling it as
 // a plain list is what lets all three shapes work without the code caring.
 //
 // PTS is implicit at both ends and is not a stop: the owner confirms the first
 // dispatch and the final return himself.
 export type ChainStopKind = "lab" | "ref";
+
+// How PTS learned of a receipt or handover it records on a stop's behalf (part 0.10).
+export type ChainStampSource = "phone" | "email" | "protocol" | "courier" | "in_person" | "other";
+
+// Who recorded a chain step. A laboratory stamps its own stop from its account; PTS
+// can stamp ANY stop — a reference laboratory has no account at all, and a lab may
+// simply phone — and then says how it knows (part 0.10, N25 / E6.c).
+export interface ChainStamp {
+  by: "lab" | "pts";
+  recordedAt: string;         // ISO — when it was entered (receivedAt/sentAt = when it HAPPENED)
+  recordedBy?: string;        // the PTS member's e-mail (by === "pts"); never set for a lab
+  source?: ChainStampSource;  // by === "pts"
+  note?: string;              // by === "pts", optional
+}
 
 export interface ChainStop {
   id: string;           // stable across reordering, so a stop can be moved safely
@@ -294,6 +367,9 @@ export interface ChainStop {
   code?: string;        // participant code, when kind === "lab"
   receivedAt?: string;  // ISO — the device arrived here
   sentAt?: string;      // ISO — this stop handed it on
+  received?: ChainStamp; // who recorded the arrival (absent on stops stamped before part 0.10)
+  sent?: ChainStamp;     // who recorded the handover
+  windowDue?: string;    // its window as it stood when handed on (3.4) — kept, not recounted
 }
 
 export interface SchemeChain {
@@ -302,8 +378,28 @@ export interface SchemeChain {
   // used until the round produces real hops to average — see lib/chain.ts. It is
   // an estimate for the waiting labs and nothing else: it enforces no deadline.
   daysPerLab?: number;
+  // The window each laboratory has, in WORKING days from its own receipt (part 3.4,
+  // Q14) — the holiday calendar taken off. Absent: 3, as the portal's Instruction says.
+  windowWorkDays?: number;
   dispatchedAt?: string; // the owner confirmed the first send
   returnedAt?: string;   // the owner confirmed the final return
+}
+
+// A file that was replaced or removed (part 0.9, finding N9). Nothing is deleted:
+// the stored object stays, and this records where it was, when, why and by whom.
+export interface SupersededFile {
+  where: string; // e.g. "upload:protocol", "labdoc:261101:proforma", "labupload:261101:results"
+  file: UploadedDoc;
+  at: string;    // ISO
+  reason: "replaced" | "removed";
+  by: string;    // the actor (staff e-mail, or lab:<account id>)
+}
+
+// The edition a released document went out as (part 3.0).
+export interface ReleasedEdition {
+  id: string; // doc_editions.id
+  no: number;
+  at: string; // ISO — when it was released
 }
 
 export interface UploadedDoc {
@@ -313,6 +409,7 @@ export interface UploadedDoc {
   size: number; // bytes
   uploadedAt: string; // ISO
   uploadedBy: string; // actor email
+  roundAt?: string; // a laboratory's file: the round's clock when it came (1.3) — what counts against a deadline (3.4)
 }
 
 export interface TeamMember {
@@ -343,6 +440,18 @@ export interface Parameter {
   // σpt,min — per-characteristic lower floor for the proficiency SD (ISO 13528 /
   // Statistical project Ф 7.2.2-1 §7.4). Scoring uses σpt = max(s*, σpt,min).
   sigmaMin?: number;
+  // ── part 3.6 (lib/characteristics-model) ──
+  id?: string;               // stable — never reused, never moved by a reorder («ch-N»)
+  unit?: string;
+  step?: number;             // the reporting step
+  guardMin?: number;         // absolute guard limits — 2.0's physical_min / physical_max
+  guardMax?: number;
+  uRequired?: boolean;       // the expanded uncertainty is required
+  group?: string;            // the statistical group (processed together)
+  groupEn?: string;
+  determinations?: number;   // 1–3 while 2.0's contract has three columns (D3) — its `specimens`
+  // the 2.0 configuration fields, as entered, passed through, never shown to labs (D3)
+  engine?: Partial<Record<EngineField, string>>;
 }
 
 // One result-entry table on the Results Sheet (F 7.2.1-7): a tested characteristic
@@ -385,6 +494,7 @@ export interface CalibrationData {
   deviceEn: string;
   deviceBg: string;
   points: string[]; // calibration points, e.g. ["20","40",…,"200"]
+  pointIds?: string[]; // each point's stable id — its row, 2.0's characteristic_id (3.6)
   directionsEn: string[]; // e.g. ["Tension","Compression"] ([] if none)
   directionsBg: string[];
   referenceLabEn: string;
@@ -395,7 +505,7 @@ export interface CalibrationData {
   methodBg: string;
   feeEn: string;
   feeBg: string;
-  stabilityFormula: string; // "u_stab = |X_ref1 − X_ref2| / √3"
+  stabilityFormula: string; // "u_stab = |X_ref1 − X_ref2| / (2·√3)" (D22)
   enCriterionEn: string; // "Eₙ = (X_lab − X_ref)/√(U_lab²+U_ref²); satisfactory when |Eₙ| ≤ 1"
   enCriterionBg: string;
 }
@@ -411,7 +521,7 @@ export interface AssignedValue {
 export interface ResultEntry {
   value: number; // the participant's reported result (the mean)
   u: number; // the participant's reported uncertainty (U_lab for calibration)
-  // F 7.2.1-6 — the individual determinations I/II/III behind the mean, positional
+  // F 7.2.1-5 — the individual determinations I/II/III behind the mean, positional
   // (null = that determination not reported). Absent for older/summary-only entries.
   determinations?: (number | null)[];
 }
@@ -425,7 +535,50 @@ export interface Scoring {
 export interface Scheme {
   id: string; // url-safe, e.g. "26-01-T-1"
   number: string; // display, e.g. "PTS 26/01-T-1"
+  // the workflow: T — many identical objects at once (testing, and sampling until its
+  // own screens come); C — one instrument travelling lab to lab (calibration)
   type: "T" | "C";
+  // What the number carries, kept as fields of their own (Реш. 102, part 3.1; lib/
+  // scheme-number): PTS or ILC; the activity T, S or C; within the accredited scope
+  // (true) or NA (false). What the number states, the number decides; the rest PTS
+  // chooses — an archive number may state none of them. Absent on a scheme from
+  // before 3.1: read through schemeMarkers().
+  kind?: SchemeKind;
+  activity?: Activity;
+  accredited?: boolean;
+  // The 19 stages' ticks and the acts that moved the scheme between its states
+  // (part 3.2, lib/lifecycle-model) — who and when, never removed from the journal.
+  lifecycle?: Lifecycle;
+  // The amendments of a running scheme, each by the head's order (part 3.3,
+  // lib/amendments-model): № 1, 2 … — appended, never changed.
+  amendments?: Amendment[];
+  // Individual extensions of a participant's deadline, each with its order (part 3.4,
+  // lib/deadlines-model) — by code; appended, the latest per deadline in force.
+  extensions?: Extension[];
+  // The batches of objects and their homogeneity values (part 3.5, Реш. 151,
+  // lib/batches-model) — a testing scheme's; a calibration scheme has none.
+  batches?: Batch[];
+  // The characteristics' configuration versions, each change on record (part 3.6), and
+  // the counters that keep ids from ever being given twice.
+  characteristicVersions?: CharacteristicVersion[];
+  characteristicSeq?: number;
+  pointSeq?: number;
+  // ONE static reminder text per scheme, shown to the participants (А3; 3.6)
+  staticReminder?: { bg: string; en: string };
+  /** the scheme's commercial fields (3.7, Реш. 153) — prices in euro cents, the share
+   *  a 2nd+ participation pays, the MT/CY/IE add-on, the own-courier pickup address,
+   *  the maximum participants (hidden from laboratories) */
+  commercial?: Commercial;
+  /** the per-scheme lists (3.8): shipment documents, the receipt-protocol checklist,
+   *  «accreditation required» (warns only, Реш. 108) */
+  lists?: SchemeLists;
+  /** a calibration scheme's documents on M1's structure (3.10) — set when it is made;
+   *  older schemes keep theirs */
+  calTemplate?: "m1";
+  /** «Период на провеждане, както се изписва в доклада» — Scheme_meta.period (3.13) */
+  period?: string;
+  /** who supplies what for this scheme — External_providers (3.13); the plan's point 3 */
+  externalProviders?: ExternalProvider[];
   status: SchemeStatus;
   titleEn: string;
   titleBg: string;
@@ -460,9 +613,14 @@ export interface Scheme {
   calibration?: CalibrationData;
   // manually-entered results & assigned values (scores computed on the fly)
   scoring?: Scoring;
-  // issued certificate numbers + dates, keyed by participant code. Generated
-  // once per lab and stored, so reprints keep the same number (project rule).
-  certificates?: Record<string, { no: string; date: string }>;
+  // issued certificate numbers + dates, keyed by participant code: the number as the
+  // ptsbg.eu register holds it, typed by PTS (0.15), stored so reprints keep it; who
+  // confirmed it is in the register, and when — absent on numbers the portal made up
+  // before 0.15, which labs no longer get (labCertificate)
+  // `simulation`: a SIM round's — never entered in the register (Реш. 130, 1.2)
+  certificates?: Record<string, { no: string; date: string; registeredBy?: string; registeredAt?: string; simulation?: boolean }>;
+  // the round's moved clock — honoured in the TEST environment only (part 1.3, lib/clock)
+  testClock?: { offsetMs: number; setAt: string; setBy: string };
   // self-service applications (заявки) submitted by labs while the scheme is open
   applications?: Application[];
   // documents the owner has composed in the BLOCK builder (superseded by `docs`).
@@ -495,6 +653,21 @@ export interface Scheme {
   // appear in the labs' portals and the mail go out. This records that act —
   // docKey → when it was sent. Absent = uploaded but not released.
   sentToParticipants?: Record<string, string>; // docKey → ISO timestamp
+  // The EDITION each released document went out as (part 3.0, lib/editions) — the
+  // participants are served that edition's frozen file, so later edits reach them
+  // only as a later edition. Absent with sentToParticipants set: released before
+  // editions existed (the lab route keeps edition 1 on its first opening).
+  releasedEditions?: Record<string, ReleasedEdition>;
+  // Releases to ONE participation or ONE user (part 5.4, lib/release-model) — each an
+  // edition, appended; a withdrawal is a date on it. JSONB, no migration.
+  releases?: TargetRelease[];
+  // Every file replaced or removed from this scheme, kept (part 0.9 — nothing is deleted).
+  supersededFiles?: SupersededFile[];
+  // Part 0.9 (finding N23): a scheme is never deleted. «Архивирай» sets these, and
+  // an archived scheme is left out of every list and answers like a missing one —
+  // its row, participants, documents and journal all stay.
+  archivedAt?: string;
+  archivedBy?: string;
   // Documents the provider sends to ONE laboratory rather than to all of them —
   // today the proforma invoice, whose amount differs per lab. The mirror image
   // of labUploads: code → slot → file. JSONB, no migration.
@@ -524,14 +697,15 @@ export interface Scheme {
   // trigger), and a laboratory must not be reminded twice for the same deadline.
   // JSONB, no migration. See lib/notify-reminders.ts.
   remindedAt?: Record<string, string>;
+  // The coding act (part 5.3, lib/coding-model): which provisional reference became which
+  // code, and the objects drawn — appended, never changed. JSONB, no migration.
+  coding?: CodingRecord[];
   // chosen document skin (visual theme) id; absent → the built-in "Classic" skin.
   skin?: string;
   // friendly folder name shown in the explorer; absent → falls back to the title/number.
   name?: string;
-  // when true, a not-yet-open scheme is shown to labs in the portal's "Upcoming"
-  // tab (announced future round). Lets a provider pre-announce a scheme WITHOUT
-  // exposing internal drafts by default. Stored in the scheme JSONB (no migration).
-  announced?: boolean;
+  // (former `announced`: dropped in part 0.3 — nothing unstarted is shown to labs,
+  // Реш. 147. Old scheme rows may still carry the key; nothing reads it.)
   // which explorer folder this scheme lives in (null/absent = directly under the
   // type root). Placement is by folder now, independent of the number's year.
   folderId?: string;

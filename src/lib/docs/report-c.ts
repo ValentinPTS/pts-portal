@@ -1,4 +1,5 @@
 import type { Scheme, Lang } from "../types";
+import { marksHtml, accreditationSentence } from "../accreditation-mark";
 import { esc, pick, wrapDoc, sec, footer, coverImgTag } from "../doc-shell";
 import { reportResultsCalibration } from "../scoring";
 
@@ -51,10 +52,7 @@ export function renderReportC(s: Scheme, lang: Lang): string {
   const cover = `<div class="cover">
     <div class="head"><img class="logo" src="/brand/logo.png" alt="PTS Bulgaria"><img class="tag" src="/brand/tagline.png" alt=""></div>
     <img class="emb" src="/brand/embroidery-border.png" alt="">
-    <div class="marks">
-      <img class="ilac" src="/brand/ilac-mra.jpg" alt="ilac-MRA">
-      <div class="snasbox"><img src="/brand/snas.png" alt="SNAS"><div class="regno">${L("Reg. No.", "Рег. №")} ${esc(s.regNo)}</div></div>
-    </div>
+    ${marksHtml(s, lang, "regno")}
     <div class="docttl">${L("FINAL REPORT", "ОКОНЧАТЕЛЕН ДОКЛАД")}</div>
     <div class="schemeno">${L("ON PROFICIENCY TESTING No.", "ОТ ИЗПИТВАНЕ ЗА ПРИГОДНОСТ №")} ${esc(s.number)}</div>
     <div class="schemettl">${L(s.titleEn, s.titleBg)}</div>
@@ -124,9 +122,9 @@ export function renderReportC(s: Scheme, lang: Lang): string {
   // ---- §5 Normative basis ----
   const method = c ? cv(c.methodEn, c.methodBg) : blank;
   const s5 = `<p>${L(
-    `This proficiency testing was planned, conducted and evaluated in accordance with ${s.standard}, supported by ISO 13528 for the statistical methods and by the applicable calibration method (${c ? pick(lang, c.methodEn, c.methodBg) : ""}). The scheme is operated under accreditation by SNAS (ILAC-MRA), Reg. No. ${s.regNo}.`,
-    `Настоящото изпитване за пригодност е планирано, проведено и оценено в съответствие с ${s.standard}, подкрепено от ISO 13528 за статистическите методи и от приложимия метод за калибриране (${c ? pick(lang, c.methodEn, c.methodBg) : ""}). Схемата се провежда при акредитация от SNAS (ILAC-MRA), Рег. № ${s.regNo}.`
-  )}</p>
+    `This proficiency testing was planned, conducted and evaluated in accordance with ${s.standard}, supported by ISO 13528 for the statistical methods and by the applicable calibration method (${c ? pick(lang, c.methodEn, c.methodBg) : ""}).`,
+    `Настоящото изпитване за пригодност е планирано, проведено и оценено в съответствие с ${s.standard}, подкрепено от ISO 13528 за статистическите методи и от приложимия метод за калибриране (${c ? pick(lang, c.methodEn, c.methodBg) : ""}).`
+  )} ${accreditationSentence(s, lang)}</p>
     <p class="muted">${L("Calibration method", "Метод за калибриране")}: ${method}.</p>`;
 
   // ---- §6 Confidentiality and publicity ----

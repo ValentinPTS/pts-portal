@@ -2,12 +2,15 @@ import Link from "next/link";
 import { requireLab } from "@/lib/lab-auth";
 import { updateLabProfileAction } from "@/lib/actions";
 import { getServerT } from "@/lib/i18n-server";
+import PasswordForm from "@/components/PasswordForm";
 
 export const dynamic = "force-dynamic";
 
 // A lab edits its own profile. Email (the login) is shown read-only.
-export default async function LabProfilePage() {
-  const { lab } = await requireLab();
+export default async function LabProfilePage({ searchParams }: { searchParams: Promise<{ review?: string }> }) {
+  const { lab, userId } = await requireLab();
+  // after accepting an invitation: review the data PTS entered (the step 4.4 uses)
+  const review = !!(await searchParams).review;
   const { tr } = await getServerT();
   const field = (name: string, label: string, value: string) => (
     <label style={{ display: "block", marginBottom: 14 }}>
@@ -24,6 +27,11 @@ export default async function LabProfilePage() {
       <main style={{ maxWidth: 640, margin: "0 auto", padding: "32px 24px" }}>
         <Link href="/lab" className="text-sm" style={{ color: "var(--muted)" }}>← {tr("lab.backToDashboard")}</Link>
         <h1 className="section-title" style={{ fontSize: 26, margin: "6px 0 16px" }}>{tr("lab.editProfile")}</h1>
+        {review && (
+          <div role="note" data-review-data className="card" style={{ padding: 14, marginBottom: 14, background: "var(--green-soft)" }}>
+            {tr("lab.reviewData")}
+          </div>
+        )}
         <form action={updateLabProfileAction} className="card" style={{ padding: 24 }}>
           <label style={{ display: "block", marginBottom: 14 }}>
             <span className="field-label">{tr("lab.emailLogin")}</span>
@@ -45,6 +53,13 @@ export default async function LabProfilePage() {
             {tr("lab.emailNote")}
           </p>
         </form>
+        {/* part 1.5: the laboratory's own password (not for a development persona — no login behind it) */}
+        {userId !== "dev-persona" && (
+          <div className="card" style={{ padding: 24, marginTop: 16 }} data-change-password>
+            <h2 className="field-label" style={{ fontSize: 15 }}>{tr("account.changePassword")}</h2>
+            <PasswordForm mode="change" />
+          </div>
+        )}
       </main>
     </div>
   );

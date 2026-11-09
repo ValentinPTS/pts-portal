@@ -1,8 +1,13 @@
 import type { NextRequest } from "next/server";
+import { mayNow, mayViewDoc } from "@/lib/access";
+import { actorNow } from "@/lib/identities";
 import type { Browser } from "playwright-core";
 import { getScheme } from "@/lib/store";
-import { getDoc } from "@/lib/documents";
-import { requireStaff, canRevealNamesNow } from "@/lib/roles";
+import { getDoc, isRestrictedDoc } from "@/lib/documents";
+import { footerLine } from "@/lib/doc-css";
+import { isTestEnvironment } from "@/lib/environment";
+import { requireStaff } from "@/lib/roles";
+import { logActivity } from "@/lib/activity";
 
 // Generates any document's PDF with Playwright (loads the generic /doc/[doc]/print
 // route), adding A4 page numbers in the footer. Node runtime (Playwright needs Node).
@@ -70,6 +75,9 @@ export async function POST(req: NextRequest) {
   const scheme = await getScheme(id); // validates id
   const def = getDoc(typeof body.doc === "string" ? body.doc : "");
   if (!scheme || !def || !def.render) return new Response("Not found", { status: 404 });
+  if (!(await mayNow("codes.view", id))) return new Response("Forbidden", { status: 403 }); // this scheme's, by the role model (2.4)
+  if (isRestrictedDoc(def.key) && !(await mayNow("names.view", id))) return new Response("Forbidden — only a manager may open this list (ISO/IEC 17043 §4.2).", { status: 403 });
+  if (!(await mayViewDoc(def.key, id))) return new Response("Forbidden — the Order is for the staff it assigns roles to (Реш. 149).", { status: 403 }); // Реш. 149, 2.6
   const lang = body.lang === "bg" ? "bg" : "en"; // whitelist
 
   const origin = req.nextUrl.origin;
@@ -82,7 +90,7 @@ export async function POST(req: NextRequest) {
   // the header). Keeping them on a server-to-server call also means the token is never
   // handed to the browser process at all.
   const internalToken = process.env.INTERNAL_TOKEN ?? "";
-  const reveal = (await canRevealNamesNow()) ? "1" : "";
+  const reveal = (await mayNow("names.view", id)) ? "1" : "";
   // composed = the owner-built (builder) version; else the auto-generated template
   const url = body.composed
     ? `${origin}/schemes/${encodeURIComponent(id)}/build/${encodeURIComponent(def.key)}/print?lang=${lang}`
@@ -98,7 +106,11 @@ export async function POST(req: NextRequest) {
   let html: string;
   try {
     const res = await fetch(url, {
-      headers: internalToken ? { "x-internal-token": internalToken, "x-reveal": reveal } : undefined,
+      // …and who is asking, for the identity store's record of the opening (2.3)
+      // without the token (the developer's computer) the print route must see the SAME
+      // person — their cookies, or it would take the request for the open build and
+      // show names to anyone (2.9)
+      headers: internalToken ? { "x-internal-token": internalToken, "x-reveal": reveal, "x-actor": await actorNow() } : { cookie: req.headers.get("cookie") ?? "" },
       cache: "no-store",
     });
     if (!res.ok) return new Response(`Render failed (${res.status})`, { status: 502 });
@@ -114,14 +126,29 @@ export async function POST(req: NextRequest) {
   const browser = await getBrowser();
   const context = await browser.newContext();
   try {
-    // Bound every CROSS-ORIGIN subresource. The documents load their typefaces from
-    // Google Fonts with a render-blocking <link>, and Chromium holds `load` until that
-    // stylesheet resolves — so slow, filtered or unreachable font hosting could stall
-    // the export for the full timeout. Fetching it ourselves with a short timeout and
-    // aborting on failure makes the worst case a document in fallback faces, never a
-    // failed export.
+    // Bound every CROSS-ORIGIN subresource. The typefaces are the portal's own
+    // (/fonts, exempt from the proxy gate like /brand), so what can still come from
+    // elsewhere is a picture from the portal's storage — and Chromium holds `load`
+    // until it resolves, so a slow or unreachable host could stall the export for the
+    // full timeout. Fetching it ourselves with a short timeout and aborting on failure
+    // makes the worst case a document missing that picture, never a failed export.
     await context.route("**/*", async (route) => {
       if (route.request().url().startsWith(origin)) {
+        // The page is set from a string, so its origin is opaque ("null") and Chromium
+        // fetches the portal's font files cross-origin, in CORS mode: without an
+        // Access-Control-Allow-Origin they are refused and the PDF falls back to
+        // Arial/Georgia. Allow them here, in this renderer only — the portal's own
+        // pages load the fonts same-origin and need nothing, and the files stay
+        // closed to other sites.
+        if (route.request().resourceType() === "font") {
+          try {
+            const res = await route.fetch({ timeout: 4000 });
+            await route.fulfill({ response: res, headers: { ...res.headers(), "access-control-allow-origin": "*" } });
+          } catch {
+            await route.abort().catch(() => {});
+          }
+          return;
+        }
         await route.continue();
         return;
       }
@@ -146,7 +173,8 @@ export async function POST(req: NextRequest) {
     // Footer: document metadata on the left, the page number centred on the page
     // (a table keeps the centre cell at the true page centre regardless of the left
     // text). `.pageNumber`/`.totalPages` are filled in by Chromium per page.
-    const meta = `${scheme.revision} · ${def.formNumber} · ${scheme.revisionDate}`;
+    // an issued document without a form number (the certificate, Q23) leaves that slot out
+    const meta = (isTestEnvironment() ? "ТЕСТОВА СРЕДА / TEST · " : "") + footerLine(scheme.revision, def.formNumber, scheme.revisionDate);
     const pageLbl = `<span class="pageNumber"></span>`; // just the number (1, 2, 3 …)
     const footer = `<table style="width:100%;border-collapse:collapse;font-family:'Segoe UI',Arial,sans-serif;font-size:8px;color:#6b6b6b;"><tr>` +
       `<td style="width:34%;text-align:left;padding-left:14mm;white-space:nowrap;">${meta}</td>` +
@@ -161,6 +189,12 @@ export async function POST(req: NextRequest) {
       headerTemplate: "<div></div>",
       footerTemplate: footer,
     });
+    // every download is in the journal (part 1.9)
+    await logActivity("file.downloaded", { schemeId: id, subject: `pdf:${def.key}`, summary: `A PDF made and downloaded (${def.key}, ${lang})` });
+    if (reveal && (def.key === "results-coded" || (def.key === "certificate" && part))) {
+      const code = typeof body.participant === "string" ? body.participant : undefined;
+      await logActivity("names.viewed", { schemeId: id, targetCode: def.key === "certificate" ? code : undefined, subject: `pdf:${def.key}`, summary: `Laboratory names with their codes — in a PDF (${def.key})` });
+    }
     return new Response(new Uint8Array(pdf), {
       headers: {
         "content-type": "application/pdf",

@@ -1,5 +1,7 @@
 import type { Scheme, Lang, Clause } from "../types";
+import { providersHtml } from "../scheme-meta";
 import { esc, pick, wrapDoc, cover, sec, footer } from "../doc-shell";
+import { transitRisk } from "./transit";
 
 const FORM = "F 7.2.1-1";
 const cl = (lang: Lang, c?: Clause) => (c ? esc(pick(lang, c.en, c.bg)) : "");
@@ -68,7 +70,8 @@ export function renderPlan(s: Scheme, lang: Lang): string {
     cover(s, lang, "PROFICIENCY TESTING PLAN", "ПЛАН НА ИЗПИТВАНЕ ЗА ПРИГОДНОСТ", { withImage: true }),
     sec(1, "Type of the proficiency testing scheme", "Вид на схемата за изпитване за пригодност", lang, s1),
     sec(2, "Personnel involved in the scheme", "Персонал, участващ в схемата за изпитване за пригодност", lang, s2),
-    sec(3, "Information about external providers", "Информация за услуги, доставени от външни доставчици", lang, s3),
+    // the scheme's external providers when listed (3.13), else the block as it was
+    sec(3, "Information about external providers", "Информация за услуги, доставени от външни доставчици", lang, providersHtml(s, lang) || s3),
     sec(4, "Criteria for participation", "Критерии за участие", lang, C("criteria")),
     sec(5, "Number and type of expected participants", "Брой и вид на очакваните участници", lang, `<p>${L(`At least ${s.minParticipants} laboratories.`, `Най-малко ${s.minParticipants} лаборатории.`)} ${cl(lang, s.clauses.expected)}</p>`),
     sec(6, "Selection of methods, parameters and range of expected values", "Избор на методи, характеристики и обхват на очакваните стойности", lang, s6),
@@ -76,7 +79,7 @@ export function renderPlan(s: Scheme, lang: Lang): string {
     sec(8, "Production, quality control, storage and distribution", "Производство, контрол на качеството, съхранение и разпространение", lang, C("production")),
     sec(9, "Confidentiality", "Конфиденциалност", lang, C("confidentiality")),
     sec(10, "Time schedule", "График на схемата", lang, s10),
-    sec(11, "Storage, handling, dispatch and disposal", "Съхранение, манипулиране, изпращане и изхвърляне", lang, C("storage")),
+    sec(11, "Storage, handling, dispatch and disposal", "Съхранение, манипулиране, изпращане и изхвърляне", lang, C("storage") + transitRisk(lang)),
     sec(12, "Homogeneity and stability methods", "Методи за определяне на хомогенността и стабилността", lang, C("homogeneity")),
     sec(13, "Reporting of results", "Докладване на резултатите", lang, C("reporting")),
     sec(14, "Statistical analysis and evaluation criteria", "Статистически анализ и критерии за оценка", lang, s14),

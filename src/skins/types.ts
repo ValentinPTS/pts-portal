@@ -17,7 +17,7 @@ export interface SkinMeta {
 export interface Skin {
   meta: SkinMeta;
   css: string; // full document stylesheet (the classic DOC_CSS + this skin's overrides)
-  fontsHref: string; // the <link> stylesheet href for the skin's web fonts
+  fonts: string[]; // the skin's web-font families — the portal serves them itself (lib/doc-fonts.ts)
   // Show the traditional embroidery border down the side of every page. Defaults to
   // true (the PTS brand); custom skins follow their "embroidery" cover toggle so the
   // alternative looks (modern/bold/minimal…) stay clean.

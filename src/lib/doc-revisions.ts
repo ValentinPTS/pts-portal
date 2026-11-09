@@ -1,15 +1,19 @@
 import { randomUUID } from "crypto";
 import type { DocRevision } from "./types";
-import { getDb } from "./supabase";
+import { getDb, noMemoryFallback } from "./supabase";
 
 // Document version history (Phase RT5, §8.3). Supabase when configured, else
 // in-memory — same graceful fallback as the other stores. Append-only: a save adds
 // a new revision; nothing is overwritten. Identical consecutive saves are skipped
 // so the history reflects real changes, not every keystroke-save.
 
-const mem: DocRevision[] = [];
+// shared across every server entry point, as the other stores are (a module-local
+// copy hid entries written from another bundle in dev — part 1.4/1.5)
+const memStore = globalThis as unknown as { __ptsRevisionMem?: DocRevision[] };
+const mem: DocRevision[] = memStore.__ptsRevisionMem ?? (memStore.__ptsRevisionMem = []);
 let warned = false;
 function warn(e: unknown) {
+  noMemoryFallback("doc-revisions", e); // on a deployment: an error, not memory (1.1)
   if (warned) return;
   warned = true;
   console.warn("[doc-revisions] Supabase unavailable — in-memory fallback:", (e as Error)?.message ?? e);
@@ -30,6 +34,21 @@ function fromRow(r: Row): DocRevision {
     savedAt: r.saved_at ?? "", approved: !!r.approved, approvedBy: r.approved_by ?? undefined,
     approvedAt: r.approved_at ?? undefined,
   };
+}
+
+/** Every saved version of every document of one round — for the round export (part 1.10). Throws on a database error. */
+export async function listRevisionsForScheme(schemeId: string): Promise<DocRevision[]> {
+  const db = getDb();
+  const order = (a: DocRevision, b: DocRevision) => a.docKey.localeCompare(b.docKey) || a.version - b.version;
+  if (!db) return mem.filter((r) => r.schemeId === schemeId).sort(order);
+  // paged: every save is a version, and a read stops at 1000 rows without a word
+  const out: DocRevision[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db.from("doc_revisions").select("*").eq("scheme_id", schemeId).order("id", { ascending: true }).range(from, from + 999);
+    if (error) throw error;
+    out.push(...(data ?? []).map((r) => fromRow(r as Row)));
+    if ((data ?? []).length < 1000) return out.sort(order);
+  }
 }
 
 // Newest version first.

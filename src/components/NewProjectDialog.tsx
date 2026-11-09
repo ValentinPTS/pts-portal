@@ -3,14 +3,18 @@
 import { useState } from "react";
 import { createProjectAction } from "@/lib/actions";
 import { useLang } from "@/components/LangProvider";
+import { composeSchemeNumber, type Activity, type SchemeKind } from "@/lib/scheme-number";
+import type { DialogNumbering } from "@/lib/folders";
 
 // Trigger (a green button or a dashed tile) + a modal that creates a new scheme
-// folder: friendly name + auto-assigned official PTS number + object. Type is
-// implied by the folder the user is in.
+// folder: friendly name + the official number + object. Type is implied by the
+// folder the user is in; the number is composed from the kind (PTS/ILC), the
+// activity (T/S here, C in calibration) and NA (Реш. 102, part 3.1) — PTS may type
+// another, and the server takes the markers from what the number states.
 export default function NewProjectDialog({
-  type, typeLabel, year, nextNumber, accent, soft, line, variant, folderId = null, samples = [],
+  type, typeLabel, year, numbering, accent, soft, line, variant, folderId = null, samples = [],
 }: {
-  type: "T" | "C"; typeLabel: string; year: string; nextNumber: string;
+  type: "T" | "C"; typeLabel: string; year: string; numbering: DialogNumbering;
   accent: string; soft: string; line: string; variant: "button" | "tile";
   folderId?: string | null;
   samples?: { key: string; label: string }[];
@@ -19,6 +23,15 @@ export default function NewProjectDialog({
   const [open, setOpen] = useState(false);
   const [sample, setSample] = useState("");
   const [name, setName] = useState("");
+  const [kind, setKind] = useState<SchemeKind>("PTS");
+  const [activity, setActivity] = useState<Activity>(type === "C" ? "C" : "T");
+  const [na, setNa] = useState(false);
+  const compose = (k: SchemeKind, a: Activity, n: boolean) =>
+    composeSchemeNumber({ kind: k, activity: a, na: n, simulation: numbering.simulation }, numbering.yy, numbering.mm, numbering.next[a] ?? 1);
+  const [number, setNumber] = useState(() => compose("PTS", type === "C" ? "C" : "T", false));
+  // a change of kind, activity or NA composes the number again; ILC is NA by default —
+  // today they coincide, though they are two fields (Реш. 102, А4)
+  const pickMarkers = (k: SchemeKind, a: Activity, n: boolean) => { setKind(k); setActivity(a); setNa(n); setNumber(compose(k, a, n)); };
 
   function pickSample(key: string) {
     setSample(key);
@@ -49,7 +62,7 @@ export default function NewProjectDialog({
       {open && (
         <div
           onClick={() => setOpen(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(15,30,22,0.45)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 50, padding: "10vh 16px" }}
+          style={{ position: "fixed", inset: 0, background: "rgba(15,30,22,0.45)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 50, padding: "6vh 16px", overflowY: "auto" }}
         >
           <form
             action={createProjectAction}
@@ -85,11 +98,40 @@ export default function NewProjectDialog({
                 style={{ border: "1px solid var(--line)", borderRadius: 9, padding: "11px 12px", fontSize: 14 }} />
             </label>
 
+            <div data-number-markers style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 6, flex: "1 1 180px" }}>
+                  <span style={{ fontWeight: 700, fontSize: 13 }}>{t("np.kind")}</span>
+                  <select name="kind" value={kind} onChange={(e) => { const k = e.target.value === "ILC" ? "ILC" : "PTS"; pickMarkers(k, activity, k === "ILC"); }}
+                    style={{ border: "1px solid var(--line)", borderRadius: 9, padding: "10px 12px", fontSize: 14, background: "#fff" }}>
+                    <option value="PTS">{t("np.kindPTS")}</option>
+                    <option value="ILC">{t("np.kindILC")}</option>
+                  </select>
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 6, flex: "1 1 160px" }}>
+                  <span style={{ fontWeight: 700, fontSize: 13 }}>{t("np.activity")}</span>
+                  {type === "C" ? (
+                    <span style={{ padding: "10px 0", fontSize: 14 }}>{t("np.activityC")}</span>
+                  ) : (
+                    <select name="activity" value={activity} onChange={(e) => pickMarkers(kind, e.target.value === "S" ? "S" : "T", na)}
+                      style={{ border: "1px solid var(--line)", borderRadius: 9, padding: "10px 12px", fontSize: 14, background: "#fff" }}>
+                      <option value="T">{t("np.activityT")}</option>
+                      <option value="S">{t("np.activityS")}</option>
+                    </select>
+                  )}
+                </label>
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
+                <input type="checkbox" name="na" checked={na} onChange={(e) => pickMarkers(kind, activity, e.target.checked)} />
+                {t("np.na")}
+              </label>
+            </div>
+
             <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <span style={{ fontWeight: 700, fontSize: 13 }}>{t("np.officialNumber")}</span>
-              <input name="number" required defaultValue={nextNumber}
+              <input name="number" required value={number} onChange={(e) => setNumber(e.target.value)}
                 style={{ background: soft, border: `1px solid ${line}`, color: accent, fontWeight: 700, fontSize: 15, padding: "11px 12px", borderRadius: 9, fontFamily: "var(--font-sans)", letterSpacing: "0.01em" }} />
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("np.autoAssigned")}</span>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("np.autoAssigned")} {t("np.markersHint")}</span>
             </label>
 
             <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>

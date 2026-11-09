@@ -4,6 +4,8 @@ import {
   isDone, isHolding, isFrozen, holderIndex, nextStopIndex, nextStopFor,
   stopIndexesForCode, labState, positionOf, stopsAhead, paceDays,
   estimatedWaitDays, describeWait, chainComplete, reorderPending, ordinalSuffixBg, isIncomingFor,
+  stampProblem, applyStamp, isStampSource, stampSourceLabel, sofiaDay, sofiaTime, fmtStamp, CHAIN_STAMP_SOURCES,
+  returnProblem, rebuildChain, sofiaWallToIso, sofiaNowWall,
 } from "../src/lib/chain.ts";
 import type { ChainStop, SchemeChain } from "../src/lib/types.ts";
 
@@ -277,6 +279,139 @@ ok("all stops passed → complete",
   ], "2026-01-01");
   ok("when the chain is finished nothing is incoming", !isIncomingFor(allDone, "A") && !isIncomingFor(allDone, "B"));
   ok("an unknown code is never told anything", !isIncomingFor(refDone, "ZZZ"));
+}
+
+// ── PTS stamps a stop on its behalf (part 0.10, N25 / E6.c) ─────────────────
+{
+  const NOW = Date.parse("2026-08-20T12:00:00Z");
+  const T = (iso: string) => Date.parse(iso);
+  // reference before, two labs, reference after — dispatched, nothing received yet
+  const fresh: SchemeChain = { stops: [ref("r1"), lab("a", "AAA"), lab("b", "BBB"), ref("r2")], dispatchedAt: D(1) };
+
+  ok("a LEADING reference stop can be stamped as arrived — it no longer stalls the chain",
+    stampProblem(fresh, "r1", "received", T(D(2)), NOW) === null);
+  ok("…but not before PTS has sent the device",
+    stampProblem({ ...fresh, dispatchedAt: undefined }, "r1", "received", T(D(2)), NOW) === "not-dispatched");
+  ok("arrivals go in order: the second stop cannot arrive first",
+    stampProblem(fresh, "a", "received", T(D(2)), NOW) === "order");
+  ok("a handover needs the arrival first", stampProblem(fresh, "r1", "sent", T(D(2)), NOW) === "not-received");
+  ok("an unknown stop is refused", stampProblem(fresh, "zzz", "received", T(D(2)), NOW) === "missing");
+  ok("no chain at all is refused", stampProblem(undefined, "r1", "received", T(D(2)), NOW) === "missing");
+  ok("the future is refused", stampProblem(fresh, "r1", "received", NOW + 3_600_000, NOW) === "future");
+  ok("…but a clock four minutes fast is not the future", stampProblem(fresh, "r1", "received", NOW + 4 * 60_000, NOW) === null);
+  ok("…while six minutes ahead is", stampProblem(fresh, "r1", "received", NOW + 6 * 60_000, NOW) === "future");
+  ok("a time that is not a time is refused", stampProblem(fresh, "r1", "received", NaN, NOW) === "time");
+
+  const refHolds: SchemeChain = { ...fresh, stops: applyStamp(fresh.stops, "r1", "received", D(2), { by: "pts", recordedAt: D(2), source: "phone" }) };
+  ok("applyStamp sets the arrival and who recorded it",
+    refHolds.stops[0].receivedAt === D(2) && refHolds.stops[0].received?.by === "pts" && refHolds.stops[0].received?.source === "phone");
+  ok("applyStamp touches no other stop", refHolds.stops.slice(1).every((s, i) => s === fresh.stops[i + 1]));
+  ok("applyStamp returns a fresh array", refHolds.stops !== fresh.stops);
+  ok("the reference stop now holds the device", holderIndex(refHolds) === 0);
+  ok("the next lab cannot arrive while the reference still holds it",
+    stampProblem(refHolds, "a", "received", T(D(3)), NOW) === "previous-holding");
+  ok("the same arrival cannot be stamped twice", stampProblem(refHolds, "r1", "received", T(D(3)), NOW) === "already");
+  ok("a handover before the arrival is refused", stampProblem(refHolds, "r1", "sent", T(D(1)), NOW) === "before-receipt");
+  ok("a handover after the arrival is accepted", stampProblem(refHolds, "r1", "sent", T(D(3)), NOW) === null);
+
+  const refSent: SchemeChain = { ...refHolds, stops: applyStamp(refHolds.stops, "r1", "sent", D(3), { by: "pts", recordedAt: D(3), source: "courier" }) };
+  ok("after the reference hands it on, the first lab is told it is coming", isIncomingFor(refSent, "AAA"));
+  ok("…and PTS may now record that lab's arrival", stampProblem(refSent, "a", "received", T(D(5)), NOW) === null);
+  ok("the handover cannot be stamped twice", stampProblem(refSent, "r1", "sent", T(D(4)), NOW) === "already");
+
+  // walk it to the end: the TRAILING reference stop can be stamped too
+  let c: SchemeChain = refSent;
+  const pts = { by: "pts" as const, recordedAt: D(19), source: "phone" as const };
+  for (const [id, r, s] of [["a", 5, 9], ["b", 11, 15], ["r2", 17, 18]] as const) {
+    ok(`stop ${id} can be stamped as arrived in turn`, stampProblem(c, id, "received", T(D(r)), NOW) === null);
+    c = { ...c, stops: applyStamp(c.stops, id, "received", D(r), pts) };
+    ok(`stop ${id} can be stamped as handed on`, stampProblem(c, id, "sent", T(D(s)), NOW) === null);
+    c = { ...c, stops: applyStamp(c.stops, id, "sent", D(s), pts) };
+  }
+  ok("with the trailing reference stamped, the chain is complete", chainComplete(c));
+  ok("a closed chain takes no stamps — even one that would otherwise be fine",
+    stampProblem(refSent, "a", "received", T(D(5)), NOW) === null
+    && stampProblem({ ...refSent, returnedAt: D(19) }, "a", "received", T(D(5)), NOW) === "closed"
+    && stampProblem({ ...refSent, returnedAt: D(19) }, "a", "received", T(D(5)), NOW, "lab") === "closed");
+
+  // chronology — the record the waiting labs' estimate is computed from
+  ok("no arrival before PTS sent the device", stampProblem(fresh, "r1", "received", T("2026-07-31T09:00:00Z"), NOW) === "before-dispatch");
+  ok("a mistyped year (0026) cannot slip through", stampProblem(fresh, "r1", "received", Date.UTC(26, 10, 2), NOW) === "before-dispatch");
+  ok("chronology is to the minute: an arrival typed 09:00 fits a dispatch pressed at 09:00:42",
+    stampProblem({ ...fresh, dispatchedAt: "2026-08-01T09:00:42Z" }, "r1", "received", T("2026-08-01T09:00:00Z"), NOW) === null
+    && stampProblem({ ...fresh, dispatchedAt: "2026-08-01T09:00:42Z" }, "r1", "received", T("2026-08-01T08:59:00Z"), NOW) === "before-dispatch");
+  ok("no arrival before the previous stop handed on", stampProblem(refSent, "a", "received", T(D(2)), NOW) === "before-previous");
+  ok("…the moment of the handover itself is fine", stampProblem(refSent, "a", "received", T(D(3)), NOW) === null);
+  // a lab that has the device may confirm even while the stop before has not pressed
+  const aHolds: SchemeChain = { ...refSent, stops: applyStamp(refSent.stops, "a", "received", D(5), pts) };
+  ok("a LAB may confirm its arrival while the stop before has not pressed «handed on»",
+    stampProblem(aHolds, "b", "received", T(D(11)), NOW, "lab") === null);
+  ok("…PTS may not: it records the silent stop's handover first",
+    stampProblem(aHolds, "b", "received", T(D(11)), NOW) === "previous-holding");
+  const bAlso: SchemeChain = { ...aHolds, stops: applyStamp(aHolds.stops, "b", "received", D(11), { by: "lab", recordedAt: D(11) }) };
+  ok("then the silent stop's handover cannot be after the next arrival",
+    stampProblem(bAlso, "a", "sent", T(D(12)), NOW) === "after-next-arrival");
+  ok("…but before it, it can", stampProblem(bAlso, "a", "sent", T(D(10)), NOW) === null);
+  ok("a lab is held to the order too: no arrival out of turn",
+    stampProblem(refSent, "b", "received", NOW, NOW, "lab") === "order");
+  ok("…and none before the device has left PTS",
+    stampProblem({ ...fresh, dispatchedAt: undefined }, "a", "received", NOW, NOW, "lab") === "not-dispatched");
+  ok("a lab cannot hand on what it has not received", stampProblem(refSent, "a", "sent", NOW, NOW, "lab") === "not-received");
+
+  // closing the chain
+  ok("the chain cannot close before the device left", returnProblem({ ...fresh, dispatchedAt: undefined }) === "not-dispatched");
+  ok("…nor while a stop is still open — that would strand it", returnProblem(refSent) === "open-stops");
+  ok("it closes once every stop has handed on", returnProblem(c) === null);
+  ok("…and only once", returnProblem({ ...c, returnedAt: D(19) }) === "already");
+  ok("no chain at all cannot close", returnProblem(undefined) === "not-dispatched");
+
+  // saving a new order from a screen loaded before a stop was reached
+  {
+    let n = 0;
+    const mint = () => `new${++n}`;
+    const cur = [ref("r1", D(1)), lab("a", "AAA"), lab("b", "BBB")];
+    const out = rebuildChain(cur, [{ id: "b", kind: "lab", code: "BBB" }, { id: "r1", kind: "ref" }, { id: "a", kind: "lab", code: "AAA" }, { kind: "lab", code: "CCC" }], mint);
+    ok("a frozen stop stays first, exactly as it was", out[0] === cur[0]);
+    ok("a stale id of a FROZEN stop is not added a second time", out.filter((s) => s.id === "r1").length === 1 && out.length === 4);
+    ok("pending stops are reused by id, in the new order", out[1] === cur[2] && out[2] === cur[1]);
+    ok("a new stop gets a fresh id", out[3].id === "new1" && out[3].code === "CCC" && n === 1);
+    const reached = [ref("r1", D(1), D(2)), lab("a", "AAA", D(3)), lab("b", "BBB")];
+    const out2 = rebuildChain(reached, [{ id: "a", kind: "lab", code: "AAA" }, { id: "b", kind: "lab", code: "BBB" }], mint);
+    ok("a lab reached since the screen loaded is not duplicated", out2.filter((s) => s.code === "AAA").length === 1 && out2.length === 3);
+    ok("…and an omitted pending stop is dropped", rebuildChain(cur, [{ id: "a", kind: "lab", code: "AAA" }], mint).map((s) => s.id).join() === "r1,a");
+  }
+
+  // a lab's own stamps and PTS's coexist: a lab that already confirmed is "already"
+  const labDid: SchemeChain = { ...refSent, stops: applyStamp(refSent.stops, "a", "received", D(5), { by: "lab", recordedAt: D(5) }) };
+  ok("a lab's own confirmation counts — PTS is not asked to repeat it",
+    stampProblem(labDid, "a", "received", T(D(6)), NOW) === "already" && labDid.stops[1].received?.by === "lab");
+
+  ok("every source is a known source", CHAIN_STAMP_SOURCES.every(isStampSource));
+  ok("an unknown source is not", !isStampSource("fax") && !isStampSource(undefined) && !isStampSource(""));
+  ok("every source has a label in both languages",
+    CHAIN_STAMP_SOURCES.every((s) => stampSourceLabel(s, "bg") && stampSourceLabel(s, "en")));
+  ok("no source → no label", stampSourceLabel(undefined, "bg") === "");
+
+  // Bulgarian time, wherever the server runs: 22:30 UTC in summer is 01:30 next day in Sofia
+  ok("the case-file day is the day in Sofia, not in UTC", sofiaDay("2026-08-04T22:30:00Z") === "2026-08-05");
+  ok("…and the time is Sofia time (EEST, +3)", sofiaTime("2026-08-04T22:30:00Z") === "01:30");
+  ok("in winter Sofia is +2", sofiaTime("2026-01-15T10:05:00Z") === "12:05");
+  ok("midnight is 00, never 24", sofiaTime("2026-01-14T22:00:00Z") === "00:00");
+  ok("a chain step shows date AND time", fmtStamp("2026-08-04T09:07:00Z") === "04.08.2026 12:07");
+  ok("nothing in → nothing out", fmtStamp(undefined) === "" && sofiaDay("not a date") === "" && sofiaTime("") === "");
+
+  // what PTS types is Bulgarian wall-clock time, whatever the browser's zone
+  ok("a winter time is +2", sofiaWallToIso("2026-11-02T14:30") === "2026-11-02T12:30:00.000Z");
+  ok("a summer time is +3", sofiaWallToIso("2026-08-04T12:07") === "2026-08-04T09:07:00.000Z");
+  ok("the day summer time starts: before and after the change",
+    sofiaWallToIso("2026-03-29T01:00") === "2026-03-28T23:00:00.000Z" && sofiaWallToIso("2026-03-29T12:00") === "2026-03-29T09:00:00.000Z");
+  ok("the day it ends", sofiaWallToIso("2026-10-25T12:00") === "2026-10-25T10:00:00.000Z");
+  ok("typed → shown is the same wall-clock time", fmtStamp(sofiaWallToIso("2026-12-31T23:59") ?? "") === "31.12.2026 23:59");
+  ok("a mistyped year is refused", sofiaWallToIso("0026-11-02T10:00") === null);
+  ok("a date that does not exist is refused", sofiaWallToIso("2026-02-30T10:00") === null);
+  ok("24:00 is refused", sofiaWallToIso("2026-11-02T24:00") === null);
+  ok("anything else is refused", sofiaWallToIso("2026-11-02 14:30") === null && sofiaWallToIso("") === null && sofiaWallToIso("2026-11-02T14:30Z") === null);
+  ok("now, as the form's default, in Sofia", sofiaNowWall(Date.parse("2026-11-02T12:30:40Z")) === "2026-11-02T14:30");
 }
 
 console.log(`chain.test: ${pass} passed, ${fail} failed`);

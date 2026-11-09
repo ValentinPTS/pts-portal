@@ -53,7 +53,7 @@ export default function FolderActions({ schemeId, name }: { schemeId: string; na
         onClick={del}
         disabled={pending}
       >
-        {t("folder.deleteFolder")}
+        {t("folder.archiveScheme")}
       </button>
     </span>
   );
