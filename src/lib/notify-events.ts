@@ -354,3 +354,45 @@ export async function notifyCoded(labId: string | undefined, schemeId: string, s
     href: "/lab",
   });
 }
+
+// ── Delivery and receipt (part 5.6) ──────────────────────────────────────────────
+
+const dmy = (day: string) => (/^\d{4}-\d{2}-\d{2}$/.test(day) ? `${day.slice(8, 10)}.${day.slice(5, 7)}.${day.slice(0, 4)}` : day);
+
+/** Its object on its way (spec's notices: «Изпратен обект, с номер на товарителница»), a
+ *  replacement, or handed to its own courier (Реш. 154). To the participation, by its code. */
+export async function notifyItemsDispatched(labId: string | undefined, schemeId: string, schemeNumber: string, code: string, w: { kind: "dispatch" | "replacement" | "handover"; day: string; waybill?: string; carrier?: string; time?: string }): Promise<void> {
+  if (!(await anyoneToTell(labId, schemeId, code))) return; // nobody to tell — the owner tells them directly
+  const via = { bg: [w.carrier ? `с ${w.carrier}` : "", w.waybill ? `товарителница ${w.waybill}` : ""].filter(Boolean).join(", "), en: [w.carrier ? `by ${w.carrier}` : "", w.waybill ? `waybill ${w.waybill}` : ""].filter(Boolean).join(", ") };
+  const bg = w.kind === "handover"
+    ? `Схема ${schemeNumber}${refBg(code)}: обектът е предаден на вашия куриер${w.carrier ? ` (${w.carrier})` : ""} на ${dmy(w.day)}${w.time ? ` в ${w.time} ч.` : ""}. Рискът при превоза е ваш. Когато пристигне, попълнете протокола за получаване в портала.`
+    : `Схема ${schemeNumber}${refBg(code)}: ${w.kind === "replacement" ? "заместващ обект ви е изпратен" : "обектът ви е изпратен"} на ${dmy(w.day)}${via.bg ? ` — ${via.bg}` : ""}. Когато пристигне, попълнете протокола за получаване в портала.`;
+  const en = w.kind === "handover"
+    ? `Scheme ${schemeNumber}${refEn(code)}: the object was handed to your courier${w.carrier ? ` (${w.carrier})` : ""} on ${dmy(w.day)}${w.time ? ` at ${w.time}` : ""}. The risk in transit is yours. When it arrives, fill in the receipt protocol in the portal.`
+    : `Scheme ${schemeNumber}${refEn(code)}: ${w.kind === "replacement" ? "a replacement object was sent to you" : "your object was sent"} on ${dmy(w.day)}${via.en ? ` — ${via.en}` : ""}. When it arrives, fill in the receipt protocol in the portal.`;
+  await notify({ kind: "items.dispatched", audience: "lab", labId, schemeId, code, bg, en, href: "/lab" });
+}
+
+/** The participant's online receipt protocol is in (Ф 7.3.4-1) — fit or not (Реш. 79). To PTS, by code. */
+export async function notifyReceiptProtocol(schemeId: string, schemeNumber: string, code: string, suitable: boolean): Promise<void> {
+  await notify({
+    kind: "receipt.confirmed",
+    audience: "provider",
+    schemeId, code,
+    bg: suitable ? `${code} подаде протокол за получаване (${schemeNumber}): обектът е годен.` : `${code} подаде протокол за получаване (${schemeNumber}): обектът е НЕГОДЕН — вижте «Доставки».`,
+    en: suitable ? `${code} filed its receipt protocol (${schemeNumber}): the object is fit.` : `${code} filed its receipt protocol (${schemeNumber}): the object is NOT fit — see «Deliveries».`,
+    href: `/deliveries?scheme=${encodeURIComponent(schemeId)}`,
+  });
+}
+
+/** «Сигнализирай проблем» — a participant's problem with its object. To PTS, by code. */
+export async function notifyDeliveryProblem(schemeId: string, schemeNumber: string, code: string): Promise<void> {
+  await notify({
+    kind: "delivery.problem",
+    audience: "provider",
+    schemeId, code,
+    bg: `${code} сигнализира проблем с обекта (${schemeNumber}) — вижте «Доставки».`,
+    en: `${code} signalled a problem with its object (${schemeNumber}) — see «Deliveries».`,
+    href: `/deliveries?scheme=${encodeURIComponent(schemeId)}`,
+  });
+}

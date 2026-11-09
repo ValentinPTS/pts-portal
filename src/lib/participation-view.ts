@@ -23,6 +23,7 @@ import { holidaySet } from "./holidays";
 import { chainWindow } from "./deadlines-model";
 import { docsFor, type ReachingRelease } from "./release-model";
 import { inFinalRound } from "./announcement-model";
+import { deliveryOf, deliveryProgress, receivedOtherwise, otherReceipts } from "./delivery-model";
 import { schemeNowMs } from "./clock";
 import {
   stateFacts, participationState, nextDeadline, actionsFor, paymentOf, finished, STATE_STAGE,
@@ -76,6 +77,8 @@ export interface ParticipationView {
   payment: PaymentMark;
   deadline: NextDeadline | null;
   events: CaseEvent[];
+  /** received after the latest shipment some other way — a signed scan, PTS's own step (5.6) */
+  receivedOtherwise: boolean;
   /** the latest dispatch and receipt on its case file */
   dispatch?: CaseEvent;
   receipt?: CaseEvent;
@@ -114,7 +117,10 @@ export async function participationViews(rows: readonly OwnRow[], viewer: { user
     const opened = new Set(downloads.filter((e) => e.subject && e.targetCode).map((e) => `${e.subject!.slice("edition:".length)}|${e.targetCode}`));
     for (const { r, part } of parts) {
       const events = await listCaseEvents(scheme.id, part.code).catch(() => [] as CaseEvent[]);
-      const state = participationState(stateFacts({ scheme, part, events, country: r.country }));
+      // a testing scheme's delivery record speaks for the object once it has a shipment (5.6)
+      const d = deliveryOf(scheme, part.id);
+      const otherwise = receivedOtherwise(d, otherReceipts(scheme, part.code, events));
+      const state = participationState(stateFacts({ scheme, part, events, country: r.country, delivery: scheme.type === "C" ? null : deliveryProgress(d, otherwise) }));
       // its own window while it holds the instrument (3.4)
       const stop = scheme.type === "C" ? scheme.chain?.stops?.find((s) => s.kind === "lab" && s.code === part.code && !!s.receivedAt && !s.sentAt) : undefined;
       const w = stop ? chainWindow(scheme, stop, off) : null;
@@ -125,7 +131,7 @@ export async function participationViews(rows: readonly OwnRow[], viewer: { user
       const docs = (reaching.get(part.id) ?? []).map((d) => ({ ...d, opened: d.editionId ? mineCodes.some((c) => opened.has(`${d.editionId}|${c}`)) : null }));
       const dispatch = latest(events, "items_dispatched");
       out.push({
-        participantId: part.id, scheme, part, labName: r.labName, laboratoryId: r.laboratoryId,
+        participantId: part.id, scheme, part, labName: r.labName, laboratoryId: r.laboratoryId, receivedOtherwise: otherwise,
         state, stage: STATE_STAGE[state], finished: finished(state),
         payment: paymentOf(scheme, part.code, part.status), deadline, events,
         dispatch, receipt: latest(events, "receipt_confirmed"), docs,

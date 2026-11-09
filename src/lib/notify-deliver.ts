@@ -1,5 +1,5 @@
 import type { Notification } from "./types";
-import { listUndelivered, markDelivered, BACKFILL_RELEASE } from "./notifications";
+import { listUndelivered, markDelivered, BACKFILL_RELEASE, isReminderKind } from "./notifications";
 import { getLab } from "./labs";
 import { sendEmail, isMailConfigured, providerInbox, looksLikeEmail } from "./mail";
 import { mailAllowedHere, testSubject } from "./environment";
@@ -70,7 +70,7 @@ export function bodyFor(n: Notification, baseUrl: string): string {
 
 /** The class of a laboratory notice (part 1.8): a reminder, the chain notice (D19), or the provider's own. */
 export function classFor(n: Notification): MessageClass {
-  if (n.kind === "results.due") return "reminder";
+  if (n.kind === "results.due" || n.kind === "receipt.due") return "reminder";
   if (n.kind === "device.moved") return "chain";
   return "provider";
 }
@@ -82,7 +82,8 @@ export function classFor(n: Notification): MessageClass {
  */
 export function approvalFor(n: Notification): Approval | null {
   if (n.audience !== "lab" || !n.releasedAt || n.withheldAt || !n.releasedBy || n.releasedBy === BACKFILL_RELEASE) return null;
-  if (n.releasedBy.startsWith("template:")) return n.kind === "results.due" ? { by: n.releasedBy, ref: `notice:${n.id}` } : null;
+  // a template releases only a reminder of its own kind (results.due; receipt.due since 5.6)
+  if (n.releasedBy.startsWith("template:")) return isReminderKind(n.kind) && n.releasedBy.startsWith(`template:${n.kind}@`) ? { by: n.releasedBy, ref: `notice:${n.id}` } : null;
   return { by: n.releasedBy, ref: `notice:${n.id}` };
 }
 

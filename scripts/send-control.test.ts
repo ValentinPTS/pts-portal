@@ -61,6 +61,9 @@ try {
   t("«Не изпращай»: never e-mailed", mails.length === 0);
   t("the 0016 backlog (shown in the portal only) carries no approval", approvalFor({ ...n1, releasedBy: "migration-0016" }) === null);
   t("a «template» release on anything but a reminder carries no approval", approvalFor({ ...n1, kind: "docs.sent", releasedBy: "template:results.due@v1 (approved by x)" }) === null);
+  // since 5.6: the receipt reminder too — each released only by a template of its OWN kind
+  t("…the receipt reminder by its own template: approved", approvalFor({ ...n1, kind: "receipt.due", releasedBy: "template:receipt.due@v2 (approved by x)" })?.by === "template:receipt.due@v2 (approved by x)");
+  t("…never by another reminder's template", approvalFor({ ...n1, kind: "receipt.due", releasedBy: "template:results.due@v1 (approved by x)" }) === null && approvalFor({ ...n1, kind: "results.due", releasedBy: "template:receipt.due@v1 (approved by x)" }) === null);
 
   // ── the chain notice (D19): waits for «Изпрати» like a provider notice ─────
   const n3 = (await notify({ kind: "device.moved", audience: "lab", labId: lab.id, bg: "Уредът пътува към вас.", en: "The device is on its way." }))!;
@@ -223,8 +226,10 @@ t("the reminder job claims the deadline first, gives it back on an error", /if \
 t("…an automatic reminder only with a scheme number that parses", /const auto = byTemplate && parseSchemeNumber\(s\.number\) \? byTemplate : undefined;/.test(reminders) && /releasedByTemplate: auto,/.test(reminders));
 t("the daily job: a failed reminder run still delivers", /raiseDueReminders\(\)\.catch\(/.test(src("app/api/cron/notify/route.ts")));
 t("no other way to send: no signInWithOtp, signUp, or a second mail client", callsOf(/\.auth\.(signInWithOtp|signUp)\(|nodemailer|api\.postmarkapp|api\.mailgun/g).length === 0);
-t("a reminder's template release: only from the reminder job", JSON.stringify(count(callsOf(/releasedByTemplate: /g))) === JSON.stringify({ "lib/notify-reminders.ts": 1 }));
-t("…and only for a laboratory's results.due", /rest\.audience === "lab" && rest\.kind === "results\.due" && releasedByTemplate\.startsWith\("template:"\)/.test(src("lib/notifications.ts")));
+// the results reminder and, since 5.6, the receipt reminder — both from the reminder job
+t("a reminder's template release: only from the reminder job", JSON.stringify(count(callsOf(/releasedByTemplate: /g))) === JSON.stringify({ "lib/notify-reminders.ts": 2 }));
+// since 5.6 also the receipt reminder — each by a template of its own kind
+t("…and only for a laboratory's reminder, by a template of its own kind", /rest\.audience === "lab" && isReminderKind\(rest\.kind\) && releasedByTemplate\.startsWith\(`template:\$\{rest\.kind\}@`\)/.test(src("lib/notifications.ts")) && /REMINDER_KINDS: readonly ReminderKind\[\] = \["results\.due", "receipt\.due"\]/.test(src("lib/reminder-templates.ts")));
 t("«Изпрати» on a notice: who releases documents, in the notice's own scheme, recorded with who", /export async function decideNoticeAction[\s\S]{0,120}await requireCapAnywhere\("docs\.release"\);[\s\S]{0,400}if \(!notice \|\| !\(await mayNow\("docs\.release", notice\.schemeId\)\)\) redirect[\s\S]{0,400}decideNotice\(id, decision, by\)/.test(actions));
 t("the template's approval: the head (texts.approve, 2.4), the version seen", /export async function approveReminderTemplateAction[\s\S]{0,80}await requireCap\("texts\.approve"\);[\s\S]{0,400}approveReminderTemplate\(kind, by, seen\)/.test(actions));
 

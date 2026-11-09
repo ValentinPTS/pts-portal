@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { mayAnywhereNow, requireCapAnywhere } from "@/lib/access";
 import { getServerT } from "@/lib/i18n-server";
-import { listReminderTemplates, isTemplateApproved, renderTemplate, PLACEHOLDERS, MAX_TEMPLATE_LENGTH } from "@/lib/reminder-templates";
+import { listReminderTemplates, isTemplateApproved, renderTemplate, PLACEHOLDERS, MAX_TEMPLATE_LENGTH, REMINDER_LABEL } from "@/lib/reminder-templates";
 import { saveReminderTemplateAction, approveReminderTemplateAction } from "@/lib/actions";
 import { invitePreview, profileConfirmedPreview, SUPABASE_TEMPLATES, FIXED_TEXTS_APPROVED_AT } from "@/lib/fixed-texts";
 
@@ -61,7 +61,7 @@ export default async function ReminderTextsPage({ searchParams }: { searchParams
         return (
           <section key={tpl.kind} data-template={tpl.kind} className="card p-4 mt-4">
             <div className="flex items-center gap-3 flex-wrap">
-              <h2 className="font-bold" style={{ color: "var(--green-dark)" }}>{L("Ден преди срока за резултати", "The day before results are due")}</h2>
+              <h2 className="font-bold" style={{ color: "var(--green-dark)" }}>{L(REMINDER_LABEL[tpl.kind].bg, REMINDER_LABEL[tpl.kind].en)}</h2>
               <span data-template-status className="text-xs font-bold rounded px-2 py-0.5"
                 style={ok ? { background: "#e3eeda", color: "#456b2c" } : { background: "#fbe9dc", color: "#7a2e0e" }}>
                 {ok

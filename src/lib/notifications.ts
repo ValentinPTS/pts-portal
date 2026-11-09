@@ -1,6 +1,10 @@
 import { randomUUID } from "crypto";
 import type { Notification, NotifyKind } from "./types";
 import { getDb, noMemoryFallback, dropOnDeployment } from "./supabase";
+import { REMINDER_KINDS } from "./reminder-templates";
+
+/** A reminder a template may release (part 1.8): one of the reminder kinds. */
+export const isReminderKind = (kind: string): boolean => (REMINDER_KINDS as readonly string[]).includes(kind);
 
 // The notification OUTBOX (Phase 1). Supabase when configured, else in-memory —
 // the same graceful fallback as every other store here. See migration
@@ -76,7 +80,8 @@ const newestFirst = (a: Notification, b: Notification) => (b.createdAt || "").lo
 function build(input: Parameters<typeof notify>[0]): Notification {
   const { releasedByTemplate, ...rest } = input;
   const createdAt = new Date().toISOString();
-  const byTemplate = !!releasedByTemplate && rest.audience === "lab" && rest.kind === "results.due" && releasedByTemplate.startsWith("template:");
+  // …and only a reminder of the template's own kind (results.due; receipt.due since 5.6)
+  const byTemplate = !!releasedByTemplate && rest.audience === "lab" && isReminderKind(rest.kind) && releasedByTemplate.startsWith(`template:${rest.kind}@`);
   return { id: randomUUID(), createdAt, ...rest, ...(byTemplate ? { releasedAt: createdAt, releasedBy: releasedByTemplate } : {}) };
 }
 

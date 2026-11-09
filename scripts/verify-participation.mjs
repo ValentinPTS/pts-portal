@@ -5,7 +5,8 @@
 // On a scheme of its own, opened: participation A of a legal entity registered in Turkey
 // (a user of it reads A), participation B of a laboratory's account (the lab persona).
 // Each is followed from the record: applied → (A: awaiting the choice of carrier until PTS
-// records it) → confirmed → dispatched → received → withdrawn, into the archive. The bar
+// records it) → confirmed → dispatched (through «Доставки», 5.6) → received → withdrawn,
+// into the archive. The bar
 // shows the stage it is in, payment beside it; the home says what needs action — the
 // results deadline with its hour, the receipt to confirm, a document not opened — and an
 // opened document drops out of it.
@@ -166,17 +167,19 @@ try {
   await go(`/lab/p/${pidA}`);
   t("A: confirmed — its code shown, the bar at «Изпращане»", (await attr(page.locator("[data-participation-page]"), "data-state")) === "confirmed" && (await textOf(page.locator("[data-own-code]"))) === codeA && (await attr(page.locator("[data-stage-bar]"), "data-stage-bar")) === "dispatch");
 
-  // ── dispatched: a waybill on its case file; a proforma, paid ──
+  // ── dispatched through «Доставки» (5.6): a waybill; a proforma, paid ──
   await go("/dev/persona?role=manager");
   const WAYBILL = `WB-${stamp}`;
-  for (const code of [codeA]) {
-    await go(`/schemes/${S}/participants/${encodeURIComponent(code)}`);
-    const step = page.locator('form:has(input[name="ref"])');
-    await step.locator('select[name="kind"]').selectOption("items_dispatched");
-    await step.locator('input[name="ref"]').fill(WAYBILL);
-    await step.locator('button[type="submit"]').click();
-    await page.waitForSelector(`text=${WAYBILL}`);
-  }
+  const dispatch = async (pid, waybill) => {
+    await go(`/deliveries?scheme=${S}`);
+    const row = page.locator(`[data-delivery-row="${pid}"]`);
+    await row.waitFor();
+    if (!(await row.locator('[data-dispatch-form="dispatch"]').isVisible())) await row.locator("[data-dispatch-forms] summary").click();
+    await row.locator('[data-dispatch-form="dispatch"] input[name="waybill"]').fill(waybill);
+    await row.locator('[data-dispatch-form="dispatch"] button[type="submit"]').click();
+    await waitFor(async () => (await page.locator('[data-deliveries-ok="dispatch"]').count()) === 1);
+  };
+  await dispatch(pidA, WAYBILL);
   await go(`/schemes/${S}/participants/${encodeURIComponent(codeA)}`);
   const up = page.getByRole("button", { name: /Качи проформа|Upload proforma/ });
   await up.waitFor();
@@ -191,12 +194,7 @@ try {
   const codeB = (await textOf(page.locator("[data-own-code]"))).trim();
   t("B's page: its code, confirmed — the bar at «Изпращане»", !!codeB && (await attr(page.locator("[data-participation-page]"), "data-state")) === "confirmed" && (await attr(page.locator("[data-stage-bar]"), "data-stage-bar")) === "dispatch", codeB);
   await go("/dev/persona?role=manager");
-  await go(`/schemes/${S}/participants/${encodeURIComponent(codeB)}`);
-  const stepB = page.locator('form:has(input[name="ref"])');
-  await stepB.locator('select[name="kind"]').selectOption("items_dispatched");
-  await stepB.locator('input[name="ref"]').fill(`${WAYBILL}-B`);
-  await stepB.locator('button[type="submit"]').click();
-  await page.waitForSelector(`text=${WAYBILL}-B`);
+  await dispatch(pidB, `${WAYBILL}-B`);
 
   await go(`/dev/persona?role=participant&user=${uid}`);
   await go("/lab/overview");

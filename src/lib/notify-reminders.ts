@@ -10,6 +10,10 @@ import { schemeNowMs, sofiaToday } from "./clock";
 import { getReminderTemplate, isTemplateApproved, renderTemplate, templateApproval } from "./reminder-templates";
 import { noticeExists } from "./notifications";
 import { parseSchemeNumber } from "./scheme-number";
+import { deliveryOf, receiptReminderDue, receivedOtherwise, otherReceipts } from "./delivery-model";
+import { listCaseEventsForScheme } from "./case-events";
+import { holidaySet } from "./holidays";
+import { isProvisional } from "./coding-model";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The day-before reminder.
@@ -147,7 +151,62 @@ export async function raiseDueReminders(realNowMs: number = Date.now()): Promise
       report.schemesReminded.push(s.number);
     }
   }
+  report.remindersRaised += await raiseReceiptReminders(schemes, realNowMs);
   return report;
+}
+
+/** «Напомняне за протокол за получаване» (part 5.6): an object sent three working days ago
+ *  whose receipt protocol is not in — once per shipment, to that participation, from PTS's
+ *  approved template (1.8); unapproved, it waits for a person like any other notice. */
+async function raiseReceiptReminders(schemes: Scheme[], realNowMs: number): Promise<number> {
+  const running = schemes.filter((s) => s.status === "running" && s.type !== "C" && !!s.deliveries && Object.keys(s.deliveries).length);
+  if (!running.length) return 0;
+  const tpl = await getReminderTemplate("receipt.due");
+  const byTemplate = isTemplateApproved(tpl) ? templateApproval(tpl) : undefined;
+  const off = await holidaySet();
+  let raised = 0;
+  for (const s of running) {
+    const todayIso = sofiaToday(schemeNowMs(s, realNowMs));
+    // received is read as the pages read it — the latest shipment's protocol, or a signed scan
+    // or PTS's own step after it — never the status, which only moves forward: a replacement
+    // on its way is awaited again (5.6 review)
+    const events = await listCaseEventsForScheme(s.id).catch(() => []);
+    const due = (await listParticipants(s.id))
+      .filter((p) => inFinalRound(s, p) && !isProvisional(p.code))
+      .flatMap((p) => {
+        const d = deliveryOf(s, p.id);
+        if (receivedOtherwise(d, otherReceipts(s, p.code, events.filter((e) => e.code === p.code)))) return [];
+        const sh = receiptReminderDue(d, todayIso, off);
+        return sh ? [{ p, sh, stamp: `receiptDue@${p.id}:${sh.id}` }] : [];
+      })
+      .filter((x) => !s.remindedAt?.[x.stamp]);
+    if (!due.length) continue;
+    const auto = byTemplate && parseSchemeNumber(s.number) ? byTemplate : undefined;
+    const labOf = await labIdsFor(s.id, due.map((x) => x.p), "system:reminders", "system");
+    for (const { p, sh, stamp } of due) {
+      // claim it first, in the lock — of two runs only one goes on
+      let claimed = false;
+      await updateSchemeWith(s.id, (cur) => {
+        if (cur.remindedAt?.[stamp]) return {};
+        claimed = true;
+        return { remindedAt: { ...(cur.remindedAt ?? {}), [stamp]: new Date().toISOString() } };
+      });
+      if (!claimed) continue;
+      const labId = labOf.get(p.code);
+      if (!labId && !(await participationEntity(s.id, p.code, "system:reminders").catch(() => "unknown"))) continue;
+      const when = fmtSchemeDate(sh.day);
+      const text = renderTemplate(tpl, { scheme: s.number, date: when });
+      try {
+        if (await noticeExists({ kind: "receipt.due", labId, schemeId: s.id, code: p.code, bgIncludes: when })) continue;
+        await notifyOrThrow({ kind: "receipt.due", audience: "lab", labId, schemeId: s.id, code: p.code, bg: text.bg, en: text.en, href: "/lab", releasedByTemplate: auto });
+        raised++;
+      } catch (e) {
+        await updateSchemeWith(s.id, (cur) => { const rest = { ...(cur.remindedAt ?? {}) }; delete rest[stamp]; return { remindedAt: rest }; }).catch(() => null);
+        throw e;
+      }
+    }
+  }
+  return raised;
 }
 
 // Re-exported so the cron route can name the label without reaching past this

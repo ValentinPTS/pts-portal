@@ -43,7 +43,7 @@ export default async function CaseFilePage({
   params, searchParams,
 }: {
   params: Promise<{ id: string; code: string }>;
-  searchParams: Promise<{ reveal?: string; kind?: string; from?: string; void?: string }>;
+  searchParams: Promise<{ reveal?: string; kind?: string; from?: string; void?: string; step?: string }>;
 }) {
   await requireStaff(); // read gate: manager/staff/auditor only
   const { id, code: rawCode } = await params;
@@ -60,6 +60,7 @@ export default async function CaseFilePage({
   if (!coded) notFound();
 
   const { lang, tr } = await getServerT();
+  const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const canReveal = await mayNow("names.view", id); // the scheme manager and the coding expert, here (Реш. 93, 2.4)
   const revealed = canReveal && sp.reveal === "1";
   // who is behind this code only when a manager asks to see it — an opening, on record (2.3)
@@ -226,13 +227,20 @@ export default async function CaseFilePage({
       {/* add a step */}
       <h3 id="add" className="font-bold mt-6 mb-1" style={{ color: "var(--green-dark)" }}>{tr("case.addStep")}</h3>
       <p className="text-xs mb-2" style={{ color: "var(--muted)" }}>{tr("case.addHint")}</p>
+      {/* a testing scheme's object goes out through «Доставки» — the shipment on record and the participation told (5.6) */}
+      {s?.type === "T" && (
+        <p className="text-xs mb-2" data-dispatch-via-deliveries={sp.step === "dispatch" ? "refused" : "1"} style={{ color: sp.step === "dispatch" ? "#8f2f2f" : "var(--muted)" }}>
+          {sp.step === "dispatch" ? `${L("Изпращането не е записано тук.", "The dispatch was not recorded here.")} ` : ""}
+          {L("Изпращането на обекта при изпитване се записва в ", "A testing object's dispatch is recorded in ")}<Link href={`/deliveries?scheme=${encodeURIComponent(id)}`}>{L("«Доставки»", "«Deliveries»")}</Link>{L(" — там е пратката и известието до участието.", " — the shipment and the notice to the participation are there.")}
+        </p>
+      )}
       <form action={addCaseEventAction} className="grid gap-3 items-end" style={{ gridTemplateColumns: "1.4fr 1fr 1.4fr auto" }}>
         <input type="hidden" name="schemeId" value={id} />
         <input type="hidden" name="code" value={code} />
         {returnTo && <input type="hidden" name="returnTo" value={returnTo} />}
         <label className="block"><span className="block mb-0.5" style={labelStyle}>{tr("case.kind")}</span>
           <select name="kind" className={inputCls} style={inputStyle} defaultValue={preKind}>
-            {MANUAL_KINDS.map((k) => <option key={k} value={k}>{tr(`casekind.${k}`)}</option>)}
+            {MANUAL_KINDS.filter((k) => !(k === "items_dispatched" && s?.type === "T")).map((k) => <option key={k} value={k}>{tr(`casekind.${k}`)}</option>)}
           </select></label>
         <label className="block"><span className="block mb-0.5" style={labelStyle}>{tr("case.date")}</span>
           <input name="at" type="date" defaultValue={today} className={inputCls} style={inputStyle} /></label>

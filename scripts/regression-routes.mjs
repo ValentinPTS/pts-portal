@@ -28,7 +28,8 @@ export const ROUTES = [
   { file: "organizations/page.tsx", names: "never", paths: () => ["/organizations"] },
   { file: "organizations/proof/[id]/route.ts", names: "never", paths: () => ["/organizations/proof/00000000-0000-4000-8000-000000000000"] },
   { file: "batches/page.tsx", names: "never", paths: () => ["/batches"] },
-  { file: "deliveries/page.tsx", names: "never", paths: () => ["/deliveries"] },
+  // the shipments by code; the addresses to who sees names in that scheme, for dispatch (5.6, D18)
+  { file: "deliveries/page.tsx", names: "scheme", paths: (c) => ["/deliveries", `/deliveries?scheme=${c.S}`] },
   { file: "invoices/page.tsx", names: "never", paths: () => ["/invoices"] },
   { file: "files/[type]/page.tsx", names: "never", paths: () => ["/files/testing", "/files/calibration"] },
   { file: "files/[type]/f/[folderId]/page.tsx", names: "never", paths: (c) => (c.folderPath ? [c.folderPath] : []) },

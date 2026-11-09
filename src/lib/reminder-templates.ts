@@ -13,9 +13,15 @@ import { getDb, noMemoryFallback } from "./supabase";
 // §4.2: the placeholders are the scheme number and the date — never a laboratory
 // name; there is no placeholder that could carry one.
 
-export type ReminderKind = "results.due";
-export const REMINDER_KINDS: readonly ReminderKind[] = ["results.due"];
+export type ReminderKind = "results.due" | "receipt.due";
+// «receipt.due» (part 5.6; the spec's notices: «Напомняне за протокол за получаване»)
+export const REMINDER_KINDS: readonly ReminderKind[] = ["results.due", "receipt.due"];
 export const PLACEHOLDERS = ["{scheme}", "{date}"] as const;
+/** What each reminder is, as «Текстове на напомнянията» names it */
+export const REMINDER_LABEL: Record<ReminderKind, { bg: string; en: string }> = {
+  "results.due": { bg: "Ден преди срока за резултати", en: "The day before results are due" },
+  "receipt.due": { bg: "Протокол за получаване — 3 работни дни след изпращането, ако още не е подаден", en: "Receipt protocol — 3 working days after dispatch, if not in yet" },
+};
 
 export interface ReminderTemplate {
   kind: ReminderKind;
@@ -34,6 +40,11 @@ export const DEFAULT_TEMPLATES: Record<ReminderKind, { bg: string; en: string }>
   "results.due": {
     bg: "Напомняне: срокът за резултати по схема {scheme} е утре, {date}.",
     en: "Reminder: results for scheme {scheme} are due tomorrow, {date}.",
+  },
+  // {date}: the day the object was sent
+  "receipt.due": {
+    bg: "Напомняне: обектът по схема {scheme} е изпратен на {date}. Когато пристигне, попълнете протокола за получаване в портала.",
+    en: "Reminder: the object of scheme {scheme} was sent on {date}. When it arrives, fill in the receipt protocol in the portal.",
   },
 };
 

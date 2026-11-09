@@ -85,7 +85,8 @@ t("…read: every version, exactly the ones recorded; anonymise recorded; only t
 // ── the actions, the page, the export ──
 const actions = readFileSync(new URL("../src/lib/actions.ts", import.meta.url), "utf8");
 const sect = actions.slice(actions.indexOf("// ── A frozen copy per participation (plan part 4.5"));
-const fa = sect.slice(sect.indexOf("export async function freezeParticipationAction"));
+const faAt = sect.indexOf("export async function freezeParticipationAction");
+const fa = sect.slice(faAt, sect.indexOf("\nexport async function", faAt + 10) > 0 ? sect.indexOf("\nexport async function", faAt + 10) : undefined); // the action alone, not the rest of the file
 t("linking: participants.manage in ITS scheme; the participation of THIS scheme; a correction with its reason; never a name in the journal", /await requireCap\("participants\.manage", schemeId\);/.test(fa.slice(0, 500)) && /\(await listParticipants\(schemeId\)\)\.find\(\(x\) => x\.id === /.test(fa) && /reason \|\| undefined/.test(fa) && !(fa.match(/logActivity\([^;]*;/g) ?? []).some((c) => /\.(name|email|labName)\b|\$\{reason|, reason\b/.test(c)));
 const fo = sect.slice(sect.indexOf("export async function freezeOptionsAction"), sect.indexOf("export async function freezeParticipationAction"));
 t("…its choices opened only when asked, behind the same right; only active laboratories under entities not inactive, and their users", /\{\n\s*await requireCap\("participants\.manage", String\(schemeId \?\? ""\)\);/.test(fo.slice(0, 400)) && /l\.state === "active" && ents\.get\(l\.entityId\) && ents\.get\(l\.entityId\)!\.state !== "inactive"/.test(fo) && /u\.state !== "inactive" && entityIds\.has\(u\.entityId\)/.test(fo));

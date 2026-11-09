@@ -120,7 +120,11 @@ export const SCHEME_FIELDS = {
   parameters: "coded", resultTables: "coded", schedule: "coded", prices: "coded", assignedValueMethodEn: "coded", assignedValueMethodBg: "coded",
   scoresEn: "coded", scoresBg: "coded", clauses: "coded", calibration: "coded", scoring: "coded", testClock: "coded",
   formData: "coded", docActive: "coded", docReady: "coded", sentToParticipants: "coded", releasedEditions: "coded", archivedAt: "coded", archivedBy: "coded",
-  paidAt: "coded", dates: "coded", chain: "coded", remindedAt: "coded", coding: "coded",
+  paidAt: "coded", dates: "coded", chain: "coded", remindedAt: "coded", coding: "coded", deliveryMinDays: "coded",
+  // shipments and receipts by participation id; who received an object, a hand-over's
+  // receiver, remarks and a problem's words are a person's — and an entity user's account
+  // id is the same in every round: kept only in identity/ (5.6)
+  deliveries: "split",
   // a release to one user names that user (an entity user's id is the same in every round):
   // its user kept only in identity/ (5.4 review)
   releases: "split", skin: "coded", name: "coded", folderId: "coded",
@@ -216,10 +220,23 @@ export function codedScheme(s: Scheme): Record<string, unknown> {
       case "labDocs": out[k] = mapValues(s.labDocs, (slots) => mapValues(slots as Record<string, UploadedDoc>, fileMeta)); break;
       case "supersededFiles": out[k] = (s.supersededFiles ?? []).map((x) => ({ where: x.where, at: x.at, reason: x.reason, file: fileMeta(x.file) })); break;
       case "releases": out[k] = (s.releases ?? []).map(({ userId: _u, ...r }) => r); break;
+      case "deliveries": out[k] = codedDeliveries(s.deliveries); break;
     }
   }
   return out;
 }
+
+/** Delivery and receipt as the coded part holds them (5.6): what went, when, with which
+ *  waybill and documents, fit or not — never the carrier, who received it, a hand-over's
+ *  receiver, the remarks, a replacement's reason, a problem's words, or which account
+ *  entered them. */
+export const codedDeliveries = (d: Scheme["deliveries"]) => d === undefined ? undefined : Object.fromEntries(Object.entries(d).map(([pid, x]) => [pid, {
+  // the carrier is a participant's own (its courier is identity here too) — a hand-over's
+  // may be its own person: kept only in identity/ (5.6 review)
+  shipments: (x.shipments ?? []).map(({ handover, reason: _why, carrier: _c, ...sh }) => ({ ...sh, ...(handover ? { handover: { time: handover.time } } : {}) })),
+  receipts: (x.receipts ?? []).map(({ by: _b, receivedBy: _r, remarks: _m, ...r }) => r),
+  problems: (x.problems ?? []).map((pr) => ({ id: pr.id, at: pr.at, ...(pr.resolved ? { resolvedAt: pr.resolved.at } : {}) })),
+}]));
 
 /** What the identity part holds of the scheme: the identity fields, and the split ones whole. */
 export function identityScheme(s: Scheme): Record<string, unknown> {

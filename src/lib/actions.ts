@@ -73,7 +73,8 @@ import { requireParticipant, participantActor, getParticipantSession, participat
 import { inviteParticipant } from "./participant-invite";
 import { freezeParticipation, participationEntity } from "./participation-snapshots";
 import { readSelections, characteristicsOf, readRefusal, readSource, inRound, REFUSAL_CATEGORIES, STANDING_PROBLEM_TEXT, MAX_PER_CHARACTERISTIC, participationSets, selectionsOf, sameSelections, objectsNeeded, type Standing } from "./application-model";
-import { notifyParticipationRefused } from "./notify-events";
+import { notifyParticipationRefused, notifyItemsDispatched, notifyReceiptProtocol, notifyDeliveryProblem } from "./notify-events";
+import { readShipment, readReceipt, deliveryOf, openShipment, openProblems, replacementProblem, replacementCalledFor, minDaysOf, readMinDays, LIMITS as DELIVERY_LIMITS, MAX_OPEN_PROBLEMS, type Shipment, type ShipmentKind, type Deliveries } from "./delivery-model";
 import { finalListOf, splitFor, invoiceProblem, currentFinalList, inFinalRound, finalSelectionsOf, ANNOUNCEMENT_PROBLEM_TEXT, type FinalList } from "./announcement-model";
 import { readTarget, RELEASE_PROBLEM_TEXT, type TargetRelease } from "./release-model";
 import { drawCodes, drawObjects, toCode, codingProblem, objectsGiven, unfinished, sampleCodeOf, isProvisional, CODING_PROBLEM_TEXT, type CodingProblem, type CodingRecord } from "./coding-model";
@@ -2487,9 +2488,14 @@ export async function addCaseEventAction(formData: FormData): Promise<void> {
   // optional link to the portal document the event refers to — whitelist only
   const docKeyRaw = String(formData.get("docKey") ?? "").trim();
   const docKey = getDoc(docKeyRaw) ? docKeyRaw : "";
-  const back = String(formData.get("returnTo") ?? "") ||
-    `/schemes/${schemeId}/participants/${encodeURIComponent(code)}`;
+  // back only to one of this scheme's own pages — never a URL from the form (5.6)
+  const returnTo = String(formData.get("returnTo") ?? "");
+  const back = returnTo.startsWith(`/schemes/${schemeId}/`) && !returnTo.includes("//") && !/[\\\s]/.test(returnTo) ? returnTo
+    : `/schemes/${schemeId}/participants/${encodeURIComponent(code)}`;
   if (!schemeId || !code || !CASE_MANUAL_KINDS.includes(kind)) redirect(back);
+  // a testing scheme's object goes out through «Доставки» (5.6) — the shipment on record,
+  // the participation told; a step here alone would leave the two disagreeing (review)
+  if (kind === "items_dispatched" && (await getScheme(schemeId))?.type === "T") redirect(`${back}${back.includes("?") ? "&" : "?"}step=dispatch`);
   // the code must belong to this scheme (never trust the URL)
   const exists = (await listParticipants(schemeId)).some((p) => p.code === code);
   if (!exists) redirect(`/schemes/${schemeId}/participants`);
@@ -5470,4 +5476,216 @@ export async function setParticipationStandingAction(input: { schemeId: string; 
   }
   revalidatePath(`/schemes/${schemeId}/participants`);
   return { ok: true };
+}
+
+
+// ── Delivery and receipt (part 5.6; lib/delivery-model) ─────────────────────────────
+// PTS sends (capability «dispatch» in the scheme, D18): a dispatch with its waybill and
+// documents, a replacement object (only with the minimum working days left, Реш. 127), or a
+// hand-over to the participant's own courier (Реш. 154). The participant files its online
+// receipt protocol (Ф 7.3.4-1; «годен» = every listed check passed, Реш. 79) and may signal
+// a problem. A testing scheme's objects; a calibration device travels by the chain (5.7).
+// Everything appended, journalled; the participation told by its code.
+
+const DELIVERIES = (schemeId: string) => `/deliveries?scheme=${encodeURIComponent(schemeId)}`;
+const putDelivery = (s: { deliveries?: Deliveries }, pid: string, patch: (d: ReturnType<typeof deliveryOf>) => ReturnType<typeof deliveryOf>): Deliveries =>
+  ({ ...(s.deliveries ?? {}), [pid]: patch(deliveryOf(s, pid)) });
+
+export async function dispatchAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? "");
+  await requireCap("dispatch", schemeId); // in THIS scheme, by the role model (2.4; D18)
+  const pid = String(formData.get("participantId") ?? "").trim();
+  const kindRaw = String(formData.get("kind") ?? "");
+  const kind: ShipmentKind | null = kindRaw === "dispatch" || kindRaw === "replacement" || kindRaw === "handover" ? kindRaw : null;
+  const back = (q: string) => `${DELIVERIES(schemeId)}&${q}${pid ? `&p=${encodeURIComponent(pid)}` : ""}#p-${encodeURIComponent(pid)}`;
+  if (!kind) redirect(back("err=kind"));
+  const scheme = await getScheme(schemeId);
+  if (!scheme || scheme.type === "C") redirect(back("err=scheme"));
+  // the objects go while the scheme runs, to a participation going on in the round, coded
+  if (scheme!.status !== "running") redirect(back("err=state"));
+  const part = (await listParticipants(schemeId)).find((p) => p.id === pid);
+  if (!part || !inFinalRound(scheme!, part)) redirect(back("err=participation"));
+  if (isProvisional(part!.code)) redirect(back("err=uncoded"));
+  const today = sofiaToday(schemeNowMs(scheme!));
+  const d = deliveryOf(scheme!, pid);
+  if (kind !== "replacement" && d.shipments.length) redirect(back("err=twice")); // one object; a second is a replacement
+  // a replacement names the latest shipment the person saw — re-checked in the lock, so a
+  // double press or two people at once send one replacement, not two (review)
+  const seen = String(formData.get("after") ?? "");
+  if (kind === "replacement") {
+    if (!d.shipments.length) redirect(back("err=nothing"));
+    if (seen !== d.shipments[d.shipments.length - 1].id) redirect(back("err=moved"));
+    if (!replacementCalledFor(d)) redirect(back("err=fit")); // after an unfit protocol, or a problem signalled since
+    const why = replacementProblem(scheme!.type, resultsDeadline(scheme!, part!.code).at, today, minDaysOf(scheme!), await holidaySet());
+    if (why) redirect(back(`err=${why.problem}${why.left !== undefined ? `&left=${why.left}` : ""}`));
+  }
+  const read = readShipment(kind!, {
+    day: formData.get("day"), waybill: formData.get("waybill"), carrier: formData.get("carrier") ?? part!.courier, docs: formData.getAll("doc"),
+    time: formData.get("time"), receiver: formData.get("receiver"), reason: formData.get("reason"),
+  }, scheme!.lists?.shipmentDocs, today);
+  if (!read.ok) redirect(back(`err=${read.problem}`));
+  const fields = (read as Extract<typeof read, { ok: true }>).fields;
+  // who to tell, BEFORE it is recorded (2.3)
+  const tell = await labToTell(schemeId, part!.code);
+  if (!tell) redirect(back("err=reach"));
+  const actor = (await getRoleContext()).email ?? "build";
+  const shipment: Shipment = { id: randomUUID(), at: schemeNowIso(scheme!), recordedAt: new Date().toISOString(), by: actor, ...fields };
+  // in the lock, from the fresh scheme: still running; still one object unless a replacement;
+  // a replacement still called for, after the very shipment the person saw
+  let refused: string | null = null;
+  await updateSchemeWith(schemeId, (s) => {
+    if (s.status !== "running") { refused = "state"; return {}; }
+    const fresh = deliveryOf(s, pid);
+    if (kind !== "replacement" && fresh.shipments.length) { refused = "twice"; return {}; }
+    if (kind === "replacement" && (fresh.shipments[fresh.shipments.length - 1]?.id !== seen || !replacementCalledFor(fresh))) { refused = "moved"; return {}; }
+    return { deliveries: putDelivery(s, pid, (x) => ({ ...x, shipments: [...x.shipments, shipment] })) };
+  });
+  if (refused) redirect(back(`err=${refused}`));
+  const docNames = (scheme!.lists?.shipmentDocs ?? []).filter((i) => fields.docs.includes(i.id)).map((i) => i.en);
+  await addCaseEvent({
+    schemeId, code: part!.code, kind: "items_dispatched", at: fields.day,
+    ref: (fields.waybill ?? (fields.handover ? `hand-over ${fields.handover.time}` : "")).slice(0, 120),
+    // never the carrier: a participant's courier says where it is (the export keeps it with
+    // identities) — and a hand-over's may be its own person (review)
+    note: `${kind === "replacement" ? "replacement object" : kind === "handover" ? "handed to the participant's own courier" : "dispatched"}${docNames.length ? `; documents: ${docNames.join(", ")}` : ""}`.slice(0, 400),
+    recordedBy: actor, source: "auto",
+  });
+  await advanceStatusForEvent(schemeId, part!.code, "items_dispatched");
+  await notifyItemsDispatched(tell!.labId, schemeId, scheme!.number, part!.code, { kind: kind!, day: fields.day, waybill: fields.waybill, carrier: fields.carrier, time: fields.handover?.time });
+  // the carrier and a replacement's reason stay in the record — never in the journal's words (§4.2)
+  await logActivity("delivery.dispatched", { schemeId, targetCode: part!.code, subject: `shipment:${shipment.id}`, summary: `${kind === "replacement" ? "A replacement object" : kind === "handover" ? "The object handed to the participant's own courier" : "The object"} for ${part!.code} — ${fields.day}${fields.waybill ? `, waybill ${fields.waybill}` : ""}`, after: { kind, day: fields.day, waybill: fields.waybill ?? null, docs: fields.docs } });
+  revalidatePath("/deliveries");
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  redirect(back(`ok=${kind}`));
+}
+
+/** PTS marks a signalled problem resolved, with a note — the problem stays on record. */
+export async function resolveDeliveryProblemAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? "");
+  await requireCap("dispatch", schemeId);
+  const pid = String(formData.get("participantId") ?? "").trim();
+  const problemId = String(formData.get("problemId") ?? "").trim();
+  const note = String(formData.get("note") ?? "").replace(/\s+/g, " ").trim().slice(0, DELIVERY_LIMITS.note);
+  const back = (q: string) => `${DELIVERIES(schemeId)}&${q}&p=${encodeURIComponent(pid)}#p-${encodeURIComponent(pid)}`;
+  if (note.length < 3) redirect(back("err=note"));
+  const actor = (await getRoleContext()).email ?? "build";
+  const scheme = await getScheme(schemeId);
+  if (!scheme) redirect(back("err=scheme"));
+  const at = schemeNowIso(scheme!); // the round's clock (1.3)
+  let found = false;
+  await updateSchemeWith(schemeId, (s) => {
+    const d = deliveryOf(s, pid);
+    if (!d.problems.some((x) => x.id === problemId && !x.resolved)) return {};
+    found = true;
+    return { deliveries: putDelivery(s, pid, (x) => ({ ...x, problems: x.problems.map((pr) => (pr.id === problemId ? { ...pr, resolved: { at, by: actor, note } } : pr)) })) };
+  });
+  if (!found) redirect(back("err=problem"));
+  const code = (await listParticipants(schemeId)).find((p) => p.id === pid)?.code;
+  // the note stays in the record (the participant reads it) — free words never in the journal (§4.2, N4; review)
+  await logActivity("delivery.problem_resolved", { schemeId, targetCode: code, subject: `problem:${problemId}`, summary: `A delivery problem of ${code ?? "a participation"} marked resolved` });
+  revalidatePath("/deliveries");
+  redirect(back("ok=resolved"));
+}
+
+/** А16 / Реш. 127: the scheme's minimum working days for a replacement object. */
+export async function setDeliveryMinDaysAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? "");
+  await requireCap("scheme.edit", schemeId);
+  const n = readMinDays(formData.get("days"));
+  if (n === null) redirect(`${DELIVERIES(schemeId)}&err=days`);
+  const before = (await getScheme(schemeId))?.deliveryMinDays;
+  await updateSchemeWith(schemeId, () => ({ deliveryMinDays: n! }));
+  await logActivity("scheme.delivery_min_days", { schemeId, summary: `Minimum working days for a replacement object: ${before ?? "10 (default)"} → ${n}`, before: { days: before ?? null }, after: { days: n } });
+  revalidatePath("/deliveries");
+  redirect(`${DELIVERIES(schemeId)}&ok=days`);
+}
+
+// ── the participant's side ──
+/** Its own participation in the scheme — a laboratory's account or a user of its entity —
+ *  going on in the round; how it is journalled; who it is on the record (an account id). */
+async function ownGoingOn(schemeId: string, participantId: string) {
+  const ls = await getLabSession();
+  const ps = ls ? null : await getParticipantSession().catch(() => null);
+  if (!ls && !ps) return null;
+  const scheme = await getScheme(schemeId);
+  if (!scheme || !isStarted(scheme)) return null;
+  const own = ls
+    ? (await listVisibleParticipations(ls.lab.id)).some((p) => p.id === participantId && p.schemeId === schemeId)
+    : (await participationsOf(ps!)).some((p) => p.participantId === participantId && p.schemeId === schemeId);
+  if (!own) return null;
+  const part = (await listParticipants(schemeId)).find((p) => p.id === participantId);
+  if (!part || !inFinalRound(scheme, part)) return null;
+  const by = ls ? `lab:${ls.lab.id}` : `entityuser:${ps!.user.id}`;
+  const log = async (action: string, meta: { targetCode: string; subject?: string; summary: string; after?: Record<string, unknown> }) => {
+    if (ls) await logActivity(action, { schemeId, ...meta });
+    else await logAs({ kind: "lab", userId: ps!.user.id }, action, { schemeId, ...meta, after: { ...(meta.after ?? {}), by } });
+  };
+  return { scheme, part, by, log };
+}
+const ownBack = (pid: string, q: string) => `/lab/p/${encodeURIComponent(pid)}?${q}#receipt`;
+
+/** The online receipt protocol (Ф 7.3.4-1) for the shipment awaiting it. */
+export async function submitReceiptAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? "");
+  const pid = String(formData.get("participantId") ?? "").trim();
+  const mine = await ownGoingOn(schemeId, pid);
+  if (!mine) redirect("/lab");
+  const { scheme, part, by, log } = mine!;
+  if (scheme.type === "C") redirect(ownBack(pid, "e=receipt-shipment"));
+  // only while the round runs — never after the report, in a closed scheme or one not held (review)
+  if (scheme.status !== "running") redirect(ownBack(pid, "e=receipt-state"));
+  const d0 = deliveryOf(scheme, pid);
+  const posted = String(formData.get("shipmentId") ?? "");
+  // a protocol for a shipment that has one already — a second press, a stale form: refused, said so
+  if (d0.receipts.some((r) => r.shipmentId === posted)) redirect(ownBack(pid, "e=receipt-twice"));
+  const open = openShipment(d0);
+  if (!open || posted !== open.id) redirect(ownBack(pid, "e=receipt-shipment"));
+  const checks: Record<string, unknown> = {};
+  for (const i of scheme.lists?.receiptChecks ?? []) checks[i.id] = formData.get(`check_${i.id}`);
+  const read = readReceipt({ day: formData.get("day"), time: formData.get("time"), checks, undamaged: formData.get("undamaged"), remarks: formData.get("remarks"), receivedBy: formData.get("receivedBy") }, scheme.lists?.receiptChecks, sofiaToday(schemeNowMs(scheme)), open!.day);
+  if (!read.ok) redirect(ownBack(pid, `e=receipt-${read.problem}`));
+  const fields = (read as Extract<typeof read, { ok: true }>).fields;
+  const receipt = { id: randomUUID(), shipmentId: open!.id, at: schemeNowIso(scheme), by, ...fields };
+  // in the lock: the same shipment still awaits it — a second press is not a second protocol
+  let refused = false;
+  await updateSchemeWith(schemeId, (s) => {
+    const d = deliveryOf(s, pid);
+    if (openShipment(d)?.id !== open!.id) { refused = true; return {}; }
+    return { deliveries: putDelivery(s, pid, (x) => ({ ...x, receipts: [...x.receipts, receipt] })) };
+  });
+  if (refused) redirect(ownBack(pid, "e=receipt-twice"));
+  await addCaseEvent({
+    schemeId, code: part.code, kind: "receipt_confirmed", at: fields.day, ref: (open!.waybill ?? "").slice(0, 120),
+    note: `online receipt protocol ${fields.time}: ${fields.suitable ? "fit" : "NOT fit"}${fields.undamaged ? "" : " (packaging damaged)"}`,
+    recordedBy: LAB_RECORDER, source: "auto",
+  });
+  await advanceStatusForEvent(schemeId, part.code, "receipt_confirmed");
+  await notifyReceiptProtocol(schemeId, scheme.number, part.code, fields.suitable);
+  // the person's name stays in the record, out of the journal's words (§4.2, N4)
+  await log("receipt.protocol", { targetCode: part.code, subject: `receipt:${receipt.id}`, summary: `Receipt protocol of ${part.code}: ${fields.suitable ? "fit" : "NOT fit"}`, after: { shipment: open!.id, day: fields.day, time: fields.time, suitable: fields.suitable, undamaged: fields.undamaged, failed: Object.entries(fields.checks).filter(([, v]) => !v).map(([k]) => k) } });
+  revalidatePath(`/lab/p/${pid}`);
+  revalidatePath("/deliveries");
+  redirect(ownBack(pid, "ok=receipt"));
+}
+
+/** «Сигнализирай проблем» — after its object was sent, while it goes on. */
+export async function reportDeliveryProblemAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? "");
+  const pid = String(formData.get("participantId") ?? "").trim();
+  const mine = await ownGoingOn(schemeId, pid);
+  if (!mine) redirect("/lab");
+  const { scheme, part, by, log } = mine!;
+  if (scheme.status !== "running") redirect(ownBack(pid, "e=problem-state"));
+  if (!deliveryOf(scheme, pid).shipments.length) redirect(ownBack(pid, "e=problem-nothing"));
+  // a handful open at once — the next waits for PTS's answer (each one tells PTS)
+  if (openProblems(deliveryOf(scheme, pid)).length >= MAX_OPEN_PROBLEMS) redirect(ownBack(pid, "e=problem-many"));
+  const text = String(formData.get("text") ?? "").replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, " ").trim().slice(0, DELIVERY_LIMITS.problem);
+  if (text.length < 3) redirect(ownBack(pid, "e=problem-text"));
+  const problem = { id: randomUUID(), at: schemeNowIso(scheme), by, text };
+  await updateSchemeWith(schemeId, (s) => ({ deliveries: putDelivery(s, pid, (x) => ({ ...x, problems: [...x.problems, problem] })) }));
+  await notifyDeliveryProblem(schemeId, scheme.number, part.code);
+  await log("delivery.problem", { targetCode: part.code, subject: `problem:${problem.id}`, summary: `${part.code} signalled a problem with its object` });
+  revalidatePath(`/lab/p/${pid}`);
+  revalidatePath("/deliveries");
+  redirect(ownBack(pid, "ok=problem"));
 }

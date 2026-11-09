@@ -11,7 +11,9 @@ import { LAB_DOC_SLOTS } from "@/lib/doc-release";
 import { DEADLINE_LABEL, STATE_LABEL, PAYMENT_LABEL } from "@/lib/participation-state-model";
 import { deadlineZone } from "@/lib/scheme-dates";
 import { listForParticipations, withReadState } from "@/lib/notifications";
-import { labUploadDocAction } from "@/lib/actions";
+import { labUploadDocAction, submitReceiptAction, reportDeliveryProblemAction } from "@/lib/actions";
+import { deliveryOf, openShipment, RECEIPT_PROBLEM_TEXT } from "@/lib/delivery-model";
+import { schemeNowMs, sofiaToday } from "@/lib/clock";
 import { signOutLabAction } from "@/lib/auth-actions";
 import { confirmDate } from "@/lib/profile-confirm-model";
 import { getServerT } from "@/lib/i18n-server";
@@ -28,7 +30,7 @@ export const dynamic = "force-dynamic";
 // hour and zone, the documents released to it with whether they were opened, the proforma
 // and payment, the delivery and the receipt, the characteristics applied for, its notices.
 // For a laboratory's account and for a user of its legal entity — each only its own.
-export default async function ParticipationPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ e?: string }> }) {
+export default async function ParticipationPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ e?: string; ok?: string }> }) {
   const { id } = await params;
   const viewer = await participantViewer();
   if (!viewer) redirect("/lab/login");
@@ -41,9 +43,17 @@ export default async function ParticipationPage({ params, searchParams }: { para
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const T = (x: { bg: string; en: string }) => (lang === "bg" ? x.bg : x.en);
   const { scheme: s, part: p } = v;
-  const err = (await searchParams).e;
+  const sp = await searchParams;
+  const err = sp.e;
 
   const coded = !isProvisional(p.code);
+  // delivery and receipt (5.6): what was sent, the protocol awaited, the problems signalled
+  const delivery = deliveryOf(s, v.participantId);
+  const last = delivery.shipments[delivery.shipments.length - 1];
+  // the protocol awaited — not once it was received some other way (a signed scan, PTS's step), nor after the round (5.6 review)
+  const awaiting = s.type !== "C" && !v.finished && s.status === "running" && !v.receivedOtherwise ? openShipment(delivery) : null;
+  const today = sofiaToday(schemeNowMs(s));
+  const field = { border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px", fontSize: 13, fontFamily: "inherit" } as const;
   const reported = s.status === "report" || s.status === "closed";
   const officialReport = reported && !!s.uploads?.report;
   // the certificate is served to a laboratory's account (the document route); a user of the
@@ -97,7 +107,15 @@ export default async function ParticipationPage({ params, searchParams }: { para
     );
   };
 
-  const errText = err === "locked" ? L("Файлът не е приет — участието вече не приема файлове.", "The file was not taken — the participation takes no more files.") : err === "upload" ? L("Качването не бе прието — използвайте PDF/PNG/JPG до 15 MB.", "Upload not accepted — use a PDF/PNG/JPG up to 15 MB.") : "";
+  const receiptErr = err?.startsWith("receipt-") ? err.slice(8) : "";
+  const errText = err === "locked" ? L("Файлът не е приет — участието вече не приема файлове.", "The file was not taken — the participation takes no more files.")
+    : err === "upload" ? L("Качването не бе прието — използвайте PDF/PNG/JPG до 15 MB.", "Upload not accepted — use a PDF/PNG/JPG up to 15 MB.")
+    : receiptErr && Object.hasOwn(RECEIPT_PROBLEM_TEXT, receiptErr) ? `${L("Протоколът не е подаден", "The protocol was not filed")}: ${T(RECEIPT_PROBLEM_TEXT[receiptErr as keyof typeof RECEIPT_PROBLEM_TEXT])}`
+    : err === "problem-text" ? L("Опишете проблема (поне 3 знака).", "Describe the problem (3 characters at least).")
+    : err === "problem-nothing" ? L("Още нищо не е изпратено към вас.", "Nothing has been sent to you yet.")
+    : err === "problem-state" ? L("Схемата вече не приема сигнали — свържете се с PTS.", "The scheme no longer takes problems — contact PTS.")
+    : err === "problem-many" ? L("Имате няколко неотговорени сигнала — изчакайте отговора на PTS.", "You have several problems unanswered — wait for PTS's answer.") : "";
+  const okText = sp.ok === "receipt" ? L("Протоколът за получаване е подаден — PTS е уведомен.", "The receipt protocol is filed — PTS is told.") : sp.ok === "problem" ? L("Сигналът е изпратен на PTS.", "The problem is sent to PTS.") : "";
   const card = (title: string, body: React.ReactNode, attrs: Record<string, string> = {}) => (
     <section className="card" style={{ padding: 0, overflow: "hidden" }} {...attrs}>
       <h2 style={{ margin: 0, padding: "12px 16px", borderBottom: "1px solid var(--line)", fontSize: 15, fontWeight: 800 }}>{title}</h2>
@@ -135,7 +153,8 @@ export default async function ParticipationPage({ params, searchParams }: { para
           {p.sampleCode ? <>{" · "}{L("РТ обект ", "PT object ")}<b style={{ color: "var(--ink)" }}>{p.sampleCode}</b></> : null}
         </p>
         <div style={{ margin: "14px 0 18px" }}><StageBar lang={lang} type={s.type} state={v.state} payment={v.finished ? undefined : v.payment} /></div>
-        {errText && <div role="alert" style={{ background: "#fdecec", border: "1px solid #d9534f", color: "#8a1f1f", borderRadius: 10, padding: "8px 12px", marginBottom: 14, fontSize: 13 }}>{errText}</div>}
+        {errText && <div role="alert" data-page-err={err} style={{ background: "#fdecec", border: "1px solid #d9534f", color: "#8a1f1f", borderRadius: 10, padding: "8px 12px", marginBottom: 14, fontSize: 13 }}>{errText}</div>}
+        {okText && <div role="status" data-page-ok={sp.ok} style={{ background: "var(--green-soft)", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 12px", marginBottom: 14, fontSize: 13 }}>{okText}</div>}
         {v.state === "carrier" && (
           <p role="note" data-carrier-pending style={{ background: "#faf2e0", border: "1px solid #ecd9ae", borderRadius: 10, padding: "10px 12px", fontSize: 13, margin: "0 0 14px" }}>
             {L("Доставката извън ЕС и Балканите е за сметка на участника: PTS ви изпраща оферти на доставчици, вие избирате една, и PTS я записва тук. Проформата излиза след избора (Реш. 128).", "Delivery outside the EU and the Balkans is at the participant's cost: PTS sends you carriers' offers, you choose one, and PTS records it here. The proforma follows the choice (Реш. 128).")}
@@ -174,9 +193,77 @@ export default async function ParticipationPage({ params, searchParams }: { para
               <div id="receipt">
                 <div style={{ display: "flex", gap: "10px 24px", flexWrap: "wrap" }}>
                   {kv(L("Изпратен", "Dispatched"), v.dispatch ? fmtPhaseDate(v.dispatch.at) : "")}
-                  {kv(L("Куриер и товарителница", "Carrier and waybill"), [p.courier, v.dispatch?.ref].filter(Boolean).join(" · "))}
+                  {kv(L("Куриер и товарителница", "Carrier and waybill"), [last?.carrier ?? p.courier, last?.waybill ?? v.dispatch?.ref].filter(Boolean).join(" · "))}
                   {kv(L("Потвърдено получаване", "Receipt confirmed"), v.receipt ? fmtPhaseDate(v.receipt.at) : "")}
                 </div>
+                {/* what was sent, what arrived, what was signalled (5.6) */}
+                {delivery.shipments.length > 0 && (
+                  <ul data-shipments={delivery.shipments.length} style={{ listStyle: "none", margin: "10px 0 0", padding: 0, fontSize: 12.5, display: "flex", flexDirection: "column", gap: 4 }}>
+                    {delivery.shipments.map((x) => (
+                      <li key={x.id} data-shipment={x.kind}>
+                        <b>{x.kind === "handover" ? L("Предаден на вашия куриер", "Handed to your courier") : x.kind === "replacement" ? L("Заместващ обект", "Replacement object") : L("Изпратен", "Sent")}</b> {fmtPhaseDate(x.day)}
+                        {x.handover ? ` ${x.handover.time} · ${x.handover.carrier}` : ""}{x.carrier && !x.handover ? ` · ${x.carrier}` : ""}{x.waybill ? ` · ${L("товарителница", "waybill")} ${x.waybill}` : ""}
+                        {x.docs.length ? <span style={{ color: "var(--muted)" }}> · {(s.lists?.shipmentDocs ?? []).filter((i) => x.docs.includes(i.id)).map((i) => T(i)).join(", ")}</span> : null}
+                        {delivery.receipts.filter((r) => r.shipmentId === x.id).map((r) => (
+                          <div key={r.id} data-receipt={r.suitable ? "fit" : "unfit"} style={{ color: r.suitable ? "var(--green-dark)" : "#8f2f2f" }}>
+                            {L("Протокол за получаване", "Receipt protocol")} {fmtPhaseDate(r.day)} {r.time} · {r.suitable ? L("годен", "fit") : L("негоден", "not fit")}
+                            {(s.lists?.receiptChecks ?? []).filter((c) => r.checks[c.id] === false).map((c) => ` · ✗ ${T(c)}`).join("")}{!r.undamaged ? ` · ${L("нарушена опаковка", "packaging damaged")}` : ""}
+                          </div>
+                        ))}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {delivery.problems.length > 0 && (
+                  <ul data-problems={delivery.problems.length} style={{ listStyle: "none", margin: "8px 0 0", padding: 0, fontSize: 12.5 }}>
+                    {delivery.problems.map((pr) => (
+                      <li key={pr.id} data-problem-open={pr.resolved ? "0" : "1"} style={{ color: pr.resolved ? "var(--muted)" : "#8f2f2f" }}>
+                        {L("Сигнал", "Problem")} {fmtPhaseDate(pr.at.slice(0, 10))}: «{pr.text}»{pr.resolved ? ` — ${L("решен от PTS", "resolved by PTS")}: ${pr.resolved.note}` : ` — ${L("при PTS", "with PTS")}`}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {/* the online receipt protocol (Ф 7.3.4-1) for the shipment awaiting it — «годен» is every listed check passed (Реш. 79) */}
+                {awaiting && (
+                  <form action={submitReceiptAction} data-receipt-form={awaiting.id} style={{ marginTop: 12, padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 10, display: "grid", gap: 8, fontSize: 13 }}>
+                    <b>{L("Протокол за получаване (Ф 7.3.4-1)", "Receipt protocol (Ф 7.3.4-1)")}</b>
+                    <input type="hidden" name="schemeId" value={s.id} />
+                    <input type="hidden" name="participantId" value={v.participantId} />
+                    <input type="hidden" name="shipmentId" value={awaiting.id} />
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      <label style={{ display: "grid", fontSize: 12, color: "var(--muted)" }}>{L("Получен на", "Received on")}<input type="date" name="day" required max={today} defaultValue={today} style={field} /></label>
+                      <label style={{ display: "grid", fontSize: 12, color: "var(--muted)" }}>{L("Час", "Time")}<input type="time" name="time" required style={field} /></label>
+                      <label style={{ display: "grid", fontSize: 12, color: "var(--muted)", flex: 1, minWidth: 180 }}>{L("Получил (име и фамилия)", "Received by (name and surname)")}<input name="receivedBy" required maxLength={120} style={field} /></label>
+                    </div>
+                    <fieldset data-check="undamaged" style={{ border: "none", padding: 0, margin: 0 }}>
+                      <legend>{L("Опаковката е ненарушена", "The packaging is undamaged")}</legend>
+                      <label style={{ marginRight: 12 }}><input type="radio" name="undamaged" value="yes" required /> {L("да", "yes")}</label>
+                      <label><input type="radio" name="undamaged" value="no" /> {L("не", "no")}</label>
+                    </fieldset>
+                    {(s.lists?.receiptChecks ?? []).map((c) => (
+                      <fieldset key={c.id} data-check={c.id} style={{ border: "none", padding: 0, margin: 0 }}>
+                        <legend>{T(c)}</legend>
+                        <label style={{ marginRight: 12 }}><input type="radio" name={`check_${c.id}`} value="yes" required /> {L("да", "yes")}</label>
+                        <label><input type="radio" name={`check_${c.id}`} value="no" /> {L("не", "no")}</label>
+                      </fieldset>
+                    ))}
+                    <label style={{ display: "grid", fontSize: 12, color: "var(--muted)" }}>{L("Забележки, ако е необходимо", "Remarks, if necessary")}<textarea name="remarks" maxLength={1000} rows={2} style={field} /></label>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>{L("«Годен» означава само, че всички изброени проверки са минали (Реш. 79). Протоколът не се променя след подаване.", "«Fit» means only that every listed check passed (Реш. 79). The protocol is not changed once filed.")}</span>
+                    <button type="submit" className="btn btn-primary btn-sm" style={{ justifySelf: "start" }}>{L("Подай протокола", "File the protocol")}</button>
+                  </form>
+                )}
+                {/* «Сигнализирай проблем» — once something was sent, while it goes on */}
+                {delivery.shipments.length > 0 && !v.finished && s.type !== "C" && s.status === "running" && (
+                  <details style={{ marginTop: 10 }} data-problem-box>
+                    <summary style={{ cursor: "pointer", fontSize: 13, color: "#8f2f2f" }}>{L("Сигнализирай проблем", "Report a problem")}</summary>
+                    <form action={reportDeliveryProblemAction} style={{ display: "grid", gap: 6, marginTop: 6 }}>
+                      <input type="hidden" name="schemeId" value={s.id} />
+                      <input type="hidden" name="participantId" value={v.participantId} />
+                      <textarea name="text" required minLength={3} maxLength={1000} rows={3} aria-label={L("Какво не е наред с обекта или пратката", "What is wrong with the object or the shipment")} placeholder={L("Какво не е наред с обекта или пратката", "What is wrong with the object or the shipment")} style={field} />
+                      <button type="submit" className="btn btn-sm" style={{ justifySelf: "start" }}>{L("Изпрати сигнала на PTS", "Send it to PTS")}</button>
+                    </form>
+                  </details>
+                )}
                 {uploadBox("protocol", ["dispatched", "received", "draft", "submitted"].includes(v.state))}
               </div>
             ), { "data-delivery": v.dispatch ? "dispatched" : "none" })}

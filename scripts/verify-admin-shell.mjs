@@ -66,8 +66,10 @@ try {
 
   // the planned sections say what they will be and where the work is done meanwhile
   await go("/dev/persona?role=manager");
-  // («Обекти и партиди» is built since part 3.5)
-  for (const [key, part] of [["deliveries", "5.6"], ["invoices", "5.8"]]) {
+  // («Обекти и партиди» is built since part 3.5, «Доставки» since 5.6)
+  await go(HREF.deliveries);
+  t("«Доставки» is built (5.6): no longer a planned section", (await page.locator('[data-planned-section="deliveries"]').count()) === 0 && (await page.locator("[data-deliveries-schemes], [data-deliveries-scheme]").count() + (await page.getByText(/Няма започнала схема|No started scheme/).count())) > 0);
+  for (const [key, part] of [["invoices", "5.8"]]) {
     await go(HREF[key]);
     const text = await page.locator(`[data-planned-section="${key}"]`).innerText();
     t(`«${key}» says which part builds it, and links to where it is done now`, text.includes(part) && (await page.locator(`[data-planned-section="${key}"] a`).count()) === 1);

@@ -312,7 +312,9 @@ export type NotifyKind =
   | "scheme.announced"       // → lab: first announcement — the scheme runs (part 5.2)
   | "scheme.final_list"      // → lab: second announcement — its own characteristics that run and drop (part 5.2)
   | "participation.coded"    // → lab: its code, drawn at the coding act, and its objects (part 5.3)
-  | "device.moved";          // → lab: the calibration device is coming to you
+  | "device.moved"           // → lab: the calibration device is coming to you
+  | "delivery.problem"       // → provider: a participant signalled a problem with its object (part 5.6)
+  | "receipt.due";           // → lab: reminder — its receipt protocol is awaited (part 5.6, template)
 
 export interface Notification {
   id: string;
@@ -700,6 +702,12 @@ export interface Scheme {
   // The coding act (part 5.3, lib/coding-model): which provisional reference became which
   // code, and the objects drawn — appended, never changed. JSONB, no migration.
   coding?: CodingRecord[];
+  // Delivery and receipt (part 5.6, lib/delivery-model), by the participation's id —
+  // shipments, the online receipt protocols, problems signalled; appended. JSONB, no migration.
+  deliveries?: import("./delivery-model").Deliveries;
+  // А16 / Реш. 127: the minimum working days to a participant's results deadline for a
+  // replacement object (default 10, lib/delivery-model minDaysOf)
+  deliveryMinDays?: number;
   // chosen document skin (visual theme) id; absent → the built-in "Classic" skin.
   skin?: string;
   // friendly folder name shown in the explorer; absent → falls back to the title/number.

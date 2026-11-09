@@ -119,7 +119,8 @@ for (const [fn, cap] of [
   ["updateSchemeAction", "scheme.edit"], ["uploadSchemeDocAction", "scheme.edit"], ["issueEditionAction", "scheme.edit"], ["autoAssignAction", "results.process"],
 ] as const) t(`${fn}: ${cap}, in its scheme`, needs(fn, cap));
 // every exported action begins with a gate — the model's, the head's, a laboratory's
-// own session — or is one of the few named here and why
+// own session (ownGoingOn, 5.6: a laboratory's account or an entity's user, its own
+// participation going on) — or is one of the few named here and why
 const allActions = [...actions.matchAll(/^export async function (\w+)/gm)].map((m, k, all) => {
   const seg = actions.slice(m.index!, all[k + 1]?.index ?? actions.length);
   return [seg, m[1], seg.slice(seg.indexOf("{\n") + 2, seg.indexOf("{\n") + 702)] as const;
@@ -129,7 +130,7 @@ const OPEN: Record<string, string> = {
   submitLabApplicationAction: "the public application for a laboratory account",
   inviteLabAction: "a form wrapper of inviteLabByIdAction, which is gated",
 };
-const noGate = allActions.filter(([, name, head]) => !(name in OPEN) && !/await (requireCap|requireCapAnywhere|requireOneOf|requirePeopleManager|requireDocWriter|getLabSession|requireParticipant|myChainStop)\(/.test(head)).map(([, n]) => n);
+const noGate = allActions.filter(([, name, head]) => !(name in OPEN) && !/await (requireCap|requireCapAnywhere|requireOneOf|requirePeopleManager|requireDocWriter|getLabSession|requireParticipant|myChainStop|ownGoingOn)\(/.test(head)).map(([, n]) => n);
 t(`every action (${allActions.length}) starts with a gate`, allActions.length > 70 && noGate.length === 0, noGate.join());
 t("…the open ones are what they say", /export async function inviteLabAction[\s\S]{0,200}await inviteLabByIdAction\(/.test(actions));
 for (const [fn, cap] of [

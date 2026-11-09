@@ -157,17 +157,23 @@ export interface StateInput {
   events: readonly { kind: CaseEventKind }[];
   /** the participation's country (ISO alpha-2), when the reader may know it */
   country?: string;
+  /** a testing scheme's delivery record (5.6, lib/delivery-model deliveryProgress), when it
+   *  has shipments: the object sent — and received only with the LATEST shipment's protocol
+   *  (or received otherwise), so a replacement on its way is «изпратено» again */
+  delivery?: { dispatched: boolean; received: boolean } | null;
 }
 
 /** What the record says of one participation. A step counts when its case event is
  *  recorded OR the status reached it (the event wins — a recorded step shows even if the
  *  status write failed); for a calibration scheme also when the chain says so. */
-export function stateFacts({ scheme, part, events, country }: StateInput): StateFacts {
+export function stateFacts({ scheme, part, events, country, delivery }: StateInput): StateFacts {
   const has = (k: CaseEventKind) => events.some((e) => e.kind === k);
   const chain: SchemeChain | undefined = scheme.type === "C" ? scheme.chain : undefined;
   const cs = chain ? labState(chain, part.code) : "not-in-chain";
-  const received = has("receipt_confirmed") || reached(part.status, "received") || cs === "holding" || cs === "done";
-  const dispatched = received || has("items_dispatched") || reached(part.status, "dispatched") || (!!chain && isIncomingFor(chain, part.code));
+  // the delivery record speaks for the object once it has a shipment (5.6 review): the case
+  // file and the status only move forward, a replacement sends it back to «изпратено»
+  const received = delivery ? delivery.received : has("receipt_confirmed") || reached(part.status, "received") || cs === "holding" || cs === "done";
+  const dispatched = received || (delivery ? delivery.dispatched : has("items_dispatched") || reached(part.status, "dispatched") || (!!chain && isIncomingFor(chain, part.code)));
   const submitted = has("results_returned") || reached(part.status, "submitted") || !!resultsSubmittedAt(scheme, part.code, part.status);
   return {
     standing: part.standing?.state,
