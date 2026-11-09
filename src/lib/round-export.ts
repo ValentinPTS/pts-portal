@@ -121,6 +121,8 @@ export const SCHEME_FIELDS = {
   scoresEn: "coded", scoresBg: "coded", clauses: "coded", calibration: "coded", scoring: "coded", testClock: "coded",
   formData: "coded", docActive: "coded", docReady: "coded", sentToParticipants: "coded", releasedEditions: "coded", archivedAt: "coded", archivedBy: "coded",
   paidAt: "coded", dates: "coded", chain: "coded", remindedAt: "coded", coding: "coded", deliveryMinDays: "coded",
+  // the reference laboratory's values per point (5.7) — the device's, no participant's
+  referenceValues: "coded",
   // shipments and receipts by participation id; who received an object, a hand-over's
   // receiver, remarks and a problem's words are a person's — and an entity user's account
   // id is the same in every round: kept only in identity/ (5.6)

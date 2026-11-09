@@ -135,7 +135,7 @@ export type Frozen =
 const NOT_IN_DOCUMENTS = new Set<string>([
   "sentToParticipants", "releasedEditions", "testClock", "chain", "remindedAt", "certificates", "labUploads", "labDocs",
   "applications", "supersededFiles", "archivedAt", "archivedBy", "paidAt", "docReady", "dates", "status", "folderId",
-  "docs", "composed", "formData", "docActive", "uploads", "lifecycle", "amendments", "extensions", "batches", "characteristicVersions", "characteristicSeq", "pointSeq", "staticReminder", "commercial", "lists", "period", "deliveries", "deliveryMinDays",
+  "docs", "composed", "formData", "docActive", "uploads", "lifecycle", "amendments", "extensions", "batches", "characteristicVersions", "characteristicSeq", "pointSeq", "staticReminder", "commercial", "lists", "period", "deliveries", "deliveryMinDays", "referenceValues",
   // the folder's display name — no document prints it
   "name",
   // the releases to one participation or one user (5.4) and the coding act's record (5.3):

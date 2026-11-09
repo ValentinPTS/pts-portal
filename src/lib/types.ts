@@ -708,6 +708,10 @@ export interface Scheme {
   // А16 / Реш. 127: the minimum working days to a participant's results deadline for a
   // replacement object (default 10, lib/delivery-model minDaysOf)
   deliveryMinDays?: number;
+  // A calibration scheme's reference values per point (part 5.7, lib/reference-values-model)
+  // — x_ref before and after, u_calibration, u_other, k, for 2.0's «Calibration» sheet (D3);
+  // each save a version, appended. JSONB, no migration.
+  referenceValues?: import("./reference-values-model").ReferenceValues;
   // chosen document skin (visual theme) id; absent → the built-in "Classic" skin.
   skin?: string;
   // friendly folder name shown in the explorer; absent → falls back to the title/number.

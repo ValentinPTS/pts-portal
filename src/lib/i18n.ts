@@ -607,6 +607,7 @@ const DICT: Record<string, Entry> = {
   "act.delivery.problem": { bg: "Сигнал за проблем с обекта", en: "Object problem signalled" },
   "act.delivery.problem_resolved": { bg: "Сигналът за обекта е решен", en: "Object problem resolved" },
   "act.receipt.protocol": { bg: "Протокол за получаване", en: "Receipt protocol" },
+  "act.scheme.reference_values": { bg: "Референтни стойности по точки", en: "Reference values per point" },
   "act.scheme.delivery_min_days": { bg: "Минимален брой работни дни (заместващ обект)", en: "Minimum working days (replacement object)" },
   "act.message.sent": { bg: "Изпратен имейл до лаборатория", en: "E-mail to a laboratory sent" },
   "act.message.failed": { bg: "Неизпратен имейл до лаборатория", en: "E-mail to a laboratory not sent" },

@@ -24,11 +24,20 @@ const go = (path) => page.goto(BASE + path, { waitUntil: "domcontentloaded", tim
 const textOf = async (loc) => ((await loc.count()) ? await loc.innerText() : "");
 const attr = async (loc, a) => ((await loc.count()) ? await loc.first().getAttribute(a) : null);
 const waitFor = async (fn, tries = 40) => { for (let i = 0; i < tries; i++) { if (await fn().catch(() => false)) return true; await page.waitForTimeout(400); } return false; };
+// a form posted: by the time the page is hydrated its server action navigates in place —
+// so the address is watched, then the page loaded afresh to read what the server says now
+const submit = async (pg, button, re) => {
+  await button.click();
+  for (let i = 0; i < 225 && !re.test(pg.url()); i++) await pg.waitForTimeout(400);
+  if (!re.test(pg.url())) throw new Error(`no ${re} after the submit: ${pg.url()}`);
+  await pg.goto(pg.url(), { waitUntil: "domcontentloaded", timeout: 90000 });
+};
 page.on("dialog", async (d) => { await d.accept(d.type() === "prompt" ? "" : undefined); });
 const stamp = Date.now() % 100000;
 const NAME_A = `Доставка А ${stamp}`;
 const PDF = (w) => Buffer.from(`%PDF-1.4\n% ${w} ${stamp}\n%%EOF\n`);
-const day = (n) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+// a day in Bulgaria, as the portal counts it — never UTC's, a day behind just after midnight
+const day = (n) => new Date(Date.now() + n * 86_400_000).toLocaleDateString("sv-SE", { timeZone: "Europe/Sofia" });
 
 try {
   await go("/dev/persona?role=manager");
@@ -40,7 +49,7 @@ try {
   for (let i = 0; i < 20 && !(await dialog.isVisible().catch(() => false)); i++) { await page.getByRole("button", { name: /Нова схема|New scheme/ }).first().click(); await page.waitForTimeout(500); }
   await dialog.locator('select[name="sample"]').selectOption("aggregates");
   await dialog.locator('input[name="name"]').fill(`Доставки ${stamp}`);
-  await Promise.all([page.waitForURL(/\/schemes\/[^/]+$/, { timeout: 90000 }), dialog.getByRole("button", { name: /Създай проект|Create project/ }).click()]);
+  await submit(page, dialog.getByRole("button", { name: /Създай проект|Create project/ }), /\/schemes\/[^/]+$/);
   const S = new URL(page.url()).pathname.split("/").pop();
   const rd = page.locator('[data-date-key="resultsDue"]');
   for (let i = 0; i < 30 && !(await rd.locator('input[type="time"]').isEnabled()); i++) { await rd.locator('input[type="date"]').fill(""); await rd.locator('input[type="date"]').fill(day(40)); await page.waitForTimeout(400); }
@@ -194,7 +203,7 @@ try {
   // a day before the object left: refused (review)
   await fill(rf, day(-2), ["yes", "no"]);
   await rf.evaluate((f) => f.querySelector('input[name="day"]').removeAttribute("max"));
-  await Promise.all([page.waitForURL(/e=receipt-before/, { timeout: 90000 }), rf.locator('button[type="submit"]').click()]);
+  await submit(page, rf.locator('button[type="submit"]'), /e=receipt-before/);
   t("…a day of receipt before the dispatch: refused", (await attr(page.locator("[data-page-err]"), "data-page-err")) === "receipt-before");
   // a second tab with the same form, kept open: its protocol after the first is refused (review)
   const page2 = await page.context().newPage();
@@ -203,8 +212,8 @@ try {
   await fill(rf2stale, day(0), ["yes", "yes"]);
   await go(`/lab/p/${pidB}`);
   await fill(page.locator("[data-receipt-form]"), day(0), ["yes", "no"]);
-  await Promise.all([page.waitForURL(/ok=receipt/, { timeout: 90000 }), page.locator("[data-receipt-form] button[type='submit']").click()]);
-  await Promise.all([page2.waitForURL(/e=receipt-twice/, { timeout: 90000 }), rf2stale.locator('button[type="submit"]').click()]);
+  await submit(page, page.locator("[data-receipt-form] button[type='submit']"), /ok=receipt/);
+  await submit(page2, rf2stale.locator('button[type="submit"]'), /e=receipt-twice/);
   t("…a second protocol for the same shipment, from a stale form: refused — one protocol", /e=receipt-twice/.test(page2.url()));
   await page2.close();
   await go(`/lab/p/${pidB}?ok=receipt`);
@@ -246,11 +255,11 @@ try {
   await rf2.locator('input[name="receivedBy"]').fill(`Мария ${stamp}`);
   await rf2.locator('input[name="undamaged"][value="yes"]').check();
   for (const id of checkIds) await rf2.locator(`input[name="check_${id}"][value="yes"]`).check();
-  await Promise.all([page.waitForURL(/ok=receipt/, { timeout: 90000 }), rf2.locator('button[type="submit"]').click()]);
+  await submit(page, rf2.locator('button[type="submit"]'), /ok=receipt/);
   t("…every check passed: «годен»", (await page.locator('[data-receipt="fit"]').count()) === 1);
   await page.locator("[data-problem-box] summary").click();
   await page.locator('[data-problem-box] textarea[name="text"]').fill(`Липсва етикет на кутия 2 (${stamp})`);
-  await Promise.all([page.waitForURL(/ok=problem/, { timeout: 90000 }), page.locator('[data-problem-box] button[type="submit"]').click()]);
+  await submit(page, page.locator('[data-problem-box] button[type="submit"]'), /ok=problem/);
   t("…a problem signalled — with PTS", (await page.locator('[data-problem-open="1"]').count()) === 1);
 
   // the laboratory's account cannot reach A — the entity's (only its own)
@@ -263,7 +272,7 @@ try {
   const rfA = page.locator("[data-receipt-form]");
   t("A (an entity's user): handed to its courier — the protocol awaited", (await page.locator("[data-participation-page]").getAttribute("data-state")) === "dispatched" && (await rfA.count()) === 1);
   await fill(rfA, day(0), ["yes", "yes"]);
-  await Promise.all([page.waitForURL(/ok=receipt/, { timeout: 90000 }), rfA.locator('button[type="submit"]').click()]);
+  await submit(page, rfA.locator('button[type="submit"]'), /ok=receipt/);
   t("…filed by the entity's user: fit, received", (await page.locator('[data-receipt="fit"]').count()) === 1 && (await page.locator("[data-participation-page]").getAttribute("data-state")) === "received");
 
   // ── PTS: the problem, resolved; the record kept ──

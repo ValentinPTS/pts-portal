@@ -29,7 +29,8 @@ page.on("dialog", async (d) => { await d.accept(d.type() === "prompt" ? "" : und
 const stamp = Date.now() % 100000;
 const ENT = `Участие ${stamp} Ltd.`, LAB = `Лаб. участие ${stamp}`, USER = `Пробен Потребител ${stamp}`, NAME_A = `Участие А ${stamp}`;
 const PDF = (w) => Buffer.from(`%PDF-1.4\n% ${w} ${stamp}\n%%EOF\n`);
-const day = (n) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+// a day in Bulgaria, as the portal counts it — never UTC's, a day behind just after midnight
+const day = (n) => new Date(Date.now() + n * 86_400_000).toLocaleDateString("sv-SE", { timeZone: "Europe/Sofia" });
 
 try {
   await go("/dev/persona?role=manager");

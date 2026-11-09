@@ -100,7 +100,8 @@ t("no page or action is gated by the earlier roles any more", stale.length === 0
 // (a thin handler that hands the request to a local function — `serve`, which the
 // journal's download wrappers use, 1.9 — is gated by that function)
 const handlers: { f: string; name: string; body: string; locals: Map<string, string> }[] = [];
-const GATED = /(await requireCap\("[a-z.]+", id\)|if \(!\(await mayNow\("[a-z.]+", id\)\)\) return new Response)/;
+// requireOneOf: one of several capabilities, in THIS scheme (the reference values, 5.7)
+const GATED = /(await requireCap\("[a-z.]+", id\)|await requireOneOf\(\[(?:"[a-z.]+"(?:, )?)+\], id\)|if \(!\(await mayNow\("[a-z.]+", id\)\)\) return new Response)/;
 for (const f of files.filter((x) => /src\/app\/schemes\/\[id\]\//.test(x))) {
   const s = src(f);
   const at = [...s.matchAll(/(export (?:default )?)?async function (\w+)/g)].map((m) => ({ i: m.index!, exported: !!m[1], name: m[2] }));

@@ -11,6 +11,7 @@ import ExplorerShell from "@/components/ExplorerShell";
 import SchemeDocuments, { type DocStageView, type DocSource, type DocRow } from "@/components/SchemeDocuments";
 import SchemeDates from "@/components/SchemeDates";
 import SchemeChainPanel from "@/components/SchemeChainPanel";
+import { pointKeys, currentRows, missingFor2 } from "@/lib/reference-values-model";
 import SchemeProcessing, { type DesignationView } from "@/components/SchemeProcessing";
 import { designationStatus, listDesignations, processingCandidates, type ProcessingDesignation } from "@/lib/processing-roles";
 import { listStaff } from "@/lib/staff";
@@ -136,6 +137,10 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
   };
   // the second announcement of the CURRENT run (a step back and a new first start a new one)
   const announced2 = !!currentSecondAnnouncement(s);
+  // a calibration's reference values per point (5.7): what 2.0 still lacks; who may open them
+  const refMissing = type === "C" ? missingFor2(pointKeys(s.calibration), currentRows(s.referenceValues)) : null;
+  const refGap = refMissing && (refMissing.before || refMissing.after || refMissing.uCal) ? refMissing : null;
+  const canReference = type === "C" && ((await mayNow("results.read", id)) || (await mayNow("scheme.edit", id)) || (await mayNow("results.process", id)));
   // the first announcement against the scheme's minimum — below it, a warning, and the
   // count kept with the act (5.2; Реш. 129: PTS decides — «не се състои» is its act)
   const belowMin = inRoundNow.length < s.minParticipants;
@@ -167,7 +172,10 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
           : a === "announce" && belowMin
           ? L(`В кръга са ${inRoundNow.length} участия — под минималния брой на схемата (${s.minParticipants}). По Реш. 129 такава схема не се състои. Ако все пак се провежда, това се записва с броя. Продължаваме?`, `${inRoundNow.length} participations are in the round — below the scheme's minimum (${s.minParticipants}). By Реш. 129 such a scheme is not held. If it runs all the same, that is recorded with the count. Go ahead?`)
           : CONFIRM[a][lg === "bg" ? 0 : 1],
-        warn: a === "announce" && belowMin ? L(`под минималния брой: ${inRoundNow.length} от ${s.minParticipants} участия в кръга`, `below the minimum: ${inRoundNow.length} of ${s.minParticipants} participations in the round`) : undefined,
+        warn: a === "announce" && belowMin ? L(`под минималния брой: ${inRoundNow.length} от ${s.minParticipants} участия в кръга`, `below the minimum: ${inRoundNow.length} of ${s.minParticipants} participations in the round`)
+          // a calibration's reference values not all in for 2.0 (5.7) — a warning, PTS decides
+          : a === "process" && refGap ? L(`референтните стойности не са пълни за 2.0: преди — ${refGap.before}, след — ${refGap.after}, u (калибриране) — ${refGap.uCal} точки`, `the reference values are not complete for 2.0: before — ${refGap.before}, after — ${refGap.after}, u (calibration) — ${refGap.uCal} points`)
+          : undefined,
         blocked: p ? ACT_PROBLEM_TEXT[p][lg] : a === "process" && uncodedOnList ? CODING_PROBLEM_TEXT.uncoded[lg] : undefined,
         danger: a === "not_held" || a === "back",
       };
@@ -331,6 +339,13 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
 
       {/* the round's movable clock — the test environment only (1.3) */}
       {isTestEnvironment() && <SchemeTestClock schemeId={id} lang={lang} offsetMs={clockOffsetMs(s)} />}
+
+      {/* the reference values per point, before and after the participants (5.7) */}
+      {type === "C" && canReference && (
+        <div className="mt-3 text-sm" data-reference-link>
+          <Link href={`/schemes/${id}/reference`} className="btn btn-sm">{lang === "bg" ? "Референтни стойности по точки" : "Reference values per point"}{s.referenceValues?.versions?.length ? ` · ${lang === "bg" ? "версия" : "version"} ${s.referenceValues.versions.length}` : ""}</Link>
+        </div>
+      )}
 
       {/* the calibration chain — the only screen that sees the whole order */}
       {type === "C" && (

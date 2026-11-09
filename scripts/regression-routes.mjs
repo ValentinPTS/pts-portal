@@ -52,6 +52,8 @@ export const ROUTES = [
   // ── a scheme ──
   { file: "schemes/[id]/page.tsx", names: "scheme", paths: (c) => [`/schemes/${c.S}`] },
   { file: "schemes/[id]/edit/page.tsx", names: "never", paths: (c) => [`/schemes/${c.S}/edit`] },
+  // the reference values per point (5.7) — the device's numbers, no participant's
+  { file: "schemes/[id]/reference/page.tsx", names: "never", paths: (c) => [`/schemes/${c.S}/reference`] },
   { file: "schemes/[id]/participants/page.tsx", names: "scheme", paths: (c) => [`/schemes/${c.S}/participants`] },
   // …and with the reveal asked for: the case file shows names only on request (0.1)
   { file: "schemes/[id]/participants/[code]/page.tsx", names: "scheme", paths: (c) => [`/schemes/${c.S}/participants/${encodeURIComponent(c.code)}`, `/schemes/${c.S}/participants/${encodeURIComponent(c.code)}?reveal=1`] },

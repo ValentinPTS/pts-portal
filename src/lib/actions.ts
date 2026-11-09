@@ -79,6 +79,7 @@ import { finalListOf, splitFor, invoiceProblem, currentFinalList, inFinalRound, 
 import { readTarget, RELEASE_PROBLEM_TEXT, type TargetRelease } from "./release-model";
 import { drawCodes, drawObjects, toCode, codingProblem, objectsGiven, unfinished, sampleCodeOf, isProvisional, CODING_PROBLEM_TEXT, type CodingProblem, type CodingRecord } from "./coding-model";
 import { commitCoding } from "./coding-store";
+import { pointKeys, pointsReady, fingerprint, orphans, readReferenceTable, kNeedsReason, currentRows, sameRow, sameRows, type ReferenceRow } from "./reference-values-model";
 import { numbersTaken, codeMoment, MAX_LAB_NUMBER } from "./code-rule";
 import { characteristicLabel } from "./characteristics-model";
 import { changedOnly, readShown, CONFLICT_TEXT } from "./form-merge";
@@ -5688,4 +5689,66 @@ export async function reportDeliveryProblemAction(formData: FormData): Promise<v
   revalidatePath(`/lab/p/${pid}`);
   revalidatePath("/deliveries");
   redirect(ownBack(pid, "ok=problem"));
+}
+
+
+// ── The reference values per point (part 5.7; Zadanie «Приписана и референтна стойност»;
+// D3: 2.0's «Calibration» sheet) ────────────────────────────────────────────────────
+// The scheme manager, or who processes the results, records per calibration point the
+// reference laboratory's error before the first participant and after the last, with
+// u_calibration, u_other and k. Each save a version — the whole table, who, when — appended,
+// against the version and the points the person's form was drawn for (the store's lock — one
+// server instance, as every scheme write). From the draft (the first reference calibration is
+// stage 5) until the report. A typo returns the table as typed, the field named (review).
+const REFERENCE_OPEN = (st: string) => st === "draft" || st === "open" || st === "running" || st === "processing";
+
+export type ReferenceSaveState = { error?: string; problem?: { key: string; field: string; why: string }; values?: Record<string, string>; kReason?: string; n?: number } | null;
+
+export async function saveReferenceValuesAction(_prev: ReferenceSaveState, formData: FormData): Promise<ReferenceSaveState> {
+  const schemeId = String(formData.get("schemeId") ?? "");
+  await requireOneOf(["scheme.edit", "results.process"], schemeId);
+  const back = (q: string) => `/schemes/${encodeURIComponent(schemeId)}/reference?${q}`;
+  // what was typed — handed back on a refusal, so nothing is lost
+  const typed = Object.fromEntries([...formData.entries()].filter(([k, v]) => /^(xBefore|xAfter|uCal|uOther|k)__/.test(k) && typeof v === "string").map(([k, v]) => [k, String(v).slice(0, 40)]));
+  const kReason = String(formData.get("kReason") ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
+  const refuse = (error: string, problem?: { key: string; field: string; why: string }): ReferenceSaveState => ({ error, problem, values: typed, kReason, n: Date.now() });
+  const scheme = await getScheme(schemeId);
+  if (!scheme || scheme.type !== "C") return refuse("scheme");
+  if (!REFERENCE_OPEN(scheme.status)) return refuse("state");
+  if (!pointsReady(scheme.calibration)) return refuse("ids");
+  const keys = pointKeys(scheme.calibration);
+  const seen = Number(formData.get("version"));
+  const fp = String(formData.get("fp") ?? "");
+  const read = readReferenceTable((n) => formData.get(n), keys);
+  if (!read.ok) return refuse("value", (read as Extract<typeof read, { ok: false }>).problem);
+  const typedRows = (read as Extract<typeof read, { ok: true }>).rows;
+  if (kNeedsReason(typedRows) && kReason.length < 3) return refuse("kreason");
+  const actor = (await getRoleContext()).email ?? "build";
+  const res: { out: "ok" | "same" | "moved" | "state"; prev: Record<string, ReferenceRow>; rows: Record<string, ReferenceRow>; no: number } = { out: "ok", prev: {}, rows: {}, no: 0 };
+  await updateSchemeWith(schemeId, (s) => {
+    if (!REFERENCE_OPEN(s.status)) { res.out = "state"; return {}; }
+    const versions = s.referenceValues?.versions ?? [];
+    // the version AND the points the form was drawn for — else the keys could mean other points
+    if (!Number.isInteger(seen) || versions.length !== seen || fingerprint(pointKeys(s.calibration)) !== fp) { res.out = "moved"; return {}; }
+    res.prev = currentRows(s.referenceValues);
+    // values under keys the scheme no longer has stay — never dropped by a save (review)
+    const kept = Object.fromEntries(orphans(res.prev, pointKeys(s.calibration)).map((k) => [k, res.prev[k]]));
+    res.rows = { ...kept, ...typedRows };
+    if (sameRows(res.prev, res.rows) && (versions[versions.length - 1]?.kReason ?? "") === (kNeedsReason(res.rows) ? kReason : "")) { res.out = "same"; return {}; }
+    res.no = versions.length + 1;
+    return { referenceValues: { versions: [...versions, { at: schemeNowIso(s), by: actor, rows: res.rows, ...(kNeedsReason(res.rows) ? { kReason } : {}) }] } };
+  });
+  if (res.out === "state" || res.out === "moved") return refuse(res.out);
+  if (res.out === "same") redirect(back("ok=same"));
+  const { prev, rows, no } = res;
+  // the points that changed, field by field (the database re-sorts a row's keys — review)
+  const changed = [...new Set([...Object.keys(prev), ...Object.keys(rows)])].filter((k) => !sameRow(prev[k], rows[k]));
+  await logActivity("scheme.reference_values", {
+    schemeId, subject: `reference:v${no}`,
+    summary: `Reference values per point: version ${no} — ${changed.length} point(s) changed`,
+    before: Object.fromEntries(changed.map((k) => [k, prev[k] ?? null])), after: Object.fromEntries(changed.map((k) => [k, rows[k] ?? null])),
+  });
+  revalidatePath(`/schemes/${schemeId}/reference`);
+  revalidatePath(`/schemes/${schemeId}`);
+  redirect(back("ok=1"));
 }
