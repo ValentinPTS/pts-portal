@@ -611,6 +611,8 @@ const DICT: Record<string, Entry> = {
   "act.doc.acknowledged": { bg: "Потвърдено запознаване с документ", en: "Document acknowledged" },
   "act.declaration.signed": { bg: "Подписана декларация Ф 4.2-2", en: "Declaration F 4.2-2 signed" },
   "act.scheme.ack": { bg: "Изисква потвърждение — настройка", en: "Asks for acknowledgement — setting" },
+  // 5.10 — one-way messages (Реш. 116)
+  "act.message.oneway": { bg: "Еднопосочно съобщение от PTS", en: "One-way message from PTS" },
   "act.scheme.reference_values": { bg: "Референтни стойности по точки", en: "Reference values per point" },
   "act.scheme.delivery_min_days": { bg: "Минимален брой работни дни (заместващ обект)", en: "Minimum working days (replacement object)" },
   "act.message.sent": { bg: "Изпратен имейл до лаборатория", en: "E-mail to a laboratory sent" },

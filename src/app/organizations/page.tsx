@@ -15,14 +15,20 @@ import { latestOutcomeByEntity } from "@/lib/sent-messages";
 import ResendNoticeButton from "@/components/ResendNoticeButton";
 import EraseEntityForm from "@/components/EraseEntityForm";
 import { canManagePeople } from "@/lib/roles";
+import MessageComposer from "@/components/MessageComposer";
+import { sendEntityMessageAction } from "@/lib/actions";
+import { listEntityMessages } from "@/lib/notifications";
+import { fmtMoment } from "@/lib/scheme-dates";
+import { messageBody } from "@/lib/messages-model";
 
 // «Организации и лаборатории» (plan part 2.7; the legal entities built in 4.1; the
 // laboratories and their users come in 4.2–4.3). The people of the laboratories —
 // labs.manage (2.4). Every opening of the entities is on record (lib/entities).
 export const dynamic = "force-dynamic";
 
-export default async function OrganizationsPage() {
+export default async function OrganizationsPage({ searchParams }: { searchParams: Promise<{ entity?: string; msg?: string }> }) {
   await requireSection("organizations");
+  const sp = await searchParams;
   const { lang } = await getServerT();
   const lg: "bg" | "en" = lang === "bg" ? "bg" : "en";
   const L = (bg: string, en: string) => (lg === "bg" ? bg : en);
@@ -38,6 +44,9 @@ export default async function OrganizationsPage() {
   const notices = entities.some((e) => e.confirmedAt) ? await latestOutcomeByEntity("profile.confirmed") : new Map<string, string>();
   // the invitation, as the person sees it before «Изпрати» (1.8; 4.4)
   const invite = (({ subject, body, key }) => ({ subject: testSubject(subject), body, key }))(invitePreview());
+  // 5.10: the one-way messages to each organisation — its history (the notices that name it)
+  const sentTo = new Map<string, Awaited<ReturnType<typeof listEntityMessages>>>();
+  for (const n of entities.length ? await listEntityMessages().catch(() => []) : []) sentTo.set(n.entityId!, [...(sentTo.get(n.entityId!) ?? []), n]);
   return (
     <div>
       <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>{L("Юридически лица", "Legal entities")}</h1>
@@ -96,6 +105,16 @@ export default async function OrganizationsPage() {
               {e.hasParticipations
                 ? <p className="text-xs mt-3" data-kept-for-rounds style={{ color: "var(--muted)" }}>{L("Има участия — профилът се пази: данните му са в записите на кръговете (Задание §10).", "It has participations — the profile is kept: its data is in its rounds' records (Zadanie §10).")}</p>
                 : managesPeople && <EraseEntityForm lang={lg} entityId={e.id} />}
+              {/* 5.10: a one-way message to this organisation (Реш. 116) — not to an inactive one */}
+              {e.state !== "inactive" && (
+                <details className="mt-3" data-entity-message={e.id} open={sp.entity === e.id || undefined}>
+                  <summary className="text-sm" style={{ cursor: "pointer", fontWeight: 600 }}>{L("Съобщение до организацията", "Message to the organisation")}{sentTo.get(e.id)?.length ? ` (${sentTo.get(e.id)!.length})` : ""}</summary>
+                  <MessageComposer action={sendEntityMessageAction} hidden={{ entityId: e.id }} lang={lg} anchor={`message-${e.id}`} warn={false}
+                    title={L("Съобщение до организацията", "Message to the organisation")} to={L("до всички потребители на организацията, които получават известията", "to every user of the organisation who receives the notices")}
+                    answer={sp.entity === e.id ? sp.msg : undefined}
+                    history={(sentTo.get(e.id) ?? []).map((n) => ({ id: n.id, at: fmtMoment(n.createdAt), to: L("до организацията", "to the organisation"), bg: messageBody(n.bg, "bg"), en: messageBody(n.en, "en") }))} />
+                </details>
+              )}
               <EntityForms lang={lg} entity={{ id: e.id, name: e.name, country: e.country, eik: e.eik, vat: e.vat, correspondenceAddress: e.correspondenceAddress, officialEmail: e.officialEmail, mol: e.mol, language: e.language, state: e.state, viesStatus: e.vies?.status, manual: ch.manual, registry: ch.registry, hasProof: !!e.proofPath }} />
             </div>
           );

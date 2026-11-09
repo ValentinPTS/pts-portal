@@ -73,12 +73,13 @@ import { requireParticipant, participantActor, getParticipantSession, participat
 import { inviteParticipant } from "./participant-invite";
 import { freezeParticipation, participationEntity } from "./participation-snapshots";
 import { readSelections, characteristicsOf, readRefusal, readSource, inRound, REFUSAL_CATEGORIES, STANDING_PROBLEM_TEXT, MAX_PER_CHARACTERISTIC, participationSets, selectionsOf, sameSelections, objectsNeeded, type Standing } from "./application-model";
-import { notifyParticipationRefused, notifyItemsDispatched, notifyReceiptProtocol, notifyDeliveryProblem } from "./notify-events";
+import { notifyParticipationRefused, notifyItemsDispatched, notifyReceiptProtocol, notifyDeliveryProblem, notifyMessage } from "./notify-events";
 import { readDocNumber, invoiceSlotProblem, INVOICE_PROBLEM_TEXT } from "./invoice-model";
 import { readShipment, readReceipt, deliveryOf, openShipment, openProblems, replacementProblem, replacementCalledFor, minDaysOf, readMinDays, LIMITS as DELIVERY_LIMITS, MAX_OPEN_PROBLEMS, type Shipment, type ShipmentKind, type Deliveries } from "./delivery-model";
 import { finalListOf, splitFor, invoiceProblem, currentFinalList, inFinalRound, finalSelectionsOf, ANNOUNCEMENT_PROBLEM_TEXT, type FinalList } from "./announcement-model";
 import { readTarget, RELEASE_PROBLEM_TEXT, releaseFor, type TargetRelease } from "./release-model";
 import { ackRequiredFor, ackSettable, ackOf, kindOf, readAckForm, type Acknowledgement, type AckProblem } from "./ack-model";
+import { readMessage, messageBody, type SchemeMessage } from "./messages-model";
 import { drawCodes, drawObjects, toCode, codingProblem, objectsGiven, unfinished, sampleCodeOf, isProvisional, CODING_PROBLEM_TEXT, type CodingProblem, type CodingRecord } from "./coding-model";
 import { commitCoding } from "./coding-store";
 import { pointKeys, pointsReady, fingerprint, orphans, readReferenceTable, kNeedsReason, currentRows, sameRow, sameRows, type ReferenceRow } from "./reference-values-model";
@@ -122,7 +123,7 @@ import { SCHEME_DOC_BUCKET, SCHEME_DOC_EXT, MAX_SCHEME_DOC_BYTES, ensureSchemeDo
 import { isDocKey } from "./doc-stages";
 import type { UploadedDoc } from "./types";
 import { logActivity } from "./activity";
-import { decideNotice, getNotice, markRead, readerKey, listForProvider, listForLab, listForParticipations } from "./notifications";
+import { decideNotice, getNotice, markRead, readerKey, listForProvider, listForLab, listForParticipations, listForEntity, eraseEntityNotices } from "./notifications";
 import {
   notifyApplicationReceived, notifyApplicationApproved, notifyApplicationRejected,
   notifyReceiptConfirmed, notifyResultsReturned, notifyReportIssued, notifyDocsSent,
@@ -3562,7 +3563,9 @@ export async function markNotificationsReadAction(shownIds: unknown): Promise<vo
     // only the started schemes' (Реш. 147), as the page shows them
     const started = new Set((await listSchemes()).filter((s) => isStarted(s)).map((s) => s.id));
     const parts = (await participationsOf(ps)).filter((p) => started.has(p.schemeId));
-    await markRead(readerKey.participant(ps.user.id), mine((await listForParticipations(parts, 200)).map((n) => n.id)));
+    // …and its organisation's own messages (5.10)
+    const own = [...(await listForParticipations(parts, 200)), ...(await listForEntity(ps.entity.id, 200).catch(() => []))];
+    await markRead(readerKey.participant(ps.user.id), mine(own.map((n) => n.id)));
     return;
   }
   const ctx = await getRoleContext();
@@ -5440,8 +5443,12 @@ export async function eraseEntityAction(entityId: string, requestNo: unknown, re
     if (res.error && !/not found|user_not_found/i.test(String(res.error.message ?? ""))) accountsLeft.push(a);
   }
   for (const p of r.proofs) if (!(await removeProof(p))) documentsLeft.push(p);
-  await logActivity("entity.erased", { subject: `entity:${entityId}`, after: { laboratories: r.laboratories, users: r.users, messages: r.messages, accountsDeleted: r.accounts.length - accountsLeft.length, documentsRemoved: r.proofs.length - documentsLeft.length, accountsLeft, documentsLeft }, summary: `Legal entity erased on request (no participation): ${r.laboratories} laboratories, ${r.users} users, ${r.messages} messages blanked, ${r.accounts.length - accountsLeft.length} sign-in accounts deleted, ${r.proofs.length - documentsLeft.length} documents removed (Zadanie §10)${accountsLeft.length || documentsLeft.length ? ` — LEFT: ${accountsLeft.length} accounts, ${documentsLeft.length} documents` : ""}` });
+  // the one-way messages PTS wrote to it (5.10): blanked and closed off — their text may name it
+  let notices = 0, noticesLeft = false;
+  try { notices = await eraseEntityNotices(String(entityId)); } catch { noticesLeft = true; }
+  await logActivity("entity.erased", { subject: `entity:${entityId}`, after: { laboratories: r.laboratories, users: r.users, messages: r.messages, organisationMessages: notices, organisationMessagesLeft: noticesLeft, accountsDeleted: r.accounts.length - accountsLeft.length, documentsRemoved: r.proofs.length - documentsLeft.length, accountsLeft, documentsLeft }, summary: `Legal entity erased on request (no participation): ${r.laboratories} laboratories, ${r.users} users, ${r.messages} messages blanked, ${r.accounts.length - accountsLeft.length} sign-in accounts deleted, ${r.proofs.length - documentsLeft.length} documents removed (Zadanie §10)${accountsLeft.length || documentsLeft.length ? ` — LEFT: ${accountsLeft.length} accounts, ${documentsLeft.length} documents` : ""}` });
   revalidatePath("/organizations");
+  if (noticesLeft) return { error: "Профилът е изтрит, но съобщенията до организацията не можаха да се заличат — записано е в журнала; опитайте пак или съобщете на софтуерния администратор. · The profile is erased, but the messages to the organisation could not be blanked — in the journal; try again or tell PTS's software administrator." };
   if (accountsLeft.length || documentsLeft.length) return { error: `Профилът е изтрит, но ${accountsLeft.length} профила за вход и ${documentsLeft.length} документа не можаха да се премахнат — записано е в журнала; софтуерният администратор ги премахва. · The profile is erased, but ${accountsLeft.length} sign-in accounts and ${documentsLeft.length} documents could not be removed — in the journal; PTS's software administrator removes them.` };
   return { ok: true };
 }
@@ -5872,3 +5879,111 @@ export async function setAckRequiredAction(formData: FormData): Promise<void> {
   revalidatePath(`/schemes/${schemeId}`);
   redirect(back(`ack=${on ? "on" : "off"}`));
 }
+
+
+// ── One-way messages (part 5.10; К11 → Реш. 116) ─────────────────────────────────────────
+// A person at PTS writes a message to ONE participation, to EVERYONE going on in a scheme, or
+// to ONE organisation. It reaches the portal and each of its people by e-mail, released by its
+// writer — the person who saw its exact text (Реш. 138; 1.8). Who to tell is looked up before
+// anything is recorded (2.3). The journal («message.oneway» — «message.sent» is 1.8's record of
+// each e-mail) names the target, never the text.
+const msgBack = (path: string, q: string) => `${path}${path.includes("?") ? "&" : "?"}${q}#message`;
+
+/** A form's one-time token — a uuid the composer drew when it was shown (review). */
+const readNonce = (v: unknown): string => { const x = String(v ?? ""); return UUID_RE.test(x) ? x : ""; };
+
+export async function sendParticipationMessageAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? "");
+  await requireCap("participants.manage", schemeId);
+  const code = String(formData.get("code") ?? "").trim();
+  const back = (q: string) => msgBack(`/schemes/${encodeURIComponent(schemeId)}/participants/${encodeURIComponent(code)}`, q);
+  const scheme = await getScheme(schemeId);
+  if (!scheme || !isStarted(scheme)) redirect(back("msg=state"));
+  const part = (await listParticipants(schemeId)).find((p) => p.code === code);
+  if (!part) redirect(back("msg=who"));
+  const read = readMessage({ bg: formData.get("bg"), en: formData.get("en") });
+  if (!read.ok) redirect(back(`msg=${read.problem}`));
+  const text = read as Extract<typeof read, { ok: true }>;
+  const nonce = readNonce(formData.get("nonce"));
+  if (!nonce) redirect(back("msg=twice"));
+  // who to tell, before anything is recorded (2.3)
+  const tell = await labToTell(schemeId, code);
+  if (!tell) redirect(back("msg=reach"));
+  const writer = await actorNow();
+  // the form's token claimed in the lock FIRST: a second press of the same form sends nothing (review)
+  const record: SchemeMessage = { id: randomUUID(), nonce, at: new Date().toISOString(), by: writer, to: { kind: "participation", participantId: part!.id }, bg: text.bg, en: text.en };
+  let twice = false;
+  await updateSchemeWith(schemeId, (s) => {
+    if ((s.messages ?? []).some((m) => m.nonce === nonce)) { twice = true; return {}; }
+    return { messages: [...(s.messages ?? []), record] };
+  });
+  if (twice) redirect(back("msg=twice"));
+  if (!(await notifyMessage({ schemeId, code, labId: tell!.labId, participantId: part!.id }, text, writer))) {
+    // not recorded: the history says it did not reach it
+    await updateSchemeWith(schemeId, (s) => ({ messages: (s.messages ?? []).filter((m) => m.id !== record.id) }));
+    redirect(back("msg=failed"));
+  }
+  await logActivity("message.oneway", { schemeId, targetCode: code, subject: `message:${record.id}`, summary: `One-way message to ${code}` });
+  revalidatePath(`/schemes/${schemeId}/participants/${code}`);
+  redirect(back("msg=sent"));
+}
+
+export async function sendSchemeMessageAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? "");
+  await requireCap("participants.manage", schemeId);
+  const back = (q: string) => msgBack(`/schemes/${encodeURIComponent(schemeId)}`, q);
+  const scheme = await getScheme(schemeId);
+  if (!scheme || !isStarted(scheme)) redirect(back("msg=state"));
+  const read = readMessage({ bg: formData.get("bg"), en: formData.get("en") });
+  if (!read.ok) redirect(back(`msg=${read.problem}`));
+  const text = read as Extract<typeof read, { ok: true }>;
+  const nonce = readNonce(formData.get("nonce"));
+  if (!nonce) redirect(back("msg=twice"));
+  // everyone GOING ON: in the round, and on the final list once there is one (5.2)
+  const going = (await listParticipants(schemeId)).filter((p) => inFinalRound(scheme!, p));
+  if (!going.length) redirect(back("msg=nobody"));
+  const writer = await actorNow();
+  // who to tell, for all of them at once — ONE opening, before anything is recorded; the store
+  // not answering sends nothing to anyone (2.3; review)
+  let labOf: Map<string, string | undefined>;
+  try { labOf = await labIdsFor(schemeId, going, writer); } catch { redirect(back("msg=reach")); }
+  const record: SchemeMessage = { id: randomUUID(), nonce, at: new Date().toISOString(), by: writer, to: { kind: "all", count: 0, participantIds: going.map((p) => p.id) }, bg: text.bg, en: text.en };
+  let twice = false;
+  await updateSchemeWith(schemeId, (s) => {
+    if ((s.messages ?? []).some((m) => m.nonce === nonce)) { twice = true; return {}; }
+    return { messages: [...(s.messages ?? []), record] };
+  });
+  if (twice) redirect(back("msg=twice"));
+  const missed: string[] = [];
+  for (const p of going) if (!(await notifyMessage({ schemeId, code: p.code, labId: labOf!.get(p.code), participantId: p.id }, text, writer))) missed.push(p.id);
+  const sent = going.length - missed.length;
+  // the record says how many it reached and which it did not — by the participations' ids
+  await updateSchemeWith(schemeId, (s) => ({ messages: (s.messages ?? []).map((m) => (m.id === record.id ? { ...m, to: { kind: "all" as const, count: sent, participantIds: going.map((p) => p.id), ...(missed.length ? { missed } : {}) } } : m)) }));
+  if (!sent) redirect(back("msg=failed"));
+  await logActivity("message.oneway", { schemeId, subject: `message:${record.id}`, summary: `One-way message to every participation going on (${sent} of ${going.length})` });
+  revalidatePath(`/schemes/${schemeId}`);
+  redirect(back(missed.length ? `msg=partial&n=${sent}&of=${going.length}` : `msg=sent&n=${sent}`));
+}
+
+export async function sendEntityMessageAction(formData: FormData): Promise<void> {
+  await requireCapAnywhere("labs.manage"); // the people of the laboratories (2.4)
+  const entityId = String(formData.get("entityId") ?? "").trim();
+  const back = (q: string) => `/organizations?entity=${encodeURIComponent(entityId)}&${q}#message-${encodeURIComponent(entityId)}`;
+  const read = readMessage({ bg: formData.get("bg"), en: formData.get("en") });
+  if (!read.ok) redirect(back(`msg=${read.problem}`));
+  const text = read as Extract<typeof read, { ok: true }>;
+  const writer = await actorNow();
+  // the organisation is a real one — never trust the form; an inactive one is told nothing new
+  const [entity] = await openEntities({ actor: writer, purpose: "send" }, entityId).catch(() => [] as LegalEntity[]);
+  if (!entity || entity.id !== entityId) redirect(back("msg=who"));
+  if (entity!.state === "inactive" || entity!.erasedAt) redirect(back("msg=state"));
+  // the same message to the same organisation a moment ago — a second press, a resent form: not
+  // sent twice (review)
+  const recent = await listForEntity(entityId, 20).catch(() => []);
+  if (recent.some((n) => messageBody(n.bg, "bg") === text.bg && Date.now() - Date.parse(n.createdAt) < 10 * 60_000)) redirect(back("msg=twice"));
+  if (!(await notifyMessage({ entityId }, text, writer))) redirect(back("msg=failed"));
+  await logActivity("message.oneway", { subject: `entity:${entityId}`, summary: "One-way message to an organisation" });
+  revalidatePath("/organizations");
+  redirect(back("msg=sent"));
+}
+

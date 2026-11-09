@@ -11,6 +11,9 @@ import { requireStaff } from "@/lib/roles";
 import { logActivity } from "@/lib/activity";
 import LabInvoicePanel from "@/components/LabInvoicePanel";
 import { acksOfParticipation, ackDone, ackMoment } from "@/lib/ack-model";
+import MessageComposer from "@/components/MessageComposer";
+import { sendParticipationMessageAction } from "@/lib/actions";
+import { messageTargetLabel, messageReached } from "@/lib/messages-model";
 import { openEntityUsers } from "@/lib/entity-users";
 import { actorNow } from "@/lib/identities";
 import { invoiceProblem } from "@/lib/announcement-model";
@@ -49,7 +52,7 @@ export default async function CaseFilePage({
   params, searchParams,
 }: {
   params: Promise<{ id: string; code: string }>;
-  searchParams: Promise<{ reveal?: string; kind?: string; from?: string; void?: string; step?: string }>;
+  searchParams: Promise<{ reveal?: string; kind?: string; from?: string; void?: string; step?: string; msg?: string }>;
 }) {
   await requireStaff(); // read gate: manager/staff/auditor only
   const { id, code: rawCode } = await params;
@@ -68,6 +71,8 @@ export default async function CaseFilePage({
   const { lang, tr } = await getServerT();
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const canReveal = await mayNow("names.view", id); // the scheme manager and the coding expert, here (Реш. 93, 2.4)
+  // 5.10: who works with the participants here writes to them — once the scheme has started
+  const canMessage = (await mayNow("participants.manage", id)) && s.status !== "draft";
   const revealed = canReveal && sp.reveal === "1";
   // who is behind this code only when a manager asks to see it — an opening, on record (2.3)
   const p = revealed ? (await namesFor(id, [coded]))[0] : withoutIdentity(coded);
@@ -217,6 +222,16 @@ export default async function CaseFilePage({
           </section>
         );
       })()}
+
+      {/* 5.10: a one-way message to this participation (Реш. 116; Реш. 22, 91 — e.g. its lateness) */}
+      {canMessage && coded && (
+        <MessageComposer action={sendParticipationMessageAction} hidden={{ schemeId: id, code }} lang={lang === "bg" ? "bg" : "en"}
+          title={lang === "bg" ? "Съобщение до участието" : "Message to the participation"}
+          to={lang === "bg" ? `до участие ${code}` : `to participation ${code}`}
+          answer={sp.msg}
+          // to it alone, and those to everyone that reached it (review)
+          history={(s.messages ?? []).filter((m) => messageReached(m, coded.id)).reverse().map((m) => ({ id: m.id, at: ackMoment(m.at), to: m.to.kind === "all" ? (lang === "bg" ? "до всички участия" : "to every participation") : messageTargetLabel(m.to, lang === "bg" ? "bg" : "en", () => code), bg: m.bg, en: m.en }))} />
+      )}
 
       {/* timeline */}
       <h2 className="text-lg font-bold mt-7 mb-2 pb-1" style={{ color: "var(--green-dark)", borderBottom: "2px solid var(--red)" }}>

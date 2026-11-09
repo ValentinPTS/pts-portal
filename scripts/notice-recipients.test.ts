@@ -154,7 +154,7 @@ t("…the reminder job and the round's recipients list know a participation link
 t("…the accreditation body is no laboratory's name: not scrubbed from coded/ (review)", !/x\.laboratory\.accreditationBody, x\.laboratoryId/.test(readFileSync(new URL("../src/lib/round-export.ts", import.meta.url), "utf8")));
 const page = readFileSync(new URL("../src/app/lab/overview/page.tsx", import.meta.url), "utf8");
 t("the switcher: the participant's gate; only its own entity's laboratories — the one asked for, if it is one of them", /await requireParticipant\(\)/.test(page) && /openLaboratories\(\{ actor: participantActor\(user\.id\), purpose: "lab\.own" \}, \{ entityId: entity\.id \}\)/.test(page) && /shown\.find\(\(l\) => l\.id === sp\.lab\)/.test(page) && /participationsOf\(ps\)/.test(page));
-t("…a scheme not started is not shown (Реш. 147); the notices read as THIS person read them", /schemes\.filter\(\(s\) => isStarted\(s\)\)/.test(page) && /withReadState\(await listForParticipations\(ofLab, 30\)[\s\S]{0,60}readerKey\.participant\(user\.id\)\)/.test(page));
+t("…a scheme not started is not shown (Реш. 147); the notices read as THIS person read them", /schemes\.filter\(\(s\) => isStarted\(s\)\)/.test(page) && /listForParticipations\(ofLab, 30\)/.test(page) && /withReadState\(feed, readerKey\.participant\(user\.id\)\)/.test(page));
 t("…the laboratory's area leads a participant's user here", /if \(await getParticipantSignIn\(\)\) redirect\("\/lab\/overview"\);/.test(readFileSync(new URL("../src/lib/lab-auth.ts", import.meta.url), "utf8")));
 
 console.log(`notice-recipients.test: ${pass} passed, ${fail} failed`);

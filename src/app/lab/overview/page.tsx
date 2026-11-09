@@ -2,7 +2,7 @@ import Link from "next/link";
 import { isProvisional } from "@/lib/coding-model";
 import { requireParticipant, participantActor, participationsOf } from "@/lib/participant-session";
 import { openLaboratories } from "@/lib/laboratories";
-import { listForParticipations, withReadState, readerKey } from "@/lib/notifications";
+import { listForParticipations, listForEntity, withReadState, readerKey } from "@/lib/notifications";
 import { listSchemes } from "@/lib/store";
 import { isStarted } from "@/lib/visibility";
 import { participationViews } from "@/lib/participation-view";
@@ -49,9 +49,32 @@ export default async function ParticipantOverviewPage({ searchParams }: { search
   const archive = sp.view === "archive";
   // a failed read of the feed shows none, logged — the page still opens (1.1)
   const logged = (e: unknown) => { console.error("[lab/overview] notice feed:", (e as Error)?.message ?? e); return []; };
-  const notices = ofLab.length ? await withReadState(await listForParticipations(ofLab, 30).catch(logged), readerKey.participant(user.id)).catch(logged) : [];
+  // the participations' notices — and the organisation's own messages (5.10; Реш. 116), one feed, newest first
+  const feed = [...(ofLab.length ? await listForParticipations(ofLab, 30).catch(logged) : []), ...await listForEntity(entity.id, 30).catch(logged)]
+    .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")).slice(0, 30);
+  const notices = feed.length ? await withReadState(feed, readerKey.participant(user.id)).catch(logged) : [];
   const unread = notices.filter((n) => !n.readAt).length;
   const here = (extra: string) => `/lab/overview?${chosen ? `lab=${chosen.id}` : ""}${extra}`;
+
+  // the notices — the participations' and the organisation's own messages (5.10)
+  const noticeCard = (
+            <section className="card" style={{ padding: "14px 18px" }}>
+              <div className="flex items-center gap-3" style={{ flexWrap: "wrap" }}>
+                <h2 className="field-label" style={{ fontSize: 15, margin: 0 }}>{L("Известия", "Notices")} {unread > 0 && <span data-unread={unread} aria-label={L(`${unread} непрочетени`, `${unread} unread`)} style={{ background: "var(--red)", color: "#fff", borderRadius: 999, padding: "0 7px", fontSize: 12 }}>{unread}</span>}</h2>
+                {unread > 0 && <MarkNoticesRead lang={lg} ids={notices.map((n) => n.id)} />}
+              </div>
+              {notices.length === 0 ? <p className="text-sm" style={{ color: "var(--muted)" }}>{L("Няма известия.", "No notices.")}</p> : (
+                <ul className="mt-1" style={{ listStyle: "none", padding: 0, margin: 0 }} data-notices>
+                  {notices.map((n) => (
+                    <li key={n.id} data-notice={n.id} data-notice-kind={n.kind} data-notice-read={n.readAt ? "1" : "0"} style={{ borderTop: "1px solid var(--line)", padding: "6px 0", fontWeight: n.readAt ? 400 : 700, whiteSpace: "pre-wrap" }}>
+                      {!n.readAt && <span className="text-xs" style={{ color: "var(--red)", marginRight: 6 }}>● {L("ново", "new")}</span>}
+                      <span className="text-xs" style={{ color: "var(--muted)", marginRight: 8 }}>{confirmDate(n.createdAt)}{n.code && !isProvisional(n.code) ? ` · ${n.code}` : ""}</span>{lg === "bg" ? n.bg : n.en}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+  );
 
   return (
     <div style={{ minHeight: "100dvh", background: "var(--bg)" }}>
@@ -81,7 +104,11 @@ export default async function ParticipantOverviewPage({ searchParams }: { search
           </p>
         )}
         {shown.length === 0 ? (
-          <p className="text-sm" style={{ color: "var(--muted)" }}>{L("PTS още не е въвел лаборатория на организацията — пишете на office@ptsbg.eu.", "PTS has not entered a laboratory of the organisation yet — write to office@ptsbg.eu.")}</p>
+          <>
+            <p className="text-sm" style={{ color: "var(--muted)" }}>{L("PTS още не е въвел лаборатория на организацията — пишете на office@ptsbg.eu.", "PTS has not entered a laboratory of the organisation yet — write to office@ptsbg.eu.")}</p>
+            {/* the organisation's own messages reach it before it has a laboratory (5.10) */}
+            {notices.length > 0 && noticeCard}
+          </>
         ) : chosen && (
           <>
             {!archive && <ActionItems lang={lg} views={active} />}
@@ -107,22 +134,7 @@ export default async function ParticipantOverviewPage({ searchParams }: { search
             </section>
             <p style={{ margin: 0, fontSize: 12.5, color: "var(--muted)" }}>{L("Кодът е видим само за вашата лаборатория. При повече от едно участие в една схема всяко има свой код.", "The code is visible to your laboratory only. With more than one participation in a scheme, each has its own code.")}</p>
 
-            <section className="card" style={{ padding: "14px 18px" }}>
-              <div className="flex items-center gap-3" style={{ flexWrap: "wrap" }}>
-                <h2 className="field-label" style={{ fontSize: 15, margin: 0 }}>{L("Известия", "Notices")} {unread > 0 && <span data-unread={unread} aria-label={L(`${unread} непрочетени`, `${unread} unread`)} style={{ background: "var(--red)", color: "#fff", borderRadius: 999, padding: "0 7px", fontSize: 12 }}>{unread}</span>}</h2>
-                {unread > 0 && <MarkNoticesRead lang={lg} ids={notices.map((n) => n.id)} />}
-              </div>
-              {notices.length === 0 ? <p className="text-sm" style={{ color: "var(--muted)" }}>{L("Няма известия.", "No notices.")}</p> : (
-                <ul className="mt-1" style={{ listStyle: "none", padding: 0, margin: 0 }} data-notices>
-                  {notices.map((n) => (
-                    <li key={n.id} data-notice={n.id} data-notice-read={n.readAt ? "1" : "0"} style={{ borderTop: "1px solid var(--line)", padding: "6px 0", fontWeight: n.readAt ? 400 : 700 }}>
-                      {!n.readAt && <span className="text-xs" style={{ color: "var(--red)", marginRight: 6 }}>● {L("ново", "new")}</span>}
-                      <span className="text-xs" style={{ color: "var(--muted)", marginRight: 8 }}>{confirmDate(n.createdAt)}{n.code && !isProvisional(n.code) ? ` · ${n.code}` : ""}</span>{lg === "bg" ? n.bg : n.en}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+            {noticeCard}
           </>
         )}
       </main>

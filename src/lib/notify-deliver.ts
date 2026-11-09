@@ -5,6 +5,12 @@ import { sendEmail, isMailConfigured, providerInbox, looksLikeEmail } from "./ma
 import { mailAllowedHere, testSubject } from "./environment";
 import { sendToLab, sentAddresses, failuresByAddress, type MessageClass, type Approval } from "./sent-messages";
 import { noticeRecipients } from "./participation-snapshots";
+import { openEntityUsers } from "./entity-users";
+import { openEntities } from "./entities";
+import { messageBody, MESSAGE_FOOTER } from "./messages-model";
+
+/** How long a message to an organisation waits for its first recipient (5.10 review). */
+export const ENTITY_WAIT_DAYS = 30;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Draining the outbox.
@@ -57,6 +63,11 @@ export function subjectFor(n: Notification): string {
  */
 export function bodyFor(n: Notification, baseUrl: string): string {
   const link = n.href ? `${baseUrl.replace(/\/+$/, "")}${n.href}` : "";
+  // a message written in Bulgarian only (5.10): its text once, then both footers — never the
+  // same text twice (review)
+  if (n.kind === "message" && messageBody(n.bg, "bg") === messageBody(n.en, "en")) {
+    return [messageBody(n.bg, "bg"), "", MESSAGE_FOOTER.bg, MESSAGE_FOOTER.en, ...(link ? ["", link] : []), "", "—", "PTS Bulgaria"].join("\n");
+  }
   return [
     n.bg,
     "",
@@ -95,6 +106,19 @@ export function approvalFor(n: Notification): Approval | null {
  * notice then waits for the next run.
  */
 export async function recipientsOf(n: Notification): Promise<{ waiting: boolean; people: { to: string; entityId?: string }[] }> {
+  // a message to ONE organisation (5.10): its active users who receive the notices — opened
+  // for sending, on record; nobody yet: kept for when there is one (4.6)
+  if (n.audience === "lab" && n.entityId) {
+    // an organisation made inactive or erased since: nobody will take it — closed off, never
+    // waiting for ever (review); it stays in the portal's record
+    const [entity] = await openEntities({ actor: "system:notify", purpose: "send" }, n.entityId);
+    if (!entity || entity.id !== n.entityId || entity.state === "inactive" || entity.erasedAt) return { waiting: false, people: [] };
+    const users = await openEntityUsers({ actor: "system:notify", purpose: "send" }, { entityId: n.entityId });
+    const people = users.filter((u) => u.entityId === n.entityId && u.state === "active" && u.receivesNotices && looksLikeEmail(u.email)).map((u) => ({ to: u.email, entityId: n.entityId }));
+    // nobody yet: it waits for its first user — a month at most, then it is closed off
+    const tooOld = Date.now() - Date.parse(n.createdAt || "") > ENTITY_WAIT_DAYS * 86_400_000;
+    return { waiting: people.length === 0 && !tooOld, people };
+  }
   if (n.audience === "lab" && n.schemeId && n.code) {
     const r = await noticeRecipients(n.schemeId, n.code, "system:notify");
     if (r.hasCopy) {

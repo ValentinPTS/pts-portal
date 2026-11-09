@@ -8,6 +8,8 @@
 // Реш. 117: any document may «изисква потвърждение» — the acknowledgement recorded with the
 // account, the date and the edition's number, and it NEVER blocks the participant's work.
 //
+import { fmtMoment } from "./scheme-dates";
+
 // Per participation and per edition: any user of the participation may give it, the record
 // says who; a new edition asks again, and the earlier record stays.
 
@@ -110,11 +112,8 @@ export function ackDone(lang: "bg" | "en", kind: AckKind, dayTime: string): stri
 }
 
 /** A record's moment as a person in Bulgaria reads it — the day AND the hour on Sofia's clock
- *  (EET/EEST), in one reading: «10.11.2026, 00:30». Never the UTC day (review). */
-export function ackMoment(iso: string): string {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Sofia", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(iso)).map((p) => [p.type, p.value]));
-  return `${parts.day}.${parts.month}.${parts.year}, ${parts.hour}:${parts.minute}`;
-}
+ *  (lib/scheme-dates fmtMoment): «10.11.2026, 00:30». Never the UTC day (review). */
+export const ackMoment = fmtMoment;
 
 /** Acknowledgements given against documents sent to ONE user (a release at the user level,
  *  5.4) — counted apart: which participation a user's personal release reaches is that user's,

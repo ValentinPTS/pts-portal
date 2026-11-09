@@ -44,6 +44,7 @@ export const MIGRATIONS = [
   "0038_round_parties",
   "0039_applications",
   "0040_coding",
+  "0041_notification_entity",
 ] as const;
 
 /** The expected migrations the database has not recorded, in order. */

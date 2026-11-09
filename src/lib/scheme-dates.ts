@@ -128,3 +128,10 @@ export function setDates(s: Pick<Scheme, "dates">): { key: SchemeDateKey; at: st
 export function dueIn(s: Pick<Scheme, "dates">, todayIso: string, within = 1): SchemeDateKey[] {
   return DATE_KEYS.filter((k) => daysUntil(s.dates?.[k], todayIso) === within);
 }
+
+/** A moment as a person in Bulgaria reads it — the day AND the hour on Sofia's clock (EET/EEST),
+ *  in one reading: «10.11.2026, 00:30». Never the UTC day (5.9 review). */
+export function fmtMoment(iso: string): string {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Sofia", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(iso)).map((p) => [p.type, p.value]));
+  return `${parts.day}.${parts.month}.${parts.year}, ${parts.hour}:${parts.minute}`;
+}

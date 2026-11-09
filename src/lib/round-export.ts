@@ -133,6 +133,9 @@ export const SCHEME_FIELDS = {
   // the edition and its hash, the moment — but the account that gave it is an entity user's,
   // the same in every round: kept only in identity/
   acknowledgements: "split",
+  // the messages PTS's people wrote (5.10): the target, who, when — coded; the text a person
+  // wrote may name someone: whole only in identity/ (the notices go through the scrubber)
+  messages: "split",
   // a release to one user names that user (an entity user's id is the same in every round):
   // its user kept only in identity/ (5.4 review)
   releases: "split", skin: "coded", name: "coded", folderId: "coded",
@@ -233,6 +236,7 @@ export function codedScheme(s: Scheme): Record<string, unknown> {
       case "releases": out[k] = (s.releases ?? []).map(({ userId: _u, ...r }) => r); break;
       case "deliveries": out[k] = codedDeliveries(s.deliveries); break;
       case "acknowledgements": out[k] = (s.acknowledgements ?? []).map(({ by: _b, ...a }) => a); break;
+      case "messages": out[k] = (s.messages ?? []).map(({ bg: _b, en: _e, ...m }) => m); break;
     }
   }
   return out;

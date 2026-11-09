@@ -44,11 +44,14 @@ function toRow(n: Notification) {
     // been applied yet (its reads then fall back, showing and sending nothing held)
     ...(n.releasedAt ? { released_at: n.releasedAt, released_by: n.releasedBy ?? null } : {}),
     ...(n.withheldAt ? { withheld_at: n.withheldAt, withheld_by: n.withheldBy ?? null } : {}),
+    // only when set (5.10, migration 0041): every other notice inserts as before
+    ...(n.entityId ? { entity_id: n.entityId } : {}),
   } as {
     id: string; kind: string; audience: string; lab_id: string | null; scheme_id: string | null;
     code: string | null; bg: string; en: string; href: string | null; created_at: string;
     read_at: string | null; emailed_at: string | null; released_at?: string | null;
     released_by?: string | null; withheld_at?: string | null; withheld_by?: string | null;
+    entity_id?: string | null;
   };
 }
 type Row = ReturnType<typeof toRow>;
@@ -60,6 +63,7 @@ function fromRow(r: Row): Notification {
     createdAt: r.created_at ?? "", readAt: r.read_at ?? undefined, emailedAt: r.emailed_at ?? undefined,
     releasedAt: r.released_at ?? undefined, releasedBy: r.released_by ?? undefined,
     withheldAt: r.withheld_at ?? undefined, withheldBy: r.withheld_by ?? undefined,
+    entityId: r.entity_id ?? undefined,
   };
 }
 
@@ -78,12 +82,21 @@ const newestFirst = (a: Notification, b: Notification) => (b.createdAt || "").lo
 
 // a template's approval releases a LABORATORY reminder only (part 1.8)
 function build(input: Parameters<typeof notify>[0]): Notification {
-  const { releasedByTemplate, ...rest } = input;
+  const { releasedByTemplate, releasedByWriter, ...rest } = input;
   const createdAt = new Date().toISOString();
   // …and only a reminder of the template's own kind (results.due; receipt.due since 5.6)
   const byTemplate = !!releasedByTemplate && rest.audience === "lab" && isReminderKind(rest.kind) && releasedByTemplate.startsWith(`template:${rest.kind}@`);
-  return { id: randomUUID(), createdAt, ...rest, ...(byTemplate ? { releasedAt: createdAt, releasedBy: releasedByTemplate } : {}) };
+  // a one-way message (5.10): its writer is the person who saw its exact text (Реш. 138) —
+  // released by them, and by a person only (never a system or a template)
+  const byWriter = !byTemplate && isWriterRelease(rest.kind, rest.audience, releasedByWriter);
+  return { id: randomUUID(), createdAt, ...rest, ...(byTemplate ? { releasedAt: createdAt, releasedBy: releasedByTemplate } : byWriter ? { releasedAt: createdAt, releasedBy: releasedByWriter!.trim() } : {}) };
 }
+
+/** May this notice be released by the person who wrote it? Only a laboratory's MESSAGE, and only
+ *  by a person — the actor of a session (an e-mail; «build» locally with login off), never a
+ *  system job, a template or the 0016 backlog (5.10). */
+export const isWriterRelease = (kind: string, audience: string, by: string | undefined): boolean =>
+  kind === "message" && audience === "lab" && !!by?.trim() && !/^(system|template):/i.test(by.trim()) && by.trim() !== BACKFILL_RELEASE && by.trim() !== "unknown";
 
 /**
  * Raise a notification. Never throws — a notice failing to record must not roll
@@ -102,6 +115,11 @@ export async function notify(input: {
   // part 1.8: only the reminder job passes this — an approved template's approval
   // ("template:<kind>@v<n> (approved by …)"); the notice is then out at once
   releasedByTemplate?: string;
+  // part 5.10: a one-way message's writer (their e-mail) — out at once, for the kind
+  // «message» only (isWriterRelease)
+  releasedByWriter?: string;
+  // part 5.10: a message to one organisation (migration 0041)
+  entityId?: string;
 }): Promise<Notification | null> {
   const n = build(input);
   const db = getDb();
@@ -385,4 +403,65 @@ export async function markDelivered(id: string): Promise<void> {
  *  database does it with the participation, 0040). */
 export function recodeMemNotifications(schemeId: string, codes: Readonly<Record<string, string>>): void {
   for (const n of mem) if (n.schemeId === schemeId && n.code && Object.hasOwn(codes, n.code)) n.code = codes[n.code];
+}
+
+/** One organisation's messages (5.10) — released, newest first: what its users see on «Начало»
+ *  beside their participations' notices. Scoped by the entity the SESSION's user belongs to,
+ *  never by anything the client sends. */
+export async function listForEntity(entityId: string, limit = 50): Promise<Notification[]> {
+  const fromMem = () => mem.filter((n) => n.audience === "lab" && n.entityId === entityId && isOut(n)).sort(newestFirst).slice(0, limit);
+  if (!entityId) return [];
+  const db = getDb();
+  if (!db) return fromMem();
+  try {
+    const { data, error } = await db
+      .from("notifications").select("*")
+      .eq("audience", "lab").eq("entity_id", entityId)
+      .not("released_at", "is", null).is("withheld_at", null)
+      .order("created_at", { ascending: false }).limit(limit);
+    if (error) throw error;
+    return (data ?? []).map((r) => fromRow(r as Row));
+  } catch (e) {
+    // before migration 0041 the column is not there: no organisation messages, said by none
+    if (dropOnDeployment("notifications", e)) return [];
+    warn(e);
+    return fromMem();
+  }
+}
+
+/** The messages to organisations (5.10) — for «Организации»'s history, newest first: the notices
+ *  that name an entity. Before migration 0041, none. */
+export async function listEntityMessages(limit = 300): Promise<Notification[]> {
+  const fromMem = () => mem.filter((n) => n.audience === "lab" && !!n.entityId).sort(newestFirst).slice(0, limit);
+  const db = getDb();
+  if (!db) return fromMem();
+  try {
+    const { data, error } = await db.from("notifications").select("*").eq("audience", "lab").not("entity_id", "is", null).order("created_at", { ascending: false }).limit(limit);
+    if (error) throw error;
+    return (data ?? []).map((r) => fromRow(r as Row));
+  } catch (e) {
+    if (dropOnDeployment("notifications", e)) return [];
+    warn(e);
+    return fromMem();
+  }
+}
+
+/** An organisation erased on request (4.7): the messages PTS wrote to it are blanked and closed
+ *  off — their text may name it or its people (5.10 review). The row stays: who, when, that a
+ *  message was sent. Returns how many. Throws on a database error — the erasure says what is left. */
+export const ERASED_TEXT = "‹изтрито по искане · erased on request›";
+export async function eraseEntityNotices(entityId: string): Promise<number> {
+  if (!entityId) return 0;
+  const at = new Date().toISOString();
+  const db = getDb();
+  if (!db) {
+    let n = 0;
+    for (const x of mem) if (x.entityId === entityId) { x.bg = ERASED_TEXT; x.en = ERASED_TEXT; x.emailedAt = x.emailedAt ?? at; n++; }
+    return n;
+  }
+  const { data, error } = await db.from("notifications").update({ bg: ERASED_TEXT, en: ERASED_TEXT }).eq("entity_id", entityId).select("id");
+  if (error) throw new Error(`[notifications] organisation messages not blanked: ${error.message}`, { cause: error });
+  const { error: e2 } = await db.from("notifications").update({ emailed_at: at }).eq("entity_id", entityId).is("emailed_at", null);
+  if (e2) throw new Error(`[notifications] organisation messages not closed off: ${e2.message}`, { cause: e2 });
+  return (data ?? []).length;
 }

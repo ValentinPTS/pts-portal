@@ -1,4 +1,5 @@
 import { isProvisional } from "./coding-model";
+import { messageText } from "./messages-model";
 import { notify } from "./notifications";
 import { participationEntity } from "./participation-snapshots";
 
@@ -399,4 +400,26 @@ export async function notifyDeliveryProblem(schemeId: string, schemeNumber: stri
     en: `${code} signalled a problem with its object (${schemeNumber}) — see «Deliveries».`,
     href: `/deliveries?scheme=${encodeURIComponent(schemeId)}`,
   });
+}
+
+/**
+ * A one-way message a person at PTS wrote (part 5.10; Реш. 116) — to one participation (its
+ * scheme and code, its people) or to one organisation (its entity, its users). Released by its
+ * writer, who saw its exact text (Реш. 138): out in the portal at once, and e-mailed with their
+ * approval (1.8). Never throws (notify); returns whether it was recorded.
+ */
+export async function notifyMessage(target: { schemeId: string; code: string; labId?: string; participantId?: string } | { entityId: string }, text: { bg: string; en: string }, writer: string): Promise<boolean> {
+  // (text.en is the Bulgarian when no English was given — the e-mail then carries it once: bodyFor)
+  const n = await notify({
+    kind: "message",
+    audience: "lab",
+    ...("entityId" in target
+      ? { entityId: target.entityId, href: "/lab/overview" }
+      // the participation's own page — where its notices are (5.5)
+      : { schemeId: target.schemeId, code: target.code, labId: target.labId, href: target.participantId ? `/lab/p/${encodeURIComponent(target.participantId)}` : "/lab" }),
+    bg: messageText(text.bg, "bg"),
+    en: messageText(text.en, "en"),
+    releasedByWriter: writer,
+  });
+  return !!n?.releasedAt;
 }

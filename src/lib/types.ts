@@ -317,7 +317,8 @@ export type NotifyKind =
   | "participation.coded"    // → lab: its code, drawn at the coding act, and its objects (part 5.3)
   | "device.moved"           // → lab: the calibration device is coming to you
   | "delivery.problem"       // → provider: a participant signalled a problem with its object (part 5.6)
-  | "receipt.due";           // → lab: reminder — its receipt protocol is awaited (part 5.6, template)
+  | "receipt.due"            // → lab: reminder — its receipt protocol is awaited (part 5.6, template)
+  | "message";               // → lab: a one-way message a person at PTS wrote (part 5.10; Реш. 116)
 
 export interface Notification {
   id: string;
@@ -326,6 +327,9 @@ export interface Notification {
   labId?: string;    // which lab, when audience is "lab"
   schemeId?: string;
   code?: string;     // participant code — NEVER a laboratory name
+  // a message to ONE organisation (part 5.10, migration 0041): its legal entity's id — no
+  // scheme, no code; its users who receive notices are its recipients
+  entityId?: string;
   bg: string;        // the message itself, both languages, fixed at write time
   en: string;
   href?: string;     // where clicking it should take the reader
@@ -719,6 +723,9 @@ export interface Scheme {
   // per participation and edition, with the account, the moment and — for the declaration —
   // the hash of the edition's frozen file. Appended, never rewritten.
   acknowledgements?: import("./ack-model").Acknowledgement[];
+  // the one-way messages its people sent (part 5.10; Реш. 116) — to one participation or to
+  // everyone going on: the target, the text, who, when. Appended; the history on its pages.
+  messages?: import("./messages-model").SchemeMessage[];
   // A calibration scheme's reference values per point (part 5.7, lib/reference-values-model)
   // — x_ref before and after, u_calibration, u_other, k, for 2.0's «Calibration» sheet (D3);
   // each save a version, appended. JSONB, no migration.

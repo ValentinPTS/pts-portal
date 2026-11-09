@@ -383,7 +383,7 @@ export default async function ParticipationPage({ params, searchParams }: { para
             {card(L("Съобщения", "Notices"), notices.length === 0 ? <p style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>{L("Няма съобщения.", "No notices.")}</p> : (
               <ul data-participation-notices={notices.length} style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
                 {notices.slice(0, 8).map((n) => (
-                  <li key={n.id} style={{ fontWeight: n.readAt ? 400 : 700 }}>
+                  <li key={n.id} data-participation-notice={n.kind} style={{ fontWeight: n.readAt ? 400 : 700, whiteSpace: "pre-wrap" }}>
                     <span style={{ fontSize: 11.5, color: "var(--muted)", marginRight: 6 }}>{confirmDate(n.createdAt)}</span>{lang === "bg" ? n.bg : n.en}
                   </li>
                 ))}

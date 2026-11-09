@@ -7,7 +7,10 @@ import { getDoc, isFormDoc, isListDoc, isRestrictedDoc, isDocDone, hasDocContent
 import { DOC_STAGES } from "@/lib/doc-stages";
 import { isSendableDoc, SENDABLE_DOCS } from "@/lib/doc-release";
 import AckPanel from "@/components/AckPanel";
-import { ackRequiredFor, ackSettable, ackCounts, personalAcks } from "@/lib/ack-model";
+import MessageComposer from "@/components/MessageComposer";
+import { sendSchemeMessageAction } from "@/lib/actions";
+import { messageTargetLabel } from "@/lib/messages-model";
+import { ackRequiredFor, ackSettable, ackCounts, personalAcks, ackMoment } from "@/lib/ack-model";
 import { releaseFor } from "@/lib/release-model";
 import { isStarted } from "@/lib/visibility";
 import { fmtPhaseDate } from "@/lib/lab-phases";
@@ -53,10 +56,11 @@ import { requireStaff, getRoleContext, canManagePeople } from "@/lib/roles";
 // A scheme folder → its 14 documents grouped by workflow stage. Every document can be
 // built in the app OR filled with an uploaded ready-made file (PDF/image) — see
 // SchemeDocuments. The header shows the primary tools; the rest tuck under "Управление".
-export default async function SchemePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ack?: string }> }) {
+export default async function SchemePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ack?: string; msg?: string; n?: string; of?: string }> }) {
   await requireStaff(); // read gate: one of PTS's people
   const { id } = await params;
-  const ackNotice = (await searchParams).ack; // 5.9: the setting's answer
+  const sp = await searchParams;
+  const ackNotice = sp.ack; // 5.9: the setting's answer
   await requireCap("codes.view", id); // in THIS scheme, by the role model (2.4)
   const s = await getScheme(id);
   if (!s) notFound();
@@ -411,6 +415,16 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
         });
         return <AckPanel schemeId={id} lang={lang} rows={rows} canEdit={canAct} started={isStarted(s)} notice={ackNotice} />;
       })()}
+      {/* 5.10: a one-way message to every participation going on (Реш. 116) — by who works with
+          the participants here, once the scheme has started */}
+      {canManage && isStarted(s) && (
+        <MessageComposer action={sendSchemeMessageAction} hidden={{ schemeId: id }} lang={lang}
+          title={lang === "bg" ? "Съобщение до всички участници" : "Message to every participant"}
+          to={lang === "bg" ? "до всички участия в ход (в кръга и в окончателния списък)" : "to every participation going on (in the round and on the final list)"}
+          answer={sp.msg} answerExtra={sp.n && sp.of ? (lang === "bg" ? `${sp.n} от ${sp.of}` : `${sp.n} of ${sp.of}`) : undefined}
+          // the codes as they are now — the coding act re-keys them (5.3)
+          history={[...(s.messages ?? [])].reverse().map((m) => ({ id: m.id, at: ackMoment(m.at), to: messageTargetLabel(m.to, lang, (pid) => participantsNow.find((p) => p.id === pid)?.code ?? "—"), bg: m.bg, en: m.en }))} />
+      )}
     </ExplorerShell>
   );
 }
