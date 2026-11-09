@@ -43,6 +43,8 @@ for (const f of files) {
   for (const m of src.matchAll(/\bmine\.log\(\s*"([^"]+)"/g)) actions.add(m[1]);
   // part 5.6: the participant's delivery actions journal through ownGoingOn's helper
   for (const m of src.matchAll(/\bawait log\(\s*"([^"]+)"/g)) actions.add(m[1]);
+  // part 5.9: the declaration or an acknowledgement — the helper's action chosen by a ternary
+  for (const m of src.matchAll(/\bawait log\(\s*[^,()]+?\?\s*"([^"]+)"\s*:\s*"([^"]+)"/g)) { actions.add(m[1]); actions.add(m[2]); }
   for (const m of src.matchAll(/logAs\(\{[^}]*\},\s*\w+\s*\?\s*"([^"]+)"\s*:\s*"([^"]+)"/g)) { actions.add(m[1]); actions.add(m[2]); }
   // some call sites choose the action with a ternary — catch both literals
   for (const m of src.matchAll(/logActivity\(\s*\w+\s*\?\s*"([^"]+)"\s*:\s*"([^"]+)"/g)) {

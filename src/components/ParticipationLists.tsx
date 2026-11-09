@@ -33,6 +33,7 @@ export function deadlineText(at: string, v: ParticipationView, lang: Lang): stri
 const KIND_STYLE: Record<ActionItem["kind"], { bg: string; fg: string; line: string }> = {
   deadline: { bg: "#fbeaea", fg: "#8f2f2f", line: "#ecc4c4" },
   delivery: { bg: "#faf2e0", fg: "#7a5416", line: "#ecd9ae" },
+  acknowledge: { bg: "#efeaf6", fg: "#4f3a75", line: "#d8cdea" },
   document: { bg: "#e8eff7", fg: "#2f4f75", line: "#c8d6e8" },
 };
 
@@ -61,7 +62,10 @@ export function ActionItems({ lang, views }: { lang: Lang; views: ParticipationV
                 ? { title: T(lang, { bg: "Предайте уреда нататък", en: "Hand the instrument on" }), detail: `${T(lang, { bg: "до", en: "by" })} ${deadlineText(a.at!, v, lang)}${code}`, href: participationHref(v), button: T(lang, { bg: "Към участието", en: "Open the participation" }) }
                 : a.what === "receipt"
                   ? { title: T(lang, { bg: "Непотвърдено получаване", en: "Receipt not confirmed" }), detail: [a.at ? `${T(lang, { bg: "Изпратено", en: "Dispatched" })} ${fmtSchemeDate(a.at)}` : "", v.dispatch?.ref ? `${T(lang, { bg: "товарителница", en: "waybill" })} ${v.dispatch.ref}` : ""].filter(Boolean).join(" · ") + code, href: `${participationHref(v)}#receipt`, button: T(lang, { bg: "Потвърди получаването", en: "Confirm the receipt" }) }
-                  : { title: `${docName(a.docKey!, lang)}${a.editionNo ? T(lang, { bg: ` · ред. № ${a.editionNo}`, en: ` · ed. No. ${a.editionNo}` }) : ""}`, detail: T(lang, { bg: "Още не е отворен от никого от участието", en: "Not opened yet by anyone of the participation" }), href: docHref(v, a.docKey!, lang), button: T(lang, { bg: "Отвори", en: "Open" }) };
+                  : a.kind === "acknowledge"
+                    // 5.9: the declaration to sign, a document to acknowledge — on the participation's page; never a block
+                    ? { title: `${docName(a.docKey!, lang)}${a.editionNo ? T(lang, { bg: ` · ред. № ${a.editionNo}`, en: ` · ed. No. ${a.editionNo}` }) : ""}`, detail: (a.what === "declaration" ? T(lang, { bg: "Очаква подписване с отметка в портала", en: "Awaits signing by a tick in the portal" }) : T(lang, { bg: "Изисква потвърждение, че сте се запознали", en: "Asks you to acknowledge you have read it" })) + code, href: `${participationHref(v)}${a.what === "declaration" ? "#declaration" : "#documents"}`, button: a.what === "declaration" ? T(lang, { bg: "Подпиши", en: "Sign" }) : T(lang, { bg: "Потвърди", en: "Acknowledge" }) }
+                    : { title: `${docName(a.docKey!, lang)}${a.editionNo ? T(lang, { bg: ` · ред. № ${a.editionNo}`, en: ` · ed. No. ${a.editionNo}` }) : ""}`, detail: T(lang, { bg: "Още не е отворен от никого от участието", en: "Not opened yet by anyone of the participation" }), href: docHref(v, a.docKey!, lang), button: T(lang, { bg: "Отвори", en: "Open" }) };
             return (
               <li key={`${a.participantId}-${a.kind}-${a.docKey ?? a.what}-${i}`} data-action={a.kind} data-action-what={a.what} data-action-for={a.participantId}
                 style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 18px", borderTop: i ? "1px solid var(--line)" : "none", flexWrap: "wrap" }}>

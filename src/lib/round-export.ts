@@ -127,6 +127,12 @@ export const SCHEME_FIELDS = {
   // receiver, remarks and a problem's words are a person's — and an entity user's account
   // id is the same in every round: kept only in identity/ (5.6)
   deliveries: "split",
+  // which documents ask for an acknowledgement (5.9) — set by PTS's staff
+  ackRequired: "coded",
+  // the acknowledgements and the declaration's ticks (5.9): the participation, the document,
+  // the edition and its hash, the moment — but the account that gave it is an entity user's,
+  // the same in every round: kept only in identity/
+  acknowledgements: "split",
   // a release to one user names that user (an entity user's id is the same in every round):
   // its user kept only in identity/ (5.4 review)
   releases: "split", skin: "coded", name: "coded", folderId: "coded",
@@ -226,6 +232,7 @@ export function codedScheme(s: Scheme): Record<string, unknown> {
       case "supersededFiles": out[k] = (s.supersededFiles ?? []).map((x) => ({ where: x.where, at: x.at, reason: x.reason, file: fileMeta(x.file) })); break;
       case "releases": out[k] = (s.releases ?? []).map(({ userId: _u, ...r }) => r); break;
       case "deliveries": out[k] = codedDeliveries(s.deliveries); break;
+      case "acknowledgements": out[k] = (s.acknowledgements ?? []).map(({ by: _b, ...a }) => a); break;
     }
   }
   return out;

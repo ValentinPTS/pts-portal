@@ -11,7 +11,9 @@ import { LAB_DOC_SLOTS } from "@/lib/doc-release";
 import { DEADLINE_LABEL, STATE_LABEL, PAYMENT_LABEL } from "@/lib/participation-state-model";
 import { deadlineZone } from "@/lib/scheme-dates";
 import { listForParticipations, withReadState } from "@/lib/notifications";
-import { labUploadDocAction, submitReceiptAction, reportDeliveryProblemAction } from "@/lib/actions";
+import { labUploadDocAction, submitReceiptAction, reportDeliveryProblemAction, acknowledgeDocAction } from "@/lib/actions";
+import { ACK_PROBLEM_TEXT, ackDone, ackMoment, declarationWords, DECLARATION, type AckProblem } from "@/lib/ack-model";
+import type { DocAck } from "@/lib/participation-view";
 import { deliveryOf, openShipment, RECEIPT_PROBLEM_TEXT } from "@/lib/delivery-model";
 import { schemeNowMs, sofiaToday } from "@/lib/clock";
 import { signOutLabAction } from "@/lib/auth-actions";
@@ -71,12 +73,13 @@ export default async function ParticipationPage({ params, searchParams }: { para
   // the documents of the participation, in its three levels (Реш. 49): the scheme's, those
   // to it alone or to this user, then what is issued to it — the report, the certificate,
   // the proforma. PTS's own documents (the provider's level) have no place in the portal yet.
+  const NO_ACK: DocAck = { state: "none" };
   const rows = [
-    ...v.docs.map((d) => ({ key: d.key, name: docName(d.key, lang), ed: d.editionNo ? String(d.editionNo) : "—", at: d.at.slice(0, 10), lvl: d.level as string, level: d.level === "all" ? L("на схемата", "the scheme's") : d.level === "user" ? L("до вас лично", "to you personally") : L("на участието", "the participation's"), state: d.opened === null ? "—" : d.opened ? L("отворен", "opened") : L("неотворен", "not opened"), opened: d.opened !== false, href: docHref(v, d.key, lang) })),
-    ...(officialReport ? [{ key: "report", lvl: "issued", name: L("Окончателен доклад", "Final report"), ed: "—", at: "", level: L("на схемата", "the scheme's"), state: L("издаден", "issued"), opened: true, href: `/lab/doc/${s.id}/report?lang=${lang}&p=${encodeURIComponent(v.participantId)}` }] : []),
-    ...(hasCert ? [{ key: "certificate", lvl: "issued", name: L("Сертификат", "Certificate"), ed: "—", at: "", level: L("на участието", "the participation's"), state: L("издаден", "issued"), opened: true, href: `/lab/doc/${s.id}/certificate?lang=${lang}&p=${encodeURIComponent(v.participantId)}` }] : []),
-    ...(original ? [{ key: "invoice", lvl: "issued", name: `${T(LAB_DOC_SLOTS.invoice)}${original.number ? ` № ${original.number}` : ""}`, ed: "—", at: original.uploadedAt.slice(0, 10), level: L("на участието", "the participation's"), state: L("платено", "paid"), opened: true, href: `/lab/labdoc/${s.id}/invoice?p=${encodeURIComponent(v.participantId)}` }] : []),
-    ...(invoice ? [{ key: "proforma", lvl: "issued", name: `${T(LAB_DOC_SLOTS.proforma)}${invoice.number ? ` № ${invoice.number}` : ""}`, ed: "—", at: invoice.uploadedAt.slice(0, 10), level: L("на участието", "the participation's"), state: s.status === "not_held" ? L("схемата не се състои — нищо не се фактурира", "the scheme is not held — nothing is invoiced") : T(PAYMENT_LABEL[v.payment]), opened: true, href: `/lab/labdoc/${s.id}/proforma?p=${encodeURIComponent(v.participantId)}` }] : []),
+    ...v.docs.map((d) => ({ key: d.key, ack: d.ack as DocAck, editionId: d.editionId ?? "", editionNo: d.editionNo, name: docName(d.key, lang), ed: d.editionNo ? String(d.editionNo) : "—", at: d.at.slice(0, 10), lvl: d.level as string, level: d.level === "all" ? L("на схемата", "the scheme's") : d.level === "user" ? L("до вас лично", "to you personally") : L("на участието", "the participation's"), state: d.opened === null ? "—" : d.opened ? L("отворен", "opened") : L("неотворен", "not opened"), opened: d.opened !== false, href: docHref(v, d.key, lang) })),
+    ...(officialReport ? [{ key: "report", ack: NO_ACK, editionId: "", editionNo: undefined, lvl: "issued", name: L("Окончателен доклад", "Final report"), ed: "—", at: "", level: L("на схемата", "the scheme's"), state: L("издаден", "issued"), opened: true, href: `/lab/doc/${s.id}/report?lang=${lang}&p=${encodeURIComponent(v.participantId)}` }] : []),
+    ...(hasCert ? [{ key: "certificate", ack: NO_ACK, editionId: "", editionNo: undefined, lvl: "issued", name: L("Сертификат", "Certificate"), ed: "—", at: "", level: L("на участието", "the participation's"), state: L("издаден", "issued"), opened: true, href: `/lab/doc/${s.id}/certificate?lang=${lang}&p=${encodeURIComponent(v.participantId)}` }] : []),
+    ...(original ? [{ key: "invoice", ack: NO_ACK, editionId: "", editionNo: undefined, lvl: "issued", name: `${T(LAB_DOC_SLOTS.invoice)}${original.number ? ` № ${original.number}` : ""}`, ed: "—", at: original.uploadedAt.slice(0, 10), level: L("на участието", "the participation's"), state: L("платено", "paid"), opened: true, href: `/lab/labdoc/${s.id}/invoice?p=${encodeURIComponent(v.participantId)}` }] : []),
+    ...(invoice ? [{ key: "proforma", ack: NO_ACK, editionId: "", editionNo: undefined, lvl: "issued", name: `${T(LAB_DOC_SLOTS.proforma)}${invoice.number ? ` № ${invoice.number}` : ""}`, ed: "—", at: invoice.uploadedAt.slice(0, 10), level: L("на участието", "the participation's"), state: s.status === "not_held" ? L("схемата не се състои — нищо не се фактурира", "the scheme is not held — nothing is invoiced") : T(PAYMENT_LABEL[v.payment]), opened: true, href: `/lab/labdoc/${s.id}/proforma?p=${encodeURIComponent(v.participantId)}` }] : []),
   ];
 
   // the characteristics it applied for (5.1), each with its participations when more than one
@@ -111,14 +114,20 @@ export default async function ParticipationPage({ params, searchParams }: { para
   };
 
   const receiptErr = err?.startsWith("receipt-") ? err.slice(8) : "";
+  const ackErr = err?.startsWith("ack-") ? err.slice(4) : "";
   const errText = err === "locked" ? L("Файлът не е приет — участието вече не приема файлове.", "The file was not taken — the participation takes no more files.")
     : err === "upload" ? L("Качването не бе прието — използвайте PDF/PNG/JPG до 15 MB.", "Upload not accepted — use a PDF/PNG/JPG up to 15 MB.")
     : receiptErr && Object.hasOwn(RECEIPT_PROBLEM_TEXT, receiptErr) ? `${L("Протоколът не е подаден", "The protocol was not filed")}: ${T(RECEIPT_PROBLEM_TEXT[receiptErr as keyof typeof RECEIPT_PROBLEM_TEXT])}`
     : err === "problem-text" ? L("Опишете проблема (поне 3 знака).", "Describe the problem (3 characters at least).")
     : err === "problem-nothing" ? L("Още нищо не е изпратено към вас.", "Nothing has been sent to you yet.")
     : err === "problem-state" ? L("Схемата вече не приема сигнали — свържете се с PTS.", "The scheme no longer takes problems — contact PTS.")
-    : err === "problem-many" ? L("Имате няколко неотговорени сигнала — изчакайте отговора на PTS.", "You have several problems unanswered — wait for PTS's answer.") : "";
-  const okText = sp.ok === "receipt" ? L("Протоколът за получаване е подаден — PTS е уведомен.", "The receipt protocol is filed — PTS is told.") : sp.ok === "problem" ? L("Сигналът е изпратен на PTS.", "The problem is sent to PTS.") : "";
+    : err === "problem-many" ? L("Имате няколко неотговорени сигнала — изчакайте отговора на PTS.", "You have several problems unanswered — wait for PTS's answer.")
+    : ackErr && Object.hasOwn(ACK_PROBLEM_TEXT, ackErr) ? T(ACK_PROBLEM_TEXT[ackErr as AckProblem]) : "";
+  const okText = sp.ok === "receipt" ? L("Протоколът за получаване е подаден — PTS е уведомен.", "The receipt protocol is filed — PTS is told.") : sp.ok === "problem" ? L("Сигналът е изпратен на PTS.", "The problem is sent to PTS.")
+    : sp.ok === "ack" ? L("Потвърждението е записано.", "The acknowledgement is recorded.") : sp.ok === "declaration" ? L("Декларацията е подписана — записана с вашия акаунт, датата, часа и редакцията.", "The declaration is signed — recorded with your account, the date, the hour and the edition.") : "";
+  // a record's moment as a person reads it: the day and the hour, both on Sofia's clock (review)
+  const dayTime = ackMoment;
+  const declaration = rows.find((r) => r.key === DECLARATION && r.ack.state !== "none");
   const card = (title: string, body: React.ReactNode, attrs: Record<string, string> = {}) => (
     <section className="card" style={{ padding: 0, overflow: "hidden" }} {...attrs}>
       <h2 style={{ margin: 0, padding: "12px 16px", borderBottom: "1px solid var(--line)", fontSize: 15, fontWeight: 800 }}>{title}</h2>
@@ -175,18 +184,70 @@ export default async function ParticipationPage({ params, searchParams }: { para
                     <th style={{ padding: "4px 6px" }}>{L("Документ", "Document")}</th><th style={{ padding: "4px 6px" }}>{L("Ред.", "Ed.")}</th><th style={{ padding: "4px 6px" }}>{L("Публикуван", "Published")}</th><th style={{ padding: "4px 6px" }}>{L("Ниво", "Level")}</th><th style={{ padding: "4px 6px" }}>{L("Състояние", "State")}</th>
                   </tr></thead>
                   <tbody>{rows.map((r) => (
-                    <tr key={r.key} data-doc-row={r.key} data-doc={r.key} data-doc-level={r.lvl} data-doc-opened={r.opened ? "1" : "0"} style={{ borderTop: "1px solid var(--line)" }}>
+                    <tr key={r.key} data-doc-row={r.key} data-doc={r.key} data-doc-level={r.lvl} data-doc-opened={r.opened ? "1" : "0"} data-doc-ack={r.ack.state} style={{ borderTop: "1px solid var(--line)" }}>
                       <td style={{ padding: "7px 6px" }}><a href={r.href} target="_blank" rel="noreferrer">{r.name}</a></td>
                       <td style={{ padding: "7px 6px", fontVariantNumeric: "tabular-nums" }}>{r.ed}</td>
                       <td style={{ padding: "7px 6px", fontVariantNumeric: "tabular-nums" }}>{r.at ? fmtPhaseDate(r.at) : "—"}</td>
                       <td style={{ padding: "7px 6px", color: "var(--muted)" }}>{r.level}</td>
-                      <td style={{ padding: "7px 6px", color: r.opened ? "var(--muted)" : "#2f4f75", fontWeight: r.opened ? 400 : 700 }}>{r.state}</td>
+                      <td style={{ padding: "7px 6px", color: r.opened ? "var(--muted)" : "#2f4f75", fontWeight: r.opened ? 400 : 700 }}>
+                        {r.state}
+                        {/* 5.9: asked to acknowledge (Реш. 117) or to sign (Реш. 118) — never a block */}
+                        {r.ack.state === "done" ? (
+                          <div data-ack-done={r.ack.kind} style={{ fontSize: 12, color: "#2e6b3a", fontWeight: 600 }}>✓ {ackDone(lang, r.ack.kind, dayTime(r.ack.record.at))}</div>
+                        ) : r.ack.state === "asked" && r.ack.kind === "declaration" ? (
+                          <div><a href="#declaration" style={{ fontSize: 12, fontWeight: 700 }}>{L("Подпишете ↓", "Sign ↓")}</a></div>
+                        ) : r.ack.state === "asked" && s.status !== "not_held" && !r.editionId ? (
+                          // released before editions: its edition is kept on the first opening (3.0)
+                          <div data-ack-open-first style={{ fontSize: 12 }}><a href={r.href} target="_blank" rel="noreferrer">{L("Отворете го — после потвърдете", "Open it — then acknowledge")}</a></div>
+                        ) : r.ack.state === "asked" && s.status !== "not_held" ? (
+                          <form action={acknowledgeDocAction} data-ack-form={r.key} style={{ marginTop: 4 }}>
+                            <input type="hidden" name="schemeId" value={s.id} />
+                            <input type="hidden" name="participantId" value={v.participantId} />
+                            <input type="hidden" name="docKey" value={r.key} />
+                            <input type="hidden" name="editionId" value={r.editionId} />
+                            <input type="hidden" name="lang" value={lang} />
+                            <button type="submit" className="btn btn-sm" style={{ fontSize: 12 }}>{L("Запознах се", "I have read it")}</button>
+                          </form>
+                        ) : null}
+                      </td>
                     </tr>
                   ))}</tbody>
                 </table>
-                <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--muted)" }}>{L("Всяко сваляне се записва. «Отворен» — свален от някого от участието.", "Every download is recorded. «Opened» — downloaded by someone of the participation.")}</p>
+                <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--muted)" }}>{L("Всяко сваляне се записва. «Отворен» — свален от някого от участието. «Запознах се» записва вашия акаунт, датата и редакцията; не спира нищо.", "Every download is recorded. «Opened» — downloaded by someone of the participation. «I have read it» records your account, the date and the edition; it holds nothing back.")}</p>
               </div>
-            ))}
+            ), { id: "documents" })}
+
+            {/* the declaration Ф 4.2-2, signed by a tick (5.9; Реш. 118) — the account, the day and
+                the hour, and the edition's text (the hash of its frozen file) */}
+            {declaration ? card(L("Декларация за конфиденциалност (Ф 4.2-2)", "Confidentiality declaration (F 4.2-2)"), declaration.ack.state === "done" ? (
+              <div data-declaration="signed" style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                <span style={{ fontWeight: 700, color: "#2e6b3a" }}>✓ {ackDone(lang, "declaration", dayTime(declaration.ack.record.at))}{declaration.ack.record.editionNo ? L(` · редакция № ${declaration.ack.record.editionNo}`, ` · edition No. ${declaration.ack.record.editionNo}`) : ""}</span>
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>{L("Записана с акаунта, датата, часа и текста на тази редакция. Нова редакция ще поиска нов подпис.", "Recorded with the account, the date, the hour and this edition's text. A new edition will ask to be signed again.")}</span>
+              </div>
+            ) : s.status === "not_held" ? (
+              <p style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>{L("Схемата не се състои — няма какво да се подписва.", "The scheme is not held — there is nothing to sign.")}</p>
+            ) : !declaration.editionId ? (
+              // sent before editions: its edition — the text signed — is kept on the first opening (3.0)
+              <p data-declaration="open-first" style={{ margin: 0, fontSize: 13 }}>
+                <a href={declaration.href} target="_blank" rel="noreferrer" style={{ fontWeight: 600 }}>{L("Отворете декларацията", "Open the declaration")} ↗</a>
+                {L(" — после презаредете страницата и я подпишете.", " — then reload this page and sign it.")}
+              </p>
+            ) : (
+              <form action={acknowledgeDocAction} data-declaration="asked" style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+                <input type="hidden" name="schemeId" value={s.id} />
+                <input type="hidden" name="participantId" value={v.participantId} />
+                <input type="hidden" name="docKey" value={DECLARATION} />
+                <input type="hidden" name="editionId" value={declaration.editionId} />
+                <input type="hidden" name="lang" value={lang} />
+                <a href={declaration.href} target="_blank" rel="noreferrer" style={{ fontWeight: 600 }}>{L("Прочетете декларацията", "Read the declaration")}{declaration.editionNo ? L(` (редакция № ${declaration.editionNo})`, ` (edition No. ${declaration.editionNo})`) : ""} ↗</a>
+                <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                  <input type="checkbox" name="tick" value="on" required style={{ marginTop: 3 }} />
+                  <span>{declarationWords(lang, declaration.editionNo, undefined) /* the edition by its number — the row's date is the release's, not the edition's */}</span>
+                </label>
+                <div><button type="submit" className="btn btn-primary btn-sm">{L("Подписвам", "Sign")}</button></div>
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>{L("Отметката е подписът: записват се вашият акаунт, датата, часът и текстът на тази редакция. Сканирано копие не е нужно.", "The tick is the signature: your account, the date, the hour and this edition's text are recorded. A scanned copy is not needed.")}</span>
+              </form>
+            ), { id: "declaration" }) : null}
 
             {s.type === "C" && chain ? (
               <DeviceChainCard schemeId={s.id} lang={lang} state={chain.state} position={chain.position?.position} total={chain.position?.total} wait={chain.wait} started={chain.started} closed={chain.closed} incoming={chain.incoming} next={chain.next} handOnBy={chain.handOnBy} />

@@ -712,6 +712,13 @@ export interface Scheme {
   // А16 / Реш. 127: the minimum working days to a participant's results deadline for a
   // replacement object (default 10, lib/delivery-model minDaysOf)
   deliveryMinDays?: number;
+  // «изисква потвърждение» per document (part 5.9; Реш. 117) — docKey → who set it, when.
+  // The declaration Ф 4.2-2 always asks, with no setting (lib/ack-model). JSONB, no migration.
+  ackRequired?: Record<string, import("./ack-model").AckSetting>;
+  // the participations' acknowledgements and the declaration's ticks (5.9; Реш. 117, 118):
+  // per participation and edition, with the account, the moment and — for the declaration —
+  // the hash of the edition's frozen file. Appended, never rewritten.
+  acknowledgements?: import("./ack-model").Acknowledgement[];
   // A calibration scheme's reference values per point (part 5.7, lib/reference-values-model)
   // — x_ref before and after, u_calibration, u_other, k, for 2.0's «Calibration» sheet (D3);
   // each save a version, appended. JSONB, no migration.

@@ -10,6 +10,9 @@ import { addCaseEventAction, voidCaseEventAction } from "@/lib/actions";
 import { requireStaff } from "@/lib/roles";
 import { logActivity } from "@/lib/activity";
 import LabInvoicePanel from "@/components/LabInvoicePanel";
+import { acksOfParticipation, ackDone, ackMoment } from "@/lib/ack-model";
+import { openEntityUsers } from "@/lib/entity-users";
+import { actorNow } from "@/lib/identities";
 import { invoiceProblem } from "@/lib/announcement-model";
 import { getServerT } from "@/lib/i18n-server";
 import { DOCUMENTS } from "@/lib/documents";
@@ -69,6 +72,16 @@ export default async function CaseFilePage({
   // who is behind this code only when a manager asks to see it — an opening, on record (2.3)
   const p = revealed ? (await namesFor(id, [coded]))[0] : withoutIdentity(coded);
   if (revealed) await logActivity("names.viewed", { schemeId: id, targetCode: code, subject: `participant:${code}`, summary: "Laboratory name shown for one code — its case file" });
+  // 5.9: the acknowledgements and the declaration's ticks of this participation — the account by
+  // name only when the names are revealed here (one opening, on record), else by its kind (review)
+  const acks = coded ? acksOfParticipation(s, coded.id) : [];
+  const ackUser = new Map<string, string>();
+  const ackUserIds = [...new Set(acks.map((a) => a.by).filter((b) => b.startsWith("entityuser:")).map((b) => b.slice("entityuser:".length)))];
+  if (revealed && ackUserIds.length) {
+    const who = { actor: await actorNow(), purpose: "names.view" as const };
+    for (const uid of ackUserIds) for (const u of await openEntityUsers(who, { userId: uid }).catch(() => [])) ackUser.set(`entityuser:${u.id}`, u.name);
+    if (ackUser.size) await logActivity("names.viewed", { schemeId: id, targetCode: code, subject: `participant:${code}`, summary: `Who acknowledged or signed for one code shown by name (${ackUser.size})` });
+  }
 
   // A non-manager never sees a lab's e-mail or the name of a file it uploaded (N4).
   // voided steps included: they stay in the file, struck through (part 0.9)
@@ -178,6 +191,32 @@ export default async function CaseFilePage({
           notYet={s.status === "not_held" ? undefined : invoiceProblem(s, coded!) ?? undefined}
         />
       )}
+
+      {/* 5.9: what this participation acknowledged or signed (Реш. 117, 118) — the document, the
+          edition, the moment; the account only as its kind, never a person's name by the code */}
+      {acks.length > 0 && (() => {
+        const at = ackMoment; // the day and the hour on Sofia's clock (review)
+        const lg = lang === "bg" ? "bg" : "en";
+        return (
+          <section className="card p-4 mt-4" data-participant-acks={acks.length}>
+            <h2 className="font-bold" style={{ color: "var(--green-dark)", fontSize: 15, margin: 0 }}>{lg === "bg" ? "Потвърждения и декларация" : "Acknowledgements and declaration"}</h2>
+            <ul className="text-sm mt-2" style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+              {acks.map((a) => {
+                const d = DOCUMENTS.find((x) => x.key === a.docKey);
+                return (
+                  <li key={a.id} data-participant-ack={a.docKey} data-ack-kind={a.kind}>
+                    <strong>{d ? (lg === "bg" ? d.nameBg : d.nameEn) : a.docKey}</strong>
+                    {a.editionNo ? (lg === "bg" ? ` · ред. № ${a.editionNo}` : ` · ed. No. ${a.editionNo}`) : ""}
+                    {" — "}{ackDone(lg, a.kind, at(a.at))}
+                    {" · "}<span style={{ color: "var(--muted)" }} data-ack-account>{ackUser.get(a.by) ?? (a.by.startsWith("entityuser:") ? (lg === "bg" ? "потребител на организацията" : "a user of the organisation") : (lg === "bg" ? "акаунтът на лабораторията" : "the laboratory's account"))}</span>
+                    {a.sha ? <span style={{ color: "var(--muted)", fontFamily: "monospace", fontSize: 11 }}>{` · sha-256 ${a.sha.slice(0, 12)}…`}</span> : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })()}
 
       {/* timeline */}
       <h2 className="text-lg font-bold mt-7 mb-2 pb-1" style={{ color: "var(--green-dark)", borderBottom: "2px solid var(--red)" }}>

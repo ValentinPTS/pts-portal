@@ -5,7 +5,11 @@ import { notFound } from "next/navigation";
 import { getScheme } from "@/lib/store";
 import { getDoc, isFormDoc, isListDoc, isRestrictedDoc, isDocDone, hasDocContent, ORDER_DOC } from "@/lib/documents";
 import { DOC_STAGES } from "@/lib/doc-stages";
-import { isSendableDoc } from "@/lib/doc-release";
+import { isSendableDoc, SENDABLE_DOCS } from "@/lib/doc-release";
+import AckPanel from "@/components/AckPanel";
+import { ackRequiredFor, ackSettable, ackCounts, personalAcks } from "@/lib/ack-model";
+import { releaseFor } from "@/lib/release-model";
+import { isStarted } from "@/lib/visibility";
 import { fmtPhaseDate } from "@/lib/lab-phases";
 import ExplorerShell from "@/components/ExplorerShell";
 import SchemeDocuments, { type DocStageView, type DocSource, type DocRow } from "@/components/SchemeDocuments";
@@ -49,9 +53,10 @@ import { requireStaff, getRoleContext, canManagePeople } from "@/lib/roles";
 // A scheme folder → its 14 documents grouped by workflow stage. Every document can be
 // built in the app OR filled with an uploaded ready-made file (PDF/image) — see
 // SchemeDocuments. The header shows the primary tools; the rest tuck under "Управление".
-export default async function SchemePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function SchemePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ack?: string }> }) {
   await requireStaff(); // read gate: one of PTS's people
   const { id } = await params;
+  const ackNotice = (await searchParams).ack; // 5.9: the setting's answer
   await requireCap("codes.view", id); // in THIS scheme, by the role model (2.4)
   const s = await getScheme(id);
   if (!s) notFound();
@@ -396,6 +401,16 @@ export default async function SchemePage({ params }: { params: Promise<{ id: str
         );
       })()}
       <SchemeDocuments schemeId={id} lang={lang} stages={stages} lists={lists} />
+      {/* 5.9: which documents ask to be acknowledged, and how many have — counts, no code named */}
+      {(() => {
+        const going = isStarted(s) ? participantsNow.filter((p) => inFinalRound(s, p)) : [];
+        const rows = SENDABLE_DOCS.map((k) => {
+          const reaching = going.flatMap((p) => { const r = releaseFor(s, k, { participantIds: [p.id] }); return r ? [{ participantId: p.id, editionId: r.editionId }] : []; });
+          const d = getDoc(k);
+          return { key: k, name: d ? (lang === "bg" ? d.nameBg : d.nameEn) : k, required: ackRequiredFor(s, k), settable: ackSettable(k), ...ackCounts(s, k, reaching), personal: personalAcks(s, k) };
+        });
+        return <AckPanel schemeId={id} lang={lang} rows={rows} canEdit={canAct} started={isStarted(s)} notice={ackNotice} />;
+      })()}
     </ExplorerShell>
   );
 }

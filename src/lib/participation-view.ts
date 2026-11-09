@@ -22,6 +22,7 @@ import { listActivity } from "./activity-store";
 import { holidaySet } from "./holidays";
 import { chainWindow } from "./deadlines-model";
 import { docsFor, type ReachingRelease } from "./release-model";
+import { ackRequiredFor, ackOf, kindOf, type AckKind, type Acknowledgement } from "./ack-model";
 import { inFinalRound } from "./announcement-model";
 import { deliveryOf, deliveryProgress, receivedOtherwise, otherReceipts } from "./delivery-model";
 import { schemeNowMs } from "./clock";
@@ -84,9 +85,13 @@ export interface ParticipationView {
   receipt?: CaseEvent;
   /** every document released to it, each with whether anyone of it opened that edition
    *  (null: released before editions — not known) */
-  docs: ({ key: string } & ReachingRelease & { opened: boolean | null })[];
+  docs: ({ key: string } & ReachingRelease & { opened: boolean | null; ack: DocAck })[];
   actions: ActionItem[];
 }
+
+/** A document's acknowledgement for the edition the participation holds (5.9): not asked; asked
+ *  and not given; given — with its record. */
+export type DocAck = { state: "none" } | { state: "asked"; kind: AckKind } | { state: "done"; kind: AckKind; record: Acknowledgement };
 
 const latest = (events: CaseEvent[], kind: CaseEvent["kind"]) =>
   events.filter((e) => e.kind === kind).sort((a, b) => (b.at + (b.recordedAt ?? "")).localeCompare(a.at + (a.recordedAt ?? "")))[0];
@@ -128,14 +133,25 @@ export async function participationViews(rows: readonly OwnRow[], viewer: { user
       const mineCodes = codesOf(part.code);
       // opened: a download of THAT edition by THIS participation's code; a release from before
       // editions (3.0) has none to match — not known, never said «opened»
-      const docs = (reaching.get(part.id) ?? []).map((d) => ({ ...d, opened: d.editionId ? mineCodes.some((c) => opened.has(`${d.editionId}|${c}`)) : null }));
+      const docs = (reaching.get(part.id) ?? []).map((d) => {
+        // asked to acknowledge — the declaration always (5.9; Реш. 117, 118)
+        // a record made stays shown when the setting is later cleared (review)
+        const rec = ackOf(scheme, part.id, d.key, d.editionId);
+        const ack: DocAck = rec ? { state: "done", kind: kindOf(d.key), record: rec } : ackRequiredFor(scheme, d.key) ? { state: "asked", kind: kindOf(d.key) } : { state: "none" };
+        return { ...d, opened: d.editionId ? mineCodes.some((c) => opened.has(`${d.editionId}|${c}`)) : null, ack };
+      });
       const dispatch = latest(events, "items_dispatched");
       out.push({
         participantId: part.id, scheme, part, labName: r.labName, laboratoryId: r.laboratoryId, receivedOtherwise: otherwise,
         state, stage: STATE_STAGE[state], finished: finished(state),
         payment: paymentOf(scheme, part.code, part.status), deadline, events,
         dispatch, receipt: latest(events, "receipt_confirmed"), docs,
-        actions: actionsFor({ participantId: part.id, state, deadline, dispatchedAt: dispatch?.at, unopened: docs.filter((d) => d.opened === false).map((d) => ({ key: d.key, editionNo: d.editionNo, editionId: d.editionId })) }),
+        actions: actionsFor({
+          participantId: part.id, state, deadline, dispatchedAt: dispatch?.at,
+          unopened: docs.filter((d) => d.opened === false).map((d) => ({ key: d.key, editionNo: d.editionNo, editionId: d.editionId })),
+          // a scheme not held asks nothing more of anyone
+          unacked: scheme.status === "not_held" ? [] : docs.filter((d) => d.ack.state === "asked").map((d) => ({ key: d.key, kind: kindOf(d.key), editionNo: d.editionNo, editionId: d.editionId })),
+        }),
       });
     }
   }

@@ -77,7 +77,8 @@ import { notifyParticipationRefused, notifyItemsDispatched, notifyReceiptProtoco
 import { readDocNumber, invoiceSlotProblem, INVOICE_PROBLEM_TEXT } from "./invoice-model";
 import { readShipment, readReceipt, deliveryOf, openShipment, openProblems, replacementProblem, replacementCalledFor, minDaysOf, readMinDays, LIMITS as DELIVERY_LIMITS, MAX_OPEN_PROBLEMS, type Shipment, type ShipmentKind, type Deliveries } from "./delivery-model";
 import { finalListOf, splitFor, invoiceProblem, currentFinalList, inFinalRound, finalSelectionsOf, ANNOUNCEMENT_PROBLEM_TEXT, type FinalList } from "./announcement-model";
-import { readTarget, RELEASE_PROBLEM_TEXT, type TargetRelease } from "./release-model";
+import { readTarget, RELEASE_PROBLEM_TEXT, releaseFor, type TargetRelease } from "./release-model";
+import { ackRequiredFor, ackSettable, ackOf, kindOf, readAckForm, type Acknowledgement, type AckProblem } from "./ack-model";
 import { drawCodes, drawObjects, toCode, codingProblem, objectsGiven, unfinished, sampleCodeOf, isProvisional, CODING_PROBLEM_TEXT, type CodingProblem, type CodingRecord } from "./coding-model";
 import { commitCoding } from "./coding-store";
 import { pointKeys, pointsReady, fingerprint, orphans, readReferenceTable, kNeedsReason, currentRows, sameRow, sameRows, type ReferenceRow } from "./reference-values-model";
@@ -5764,4 +5765,110 @@ export async function saveReferenceValuesAction(_prev: ReferenceSaveState, formD
   revalidatePath(`/schemes/${schemeId}/reference`);
   revalidatePath(`/schemes/${schemeId}`);
   redirect(back("ok=1"));
+}
+
+
+// ── The declaration and the acknowledgements (part 5.9; PTS's answers К12, К13 — Реш. 117,
+// 118) ───────────────────────────────────────────────────────────────────────────────────
+// A participation acknowledges the edition of a document it holds — or, for the declaration
+// Ф 4.2-2, signs it with a tick: the account, the moment on the round's clock, the edition and
+// (the declaration) the hash of its frozen file, which is the text signed. Per participation
+// and edition: a second press is no second record, a new edition asks again. NEVER a block:
+// nothing else in the portal waits on it (Реш. 117).
+const ackBack = (pid: string, q: string) => `/lab/p/${encodeURIComponent(pid)}?${q}#documents`;
+
+export async function acknowledgeDocAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? "");
+  const pid = String(formData.get("participantId") ?? "").trim();
+  const docKey = String(formData.get("docKey") ?? "");
+  const posted = String(formData.get("editionId") ?? "");
+  const lang = formData.get("lang") === "en" ? "en" as const : "bg" as const;
+  const mine = await ownGoingOn(schemeId, pid);
+  if (!mine) redirect("/lab");
+  const { scheme, part, by, log } = mine!;
+  const no = (problem: AckProblem) => redirect(ackBack(pid, `e=ack-${problem}`));
+  if (scheme.status === "not_held") no("state");
+  const form = readAckForm(docKey, formData.get("tick"));
+  if (!form.ok) no(form.problem);
+  if (!isSendableDoc(docKey) || !ackRequiredFor(scheme, docKey)) no("not-asked");
+  // the edition that reaches THIS participation now — its own release, or the scheme's
+  const viewer = { participantIds: [pid], userId: by.startsWith("entityuser:") ? by.slice("entityuser:".length) : undefined };
+  const reaching = releaseFor(scheme, docKey, viewer);
+  if (!reaching) no("not-reaching");
+  // what is acknowledged is always a frozen edition: a release from before editions (3.0) keeps
+  // its edition on the first opening — open it first, never an unknown text signed (review)
+  if (!reaching!.editionId) no("open-first");
+  // the form was drawn for the edition it showed: a newer one meanwhile is the one to acknowledge
+  if (reaching!.editionId !== posted) no("edition");
+  if (ackOf(scheme, pid, docKey, reaching!.editionId)) no("twice");
+  // the declaration: the text signed — the hash of the edition's frozen file, in the language shown
+  let sha: string | undefined;
+  if (kindOf(docKey) === "declaration") {
+    const ed = await getEdition(reaching!.editionId!).catch(() => null);
+    sha = ed ? (ed.source === "uploaded" ? ed.sha.file : ed.sha[lang] ?? ed.sha.bg ?? ed.sha.en) : undefined;
+    // the text signed is the record's heart (Реш. 118): without its hash, nothing is saved (review)
+    if (!sha) no("failed");
+  }
+  const record: Acknowledgement = {
+    id: randomUUID(), participantId: pid, docKey, kind: kindOf(docKey),
+    editionId: reaching!.editionId!, ...(reaching!.editionNo ? { editionNo: reaching!.editionNo } : {}),
+    ...(sha ? { sha, lang } : {}),
+    at: schemeNowIso(scheme), by,
+  };
+  // in the lock: still asked, still this edition, still not given — a second press is not a second record
+  let refused: AckProblem | null = null;
+  await updateSchemeWith(schemeId, (s) => {
+    if (s.status === "not_held") { refused = "state"; return {}; }
+    if (!ackRequiredFor(s, docKey)) { refused = "not-asked"; return {}; }
+    const now = releaseFor(s, docKey, viewer);
+    // withdrawn meanwhile: nothing to acknowledge; another edition meanwhile: that one (review)
+    if (!now) { refused = "not-reaching"; return {}; }
+    if (now.editionId !== reaching!.editionId) { refused = "edition"; return {}; }
+    if (ackOf(s, pid, docKey, reaching!.editionId)) { refused = "twice"; return {}; }
+    return { acknowledgements: [...(s.acknowledgements ?? []), record] };
+  });
+  if (refused) no(refused);
+  const name = getDoc(docKey)?.nameEn ?? docKey;
+  // the code, the document, the edition and the hash — the account in the record, never a name in the words
+  await log(record.kind === "declaration" ? "declaration.signed" : "doc.acknowledged", {
+    targetCode: part.code, subject: `ack:${docKey}:${record.editionId ?? "-"}`,
+    summary: record.kind === "declaration" ? `${part.code} signed the ${name}${record.editionNo ? ` (edition No. ${record.editionNo})` : ""}` : `${part.code} acknowledged the ${name}${record.editionNo ? ` (edition No. ${record.editionNo})` : ""}`,
+    after: { docKey, editionNo: record.editionNo ?? null, ...(sha ? { sha, lang } : {}) },
+  });
+  revalidatePath(`/lab/p/${pid}`);
+  revalidatePath("/lab/overview");
+  revalidatePath(`/schemes/${schemeId}`);
+  redirect(ackBack(pid, `ok=${record.kind === "declaration" ? "declaration" : "ack"}`));
+}
+
+/** «Изисква потвърждение» on a document of the scheme — set or cleared by who edits the scheme.
+ *  Clearing it keeps every record made; the declaration always asks and has no setting. */
+export async function setAckRequiredAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? "");
+  await requireCap("scheme.edit", schemeId);
+  const docKey = String(formData.get("docKey") ?? "");
+  const on = formData.get("on") === "1";
+  const back = (q: string) => `/schemes/${encodeURIComponent(schemeId)}?${q}#acknowledgements`;
+  if (!isSendableDoc(docKey) || !ackSettable(docKey)) redirect(back("ack=doc"));
+  const scheme = await getScheme(schemeId);
+  if (!scheme) redirect("/files");
+  const actor = (await getRoleContext()).email ?? "";
+  let was = false;
+  await updateSchemeWith(schemeId, (s) => {
+    was = !!s.ackRequired?.[docKey];
+    if (was === on) return {};
+    const next = { ...(s.ackRequired ?? {}) };
+    if (on) next[docKey] = { at: new Date().toISOString(), by: actor };
+    else delete next[docKey];
+    return { ackRequired: next };
+  });
+  if (was !== on) {
+    await logActivity("scheme.ack", {
+      schemeId, subject: `doc:${docKey}`,
+      summary: `${getDoc(docKey)?.nameEn ?? docKey}: ${on ? "asks the participations to acknowledge it" : "no longer asks for an acknowledgement (the records stay)"}`,
+      before: { required: was }, after: { required: on },
+    });
+  }
+  revalidatePath(`/schemes/${schemeId}`);
+  redirect(back(`ack=${on ? "on" : "off"}`));
 }

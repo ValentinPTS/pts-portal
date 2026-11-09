@@ -607,6 +607,10 @@ const DICT: Record<string, Entry> = {
   "act.delivery.problem": { bg: "Сигнал за проблем с обекта", en: "Object problem signalled" },
   "act.delivery.problem_resolved": { bg: "Сигналът за обекта е решен", en: "Object problem resolved" },
   "act.receipt.protocol": { bg: "Протокол за получаване", en: "Receipt protocol" },
+  // 5.9 — the declaration's tick and the acknowledgements (Реш. 117, 118)
+  "act.doc.acknowledged": { bg: "Потвърдено запознаване с документ", en: "Document acknowledged" },
+  "act.declaration.signed": { bg: "Подписана декларация Ф 4.2-2", en: "Declaration F 4.2-2 signed" },
+  "act.scheme.ack": { bg: "Изисква потвърждение — настройка", en: "Asks for acknowledgement — setting" },
   "act.scheme.reference_values": { bg: "Референтни стойности по точки", en: "Reference values per point" },
   "act.scheme.delivery_min_days": { bg: "Минимален брой работни дни (заместващ обект)", en: "Minimum working days (replacement object)" },
   "act.message.sent": { bg: "Изпратен имейл до лаборатория", en: "E-mail to a laboratory sent" },

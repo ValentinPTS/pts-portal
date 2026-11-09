@@ -246,17 +246,18 @@ export function nextDeadline(s: Pick<Scheme, "dates" | "extensions" | "type">, c
 export const deadlineOrder = (at: string | undefined): number => deadlineMs(at) ?? Number.POSITIVE_INFINITY;
 
 // ── what asks for action now (the home's «Изисква действие») ──
-export type ActionKind = "deadline" | "delivery" | "document";
+export type ActionKind = "deadline" | "delivery" | "acknowledge" | "document";
 export const ACTION_LABEL: Record<ActionKind, { bg: string; en: string }> = {
   deadline: { bg: "Срок", en: "Deadline" },
   delivery: { bg: "Доставка", en: "Delivery" },
+  acknowledge: { bg: "Потвърждение", en: "Acknowledgement" },
   document: { bg: "Документ", en: "Document" },
 };
 export interface ActionItem {
   kind: ActionKind;
   participantId: string;
   /** what — its words */
-  what: "results" | "chain" | "receipt" | "document";
+  what: "results" | "chain" | "receipt" | "document" | "ack" | "declaration";
   /** the date it is about (deadline, dispatch) */
   at?: string;
   /** a document's key and its edition */
@@ -268,19 +269,24 @@ export interface ActionItem {
 /** The participation's actions, by its state: results not yet in by the deadline; the
  *  instrument to hand on; an object dispatched and its receipt not confirmed; a document
  *  released to it and not opened by anyone of it. A finished one asks for nothing. */
-export function actionsFor(p: { participantId: string; state: PState; deadline: NextDeadline | null; dispatchedAt?: string; unopened: readonly { key: string; editionNo?: number; editionId?: string }[] }): ActionItem[] {
+export function actionsFor(p: { participantId: string; state: PState; deadline: NextDeadline | null; dispatchedAt?: string; unopened: readonly { key: string; editionNo?: number; editionId?: string }[]; unacked?: readonly { key: string; kind: "ack" | "declaration"; editionNo?: number; editionId?: string }[] }): ActionItem[] {
   if (finished(p.state)) return [];
   const out: ActionItem[] = [];
   if (p.deadline?.kind === "results" && (p.state === "received" || p.state === "draft" || p.state === "dispatched")) out.push({ kind: "deadline", participantId: p.participantId, what: "results", at: p.deadline.at });
   if (p.deadline?.kind === "chain") out.push({ kind: "deadline", participantId: p.participantId, what: "chain", at: p.deadline.at });
   if (p.state === "dispatched") out.push({ kind: "delivery", participantId: p.participantId, what: "receipt", at: p.dispatchedAt });
-  for (const d of p.unopened) out.push({ kind: "document", participantId: p.participantId, what: "document", docKey: d.key, editionNo: d.editionNo, editionId: d.editionId });
+  // a document that asks to be acknowledged, or the declaration to be signed (5.9; Реш. 117,
+  // 118) — listed, never a block; such a document is not listed again as «not opened»
+  const asked = new Set((p.unacked ?? []).map((d) => `${d.key}|${d.editionId ?? ""}`));
+  for (const d of p.unacked ?? []) out.push({ kind: "acknowledge", participantId: p.participantId, what: d.kind, docKey: d.key, editionNo: d.editionNo, editionId: d.editionId });
+  for (const d of p.unopened) if (!asked.has(`${d.key}|${d.editionId ?? ""}`)) out.push({ kind: "document", participantId: p.participantId, what: "document", docKey: d.key, editionNo: d.editionNo, editionId: d.editionId });
   return out;
 }
 
 /** The order actions are shown in: deadlines first, the nearest first (by the instant it
- *  passes — a day alone at its end); then deliveries; then documents. */
+ *  passes — a day alone at its end); then deliveries; then what asks to be acknowledged or
+ *  signed (5.9); then documents not opened. */
 export const actionOrder = (a: ActionItem, b: ActionItem): number => {
-  const rank = { deadline: 0, delivery: 1, document: 2 } as const;
+  const rank = { deadline: 0, delivery: 1, acknowledge: 2, document: 3 } as const;
   return rank[a.kind] - rank[b.kind] || deadlineOrder(a.at) - deadlineOrder(b.at) || (a.at ?? "").localeCompare(b.at ?? "");
 };
