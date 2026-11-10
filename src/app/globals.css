@@ -300,3 +300,13 @@ body {
   .stage-bar .stage-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
   .stage-now-narrow { display: inline; }
 }
+
+/* printing a record (the results record, 6.8; the validation record, 8.6): the page alone — no panel,
+   no header, no controls; A4 */
+@media print {
+  .no-print, .adminrail, .adminmain > header, .adminmain > div:not(#content), .skip-link { display: none !important; }
+  .adminmain > main { margin: 0 !important; padding: 0 !important; max-width: none !important; }
+  body { background: #fff; }
+}
+/* top level — nested in @media the whole block is dropped by the CSS build (8.6) */
+@page { size: A4; margin: 14mm; }
