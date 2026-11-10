@@ -142,6 +142,10 @@ t("the laboratory's page: its own results deadline — its extension, else the s
 const casePage = read("../src/app/schemes/[id]/participants/[code]/page.tsx");
 t("the case file: the deadlines with their state; the form for the head while open or running", /data-deadlines/.test(casePage) && /const canExtend = \(await mayNow\("order\.manage", id\)\) && \(s\.status === "open" \|\| s\.status === "running"\);/.test(casePage));
 t("overdue blocks nothing: no refusal reads a deadline", !/isPast\(|deadlineState\(/.test(actions));
+// …but the results form: it closes at the deadline in force (Реш. 111, part 6.4) — only through
+// submissionOpen, and only the results' own actions (the draft, the submission, the unlock)
+const gated = [...actions.matchAll(/submissionOpen\(/g)].map((m) => actions.lastIndexOf("export async function", m.index)).map((i) => /export async function (\w+)/.exec(actions.slice(i))?.[1]);
+t("…the results form alone closes at it (Реш. 111): the draft, the submission, the unlock", [...new Set(gated)].sort().join() === "saveResultDraftAction,submitResultsAction,unlockResultsAction", [...new Set(gated)].join());
 
 console.log(`deadlines.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

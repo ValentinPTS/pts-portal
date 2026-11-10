@@ -212,13 +212,14 @@ export async function notifyReceiptConfirmed(schemeId: string, schemeNumber: str
 }
 
 /** The laboratory returned its completed results sheet. */
-export async function notifyResultsReturned(schemeId: string, schemeNumber: string, code: string): Promise<void> {
+export async function notifyResultsReturned(schemeId: string, schemeNumber: string, code: string, online?: { version: number }): Promise<void> {
   await notify({
     kind: "results.returned",
     audience: "provider",
     schemeId, code,
-    bg: `${code} върна попълнения Лист за резултати (${schemeNumber}).`,
-    en: `${code} returned its completed results sheet (${schemeNumber}).`,
+    // online (6.4): which version — a later one is a new version, the earlier kept
+    bg: online ? `${code} подаде резултатите си онлайн — версия ${online.version} (${schemeNumber}).` : `${code} върна попълнения Лист за резултати (${schemeNumber}).`,
+    en: online ? `${code} submitted its results online — version ${online.version} (${schemeNumber}).` : `${code} returned its completed results sheet (${schemeNumber}).`,
     href: `/schemes/${schemeId}/traceability`,
   });
 }
@@ -434,4 +435,19 @@ export async function notifyMessage(target: { schemeId: string; code: string; la
     releasedByWriter: writer,
   });
   return !!n?.releasedAt;
+}
+
+/** PTS unlocked a participation's results form after the deadline (part 6.4; Реш. 111) — until a
+ *  day, with its reason kept on record. To the laboratory — held for a person, as every lab notice. */
+export async function notifyResultsUnlocked(labId: string | undefined, schemeId: string, schemeNumber: string, code: string, participantId: string, until: string): Promise<void> {
+  if (!(await anyoneToTell(labId, schemeId, code))) return;
+  const day = `${until.slice(8, 10)}.${until.slice(5, 7)}.${until.slice(0, 4)}`;
+  await notify({
+    kind: "results.unlocked",
+    audience: "lab",
+    labId, schemeId, code,
+    bg: `Формулярът за резултати по схема ${schemeNumber} е отключен от PTS до ${day} включително — можете да подадете резултатите си.`,
+    en: `The results form of scheme ${schemeNumber} is unlocked by PTS until ${day} inclusive — you can submit your results.`,
+    href: `/lab/p/${encodeURIComponent(participantId)}/results`,
+  });
 }

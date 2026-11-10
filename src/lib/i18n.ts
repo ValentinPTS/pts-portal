@@ -613,6 +613,9 @@ const DICT: Record<string, Entry> = {
   "act.scheme.ack": { bg: "Изисква потвърждение — настройка", en: "Asks for acknowledgement — setting" },
   // 5.10 — one-way messages (Реш. 116)
   "act.message.oneway": { bg: "Еднопосочно съобщение от PTS", en: "One-way message from PTS" },
+  // 6.4 — submission
+  "act.results.submitted": { bg: "Подадени резултати (онлайн)", en: "Results submitted (online)" },
+  "act.results.unlocked": { bg: "Отключено подаване след срока", en: "Submission unlocked after the deadline" },
   "act.scheme.reference_values": { bg: "Референтни стойности по точки", en: "Reference values per point" },
   "act.scheme.delivery_min_days": { bg: "Минимален брой работни дни (заместващ обект)", en: "Minimum working days (replacement object)" },
   "act.message.sent": { bg: "Изпратен имейл до лаборатория", en: "E-mail to a laboratory sent" },

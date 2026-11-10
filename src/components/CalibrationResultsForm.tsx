@@ -4,6 +4,7 @@ import { useState } from "react";
 import { computeError, showError, calField, genField, readCalDraft, checkCalibration, type GeneralField, type CheckProblem, type CalRow } from "@/lib/results-model";
 import { useDraftSaver, saveStatus, type Values } from "./useDraftSaver";
 import CheckReport, { CHECK_REPORT_ID } from "./CheckReport";
+import SubmitPanel from "./SubmitPanel";
 
 // The results form — calibration, per M2 (plan part 6.2; Zadanie §11; D1). GENERAL INFO, then
 // a row per calibration point × direction: the reference value (the participant's reference
@@ -29,7 +30,7 @@ const GENERAL: { f: GeneralField; bg: string; en: string; wide?: boolean; type?:
   { f: "signedBy", bg: "Име и фамилия", en: "Name and surname" },
 ];
 
-export default function CalibrationResultsForm({ schemeId, participantId, lang, rows, unit, quantity, code, initial, editable, savedAt, rev, windows }: {
+export default function CalibrationResultsForm({ schemeId, participantId, lang, rows, unit, quantity, code, initial, editable, savedAt, rev, windows, submitOpen = false }: {
   schemeId: string; participantId: string; lang: "bg" | "en"; rows: CalFormRow[]; unit: string; quantity: string;
   /** the laboratory's code — filled by PTS (M2), shown, never typed; absent while provisional */
   code?: string;
@@ -37,9 +38,11 @@ export default function CalibrationResultsForm({ schemeId, participantId, lang, 
   /** the lab's windows with the device — from each arrival to its window's end, an extension
    *  included; a chain visiting it twice gives two (6.3) */
   windows?: { from?: string; to?: string }[];
+  /** a submission is taken now — before the deadline, or under PTS's unlock (6.4) */
+  submitOpen?: boolean;
 }) {
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
-  const { values, change, save, state, bad: notNum } = useDraftSaver({ schemeId, participantId, initial, rev, savedAt });
+  const { values, change, save, state, bad: notNum, flush } = useDraftSaver({ schemeId, participantId, initial, rev, savedAt });
   const status = saveStatus(state, L);
   // 6.3: the checks before submission, on request — completeness and format only
   // once run, the report follows the form as it is typed (the checks are pure — review)
@@ -133,6 +136,22 @@ export default function CalibrationResultsForm({ schemeId, participantId, lang, 
       </section>
 
       <CheckReport problems={checked} lang={lang} labelOf={labelOf} />
+      {/* 6.4: review → confirmations (the computed errors confirmed — D1) → receipt */}
+      <SubmitPanel schemeId={schemeId} participantId={participantId} lang={lang} kind="C" flush={flush} open={submitOpen && editable} labelOf={labelOf}
+        problems={() => checkCalibration(readCalDraft((n) => values[n], asRows), asRows, windows ?? [])}
+        summary={() => (
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {rows.map((r) => {
+              const na = values[calField("na", r.key)] === "on";
+              const err = showError(computeError(values[calField("ref", r.key)] ?? "", values[calField("meas", r.key)] ?? ""), lang);
+              return (
+                <li key={r.key} data-summary-row={r.key}>
+                  <b>{r.nominal}{r.direction ? ` · ${r.direction}` : ""}</b> — {na ? "N/A" : `${L("референтна", "reference")} ${values[calField("ref", r.key)] || "—"}, ${L("измерена", "measured")} ${values[calField("meas", r.key)] || "—"}; ${L("грешка", "error")} `}{na ? null : <b data-summary-error>{err ?? "—"}</b>}{na ? null : `; U ${values[calField("U", r.key)] || "—"}`}
+                </li>
+              );
+            })}
+          </ul>
+        )} />
       {notNum.size > 0 && (
         <p id="results-not-numbers" role="status" data-not-numbers={notNum.size} style={{ margin: 0, fontSize: 12.5, color: "#7a5416" }}>
           {L("Отбелязаните полета още не са числа (една десетична запетая или точка). Черновата ги пази, както са написани.", "The marked fields are not numbers yet (one decimal comma or point). The draft keeps them as typed.")}

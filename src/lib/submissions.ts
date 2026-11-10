@@ -93,3 +93,25 @@ export async function listSubmissions(schemeId: string): Promise<Submission[]> {
   if (error) throw new Error(`[submissions] not read: ${error.message}`, { cause: error });
   return ((data ?? []) as SubRow[]).map((r) => ({ id: r.id, participantId: r.participant_id, schemeId: r.scheme_id, version: r.version, data: r.data, configVersion: r.config_version ?? undefined, submittedAt: r.submitted_at, roundAt: r.round_at ?? undefined, submittedBy: r.submitted_by }));
 }
+
+/** Record a submitted version — the next one only (the database's guard, 0042, refuses any other;
+ *  memory keeps the same rule). Throws on failure: a submission is recorded whole, or not at all. */
+export async function addSubmission(x: Omit<Submission, "submittedAt">): Promise<Submission> {
+  const row: Submission = { ...x, submittedAt: new Date().toISOString() };
+  const db = getDb();
+  if (!db) {
+    const latest = Math.max(0, ...memSubs.filter((s) => s.participantId === x.participantId).map((s) => s.version));
+    if (x.version !== latest + 1) throw new Error(`submissions: ${x.version} is not the next version (the latest is ${latest})`);
+    memSubs.push(row);
+    return { ...row };
+  }
+  const { data, error } = await db.from("submissions").insert({ id: x.id, participant_id: x.participantId, scheme_id: x.schemeId, version: x.version, data: x.data, config_version: x.configVersion ?? null, round_at: x.roundAt ?? null, submitted_by: x.submittedBy }).select("submitted_at");
+  if (error) throw new Error(`[submissions] not recorded: ${error.message}`, { cause: error });
+  return { ...row, submittedAt: ((data ?? [])[0] as { submitted_at?: string } | undefined)?.submitted_at ?? row.submittedAt };
+}
+
+/** One participation's submitted versions, oldest first. A database error throws. */
+export async function listSubmissionsFor(participantId: string, schemeId: string): Promise<Submission[]> {
+  return (await listSubmissions(schemeId)).filter((s) => s.participantId === participantId).sort((a, b) => a.version - b.version);
+}
+

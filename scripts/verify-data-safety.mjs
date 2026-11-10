@@ -51,7 +51,7 @@ try {
   await go(`/schemes/${S}/participants`);
   t("the step moved the status to received", /получен|received/i.test(await page.locator("tr", { hasText: NAME }).first().innerText()));
   await go(`/schemes/${S}/participants/${code}`);
-  const voidForm = page.locator('form:has(input[name="reason"])').first();
+  const voidForm = page.locator('form:has(input[name="reason"]):not([data-unlock-form])').first(); // 6.4: the unlock form asks a reason too
   await voidForm.locator('input[name="reason"]').fill("recorded on the wrong participant");
   await voidForm.locator('button[type="submit"]').click();
   await page.waitForLoadState("domcontentloaded");

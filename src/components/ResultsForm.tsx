@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useDraftSaver, saveStatus } from "./useDraftSaver";
 import CheckReport, { CHECK_REPORT_ID } from "./CheckReport";
+import SubmitPanel from "./SubmitPanel";
 import { readDraft, checkTesting, type CheckProblem, type ResultRow } from "@/lib/results-model";
 
 // The results form — testing (plan part 6.1). What is typed is kept exactly as typed, saved a
@@ -32,13 +33,15 @@ const field = (kind: "d" | "mean" | "U" | "k", key: string, j?: number) => (kind
 const NAMES = { mean: { bg: "Средна стойност", en: "Mean" }, U: { bg: "U (разширена)", en: "U (expanded)" }, k: { bg: "k", en: "k" } };
 const ROMAN = ["I", "II", "III"];
 
-export default function ResultsForm({ schemeId, participantId, lang, rows, initial, editable, savedAt, rev, period }: {
+export default function ResultsForm({ schemeId, participantId, lang, rows, initial, editable, savedAt, rev, period, submitOpen = false }: {
   schemeId: string; participantId: string; lang: "bg" | "en"; rows: FormRow[]; initial: Values; editable: boolean; savedAt?: string; rev: number;
   /** the scheme's dates the test period lies within: the dispatch, the results deadline in force (6.3) */
   period?: { from?: string; to?: string };
+  /** a submission is taken now — before the deadline, or under PTS's unlock (6.4) */
+  submitOpen?: boolean;
 }) {
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
-  const { values, change, save, state, bad: notNum } = useDraftSaver({ schemeId, participantId, initial, rev, savedAt });
+  const { values, change, save, state, bad: notNum, flush } = useDraftSaver({ schemeId, participantId, initial, rev, savedAt });
   const status = saveStatus(state, L);
   // 6.3: the checks before submission, on request — completeness and format only
   // once run, the report follows the form as it is typed (the checks are pure — review)
@@ -107,6 +110,19 @@ export default function ResultsForm({ schemeId, participantId, lang, rows, initi
         </p>
       )}
       <CheckReport problems={checked} lang={lang} labelOf={labelOf} />
+      {/* 6.4: review → confirmations → receipt */}
+      <SubmitPanel schemeId={schemeId} participantId={participantId} lang={lang} kind="T" flush={flush} open={submitOpen && editable} labelOf={labelOf}
+        problems={() => checkTesting(readDraft((n) => values[n], asRows), asRows, period ?? {})}
+        summary={() => (
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {rows.map((r) => (
+              <li key={r.key} data-summary-row={r.key}>
+                <b>{r.name}</b> <span style={{ color: "var(--muted)" }}>({r.method})</span> — {values[`nr_${r.key}`] === "on" ? L("не докладвам (N/R)", "not reported (N/R)") : `${L("средна", "mean")} ${values[field("mean", r.key)] || "—"}${values[field("U", r.key)] ? `; U ${values[field("U", r.key)]} (k ${values[field("k", r.key)] || "—"})` : ""}${Array.from({ length: r.determinations }, (_, j) => values[field("d", r.key, j)]).some(Boolean) ? `; ${L("определяния", "determinations")} ${Array.from({ length: r.determinations }, (_, j) => values[field("d", r.key, j)] || "N/R").join(" / ")}` : ""}`}
+              </li>
+            ))}
+            <li>{L("Период на изпитване", "Test period")}: {values.p_from || "—"}{values.p_to && values.p_to !== values.p_from ? ` – ${values.p_to}` : ""}</li>
+          </ul>
+        )} />
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         {editable && <button type="submit" className="btn btn-primary btn-sm" data-save-draft disabled={state.kind === "saving" || state.kind === "stale"}>{L("Запази черновата", "Save the draft")}</button>}
         <button type="button" className="btn btn-sm" data-run-check onClick={runCheck}>{L("Провери", "Check")}</button>

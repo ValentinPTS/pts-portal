@@ -218,12 +218,30 @@ export function notNumbersCal(draft: CalDraft, rows: readonly CalRow[]): { key: 
 }
 
 /** A submission's data as the round export's CODED part holds it: the laboratory's name and the
- *  name of who filled it removed (rule 3 allows them on the lab's own form; they are identity). */
+ *  name of who filled it removed (rule 3 allows them on the lab's own form; they are identity); the
+ *  subcontracted part in the lab's own words too (it may name a laboratory — 6.4 review). Both
+ *  shapes: the 6.4 payload ({v, kind, draft, …} — the draft nested) and a bare calibration draft. */
 export function codedSubmissionData(data: unknown): unknown {
-  if (!data || typeof data !== "object" || (data as CalDraft).kind !== "C") return data;
-  const d = data as CalDraft;
-  const general = Object.fromEntries(Object.entries(d.general ?? {}).filter(([k]) => !GENERAL_IDENTITY.includes(k as GeneralField)));
-  return { ...d, general };
+  if (!data || typeof data !== "object" || Array.isArray(data)) return data;
+  const scrub = (g: unknown) => Object.fromEntries(Object.entries(g && typeof g === "object" ? g as Record<string, unknown> : {}).filter(([k]) => !GENERAL_IDENTITY.includes(k as GeneralField)));
+  const x = data as Record<string, unknown>;
+  if (x.draft && typeof x.draft === "object" && !Array.isArray(x.draft)) {
+    const draft = x.draft as Record<string, unknown>;
+    const out: Record<string, unknown> = { ...x, draft: "general" in draft ? { ...draft, general: scrub(draft.general) } : draft };
+    if (x.confirmations && typeof x.confirmations === "object") { const c = { ...(x.confirmations as Record<string, unknown>) }; delete c.subcontractedPart; out.confirmations = c; }
+    return out;
+  }
+  return x.kind === "C" ? { ...x, general: scrub(x.general) } : data;
+}
+
+/** What codedSubmissionData takes out — for the round export's identity part. */
+export function submissionIdentity(data: unknown): { labName: string; signedBy: string; subcontractedPart: string } {
+  const x = data && typeof data === "object" ? data as Record<string, unknown> : {};
+  const draft = x.draft && typeof x.draft === "object" ? x.draft as Record<string, unknown> : x;
+  const g = draft.general && typeof draft.general === "object" ? draft.general as Record<string, unknown> : {};
+  const c = x.confirmations && typeof x.confirmations === "object" ? x.confirmations as Record<string, unknown> : {};
+  const s = (v: unknown) => (typeof v === "string" ? v : "");
+  return { labName: s(g.labName), signedBy: s(g.signedBy), subcontractedPart: s(c.subcontractedPart) };
 }
 
 /** What a stored draft holds for points or characteristics no longer in the scheme — kept through

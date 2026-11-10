@@ -11,8 +11,12 @@ import ParticipantNav from "@/components/ParticipantNav";
 import LanguageToggle from "@/components/LanguageToggle";
 import ResultsForm from "@/components/ResultsForm";
 import CalibrationResultsForm from "@/components/CalibrationResultsForm";
-import { resultsDeadline, chainWindow } from "@/lib/deadlines-model";
-import { holidaySet } from "@/lib/holidays";
+import { testPeriodLimits, calibrationWindows } from "@/lib/results-limits";
+import { resultsDeadline } from "@/lib/deadlines-model";
+import { activeUnlock, submissionOpen } from "@/lib/submission-model";
+import { listSubmissionsFor } from "@/lib/submissions";
+import { schemeNowMs, sofiaToday } from "@/lib/clock";
+import { fmtMoment, fmtSchemeDate } from "@/lib/scheme-dates";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +36,11 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const { scheme: s, part: p } = v;
   const self = `/lab/p/${encodeURIComponent(v.participantId)}`;
+  // 6.4: the form takes a submission before the deadline in force — after it, only under PTS's
+  // unlock (Реш. 111); closed, it takes no change at all
+  const nowMs = schemeNowMs(s);
+  const unlock = activeUnlock(s.resultUnlocks, v.participantId, sofiaToday(nowMs));
+  const gate = submissionOpen(resultsDeadline(s, p.code).at, nowMs, unlock);
   const rows = s.type === "T" ? resultRows(s, p) : [];
   // a calibration (6.2): the points × the directions, by the points' lasting ids
   const cRows = s.type === "C" && s.calibration ? calRows(s.calibration) : [];
@@ -46,21 +55,38 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
     for (const r of cRows) { const x = cd.points[r.key]; cInitial[calField("ref", r.key)] = x.ref; cInitial[calField("meas", r.key)] = x.meas; cInitial[calField("U", r.key)] = x.U; cInitial[calField("cmc", r.key)] = x.cmc; cInitial[calField("na", r.key)] = x.na ? "on" : ""; }
   }
   const cReady = s.type === "C" && calRowsReady(s.calibration);
-  const cEditable = s.type === "C" && (s.status === "open" || s.status === "running") && !v.finished && canLabUploadNow(p.status) && !readFailed && cReady;
+  const cEditable = s.type === "C" && (s.status === "open" || s.status === "running") && !v.finished && canLabUploadNow(p.status) && !readFailed && cReady && gate.open;
   const reminder = lang === "bg" ? s.staticReminder?.bg : s.staticReminder?.en;
   // 6.3: the dates the checks hold the lab's dates against — testing: from the dispatch to the results
   // deadline in force (its extension included); calibration: the lab's window with the device
-  const deadline = resultsDeadline(s, p.code).at;
-  // the start: the participation's own first shipment (5.6) — else the planned dispatch, a working
-  // date that gates nothing (review)
-  const shipped = (s.deliveries?.[v.participantId]?.shipments ?? []).map((x) => x.day).filter(Boolean).sort()[0];
-  const period = { from: shipped ?? s.dates?.dispatch?.slice(0, 10), to: deadline ? deadline.slice(0, 10) : undefined };
-  // calibration: each of the lab's windows with the device (a chain may visit it twice). The holiday
-  // calendar not read: no upper limit rather than an empty calendar's early one (review)
-  const myStops = s.type === "C" ? (s.chain?.stops ?? []).filter((x) => x.kind === "lab" && x.code === p.code && !!x.receivedAt) : [];
-  let off: Set<string> | null = null;
-  if (myStops.length) { try { off = await holidaySet(); } catch { off = null; } }
-  const calWindows = myStops.map((st) => { const w = off ? chainWindow(s, st, off) : null; return w ? { from: w.received, to: w.due.slice(0, 10) } : { from: st.receivedAt ? new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Sofia", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(st.receivedAt)) : undefined }; });
+  // the dates the checks hold the lab's dates against — the same helper the submission uses (6.4)
+  const period = testPeriodLimits(s, v.participantId, p.code, gate.late ? unlock : null); // as the submission: an unlock widens only when late
+  let versions: Awaited<ReturnType<typeof listSubmissionsFor>> = [];
+  let versionsUnread = false; // a read that failed is said — never «nothing submitted» (6.4 review)
+  try { versions = await listSubmissionsFor(v.participantId, s.id); } catch { versions = []; versionsUnread = true; }
+  const versionList = versionsUnread ? (
+    <p role="alert" data-versions-unread className="card" style={{ margin: 0, padding: "10px 14px", fontSize: 13, color: "#8f2f2f" }}>{L("Подадените версии не можаха да се прочетат — не е ясно дали има такива. Презаредете страницата.", "The submitted versions could not be read — it is not known whether there are any. Reload the page.")}</p>
+  ) : versions.length ? (
+    <section className="card" data-submitted-versions={versions.length} style={{ padding: "10px 14px", fontSize: 13 }}>
+      <b>{L("Подадени версии", "Submitted versions")}</b>
+      <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+        {[...versions].reverse().map((x) => (
+          <li key={x.id} data-submitted-version={x.version}>
+            {L("версия", "version")} {x.version} · {fmtMoment(x.submittedAt)} · {x.submittedBy.startsWith("entityuser:") ? L("потребител на организацията", "a user of the organisation") : L("акаунтът на лабораторията", "the laboratory's account")} · {L("разписка", "receipt")} <span style={{ fontFamily: "monospace" }}>{x.id.slice(0, 8)}</span>{x.configVersion ? ` · ${L("конфигурация", "configuration")} v.${x.configVersion}` : ""}{(x.data as { unlock?: unknown } | null)?.unlock ? ` · ${L("след срока, отключено от PTS", "after the deadline, unlocked by PTS")}` : ""}
+          </li>
+        ))}
+      </ul>
+    </section>
+  ) : null;
+  // the deadline the form closes at, said — for calibration too: the plan's results deadline (M1 т. 13:
+  // «до крайния срок, посочен в т. 10»), not the window with the device (6.4 review)
+  const due = resultsDeadline(s, p.code);
+  const closedNote = !gate.late ? (due.at ? <p role="note" data-results-deadline={due.at} style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>{L("Срок за подаване на резултатите", "Results deadline")}: <b>{fmtSchemeDate(due.at)}</b>{due.ext ? L(` (удължен${due.ext.orderNo ? ` със заповед № ${due.ext.orderNo}` : ""})`, ` (extended${due.ext.orderNo ? ` by order No. ${due.ext.orderNo}` : ""})`) : ""}{L(" — след него формулярът се затваря.", " — after it the form closes.")}</p> : null) : (
+    unlock
+      ? <p role="note" data-results-unlocked style={{ margin: 0, fontSize: 13, color: "#2e6b3a" }}>{L(`Срокът е изтекъл, но PTS е отключил формуляра до ${unlock.until.split("-").reverse().join(".")} включително.`, `The deadline has passed, but PTS has unlocked the form until ${unlock.until.split("-").reverse().join(".")} inclusive.`)}</p>
+      : <p role="note" data-results-deadline-passed style={{ margin: 0, fontSize: 13, color: "#8f2f2f" }}>{L("Срокът за резултати е изтекъл — формулярът е затворен. След срока резултат се приема само чрез PTS (Реш. 111).", "The results deadline has passed — the form is closed. After the deadline a result comes in only through PTS (Реш. 111).")}</p>
+  );
+  const calWindows = s.type === "C" ? await calibrationWindows(s, p.code) : [];
   // what the draft keeps for points or characteristics no longer in the scheme — shown, never dropped (6.2 review)
   const orphans = Object.entries(orphansOf(stored?.data, s.type === "C" ? cRows.map((r) => r.key) : rows.map((r) => r.key)));
   const orphanText = (v: unknown) => Object.entries((v ?? {}) as Record<string, unknown>).filter(([, x]) => (typeof x === "string" && x) || (Array.isArray(x) && x.some(Boolean)) || x === true).map(([k, x]) => `${k}: ${Array.isArray(x) ? x.filter(Boolean).join(" / ") : x === true ? "N/A" : x}`).join(" · ");
@@ -86,7 +112,7 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
   initial.p_from = draft.period?.from ?? "";
   initial.p_to = draft.period?.to ?? "";
   const idsReady = rowsHaveIds(rows);
-  const editable = s.type === "T" && s.status === "running" && !v.finished && canLabUploadNow(p.status) && !readFailed && idsReady;
+  const editable = s.type === "T" && s.status === "running" && !v.finished && canLabUploadNow(p.status) && !readFailed && idsReady && gate.open;
 
   return (
     <div style={{ minHeight: "100dvh", background: "var(--bg)" }}>
@@ -104,6 +130,7 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
         <nav style={{ fontSize: 12.5, color: "var(--muted)" }}><Link href={self}>← {L("Към участието", "Back to the participation")}</Link> · {s.number}{!isProvisional(p.code) ? ` · ${L("код", "code")} ${p.code}` : ""}</nav>
         <h1 className="section-title" style={{ fontSize: 24, margin: 0 }}>{L("Резултати", "Results")}</h1>
         {/* the scheme's static reminder (3.6) — «one decimal place», «U to two significant figures» … */}
+        {closedNote}
         {reminder ? <p role="note" data-static-reminder className="card" style={{ padding: "10px 14px", margin: 0, fontSize: 13, background: "#faf2e0", border: "1px solid #ecd9ae" }}>{reminder}</p> : null}
         {s.type === "C" ? (
           cRows.length === 0 ? (
@@ -119,10 +146,10 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
                 : !cEditable ? <p role="note" data-results-closed style={{ margin: 0, fontSize: 13, color: "#7a5416" }}>{L("Формулярът не приема промени: схемата не е в ход или участието е приключило.", "The form takes no changes: the scheme is not running, or the participation is finished.")}</p> : null}
               <CalibrationResultsForm schemeId={s.id} participantId={v.participantId} lang={lang} editable={cEditable} savedAt={stored?.updatedAt} rev={stored?.rev ?? 0}
                 unit={s.calibration?.unit ?? ""} quantity={lang === "bg" ? s.calibration?.quantityBg ?? "" : s.calibration?.quantityEn ?? ""} code={isProvisional(p.code) ? undefined : p.code}
-                rows={cRows.map((r) => ({ key: r.key, nominal: r.nominal, direction: r.direction ? (lang === "bg" ? r.direction.bg : r.direction.en) : undefined }))} windows={calWindows}
+                rows={cRows.map((r) => ({ key: r.key, nominal: r.nominal, direction: r.direction ? (lang === "bg" ? r.direction.bg : r.direction.en) : undefined }))} windows={calWindows} submitOpen={gate.open}
                 initial={cInitial} />
               {orphanBox}
-              <p style={{ margin: 0, fontSize: 12.5, color: "var(--muted)" }}>{L("Това е чернова — вижда я само участието. Подаването (с потвърждение на грешките и разписка) идва в следващата част.", "This is a draft — only the participation sees it. Submission (with the errors confirmed and a receipt) comes in the next part.")}</p>
+              {versionList}
             </>
           )
         ) : rows.length === 0 ? (
@@ -138,9 +165,10 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
               : !editable ? <p role="note" data-results-closed style={{ margin: 0, fontSize: 13, color: "#7a5416" }}>{L("Формулярът не приема промени: схемата не е в ход или участието е приключило.", "The form takes no changes: the scheme is not running, or the participation is finished.")}</p> : null}
             <ResultsForm schemeId={s.id} participantId={v.participantId} lang={lang} editable={editable} savedAt={stored?.updatedAt} rev={stored?.rev ?? 0}
               rows={rows.map((r) => ({ key: r.key, name: lang === "bg" ? r.name.bg : r.name.en, method: lang === "bg" ? r.method.bg : r.method.en, unit: r.unit, determinations: r.determinations, uRequired: r.uRequired, guardMin: r.guardMin, guardMax: r.guardMax }))} period={period}
-              initial={initial} />
+              initial={initial} submitOpen={gate.open} />
             {orphanBox}
-            <p style={{ margin: 0, fontSize: 12.5, color: "var(--muted)" }}>{L("Това е чернова — вижда я само участието. Подаването (с потвърждение и разписка) идва в следващата част; дотогава резултатите се изпращат, както казва Инструкцията.", "This is a draft — only the participation sees it. Submission (with a confirmation and a receipt) comes in the next part; until then, results are sent as the Instruction says.")}</p>
+            {versionList}
+            <p style={{ margin: 0, fontSize: 12.5, color: "var(--muted)" }}>{L("Черновата вижда само участието; PTS вижда подадените версии.", "Only the participation sees the draft; PTS sees the submitted versions.")}</p>
           </>
         )}
       </main>

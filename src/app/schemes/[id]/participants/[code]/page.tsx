@@ -12,6 +12,8 @@ import { logActivity } from "@/lib/activity";
 import LabInvoicePanel from "@/components/LabInvoicePanel";
 import { acksOfParticipation, ackDone, ackMoment } from "@/lib/ack-model";
 import { deliveryOf } from "@/lib/delivery-model";
+import { listSubmissionsFor } from "@/lib/submissions";
+import { unlockResultsAction } from "@/lib/actions";
 import MessageComposer from "@/components/MessageComposer";
 import { sendParticipationMessageAction } from "@/lib/actions";
 import { messageTargetLabel, messageReached } from "@/lib/messages-model";
@@ -53,7 +55,7 @@ export default async function CaseFilePage({
   params, searchParams,
 }: {
   params: Promise<{ id: string; code: string }>;
-  searchParams: Promise<{ reveal?: string; kind?: string; from?: string; void?: string; step?: string; msg?: string }>;
+  searchParams: Promise<{ reveal?: string; kind?: string; from?: string; void?: string; step?: string; msg?: string; unlock?: string }>;
 }) {
   await requireStaff(); // read gate: manager/staff/auditor only
   const { id, code: rawCode } = await params;
@@ -72,6 +74,14 @@ export default async function CaseFilePage({
   const { lang, tr } = await getServerT();
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const canReveal = await mayNow("names.view", id); // the scheme manager and the coding expert, here (Реш. 93, 2.4)
+  // 6.4: the submitted versions — to who reads or enters the results here; the unlock by who enters them
+  const canSeeResults = (await mayNow("results.read", id)) || (await mayNow("results.enter", id));
+  const canEnterResults = await mayNow("results.enter", id);
+  let submissions: Awaited<ReturnType<typeof listSubmissionsFor>> = [];
+  // a read that failed is said — never «nothing submitted» (6.4 review: staff would unlock or chase
+  // a lab that did submit)
+  let submissionsUnread = false;
+  if (canSeeResults && coded) { try { submissions = await listSubmissionsFor(coded.id, id); } catch { submissions = []; submissionsUnread = true; } }
   // 5.10: who works with the participants here writes to them — once the scheme has started
   const canMessage = (await mayNow("participants.manage", id)) && s.status !== "draft";
   const revealed = canReveal && sp.reveal === "1";
@@ -240,6 +250,53 @@ export default async function CaseFilePage({
           </ul>
         </section>
       )}
+
+      {/* 6.4: its submitted versions — by who enters the results here; «Отключи подаването» after
+          the deadline, with a reason (Реш. 111: after it, a result comes in only through PTS) */}
+      {canSeeResults && coded && (() => {
+        const lg = lang === "bg" ? "bg" : "en";
+        const L2 = (bg: string, en: string) => (lg === "bg" ? bg : en);
+        const unlocks = (s.resultUnlocks ?? []).filter((u) => u.participantId === coded.id);
+        const answer = sp.unlock;
+        return (
+          <section id="submissions" className="card p-4 mt-4" data-staff-submissions={submissionsUnread ? undefined : submissions.length}>
+            <h2 className="font-bold" style={{ color: "var(--green-dark)", fontSize: 15, margin: 0 }}>{L2("Подадени резултати", "Submitted results")}</h2>
+            {submissionsUnread ? <p role="alert" data-staff-submissions-unread className="text-sm mt-1" style={{ color: "#8f2f2f" }}>{L2("Подадените версии не можаха да се прочетат — не е ясно дали има такива. Презаредете страницата.", "The submitted versions could not be read — it is not known whether there are any. Reload the page.")}</p> : submissions.length === 0 ? <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>{L2("Още няма подадена версия.", "No version submitted yet.")}</p> : (
+              <ul className="text-sm mt-2" style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+                {[...submissions].reverse().map((x) => {
+                  const d = x.data as { kind?: string; values?: Record<string, Record<string, unknown>>; unlock?: { reason?: string }; confirmations?: { subcontracted?: boolean; subcontractedPart?: string } } | null;
+                  return (
+                    <li key={x.id} data-staff-version={x.version} style={{ borderTop: "1px solid var(--line)", paddingTop: 6 }}>
+                      <b>{L2("версия", "version")} {x.version}</b> · {ackMoment(x.submittedAt)} · {x.submittedBy.startsWith("entityuser:") ? L2("потребител на организацията", "a user of the organisation") : L2("акаунтът на лабораторията", "the laboratory's account")} · {L2("разписка", "receipt")} <span style={{ fontFamily: "monospace" }}>{x.id.slice(0, 8)}</span>{x.configVersion ? ` · v.${x.configVersion}` : ""}
+                      {d?.unlock ? <span style={{ color: "#7a5416" }}> · {L2("след срока, отключено", "after the deadline, unlocked")}: «{d.unlock.reason}»</span> : null}
+                      {/* the part, in the lab's own words, may name a laboratory: to who may see the names (6.4 review) */}
+                      {d?.confirmations?.subcontracted ? <span style={{ color: "var(--muted)" }}> · {L2("част на подизпълнител", "part subcontracted")}{canReveal ? `: ${d.confirmations.subcontractedPart ?? ""}` : ""}</span> : null}
+                      <div style={{ fontSize: 12, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+                        {Object.entries(d?.values ?? {}).map(([k, v]) => `${k}: ${v.nr ? "N/R" : v.na ? "N/A" : d?.kind === "C" ? `${v.ref ?? "—"} → ${v.meas ?? "—"} (${L2("грешка", "error")} ${v.error ?? "—"}; U ${v.U ?? "—"})` : `${v.mean ?? "—"} (U ${v.U ?? "—"}, k ${v.k ?? "—"})`}`).join(" · ")}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {unlocks.length > 0 && (
+              <ul className="text-sm mt-2" style={{ color: "#7a5416", paddingLeft: 18 }} data-staff-unlocks={unlocks.length}>
+                {unlocks.map((u) => <li key={u.id}>{L2("Отключено до", "Unlocked until")} {u.until.split("-").reverse().join(".")} — «{u.reason}» ({ackMoment(u.at)})</li>)}
+              </ul>
+            )}
+            {canEnterResults && (
+              <form action={unlockResultsAction} className="mt-3" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }} data-unlock-form>
+                <input type="hidden" name="schemeId" value={id} />
+                <input type="hidden" name="code" value={code} />
+                <label className="text-sm" style={{ display: "grid", gap: 3 }}>{L2("Отключи подаването до (вкл.)", "Unlock the submission until (incl.)")}<input type="date" name="until" required style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px" }} /></label>
+                <label className="text-sm" style={{ display: "grid", gap: 3, flex: 1, minWidth: 240 }}>{L2("Основание (защо — записва се и се вижда в журнала; без имена и стойности)", "Reason (why — recorded and shown in the journal; no names, no values)")}<input name="reason" required minLength={5} maxLength={500} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px" }} /></label>
+                <button type="submit" className="btn btn-sm" data-unlock-submit>{L2("Отключи", "Unlock")}</button>
+                {answer ? <span role={answer === "ok" ? "status" : "alert"} data-unlock-answer={answer} className="text-sm" style={{ color: answer === "ok" ? "var(--green-dark)" : "#8f2f2f" }}>{answer === "ok" ? L2("Отключено — участникът е уведомен (след одобрение на известието).", "Unlocked — the participant is told (once the notice is released).") : answer === "reason" ? L2("Посочете основание (поне 5 знака).", "Give the reason (5 characters at least).") : answer === "until" ? L2("Датата — от днес до 30 дни напред.", "The date — from today to 30 days ahead.") : answer === "early" ? L2("Срокът за резултати още не е изтекъл — формулярът е отворен.", "The results deadline has not passed — the form is open.") : answer === "already" ? L2("Вече е отключено до тази дата или по-късно — нищо ново не е записано.", "Already unlocked until that day or later — nothing new recorded.") : answer === "state" ? L2("Формулярът не приема резултати сега — схемата или участието.", "The form takes no results now — the scheme or the participation.") : L2("Не е отключено.", "Not unlocked.")}</span> : null}
+              </form>
+            )}
+          </section>
+        );
+      })()}
 
       {/* 5.10: a one-way message to this participation (Реш. 116; Реш. 22, 91 — e.g. its lateness) */}
       {canMessage && coded && (

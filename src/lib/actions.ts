@@ -74,15 +74,17 @@ import { requireParticipant, participantActor, getParticipantSession, participat
 import { inviteParticipant } from "./participant-invite";
 import { freezeParticipation, participationEntity } from "./participation-snapshots";
 import { readSelections, characteristicsOf, readRefusal, readSource, inRound, REFUSAL_CATEGORIES, STANDING_PROBLEM_TEXT, MAX_PER_CHARACTERISTIC, participationSets, selectionsOf, sameSelections, objectsNeeded, type Standing } from "./application-model";
-import { notifyParticipationRefused, notifyItemsDispatched, notifyReceiptProtocol, notifyDeliveryProblem, notifyMessage } from "./notify-events";
+import { notifyParticipationRefused, notifyItemsDispatched, notifyReceiptProtocol, notifyDeliveryProblem, notifyMessage, notifyResultsUnlocked } from "./notify-events";
 import { readDocNumber, invoiceSlotProblem, INVOICE_PROBLEM_TEXT } from "./invoice-model";
 import { readShipment, readReceipt, deliveryOf, openShipment, openProblems, replacementProblem, replacementCalledFor, minDaysOf, readMinDays, chainReceiptTarget, LIMITS as DELIVERY_LIMITS, MAX_OPEN_PROBLEMS, type Shipment, type ShipmentKind, type Deliveries } from "./delivery-model";
 import { finalListOf, splitFor, invoiceProblem, currentFinalList, inFinalRound, finalSelectionsOf, ANNOUNCEMENT_PROBLEM_TEXT, type FinalList } from "./announcement-model";
 import { readTarget, RELEASE_PROBLEM_TEXT, releaseFor, type TargetRelease } from "./release-model";
 import { ackRequiredFor, ackSettable, ackOf, kindOf, readAckForm, type Acknowledgement, type AckProblem } from "./ack-model";
 import { readMessage, messageBody, type SchemeMessage } from "./messages-model";
-import { resultRows, readDraft, notNumbers, rowsHaveIds, calRows, calRowsReady, readCalDraft, notNumbersCal, orphansOf } from "./results-model";
-import { putDraft, getDraft } from "./submissions";
+import { resultRows, readDraft, notNumbers, rowsHaveIds, calRows, calRowsReady, readCalDraft, notNumbersCal, orphansOf, draftFor, calDraftFor, checkTesting, checkCalibration, blocking, type CheckProblem } from "./results-model";
+import { putDraft, getDraft, addSubmission, listSubmissionsFor } from "./submissions";
+import { activeUnlock, submissionOpen, readConfirmations, submissionPayload, readUnlock, SUBMIT_PROBLEM_TEXT, type ResultUnlock } from "./submission-model";
+import { testPeriodLimits, calibrationWindows } from "./results-limits";
 import { drawCodes, drawObjects, toCode, codingProblem, objectsGiven, unfinished, sampleCodeOf, isProvisional, CODING_PROBLEM_TEXT, type CodingProblem, type CodingRecord } from "./coding-model";
 import { commitCoding } from "./coding-store";
 import { pointKeys, pointsReady, fingerprint, orphans, readReferenceTable, kNeedsReason, currentRows, sameRow, sameRows, type ReferenceRow } from "./reference-values-model";
@@ -6056,6 +6058,9 @@ export async function saveResultDraftAction(schemeId: unknown, participantId: un
   // testing: while the round runs; calibration (6.2): while the device travels (open or running)
   const open = scheme.type === "T" ? scheme.status === "running" : scheme.status === "open" || scheme.status === "running";
   if (!open || !canLabUploadNow(part.status)) return { error: "state" };
+  // closed at the results deadline in force — after it, only under PTS's unlock (6.4; Реш. 111)
+  const nowD = schemeNowMs(scheme);
+  if (!submissionOpen(resultsDeadline(scheme, part.code).at, nowD, activeUnlock(scheme.resultUnlocks, pid, sofiaToday(nowD))).open) return { error: "state" };
   // only the form's fields are read, by name — whatever else is posted is ignored
   const posted = fields && typeof fields === "object" && !Array.isArray(fields) ? (fields as Record<string, unknown>) : {};
   const get = (name: string) => (Object.hasOwn(posted, name) ? posted[name] : undefined);
@@ -6085,4 +6090,127 @@ export async function saveResultDraftAction(schemeId: unknown, participantId: un
   } catch {
     return { error: "failed" };
   }
+}
+
+
+// ── Submission (part 6.4; Zadanie §7; Реш. 111; D1) ───────────────────────────────────────────
+// draft → review → confirmations → receipt. The form closes for the laboratory at the results
+// deadline in force, on the round's clock; after it a result comes in only through PTS — an unlock
+// with who, when, why and until (Реш. 111). The draft that was REVIEWED is what is submitted (its
+// revision); the checks run again here (6.3). Each submission is the next version — the database
+// refuses any change to one (0042). Journalled with its version, never a value.
+export type SubmitReceipt = { id: string; version: number; submittedAt: string; roundAt: string; account: "lab" | "entityuser"; configVersion?: number; unlocked: boolean };
+export async function submitResultsAction(schemeId: unknown, participantId: unknown, baseRev: unknown, confirm: unknown, submissionId?: unknown): Promise<{ ok: true; receipt: SubmitReceipt } | { error: keyof typeof SUBMIT_PROBLEM_TEXT; problems?: CheckProblem[] }> {
+  const sid = String(schemeId ?? ""), pid = typeof participantId === "string" ? participantId.trim() : "";
+  const base = typeof baseRev === "number" && Number.isInteger(baseRev) && baseRev >= 1 ? baseRev : -1;
+  if (base < 1) return { error: "stale" };
+  // the review's own id for this submission: a retry of one already recorded (its answer lost on
+  // the way) gets that receipt, never a second version (6.4 review)
+  const nonce = typeof submissionId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(submissionId) ? submissionId.toLowerCase() : null;
+  const mine = await ownGoingOn(sid, pid);
+  if (!mine) return { error: "not-yours" };
+  const { scheme, part, by, log } = mine;
+  const receiptOf = (x: { id: string; version: number; submittedAt: string; roundAt?: string; configVersion?: number; submittedBy: string; data: unknown }): SubmitReceipt =>
+    ({ id: x.id, version: x.version, submittedAt: x.submittedAt, roundAt: x.roundAt ?? x.submittedAt, account: x.submittedBy.startsWith("entityuser:") ? "entityuser" : "lab", configVersion: x.configVersion, unlocked: !!(x.data as { unlock?: unknown } | null)?.unlock });
+  if (nonce) {
+    let already: Awaited<ReturnType<typeof listSubmissionsFor>>;
+    try { already = await listSubmissionsFor(pid, sid); } catch { return { error: "failed" }; }
+    const same = already.find((x) => x.id === nonce);
+    if (same) return { ok: true, receipt: receiptOf(same) };
+  }
+  const formOpen = scheme.type === "T" ? scheme.status === "running" : scheme.status === "open" || scheme.status === "running";
+  if (!formOpen || !canLabUploadNow(part.status)) return { error: "state" };
+  // the deadline in force, on the round's clock — after it, only under PTS's unlock (Реш. 111)
+  const nowMs = schemeNowMs(scheme);
+  const unlock = activeUnlock(scheme.resultUnlocks, pid, sofiaToday(nowMs));
+  const gate = submissionOpen(resultsDeadline(scheme, part.code).at, nowMs, unlock);
+  if (!gate.open) return { error: "closed" };
+  // the unlock this version came in by — only when it is late: an unlock while the deadline (an
+  // extension, say) still runs is not what let it in, and the record must not say so (6.4 review)
+  const lateBy = gate.late ? unlock : null;
+  // the draft that was reviewed — its revision; changed since: review it again
+  let stored: Awaited<ReturnType<typeof getDraft>>;
+  try { stored = await getDraft(pid, sid); } catch { return { error: "failed" }; }
+  if (!stored || stored.rev !== base) return { error: "stale" };
+  // the checks again, here (6.3): anything blocking refuses; the notices go with the version
+  let problems: CheckProblem[], payload: Record<string, unknown>;
+  const c = confirm && typeof confirm === "object" ? (confirm as Record<string, unknown>) : {};
+  const conf = readConfirmations(c, scheme.type);
+  if (scheme.type === "T") {
+    const rows = resultRows(scheme, part);
+    if (!rowsHaveIds(rows)) return { error: "state" };
+    const draft = draftFor(stored.data, rows);
+    problems = checkTesting(draft, rows, testPeriodLimits(scheme, pid, part.code, lateBy));
+    if (blocking(problems).length) return { error: "checks", problems: blocking(problems) };
+    if (!conf.ok) return { error: conf.problem };
+    payload = submissionPayload("T", draft, rows, problems, conf.value, lateBy);
+  } else {
+    if (!calRowsReady(scheme.calibration)) return { error: "state" };
+    const rows = calRows(scheme.calibration);
+    const draft = calDraftFor(stored.data, rows);
+    problems = checkCalibration(draft, rows, await calibrationWindows(scheme, part.code));
+    if (blocking(problems).length) return { error: "checks", problems: blocking(problems) };
+    if (!conf.ok) return { error: conf.problem };
+    payload = submissionPayload("C", draft, rows, problems, conf.value, lateBy);
+  }
+  // the next version — recorded whole, or not at all
+  let version: number, sub: Awaited<ReturnType<typeof addSubmission>>;
+  const roundAt = schemeNowIso(scheme);
+  const configVersion = scheme.characteristicVersions?.at(-1)?.no;
+  try {
+    version = ((await listSubmissionsFor(pid, sid)).at(-1)?.version ?? 0) + 1;
+    sub = await addSubmission({ id: nonce ?? randomUUID(), participantId: pid, schemeId: sid, version, data: payload, configVersion, roundAt, submittedBy: by });
+  } catch {
+    return { error: "failed" };
+  }
+  // RECORDED. What follows never turns it into «not recorded»: each step on its own, the journal
+  // first; a step that fails is said in the server's log, and the lab gets its receipt (6.4 review)
+  const late = lateBy ? " (under PTS's unlock after the deadline)" : "";
+  const step = async (what: string, f: () => Promise<unknown>) => { try { await f(); } catch (e) { console.error(`[submit] version ${version} of ${part.code} recorded; ${what} failed:`, (e as Error)?.message ?? e); } };
+  await step("the journal", () => log("results.submitted", { targetCode: part.code, subject: `submission:${sub.id}`, summary: `${part.code} submitted its results online — version ${version}${lateBy ? " (unlocked by PTS)" : ""}`, after: { version, configVersion: configVersion ?? null, unlock: lateBy?.id ?? null, notices: problems.length - blocking(problems).length } }));
+  await step("the case file", () => addCaseEvent({ schemeId: sid, code: part.code, kind: "results_returned", at: sofiaToday(nowMs), ref: `v${version}`, note: `online results — version ${version}${late}`, recordedBy: LAB_RECORDER, source: "auto" }));
+  if (version === 1) await step("the status", () => advanceStatusForEvent(sid, part.code, "results_returned"));
+  await step("PTS's notice", () => notifyResultsReturned(sid, scheme.number, part.code, { version }));
+  try { revalidatePath(`/lab/p/${pid}`); revalidatePath(`/schemes/${sid}/participants/${part.code}`); } catch { /* the pages refresh on their next load */ }
+  return { ok: true, receipt: receiptOf({ ...sub, roundAt }) };
+}
+
+/** «Отключи подаването» — after the deadline, a result comes in only through PTS (Реш. 111): who,
+ *  when, why and until when, on record; the laboratory then submits itself, and its version names
+ *  the unlock. By who enters the results in the scheme (the coding expert). */
+export async function unlockResultsAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? "");
+  await requireCap("results.enter", schemeId);
+  const code = String(formData.get("code") ?? "").trim();
+  const back = (q: string) => `/schemes/${encodeURIComponent(schemeId)}/participants/${encodeURIComponent(code)}?${q}#submissions`;
+  const scheme = await getScheme(schemeId);
+  // the form must still take results — the scheme collecting them, the participation in the round
+  // and not scored — else the lab would be told «you can submit» when it cannot (6.4 review)
+  const takes = !!scheme && (scheme.type === "T" ? scheme.status === "running" : scheme.status === "open" || scheme.status === "running");
+  if (!scheme || !isStarted(scheme) || !takes) redirect(back("unlock=state"));
+  const part = (await listParticipants(schemeId)).find((p) => p.code === code);
+  if (!part) redirect(back("unlock=who"));
+  if (!canLabUploadNow(part!.status)) redirect(back("unlock=state"));
+  const nowMs = schemeNowMs(scheme!), today = sofiaToday(nowMs);
+  // only after the deadline in force — before it the form is open anyway (Реш. 111)
+  if (!submissionOpen(resultsDeadline(scheme!, code).at, nowMs, null).late) redirect(back("unlock=early"));
+  const read = readUnlock({ until: formData.get("until"), reason: formData.get("reason") }, today);
+  if (!read.ok) redirect(back(`unlock=${read.problem}`));
+  const value = read as Extract<typeof read, { ok: true }>;
+  const tell = await labToTell(schemeId, code);
+  if (!tell) redirect(back("unlock=reach"));
+  const by = (await getRoleContext()).email ?? "build";
+  const entry: ResultUnlock = { id: randomUUID(), participantId: part!.id, code, until: value.until, reason: value.reason, at: new Date().toISOString(), by };
+  // an unlock in force already reaching that day: nothing new — a second press is not a second
+  // unlock and a second notice (decided in the lock, 6.4 review)
+  let covered = false;
+  await updateSchemeWith(schemeId, (s) => {
+    if ((s.resultUnlocks ?? []).some((u) => u.participantId === part!.id && u.until >= today && u.until >= value.until)) { covered = true; return {}; }
+    return { resultUnlocks: [...(s.resultUnlocks ?? []), entry] };
+  });
+  if (covered) redirect(back("unlock=already"));
+  await logActivity("results.unlocked", { schemeId, targetCode: code, subject: `unlock:${entry.id}`, summary: `Results form of ${code} unlocked after the deadline until ${value.until}`, after: { until: value.until, reason: value.reason } });
+  await notifyResultsUnlocked(tell!.labId, schemeId, scheme!.number, code, part!.id, value.until);
+  revalidatePath(`/schemes/${schemeId}/participants/${code}`);
+  redirect(back("unlock=ok"));
 }

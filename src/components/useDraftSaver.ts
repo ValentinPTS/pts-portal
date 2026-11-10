@@ -73,7 +73,16 @@ export function useDraftSaver({ schemeId, participantId, initial, rev, savedAt }
     return () => window.removeEventListener("beforeunload", warn);
   }, [unsaved]);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
-  return { values, change, save, state, bad };
+  /** Save now, waiting for any save in flight (6.4: the review submits exactly what was saved) —
+   *  the revision saved, or null when the draft could not be saved (stale, an error). */
+  const flush = async (): Promise<number | null> => {
+    for (let i = 0; i < 100 && inFlight.current; i++) await new Promise((r) => setTimeout(r, 100));
+    await save();
+    for (let i = 0; i < 100 && inFlight.current; i++) await new Promise((r) => setTimeout(r, 100));
+    if (stopped.current) return null;
+    return JSON.stringify(latest.current) === lastSent.current && baseRev.current > 0 ? baseRev.current : null;
+  };
+  return { values, change, save, state, bad, flush };
 }
 
 /** The draft's state in words, both languages. */

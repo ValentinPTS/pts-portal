@@ -11,7 +11,7 @@ import { listCaseEventsForScheme } from "./case-events";
 import { listNoticesForScheme } from "./notifications";
 import { pointKeys } from "./reference-values-model";
 import { listSubmissions } from "./submissions";
-import { codedSubmissionData } from "./results-model";
+import { codedSubmissionData, submissionIdentity } from "./results-model";
 import { listSentForScheme } from "./sent-messages";
 import { listActivityForScheme } from "./activity-store";
 import { listRevisionsForScheme } from "./doc-revisions";
@@ -143,6 +143,8 @@ export const SCHEME_FIELDS = {
   // the messages PTS's people wrote (5.10): the target, who, when — coded; the text a person
   // wrote may name someone: whole only in identity/ (the notices go through the scrubber)
   messages: "split",
+  // the unlocks of a participation's form after the deadline (6.4) — by PTS's people, with the reason
+  resultUnlocks: "coded",
   // a release to one user names that user (an entity user's id is the same in every round):
   // its user kept only in identity/ (5.4 review)
   releases: "split", skin: "coded", name: "coded", folderId: "coded",
@@ -535,7 +537,7 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
     const entityOfCode = new Map([...inForce(snapshots).values()].map((x) => [codeById.get(x.participantId) ?? "", x.entityId]));
     // who submitted each version of the results (6.4) — an account: a laboratory's or a user's
     // …with a calibration form's laboratory name and who filled it (rule 3 allows them on the lab's own form)
-    add("identity/submissions_by.csv", table(submitted.map((x) => { const g = (x.data as { general?: Record<string, string> } | null)?.general; return { code: codeById.get(x.participantId) ?? "—", version: x.version, submittedBy: x.submittedBy, labName: g?.labName ?? "", signedBy: g?.signedBy ?? "" }; }), ["code", "version", "submittedBy", "labName", "signedBy"]));
+    add("identity/submissions_by.csv", table(submitted.map((x) => ({ code: codeById.get(x.participantId) ?? "—", version: x.version, submittedBy: x.submittedBy, ...submissionIdentity(x.data) })), ["code", "version", "submittedBy", "labName", "signedBy", "subcontractedPart"]));
     add("identity/notice_recipients.csv", table(notices.filter((n) => n.labId || (n.code && entityOfCode.get(n.code))).map((n) => ({ id: n.id, code: n.code, labId: n.labId, entityId: n.code ? entityOfCode.get(n.code) ?? "" : "" })), ["id", "code", "labId", "entityId"]));
     add("identity/message_recipients.csv", table(messages.map((m) => ({ id: m.id, code: m.code, labId: m.labId, entityId: m.entityId, to: m.to, error: m.error })), ["id", "code", "labId", "entityId", "to", "error"]));
     add("identity/journal_full.csv", table(journal, ["id", "at", "actorId", "actorName", "actorEmail", "actorRole", "action", "targetCode", "subject", "summary", "before", "after"]));
