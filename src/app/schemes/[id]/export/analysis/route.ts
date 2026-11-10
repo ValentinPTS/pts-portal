@@ -43,16 +43,18 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   }
   const lock = lockInForce(s!.submissionLocks);
   const preliminary = !lock;
-  // what was sent — recorded before the file is handed out, while the scheme is in processing
-  // (7.3: the transfer check compares 2.0's report with it); a record that cannot be written:
-  // nothing handed out. Outside processing the journal line alone records it — an export made
-  // after the issue never makes the check stale (review).
+  // what was sent — recorded before the file is handed out, while the scheme is in processing, or
+  // its report is issued and may be corrected (7.4: a correction re-exports when what the portal
+  // sent was wrong) (7.3: the transfer check compares 2.0's report with it); a record that cannot
+  // be written: nothing handed out. Before processing and once closed, the journal line alone
+  // records it. An issued R keeps the check it relied on — a later export never changes it.
   const manifest: AnalysisExportRecord = { id: randomUUID(), at: new Date().toISOString(), by: (await getRoleContext()).email ?? "", preliminary, ...(lock ? { lockId: lock.id } : {}), sha256: sha256(bytes), ...manifestOf(out.sheets, out.counts.outside) };
   let recorded = false;
-  if (s!.status === "processing") {
+  const records = (st: string) => st === "processing" || st === "report";
+  if (records(s!.status)) {
     try {
       await updateSchemeWith(id, (cur) => {
-        if (cur.status !== "processing") return {};
+        if (!records(cur.status)) return {};
         recorded = true;
         return { analysisExports: [...(cur.analysisExports ?? []), manifest] };
       });

@@ -18,6 +18,7 @@ import { resolveSkinAsync } from "@/skins";
 import type { DocOptions } from "@/lib/types";
 import { labCertificate } from "@/lib/cert-number";
 import { docImgSrc } from "@/lib/image-hosts";
+import { issueInForce, reaches, rLabel } from "@/lib/report-issue-model";
 
 // Lab-scoped document view. A laboratory can fetch ONLY:
 //   • documents for a scheme it actually participates in (verified by lab_id),
@@ -78,7 +79,8 @@ async function serve(req: NextRequest, ctx: { params: Promise<{ scheme: string; 
       sent: scheme.sentToParticipants,
       reported: scheme.status === "report" || scheme.status === "closed",
       hasCert: !!ls && !!labCertificate(scheme.certificates, mine.code), // a certificate: the laboratory account's (names, §7.4)
-      officialReport: !!scheme.uploads?.report,
+      // an issued R stays the official report whatever the uploads slot holds now (7.4 review)
+      officialReport: !!scheme.uploads?.report || !!issueInForce(scheme.reportIssues),
     });
   if (!allowed) return { res: new Response("Not available yet", { status: 403 }) };
   const opened = (ed: DocEdition, level: string) => ({ code: mine.code, actor, subject: `edition:${ed.id}`, summary: `“${doc}” ${editionLabel("en", ed.no, ed.issuedOn)} opened by the laboratory — ${level}` });
@@ -89,6 +91,15 @@ async function serve(req: NextRequest, ctx: { params: Promise<{ scheme: string; 
   // laboratories only when PTS issues it as the next edition, with its note
   // (ISO/IEC 17043 §7.4.3: an amended report is identified as such).
   if (doc === "report") {
+    // 7.4: once issued by the act — the R in force, never a later edition; and only to a
+    // participation it reaches: marked paid, or opened by hand (D7)
+    const inForce = issueInForce(scheme.reportIssues);
+    if (inForce) {
+      if (!reaches(scheme.reportAccess, mine.code)) return { res: new Response("The final report is issued — it opens for you once your payment is marked.", { status: 403 }) };
+      const ed = await getEdition(inForce.editionId).catch(() => null);
+      if (!ed || ed.schemeId !== scheme.id || ed.docKey !== "report") return { res: new Response("The final report cannot be opened right now. Try again in a moment.", { status: 503 }) };
+      return { res: await editionResponse(ed, "bg", download), log: opened(ed, `the final report ${rLabel(inForce.r)}`) };
+    }
     if (!scheme.uploads?.report) return { res: new Response("Not available yet", { status: 403 }) };
     const ed = await reportEdition(scheme).catch((e) => {
       console.warn("[editions] could not find or keep the report's edition:", (e as Error)?.message ?? e);

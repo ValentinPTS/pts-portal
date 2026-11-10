@@ -165,6 +165,7 @@ const DICT: Record<string, Entry> = {
   "results.unofficialBody": { bg: "Оценките z, ζ и Eₙ на тази страница се изчисляват от портала за работна проверка. Официалните оценки идват от PTS_Analysis и никога не се показват на лабораториите оттук (Реш. 135).", en: "The z, ζ and Eₙ scores on this page are computed by the portal as a working check. The official scores come from PTS_Analysis, and labs never see these (Decision 135)." },
   // part 0.6 — no portal-computed score to labs (Реш. 135); texts for PTS's approval
   "lab.resultInReport": { bg: "Оценките Ви са в окончателния доклад по-долу.", en: "Your scores are in the final report below." },
+  "lab.reportAwaitsPayment": { bg: "Окончателният доклад е издаден — ще се отвори за вас, след като PTS отбележи плащането (или го отвори по друго основание).", en: "The final report is issued — it opens for you once PTS marks your payment (or opens it on another ground)." },
   "lab.reportComing": { bg: "Обработката приключи. Окончателният доклад ще бъде качен тук, когато PTS го издаде.", en: "Processing is complete. The final report will appear here once PTS issues it." },
   "lab.awaiting": { bg: "Очакват се резултати — докладването е в процес.", en: "Awaiting results — reporting in progress." },
   "lab.finalReport": { bg: "↓ Окончателен доклад", en: "↓ Final report" },
@@ -629,6 +630,9 @@ const DICT: Record<string, Entry> = {
   "act.results.imported_2_0": { bg: "Внесено от PTS_Analysis 2.0", en: "Imported from PTS_Analysis 2.0" },
   // 7.3 — the transfer check
   "act.results.transfer_checked": { bg: "Проверка на преноса към 2.0", en: "Transfer check (2.0)" },
+  "act.report.issued": { bg: "Окончателният доклад е издаден (R1)", en: "Final report issued (R1)" },
+  "act.report.corrected": { bg: "Издадена поправка на доклада (R2…)", en: "Report correction issued (R2…)" },
+  "act.report.access": { bg: "Докладът е достъпен за участие", en: "Report opened for a participation" },
   "act.scheme.reference_values": { bg: "Референтни стойности по точки", en: "Reference values per point" },
   "act.scheme.delivery_min_days": { bg: "Минимален брой работни дни (заместващ обект)", en: "Minimum working days (replacement object)" },
   "act.message.sent": { bg: "Изпратен имейл до лаборатория", en: "E-mail to a laboratory sent" },

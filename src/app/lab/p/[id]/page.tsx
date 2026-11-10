@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { labReport } from "@/lib/report-issue-model";
 import { notFound, redirect } from "next/navigation";
 import { participantViewer, participationViews } from "@/lib/participation-view";
 import { isProvisional } from "@/lib/coding-model";
@@ -66,7 +67,9 @@ export default async function ParticipationPage({ params, searchParams }: { para
   const field = { border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px", fontSize: 13, fontFamily: "inherit" } as const;
   const reported = s.status === "report" || s.status === "closed";
   const lockNR = (s.status === "processing" || s.status === "report" || s.status === "closed") && lockWord(lockEntryOf(lockInForce(s.submissionLocks), v.participantId)) === "nr";
-  const officialReport = reported && !!s.uploads?.report;
+  // the R in force once it reaches this participation (7.4; D7: paid, or opened by hand)
+  const rep = labReport(s, p.code);
+  const officialReport = reported && rep.state === "issued";
   // the certificate is served to a laboratory's account (the document route); a user of the
   // entity gets it with phase 7 — never a row whose link answers «no» (5.5 review)
   const hasCert = viewer.kind === "lab" && !!labCertificate(s.certificates, p.code);
@@ -85,7 +88,7 @@ export default async function ParticipationPage({ params, searchParams }: { para
   const NO_ACK: DocAck = { state: "none" };
   const rows = [
     ...v.docs.map((d) => ({ key: d.key, ack: d.ack as DocAck, editionId: d.editionId ?? "", editionNo: d.editionNo, name: docName(d.key, lang), ed: d.editionNo ? String(d.editionNo) : "—", at: d.at.slice(0, 10), lvl: d.level as string, level: d.level === "all" ? L("на схемата", "the scheme's") : d.level === "user" ? L("до вас лично", "to you personally") : L("на участието", "the participation's"), state: d.opened === null ? "—" : d.opened ? L("отворен", "opened") : L("неотворен", "not opened"), opened: d.opened !== false, href: docHref(v, d.key, lang) })),
-    ...(officialReport ? [{ key: "report", ack: NO_ACK, editionId: "", editionNo: undefined, lvl: "issued", name: L("Окончателен доклад", "Final report"), ed: "—", at: "", level: L("на схемата", "the scheme's"), state: L("издаден", "issued"), opened: true, href: `/lab/doc/${s.id}/report?lang=${lang}&p=${encodeURIComponent(v.participantId)}` }] : []),
+    ...(officialReport ? [{ key: "report", ack: NO_ACK, editionId: "", editionNo: undefined, lvl: "issued", name: L("Окончателен доклад", "Final report") + (rep.label ? ` ${rep.label}` : ""), ed: rep.label ? rep.label.split(" · ")[0] : "—", at: "", level: L("на схемата", "the scheme's"), state: L("издаден", "issued"), opened: true, href: `/lab/doc/${s.id}/report?lang=${lang}&p=${encodeURIComponent(v.participantId)}` }] : []),
     ...(hasCert ? [{ key: "certificate", ack: NO_ACK, editionId: "", editionNo: undefined, lvl: "issued", name: L("Сертификат", "Certificate"), ed: "—", at: "", level: L("на участието", "the participation's"), state: L("издаден", "issued"), opened: true, href: `/lab/doc/${s.id}/certificate?lang=${lang}&p=${encodeURIComponent(v.participantId)}` }] : []),
     ...(original ? [{ key: "invoice", ack: NO_ACK, editionId: "", editionNo: undefined, lvl: "issued", name: `${T(LAB_DOC_SLOTS.invoice)}${original.number ? ` № ${original.number}` : ""}`, ed: "—", at: original.uploadedAt.slice(0, 10), level: L("на участието", "the participation's"), state: L("платено", "paid"), opened: true, href: `/lab/labdoc/${s.id}/invoice?p=${encodeURIComponent(v.participantId)}` }] : []),
     ...(invoice ? [{ key: "proforma", ack: NO_ACK, editionId: "", editionNo: undefined, lvl: "issued", name: `${T(LAB_DOC_SLOTS.proforma)}${invoice.number ? ` № ${invoice.number}` : ""}`, ed: "—", at: invoice.uploadedAt.slice(0, 10), level: L("на участието", "the participation's"), state: s.status === "not_held" ? L("схемата не се състои — нищо не се фактурира", "the scheme is not held — nothing is invoiced") : T(PAYMENT_LABEL[v.payment]), opened: true, href: `/lab/labdoc/${s.id}/proforma?p=${encodeURIComponent(v.participantId)}` }] : []),
@@ -391,7 +394,7 @@ export default async function ParticipationPage({ params, searchParams }: { para
                 {lockNR
                   ? <span data-results-box-nr style={{ color: "#7a5416" }}>{L("Подаването е заключено — от вас не са получени резултати; участието е N/R.", "The submission is locked — no results were received from you; the participation is N/R.")}</span>
                   : reported
-                  ? <span>{officialReport ? L("Резултатът ви е в окончателния доклад — в документите вляво.", "Your result is in the final report — among the documents on the left.") : L("Обработката приключи. Окончателният доклад ще е тук, когато PTS го издаде.", "Processing is complete. The final report will be here once PTS issues it.")}</span>
+                  ? <span>{officialReport ? L("Резултатът ви е в окончателния доклад — в документите вляво.", "Your result is in the final report — among the documents on the left.") : rep.state === "awaiting" ? <span data-report-awaiting>{L("Окончателният доклад е издаден — ще се отвори за вас, след като PTS отбележи плащането (или го отвори по друго основание).", "The final report is issued — it opens for you once PTS marks your payment (or opens it on another ground).")}</span> : L("Обработката приключи. Окончателният доклад ще е тук, когато PTS го издаде.", "Processing is complete. The final report will be here once PTS issues it.")}</span>
                   : v.state === "submitted" ? <span>{L("Подадени", "Submitted")}{(() => { const e = v.events.find((x) => x.kind === "results_returned"); return e ? ` · ${fmtPhaseDate(e.at)}` : ""; })()}</span>
                   : <span style={{ color: "var(--muted)" }}>{L("Още не са подадени.", "Not submitted yet.")}</span>}
                 {uploadBox("results", ["received", "draft", "submitted"].includes(v.state))}

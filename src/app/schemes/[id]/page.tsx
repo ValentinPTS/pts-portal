@@ -37,12 +37,15 @@ import { markerLabels, schemeMarkers } from "@/lib/scheme-number";
 import SchemeLifecycle, { type ActButton, type StageRow } from "@/components/SchemeLifecycle";
 import { listSubmissions, submittedParticipantIds, listCorrections } from "@/lib/submissions";
 import { listActivity } from "@/lib/activity-store";
-import { processingRecord, schemeTransferState, stageEventOf, RECORD_STAGES, type RecordEvent, type StageEvent } from "@/lib/transfer-check-model";
+import { listNoticesForScheme } from "@/lib/notifications";
+import { processingRecord, schemeTransferState, stageEventOf, reportInForce, RECORD_STAGES, type RecordEvent, type StageEvent } from "@/lib/transfer-check-model";
 import { metaGaps, META_GAP_TEXT } from "@/lib/scheme-meta";
 import { lockEntries, lockCounts, isNR, resultsOutsideForm, lockInForce } from "@/lib/submission-lock-model";
 import { analysisGaps } from "@/lib/analysis-export";
 import AnalysisImportPanel from "@/components/AnalysisImportPanel";
 import ProcessingRecordCard from "@/components/ProcessingRecordCard";
+import ReportIssueCard from "@/components/ReportIssueCard";
+import { transferProblem, correctionProblem, recipients, type IssueProblem, type RecipientRow } from "@/lib/report-issue-model";
 import { activeUnlock, submissionOpen } from "@/lib/submission-model";
 import { needsAmendment } from "@/lib/amendments-model";
 import { chainWindow, deadlineState, windowDays, resultsDeadline } from "@/lib/deadlines-model";
@@ -65,7 +68,7 @@ import { requireStaff, getRoleContext, canManagePeople } from "@/lib/roles";
 // A scheme folder → its 14 documents grouped by workflow stage. Every document can be
 // built in the app OR filled with an uploaded ready-made file (PDF/image) — see
 // SchemeDocuments. The header shows the primary tools; the rest tuck under "Управление".
-export default async function SchemePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ack?: string; msg?: string; n?: string; of?: string; imp?: string; tc?: string }> }) {
+export default async function SchemePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ack?: string; msg?: string; n?: string; of?: string; imp?: string; tc?: string; ri?: string }> }) {
   await requireStaff(); // read gate: one of PTS's people
   const { id } = await params;
   const sp = await searchParams;
@@ -140,20 +143,49 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
   }));
   const canAct = await mayNow("scheme.edit", id);
   const mayReview = (await mayNow("results.read", id)) || (await mayNow("results.enter", id)) || (await mayNow("results.process", id));
-  // 7.2: who may import 2.0's documents — while the scheme is in processing
-  const mayImport = ((await mayNow("results.process", id)) || (await mayNow("scheme.edit", id))) && s.status === "processing";
+  // 7.2: who may import 2.0's documents — while the scheme is in processing; once the report is
+  // issued (R1, 7.4), a correction's file too (it reaches nobody until a correction R2… is issued)
+  const mayImport = ((await mayNow("results.process", id)) || (await mayNow("scheme.edit", id))) && (s.status === "processing" || (s.status === "report" && !!s.reportIssues?.length));
   // 7.3: the processing record — every designation, the ticks and their withdrawals (the journal), the
   // exports, the imports, the checks — and the transfer check in force (the corrections read: one after
   // the export takes it out of force)
   let recordView: { record: RecordEvent[]; ticksFromJournal: boolean; transfer: ReturnType<typeof schemeTransferState> | null } | null = null;
   if ((mayReview || canAct) && ["processing", "report", "closed"].includes(s.status)) {
-    const ticks = await listActivity({ schemeId: id, action: "scheme.stage", limit: 1000 }).then((es) => es.map(stageEventOf).filter((x): x is StageEvent => !!x)).catch(() => null);
+    const ticks = await listActivity({ schemeId: id, action: "scheme.stage", limit: 1000, strict: true }).then((es) => es.map(stageEventOf).filter((x): x is StageEvent => !!x)).catch(() => null);
     // a tick in force the journal does not show (it could not be read): the ticks in force instead
     const ticksFromJournal = !!ticks && RECORD_STAGES.every((no) => !s.lifecycle?.stages?.[no] || ticks.some((t) => t.stage === no && t.done));
     const transfer = await listCorrections(id).then((c) => schemeTransferState(s, c)).catch(() => null);
     recordView = {
       record: processingRecord({ designations, stageEvents: ticksFromJournal ? ticks : null, stages: s.lifecycle?.stages ?? {}, exports: s.analysisExports, imports: s.analysisImports, checks: s.transferChecks }),
       ticksFromJournal, transfer,
+    };
+  }
+  // 7.4: issuing the report — what the act needs, the R editions, who received which (D7)
+  let issueView: { ready: { approved: boolean; report: { version: string } | null; problem: IssueProblem | null }; rows: RecipientRow[] | null; correctable: { version: string; problem: IssueProblem | null } | null; showReasons: boolean } | null = null;
+  if (recordView) {
+    const issues = s.reportIssues ?? [];
+    const inForceReport = reportInForce({ report: s.uploads?.report, active: s.docActive?.report ?? null, imports: s.analysisImports });
+    const version = inForceReport ? s.uploads?.report?.analysisVersion ?? "" : "";
+    let rows: RecipientRow[] | null = null;
+    if (issues.length) {
+      try {
+        // the laboratories' openings (the journal, read strictly) and the notices raised (1.8)
+        const [opened, notices] = await Promise.all([
+          listActivity({ schemeId: id, action: "file.downloaded", subjects: issues.map((i) => `edition:${i.editionId}`), limit: 1000, strict: true }),
+          listNoticesForScheme(id),
+        ]);
+        const openings = opened.filter((e) => !!e.targetCode).map((e) => ({ code: e.targetCode!, editionId: (e.subject ?? "").replace(/^edition:/, ""), at: e.at }));
+        rows = recipients({
+          codes: participantsNow.filter((p) => inFinalRound(s, p)).map((p) => p.code), access: s.reportAccess, issues, openings,
+          notices: notices.filter((n) => n.kind === "report.issued" && n.audience === "lab").map((n) => ({ code: n.code, bg: n.bg, at: n.createdAt })),
+        });
+      } catch { rows = null; }
+    }
+    issueView = {
+      ready: { approved: !!s.lifecycle?.stages?.["16"], report: inForceReport ? { version } : null, problem: transferProblem(recordView.transfer, !!inForceReport) },
+      rows,
+      correctable: s.status === "report" && issues.length ? { version, problem: correctionProblem(issues, recordView.transfer, !!inForceReport) } : null,
+      showReasons: await mayNow("names.view", id),
     };
   }
   // 7.1: who may export to 2.0 — and what the file will lack (the codes whose results came by a sheet; the meta)
@@ -397,6 +429,10 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
         <AnalysisImportPanel schemeId={id} lang={lg === "bg" ? "bg" : "en"} imports={s.analysisImports ?? []} canImport={mayImport} answer={sp.imp} />
       )}
       {/* 7.3: the processing record and the transfer check */}
+      {recordView && issueView && (
+        <ReportIssueCard schemeId={id} lang={lg === "bg" ? "bg" : "en"} status={s.status} ready={issueView.ready} issues={s.reportIssues ?? []} rows={issueView.rows}
+          canAct={canAct} correctable={issueView.correctable} answer={sp.ri} codesNotReached={(issueView.rows ?? []).filter((r) => !r.access).map((r) => r.code)} showReasons={issueView.showReasons} />
+      )}
       {recordView && (
         <ProcessingRecordCard schemeId={id} lang={lg === "bg" ? "bg" : "en"} record={recordView.record} ticksFromJournal={recordView.ticksFromJournal}
           transfer={recordView.transfer} imports={s.analysisImports ?? []} canCheck={mayImport} answer={sp.tc} />

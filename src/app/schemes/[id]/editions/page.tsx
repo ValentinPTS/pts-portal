@@ -51,12 +51,14 @@ export default async function EditionsPage({ params, searchParams }: { params: P
     }
     return { d, eds, changed };
   }));
-  const issuable: IssuableDoc[] = rows.map(({ d, eds }) => ({ key: d.key, name: lang === "bg" ? d.nameBg : d.nameEn, next: nextEditionNo(eds[0]) }));
+  // once issued (R1, 7.4) the report goes out only by its acts — not offered here
+  const issuable: IssuableDoc[] = rows.filter(({ d }) => !(d.key === "report" && s.reportIssues?.length)).map(({ d, eds }) => ({ key: d.key, name: lang === "bg" ? d.nameBg : d.nameEn, next: nextEditionNo(eds[0]) }));
   // what the participants hold: the edition a document was sent as; for the final
-  // report, once issued to them, its latest edition (the lab route serves that)
+  // report, the R in force (7.4) — before 7.4, once issued to them, its latest edition
   const reported = (s.status === "report" || s.status === "closed") && !!s.uploads?.report;
+  const rInForce = s.reportIssues?.at(-1);
   const held = (e: DocEdition) => e.docKey === "report"
-    ? reported && all.find((x) => x.docKey === "report")?.id === e.id
+    ? (rInForce ? rInForce.editionId === e.id : reported && all.find((x) => x.docKey === "report")?.id === e.id)
     : !!s.sentToParticipants?.[e.docKey] && s.releasedEditions?.[e.docKey]?.id === e.id;
   const file = (e: DocEdition, l: "bg" | "en") => `/schemes/${id}/editions/${e.id}?lang=${l}`;
 

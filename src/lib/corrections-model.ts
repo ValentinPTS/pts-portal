@@ -100,7 +100,8 @@ export function readCorrection(input: { target: unknown; used: unknown; reason: 
   return { ok: true, key: f.key, field: f.field, reported: f.reported, used: used || null, reason };
 }
 
-export const CORRECTION_PROBLEM_TEXT: Record<CorrectionProblem | "state" | "version" | "failed" | "reach", { bg: string; en: string }> = {
+export const CORRECTION_PROBLEM_TEXT: Record<CorrectionProblem | "state" | "version" | "failed" | "reach" | "approved", { bg: string; en: string }> = {
+  approved: { bg: "Резултатите са одобрени (етап 16) — корекция след одобрението не се записва; първо оттеглете одобрението (Реш. 140).", en: "The results are approved (stage 16) — no correction after the approval; withdraw the approval first (Реш. 140)." },
   field: { bg: "Изберете поле с подадена стойност.", en: "Choose a field with a submitted value." },
   value: { bg: "Използваната стойност трябва да е число (запетая или точка).", en: "The used value must be a number (comma or point)." },
   positive: { bg: "U трябва да е положително число.", en: "U must be a positive number." },

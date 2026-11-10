@@ -46,11 +46,33 @@ const unzip = (buf) => {
 };
 
 let S;
+// 7.2–7.4: 2.0's report imported, its transfer check «the same»
+const importReport = async (version, buf) => {
+  await go(`/schemes/${S}#analysis-import`);
+  const f = page.locator("[data-import-form]");
+  await f.locator('input[name="version"]').fill(version);
+  await f.locator('input[name="report-bg"]').setInputFiles({ name: "report.pdf", mimeType: "application/pdf", buffer: buf });
+  await f.locator("[data-import-submit]").click();
+  return waitFor(async () => /imp=ok/.test(page.url()), 30);
+};
+const checkSame = async () => {
+  await go(`/schemes/${S}#processing-record`);
+  await page.locator('[data-transfer-form] input[value="yes"]').check();
+  await page.locator("[data-transfer-form] [data-transfer-submit]").click();
+  return waitFor(async () => /tc=ok/.test(page.url()), 30);
+};
 // part 3.2: past «Отворена» a scheme moves by the acts on its page — announce, start
-// processing, the three processing ticks (Реш. 140), issue the report
-const toReport = async () => {
+// processing, 2.0's report and its transfer check (7.2–7.4), the three processing ticks
+// (Реш. 140), issue the report
+const toReport = async (report) => {
   const state = async () => (await page.locator("[data-lifecycle] [data-state]").innerText()).trim();
-  for (const step of [{ act: "announce" }, { act: "process" }, { tick: 14 }, { tick: 15 }, { tick: 16 }, { act: "report" }]) {
+  for (const step of [{ act: "announce" }, { act: "process" }, { analysis: true }, { tick: 14 }, { tick: 15 }, { tick: 16 }, { act: "report" }]) {
+    if (step.analysis) {
+      await page.request.get(`${BASE}/schemes/${S}/export/analysis`);
+      await importReport("2.0.3", report);
+      await checkSame();
+      continue;
+    }
     await go(`/schemes/${S}#stages`);
     await page.locator("[data-lifecycle] [data-stage]").nth(18).waitFor();
     const before = await state();
@@ -183,26 +205,32 @@ try {
   await form.locator('button[type="submit"]').click();
   t("…an unchanged document is not issued again", await waitFor(async () => /Nothing has changed since edition 2/.test(await form.innerText())) && (await page.locator('[data-edition="instruction:3"]').count()) === 0);
 
-  // ── 6. the final report: an edition of PTS's file — a replaced file reaches the
-  //       laboratories only when issued as the next edition, with its note ──
+  // ── 6. the final report: 2.0's file, issued as R1 by the act (7.4) — a replaced file reaches the
+  //       laboratories only as a correction R2, with its reason and scope; «Редакции» no longer issues it ──
   const R1 = Buffer.from(`%PDF-1.4\n% report one ${stamp}\n%%EOF\n`), R2 = Buffer.from(`%PDF-1.4\n% report two ${stamp}\n%%EOF\n`);
-  await go(`/schemes/${S}`);
-  await upload("report", R1);
-  await page.waitForTimeout(1500);
-  await toReport(); // the acts of part 3.2
+  await toReport(R1); // the acts of part 3.2, with 2.0's report (7.2–7.4)
   const labGet = async (doc) => { await go(`/dev/persona?role=lab&join=${S}`); const r = await page.request.get(`${BASE}/lab/doc/${S}/${doc}`); const b = Buffer.from(await r.body()); await go("/dev/persona?role=manager"); return { status: r.status(), b }; };
+  const rep0 = await labGet("report");
+  t("the report issued: a laboratory not marked paid does not get it yet (D7)", rep0.status === 403, `status ${rep0.status}`);
+  await go(`/schemes/${S}#report-issue`);
+  await page.locator('[data-hand-open] input[name="reason"]').fill("Държавна институция — проверка на редакциите");
+  await page.locator("[data-hand-open] [data-hand-open-submit]").click();
+  await waitFor(async () => /ri=opened/.test(page.url()));
   const rep1 = await labGet("report");
-  t("the report issued: the laboratory gets it, kept as its edition 1", rep1.status === 200 && rep1.b.equals(R1), `status ${rep1.status}`);
-  await go(`/schemes/${S}`);
-  await upload("report", R2, true);
-  await page.waitForTimeout(1500);
-  t("…the file replaced: the laboratory still gets edition 1", (await labGet("report")).b.equals(R1));
+  t("…opened for it: it gets 2.0's file, kept as edition 1 (R1)", rep1.status === 200 && rep1.b.equals(R1), `status ${rep1.status}`);
+  t("a corrected report from 2.0 imported", await importReport("2.0.4", R2));
+  t("…the file replaced: the laboratory still gets R1", (await labGet("report")).b.equals(R1));
   await go(`/schemes/${S}/editions?doc=report`);
   t("…«Редакции»: edition 1 with the participants, changed since", (await page.locator('[data-edition="report:1"] [data-held]').count()) === 1 && (await page.locator('[data-edition-doc="report"] [data-changed-since="1"]').count()) === 1);
-  await form.locator("select").selectOption("report");
-  await form.locator('textarea[name="reason"]').fill("Поправена грешка в таблица 3");
-  await form.locator('button[type="submit"]').click();
-  t("…issued as edition 2 with its note", await waitFor(async () => (await page.locator('[data-edition="report:2"]').count()) === 1));
+  t("…«Редакции» no longer offers the issued report — a correction R2 issues it", (await form.locator('select option[value="report"]').count()) === 0 && (await page.locator('[data-edition="report:2"]').count()) === 0);
+  await checkSame();
+  await go(`/schemes/${S}#report-issue`);
+  await page.locator('[data-correction-form] input[name="reason"]').fill("Поправена грешка в таблица 3");
+  await page.locator('[data-correction-form] input[name="scope"]').fill("Таблица 3 — единицата");
+  await page.locator("[data-correction-form] [data-correction-submit]").click();
+  await waitFor(async () => /ri=corrected/.test(page.url()));
+  await go(`/schemes/${S}/editions?doc=report`);
+  t("…issued as correction R2 — edition 2, with its note", await waitFor(async () => (await page.locator('[data-edition="report:2"]').count()) === 1));
   t("…and now the laboratory gets edition 2", (await labGet("report")).b.equals(R2));
 
   // ── 7. not for another scheme's people ──

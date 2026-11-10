@@ -60,12 +60,6 @@ const tick = async (S, no, note = "") => {
   await page.locator(`[data-tick="${no}"]`).click();
   await waitFor(async () => (await stage(no).getAttribute("data-done")) === "1");
 };
-const upload = async (doc, buffer) => {
-  const r = page.locator(`[data-doc-row="${doc}"]`);
-  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), r.locator("button", { hasText: /Качи|Upload/ }).click()]);
-  await chooser.setFiles({ name: `${doc}.pdf`, mimeType: "application/pdf", buffer });
-  await waitFor(async () => (await r.innerText()).includes(`${doc}.pdf`));
-};
 
 try {
   await go("/dev/persona?role=manager");
@@ -103,6 +97,9 @@ try {
   await addP.locator('[name="labName"]').fill(`Етапи лаб ${stamp}`);
   await addP.locator('button[type="submit"]').click();
   await waitFor(async () => (await page.locator("tbody").innerText()).includes(`Етапи лаб ${stamp}`));
+  // a laboratory's own participation, on the final list — it reads the report later (7.4: the final list's only)
+  await go(`/dev/persona?role=lab&join=${S}`);
+  await go("/dev/persona?role=manager");
   await go(`/schemes/${S}#stages`);
   t("…the second announcement is its own form, not a plain act", (await page.locator('[data-act="announce2"]').count()) === 0 && (await page.locator("[data-second-announcement]").count()) === 1);
   const second = page.locator("[data-second-announcement]");
@@ -117,7 +114,8 @@ try {
   // the coding act — no batch here, so codes only; stage 9 done by it
   answers.push(true);
   await page.locator("[data-coding-run]").click();
-  await waitFor(async () => (await page.locator("[data-coding-done]").count()) === 1);
+  // (the laboratory's own participation was coded on joining — wait for the act itself: stage 9)
+  await waitFor(async () => { await go(`/schemes/${S}#stages`); return (await stage(9).getAttribute("data-done")) === "1"; }, 30);
   t("the coding act: stage 9 done by it, no longer ticked by hand", (await stage(9).getAttribute("data-done")) === "1" && (await page.locator('[data-untick="9"]').count()) === 0);
 
   // the edit page changes no later state
@@ -133,6 +131,18 @@ try {
   t("«Заключи подаването и започни обработката»: processing", (await state()) === "Обработка");
   t("the report act is refused without PTS's file and the approval", (await page.locator('[data-act="report"]').isDisabled()) && /качете|upload/.test(await page.locator('[data-act-blocked="report"]').innerText()));
   t("the review cannot be ticked before the processing", await page.locator('[data-tick="15"]').isDisabled());
+  // 2.0's report, before the review (7.2), and its transfer check (7.3) — what the report act needs (7.4)
+  const REPORT = Buffer.from(`%PDF-1.4\n% lifecycle report ${stamp}\n%%EOF\n`);
+  await page.request.get(`${BASE}/schemes/${S}/export/analysis`);
+  await go(`/schemes/${S}#analysis-import`);
+  await page.locator('[data-import-form] input[name="version"]').fill("2.0.3");
+  await page.locator('[data-import-form] input[name="report-bg"]').setInputFiles({ name: "report.pdf", mimeType: "application/pdf", buffer: REPORT });
+  await page.locator("[data-import-form] [data-import-submit]").click();
+  await waitFor(async () => /imp=ok/.test(page.url()), 30);
+  await go(`/schemes/${S}#processing-record`);
+  await page.locator('[data-transfer-form] input[value="yes"]').check();
+  await page.locator("[data-transfer-form] [data-transfer-submit]").click();
+  t("2.0's report imported and its transfer check «the same» recorded", await waitFor(async () => /tc=ok/.test(page.url()), 30));
   await tick(S, 14);
   await tick(S, 15);
   await tick(S, 16);
@@ -142,15 +152,20 @@ try {
   await go(`/schemes/${S}#stages`);
   t("…the processing tick cannot be withdrawn under the review", (await page.locator('[data-untick="14"]').count()) === 0);
 
-  // ── 4. the report: PTS's file, kept as an edition, read by the laboratory ──
-  const REPORT = Buffer.from(`%PDF-1.4\n% lifecycle report ${stamp}\n%%EOF\n`);
-  await go(`/schemes/${S}`);
-  await upload("report", REPORT);
+  // ── 4. the report: 2.0's file (7.2–7.4), kept as an edition (R1), read by the laboratory it reaches (D7) ──
   await act(S, "report", "");
   t("«Издай окончателния доклад»: the report is issued, stage 17 done", (await state()) === "Докладът е издаден" && (await stage(17).getAttribute("data-done")) === "1");
   await go(`/schemes/${S}/editions?doc=report`);
   t("…kept as the report's edition 1", (await page.locator('[data-edition="report:1"]').count()) === 1);
   await go(`/dev/persona?role=lab&join=${S}`);
+  await go("/dev/persona?role=manager");
+  // the laboratories are not marked paid: opened by hand, with a reason (D7)
+  for (let i = 0; i < 4 && (await page.goto(`${BASE}/schemes/${S}#report-issue`).then(() => page.locator("[data-hand-open]").count())) > 0; i++) {
+    await page.locator('[data-hand-open] input[name="reason"]').fill("Държавна институция — проверка на етапите");
+    await page.locator("[data-hand-open] [data-hand-open-submit]").click();
+    await waitFor(async () => /ri=/.test(page.url()));
+  }
+  await go(`/dev/persona?role=lab`);
   const rep = await page.request.get(`${BASE}/lab/doc/${S}/report`);
   t("…and the laboratory reads exactly that file", rep.status() === 200 && Buffer.from(await rep.body()).equals(REPORT), `status ${rep.status()}`);
   await go("/dev/persona?role=manager");

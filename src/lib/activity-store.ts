@@ -160,6 +160,8 @@ export interface ActivityFilter {
   /** only these participations' codes (5.5) */
   targetCodes?: readonly string[];
   limit?: number;
+  /** throw when the journal cannot be read — never an empty answer that reads as «nothing» (7.4) */
+  strict?: boolean;
 }
 
 export async function listActivity(filter: ActivityFilter = {}): Promise<ActivityEvent[]> {
@@ -187,6 +189,7 @@ export async function listActivity(filter: ActivityFilter = {}): Promise<Activit
     if (error) throw error;
     return (data ?? []).map((r) => fromRow(r as Row));
   } catch (e) {
+    if (filter.strict) throw e;
     warn(e);
     return mem.slice(0, limit);
   }

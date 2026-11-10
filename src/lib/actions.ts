@@ -14,7 +14,7 @@ import { inviteLink, INVITE_RETURN, safeNext, siteOrigin } from "./auth-links";
 import { INVITE_SUBJECT, inviteText, invitePreview, PROFILE_CONFIRMED_SUBJECT, PROFILE_CONFIRMED_KEY, profileConfirmedText, fixedApproval } from "./fixed-texts";
 import { sendToLab, recordPending, settle, type Approval } from "./sent-messages";
 import { saveReminderTemplate, approveReminderTemplate, getReminderTemplate, REMINDER_KINDS, type ReminderKind } from "./reminder-templates";
-import { proposeChange, decideChange, recordSettingChange, proposalProblem, listChanges } from "./change-register";
+import { proposeChange, decideChange, recordSettingChange, proposalProblem, listChanges, listReleases } from "./change-register";
 import { endAllRolesOf, assignSchemeRole, endSchemeRole, permanentRoleProblem, type AssignProblem } from "./scheme-roles";
 import { isEffectiveHead } from "./people-manager";
 import { ROLE_LABEL } from "./role-model";
@@ -47,7 +47,7 @@ async function labAfter(schemeId: string, code: string, pre: { code?: string; te
 import { listVisibleParticipations, isStarted } from "./visibility";
 import { applyStamp, chainNewestMs, isStampSource, rebuildChain, returnProblem, sofiaDay, sofiaTime, sofiaWallToIso, stampProblem, stampSourceLabel, type StampProblem, type StampWhat } from "./chain";
 import { ONLINE_APPLICATIONS_OPEN } from "./online-applications";
-import { freezeNow, issueEdition, latestEdition, getEdition, sameAs, servable, reissueReason, amendmentStampFor, GATE_DOCS, sha256, type DocEdition, type Frozen } from "./editions";
+import { freezeNow, issueEdition, latestEdition, listEditions, getEdition, sameAs, servable, reissueReason, amendmentStampFor, GATE_DOCS, sha256, type DocEdition, type Frozen } from "./editions";
 import { gateB, stillByEmail } from "./gate-texts";
 import { hasEditions, editionLabel } from "./editions-model";
 import { addApplication, setApplicationStatus } from "./applications";
@@ -87,7 +87,9 @@ import { lockEntries, lockCounts, lockInForce, isNR, resultsOutsideForm, type Su
 import { correctableFields, activeCorrections, readCorrection, type ResultCorrection } from "./corrections-model";
 import { readNote, noteInForce, type ReviewNote } from "./review-model";
 import { IMPORT_KINDS, checkImport, servedName, type ImportKind, type ImportedFile, type AnalysisImport } from "./analysis-import-model";
-import { readCheck, schemeTransferState, type TransferCheck } from "./transfer-check-model";
+import { readCheck, schemeTransferState, reportInForce, type TransferCheck } from "./transfer-check-model";
+import { transferProblem, correctionProblem, readCorrection as readReportCorrection, readHandOpen, accessAtIssue, reaches, inScope, issueInForce, issueReason, rLabel, softwareRecord, ISSUE_PROBLEM_TEXT, type IssueProblem, type ReportIssue, type ReportAccess } from "./report-issue-model";
+import { GATE_TEXTS_VERSION } from "./gate-texts";
 import { activeUnlock, submissionOpen, readConfirmations, submissionPayload, readUnlock, SUBMIT_PROBLEM_TEXT, type ResultUnlock } from "./submission-model";
 import { testPeriodLimits, calibrationWindows } from "./results-limits";
 import { drawCodes, drawObjects, toCode, codingProblem, objectsGiven, unfinished, sampleCodeOf, isProvisional, CODING_PROBLEM_TEXT, type CodingProblem, type CodingRecord } from "./coding-model";
@@ -138,7 +140,7 @@ import {
   notifyApplicationReceived, notifyApplicationApproved, notifyApplicationRejected,
   notifyReceiptConfirmed, notifyResultsReturned, notifyReportIssued, notifyDocsSent,
   notifyInvoiceReady, notifyDeviceMoved, notifyChainReceipt, notifyChainHandover,
-  notifySchemeNotHeld, notifyReportPublished, notifySchemeAmended, notifyDeadlineExtended, notifySchemeAnnounced, notifyFinalList, notifyCoded,
+  notifySchemeNotHeld, notifyReportPublished, notifyReportCorrected, notifySchemeAmended, notifyDeadlineExtended, notifySchemeAnnounced, notifyFinalList, notifyCoded,
 } from "./notify-events";
 import { addCaseEvent, getCaseEvent, listCaseEvents, listCaseEventsForScheme, voidCaseEvent } from "./case-events";
 import { LAB_RECORDER } from "./redact";
@@ -882,6 +884,8 @@ export async function issueEditionAction(
   const scheme = await getScheme(schemeId);
   if (!scheme) return { error: "Scheme not found." };
   if (!getDoc(docKey) || !hasEditions(docKey)) return { error: EDITION_REFUSAL.editionless };
+  // once issued (R1, 7.4) the report goes out only by its acts — a correction R2… with its reason and scope
+  if (docKey === "report" && scheme.reportIssues?.length) return { error: "Издаденият доклад се поправя с «Издай поправка» (R2…) в «Издаване на доклада» — с причината и обхвата. · The issued report is corrected with «Issue a correction» (R2…) under «Issuing the report» — with its reason and scope." };
   let now: Frozen | null;
   let latest: DocEdition | null;
   try {
@@ -1107,13 +1111,29 @@ export async function setParticipantPaidAction(
     return { error: "No such participant in this scheme." };
   }
   const at = new Date().toISOString();
+  // D7 (7.4): the issued report reaches a participation once it is marked paid — who to tell is
+  // looked up before anything is recorded (2.3); unmarking never takes an issued report back
+  const part = (await listParticipants(schemeId)).find((p) => p.code === code)!;
+  const issuedNow = (s: Pick<Scheme, "status" | "reportIssues">) => (s.status === "report" || s.status === "closed") && !!s.reportIssues?.length;
+  const by = await actorNow();
+  // looked up whenever the report may reach it — in processing too: the act may land meanwhile (review)
+  let labId: string | undefined;
+  const mayReach = paid && inFinalRound(scheme, part) && !scheme.reportAccess?.[code] && ["processing", "report", "closed"].includes(scheme.status);
+  if (mayReach) {
+    try { labId = (await labIdsFor(schemeId, [part], by)).get(code); } catch { return { error: NOT_REACHED }; }
+  }
   // an original invoice exists only for one paid (Реш. 35): not unmarked while it is held
   let held = false;
+  let reached: ReportIssue | null = null;
   await updateSchemeWith(schemeId, (s) => {
     if (!paid && s.labDocs?.[code]?.invoice) { held = true; return {}; }
     const paidAt = { ...(s.paidAt ?? {}) };
     if (paid) paidAt[code] = at;
     else delete paidAt[code];
+    if (mayReach && issuedNow(s) && inFinalRound(s, part) && !s.reportAccess?.[code]) {
+      reached = issueInForce(s.reportIssues);
+      return { paidAt, reportAccess: { ...(s.reportAccess ?? {}), [code]: { at, by, via: "paid" as const } } };
+    }
     return { paidAt };
   });
   if (held) return { error: "Оригиналната фактура е качена — първо я премахнете, после отбележете неплатено. · The original invoice is uploaded — remove it first, then mark unpaid." };
@@ -1121,6 +1141,12 @@ export async function setParticipantPaidAction(
     schemeId, targetCode: code,
     summary: paid ? `${code} marked paid` : `${code} no longer marked paid`,
   });
+  if (reached) {
+    const r = reached as ReportIssue;
+    await logActivity("report.access", { schemeId, targetCode: code, subject: `edition:${r.editionId}`, summary: `The final report (${rLabel(r.r)}) reaches ${code} — its payment marked (D7)`, after: { via: "paid", r: r.r } });
+    await notifyReportPublished(labId, schemeId, scheme.number, code, rLabel(r.r));
+    revalidatePath("/lab", "layout"); // its pages now list the report
+  }
   revalidatePath(`/schemes/${schemeId}`, "layout");
   return { ok: true };
 }
@@ -1134,13 +1160,19 @@ export async function removeSchemeDocUploadAction(formData: FormData): Promise<{
   await requireDocWriter(docKey, schemeId);
   const scheme = await getScheme(schemeId);
   if (!scheme) return { error: "Scheme not found." };
+  // the issued report's file stays (7.4 review): a correction is imported from 2.0 and issued as R2…
+  const issuedReport = (s: Pick<Scheme, "reportIssues">) => docKey === "report" && !!s.reportIssues?.length;
+  if (issuedReport(scheme)) return { error: `${ISSUE_PROBLEM_TEXT.kept.bg} · ${ISSUE_PROBLEM_TEXT.kept.en}` };
   const actor = (await getRoleContext()).email ?? "";
+  let kept = false;
   await updateSchemeWith(schemeId, (s) => {
+    if (issuedReport(s)) { kept = true; return {}; }
     const uploads = { ...(s.uploads ?? {}) };
     const removed = uploads[docKey];
     delete uploads[docKey];
     return { uploads, docActive: { ...(s.docActive ?? {}), [docKey]: "built" as const }, ...supersede(s, `upload:${docKey}`, removed, "removed", actor) };
   });
+  if (kept) return { error: `${ISSUE_PROBLEM_TEXT.kept.bg} · ${ISSUE_PROBLEM_TEXT.kept.en}` };
   await logActivity("doc.upload_removed", { schemeId, summary: `Uploaded file removed for document “${docKey}”` });
   revalidatePath(`/schemes/${schemeId}`, "layout");
   return { ok: true };
@@ -4137,6 +4169,7 @@ export async function decideNoticeAction(formData: FormData): Promise<void> {
 export type LifecycleResult = { ok: true } | { error: string };
 
 const ACT_REFUSAL = Object.fromEntries(Object.entries(ACT_PROBLEM_TEXT).map(([k, v]) => [k, `${v.bg} · ${v.en}`])) as Record<ActProblem, string>;
+const ISSUE_REFUSAL = Object.fromEntries(Object.entries(ISSUE_PROBLEM_TEXT).map(([k, v]) => [k, `${v.bg} · ${v.en}`])) as Record<IssueProblem, string>;
 
 export async function lifecycleActAction(schemeId: string, actRaw: string, noteRaw?: string): Promise<LifecycleResult> {
   await requireCap("scheme.edit", schemeId); // the scheme manager's acts (2.4)
@@ -4161,6 +4194,15 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
   if (act === "announce2") return { error: ANNOUNCE_REFUSAL["use-form"] };
   const first = actProblem(scheme, act, note, codes);
   if (first) return { error: ACT_REFUSAL[first] };
+  // 7.4: the report issued is 2.0's file, its transfer check in force «the same» (7.2, 7.3; Реш. 68)
+  let issueCorr: { at: string }[] = [];
+  let issueNow: ReturnType<typeof schemeTransferState> | null = null;
+  if (act === "report") {
+    try { issueCorr = await listCorrections(schemeId); } catch { return { error: NOT_REACHED }; }
+    issueNow = schemeTransferState(scheme, issueCorr);
+    const p = transferProblem(issueNow, !!reportInForce({ report: scheme.uploads?.report, active: scheme.docActive?.report ?? null, imports: scheme.analysisImports }));
+    if (p) return { error: ISSUE_REFUSAL[p] };
+  }
   const by = await actorNow();
 
   // «Заключи подаването» (6.6; Реш. 21): the start of processing is the technical end of the
@@ -4221,28 +4263,46 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
   // The report reaches the participants as an edition of PTS's file (3.0): the file
   // uploaded NOW — the latest edition when it is that file and can be served, else the
   // next edition, kept at the act. Never an earlier draft issued in «Редакции».
+  // R1 (7.4): the edition of exactly the file the transfer check names; the software record kept with it
+  let r1: { edition: DocEdition; issue: Omit<ReportIssue, "at" | "by" | "day"> } | null = null;
   if (act === "report") {
     let frozen: Frozen | null;
     let latest: DocEdition | null;
+    let changes: Awaited<ReturnType<typeof listReleases>>, editions: DocEdition[];
     try {
-      [frozen, latest] = await Promise.all([freezeNow(scheme, "report"), latestEdition(schemeId, "report")]);
+      [frozen, latest, changes, editions] = await Promise.all([freezeNow(scheme, "report"), latestEdition(schemeId, "report"), listReleases(), listEditions(schemeId)]);
     } catch {
       return { error: EDITION_REFUSAL.failed };
     }
     if (!frozen) return { error: ACT_REFUSAL["no-report"] };
-    if (!(latest && sameAs(frozen, latest) && (await servable(latest)))) {
-      const reason = latest
-        ? `Окончателният доклад — издаден с акта «Издай окончателния доклад» (част 3.2): файлът, качен в момента${latest && sameAs(frozen, latest) ? `; ${reissueReason(latest.no)}` : ", а не редакция № " + latest.no}.`
-        : "Окончателният доклад — издаден с акта «Издай окончателния доклад» (част 3.2).";
-      const r = await issueEdition({ scheme, docKey: "report", frozen, by, reason });
+    if (frozen.source !== "uploaded" || sha256(frozen.bytes) !== issueNow!.reportSha) return { error: ISSUE_REFUSAL.stale };
+    const nextR = (scheme.reportIssues?.length ?? 0) + 1;
+    const version = scheme.uploads?.report?.analysisVersion ?? "";
+    const reasonNow = issueReason(nextR, version, "issue", note, "");
+    let edition: DocEdition;
+    // an earlier edition only when it is this file AND says this R in these words — never one issued in
+    // «Редакции» without the R or the version, never a failed attempt's other words (review)
+    if (latest && sameAs(frozen, latest) && latest.reason === reasonNow && (await servable(latest))) edition = latest;
+    else {
+      const r = await issueEdition({ scheme, docKey: "report", frozen, by, reason: reasonNow });
       if (!r.ok) return { error: EDITION_REFUSAL[r.error] ?? "The report could not be kept as an edition." };
-      await logActivity("doc.edition", { schemeId, subject: `edition:${r.edition.id}`, summary: `${editionLabel("en", r.edition.no, r.edition.issuedOn)} of “report” issued with the report act` });
+      edition = r.edition;
+      await logActivity("doc.edition", { schemeId, subject: `edition:${r.edition.id}`, summary: `${editionLabel("en", r.edition.no, r.edition.issuedOn)} of “report” kept for the report act` });
     }
+    const software = softwareRecord({
+      changes, roundStart: scheme.lifecycle?.acts?.find((a) => a.act === "open")?.at ?? null, at: new Date().toISOString(),
+      configVersions: scheme.characteristicVersions, editions, gateTexts: gateB() ? GATE_TEXTS_VERSION : "—", reportVersion: version, imports: scheme.analysisImports,
+    });
+    r1 = { edition, issue: { id: randomUUID(), r: nextR, kind: "issue", editionId: edition.id, editionNo: edition.no, reason: note, scope: "", codes: [], analysisVersion: version, importId: issueNow!.importId!, reportSha: issueNow!.reportSha!, transferCheckId: issueNow!.check!.id, software } };
   }
 
+  // the corrections read again just before the lock — one recorded meanwhile takes the check out of force (review)
+  if (act === "report") { try { issueCorr = await listCorrections(schemeId); } catch { return { error: NOT_REACHED }; } }
   const at = new Date().toISOString();
   const day = sofiaToday(schemeNowMs(scheme));
   let refused: ActProblem | null = "gone"; // stays so if the scheme is not found inside the lock
+  let issueRefused: IssueProblem | null = null;
+  let reachedNow = new Set<string>();
   let from: SchemeStatus = scheme.status;
   let to: SchemeStatus = scheme.status;
   await updateSchemeWith(schemeId, (cur) => {
@@ -4250,6 +4310,18 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
     // first stands
     refused = actProblem(cur, act, note, codes);
     if (refused) return {};
+    // 7.4: the report and its check as they were read — else nothing is issued
+    let issueWrite: Partial<Scheme> = {};
+    if (act === "report" && r1) {
+      const again = schemeTransferState(cur, issueCorr);
+      const p = transferProblem(again);
+      if (p || again.reportSha !== r1.issue.reportSha || again.check?.id !== r1.issue.transferCheckId) { issueRefused = p ?? "stale"; return {}; }
+      // the final list's participations (5.2) — one dropped at the second announcement gets nothing more
+      const access = accessAtIssue(cur.paidAt, parts.filter((x) => inFinalRound(cur, x)).map((x) => x.code), cur.reportAccess, at, by);
+      const all: Record<string, ReportAccess> = { ...(cur.reportAccess ?? {}), ...access };
+      reachedNow = new Set(Object.keys(all));
+      issueWrite = { reportIssues: [...(cur.reportIssues ?? []), { ...r1.issue, at, by, day }], reportAccess: all };
+    }
     from = cur.status;
     to = actTarget(cur, act);
     minAt = cur.minParticipants;
@@ -4262,8 +4334,9 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
     // 6.6: «Върни» from a LOCKED processing — a reopening (the lock itself is recorded after the
     // status, below); a processing never locked (before 6.6) has nothing to reopen
     const lock: SubmissionLock | null = act === "back" && from === "processing" && lockInForce(cur.submissionLocks) ? { id: randomUUID(), kind: "reopen", at, by, note } : null;
-    return { status: to, lifecycle: { ...(cur.lifecycle ?? {}), acts: [...(cur.lifecycle?.acts ?? []), entry] }, ...(ids ? { parameters: ids.params, characteristicSeq: ids.seq } : {}), ...(pts && cur.calibration ? { calibration: { ...cur.calibration, pointIds: pts.ids }, pointSeq: pts.seq } : {}), ...(lock ? { submissionLocks: [...(cur.submissionLocks ?? []), lock] } : {}) };
+    return { status: to, lifecycle: { ...(cur.lifecycle ?? {}), acts: [...(cur.lifecycle?.acts ?? []), entry] }, ...(ids ? { parameters: ids.params, characteristicSeq: ids.seq } : {}), ...(pts && cur.calibration ? { calibration: { ...cur.calibration, pointIds: pts.ids }, pointSeq: pts.seq } : {}), ...(lock ? { submissionLocks: [...(cur.submissionLocks ?? []), lock] } : {}), ...issueWrite };
   });
+  if (issueRefused) return { error: ISSUE_REFUSAL[issueRefused as IssueProblem] };
   if (refused) return { error: ACT_REFUSAL[refused as ActProblem] };
   if (act === "process") {
     // the status has changed: from here the database refuses a new version (0044) — what the lock
@@ -4292,11 +4365,18 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
     schemeId, subject: `scheme:${schemeId}`, before: { status: from }, after: { status: to },
     summary: `${ACTS[act].en}: ${STATE_LABEL[from].en} → ${STATE_LABEL[to].en}${inRoundNow !== undefined ? ` — ${inRoundNow} in the round, minimum ${minAt}${inRoundNow < minAt ? " (BELOW the minimum — runs by decision)" : ""}` : ""}${note ? ` — ${note}` : ""}`,
   });
-  // one notice per participation, by its code (never a name)
+  if (act === "report" && r1) {
+    await logActivity("report.issued", {
+      schemeId, subject: `edition:${r1.edition.id}`,
+      summary: `Final report ${rLabel(r1.issue.r)} issued — PTS_Analysis ${r1.issue.analysisVersion}; edition № ${r1.edition.no}; the transfer check relied on: ${r1.issue.transferCheckId}; it reaches ${parts.filter((p) => reachedNow.has(p.code)).length} of ${parts.filter((p) => inFinalRound(scheme, p)).length} participations now (marked paid — D7)`,
+      after: { r: r1.issue.r, edition: r1.edition.no, version: r1.issue.analysisVersion, check: r1.issue.transferCheckId, reached: parts.filter((p) => reachedNow.has(p.code)).map((p) => p.code) },
+    });
+  }
+  // one notice per participation, by its code (never a name) — the report only to those it reaches (D7)
   for (const p of parts) {
     if (act === "announce") await notifySchemeAnnounced(labOf.get(p.code), schemeId, scheme.number, p.code);
     if (act === "not_held") await notifySchemeNotHeld(labOf.get(p.code), schemeId, scheme.number, p.code);
-    if (act === "report") await notifyReportPublished(labOf.get(p.code), schemeId, scheme.number, p.code);
+    if (act === "report" && reachedNow.has(p.code)) await notifyReportPublished(labOf.get(p.code), schemeId, scheme.number, p.code, r1 ? rLabel(r1.issue.r) : "");
   }
   revalidatePath(`/schemes/${schemeId}`, "layout");
   revalidatePath("/lab", "layout");
@@ -6331,6 +6411,8 @@ export async function recordCorrectionAction(formData: FormData): Promise<void> 
   // while the results are with PTS — not once the report is out (that is a corrected report, 7.x)
   const open = !!scheme && (scheme.status === "running" || scheme.status === "processing" || (scheme.type === "C" && scheme.status === "open"));
   if (!scheme || !open) redirect(back("corr=state"));
+  // once approved (stage 16, Реш. 140) the values in force are what the report is issued on (7.4 review)
+  if (scheme!.lifecycle?.stages?.["16"]) redirect(back("corr=approved"));
   const part = (await listParticipants(schemeId)).find((p) => p.code === code);
   if (!part) redirect(back("corr=state"));
   let subs: Awaited<ReturnType<typeof listSubmissionsFor>> | null = null, recorded: ResultCorrection[] | null = null;
@@ -6402,10 +6484,13 @@ export async function importAnalysisAction(formData: FormData): Promise<void> {
   await requireOneOf(["results.process", "scheme.edit"], schemeId); // the statistics expert or the scheme manager
   const back = (q: string) => `/schemes/${encodeURIComponent(schemeId)}?${q}#analysis-import`;
   const scheme = await getScheme(schemeId);
-  if (!scheme || scheme.status !== "processing") redirect(back("imp=state"));
+  // in processing; or, once the report is issued (R1, 7.4), a correction's file — it reaches nobody
+  // until a correction R2… is issued with its reason and scope
+  const correcting = (sc: Scheme) => sc.status === "report" && !!sc.reportIssues?.length;
+  if (!scheme || (scheme.status !== "processing" && !correcting(scheme))) redirect(back("imp=state"));
   // once the processing is reviewed or approved (stages 15, 16 — Реш. 140), no new report slips in
   // under the approval: withdraw it first (7.2 review)
-  const reviewed = (sc: Scheme) => !!sc.lifecycle?.stages?.["15"] || !!sc.lifecycle?.stages?.["16"];
+  const reviewed = (sc: Scheme) => sc.status === "processing" && (!!sc.lifecycle?.stages?.["15"] || !!sc.lifecycle?.stages?.["16"]);
   if (reviewed(scheme!)) redirect(back("imp=approved"));
   const offered: { kind: ImportKind; file: File }[] = [];
   for (const kind of IMPORT_KINDS) for (const f of formData.getAll(kind)) if (f instanceof File && f.size > 0) offered.push({ kind, file: f });
@@ -6445,7 +6530,7 @@ export async function importAnalysisAction(formData: FormData): Promise<void> {
   let outcome = "gone" as "recorded" | "moved" | "approved" | "gone";
   try {
     await updateSchemeWith(schemeId, (cur) => {
-      if (cur.status !== "processing") { outcome = "moved"; return {}; }
+      if (cur.status !== "processing" && !correcting(cur)) { outcome = "moved"; return {}; }
       if (reviewed(cur)) { outcome = "approved"; return {}; }
       outcome = "recorded";
       return {
@@ -6471,7 +6556,9 @@ export async function recordTransferCheckAction(formData: FormData): Promise<voi
   await requireOneOf(["results.process", "scheme.edit"], schemeId);
   const back = (q: string) => `/schemes/${encodeURIComponent(schemeId)}?${q}#processing-record`;
   const scheme = await getScheme(schemeId);
-  if (!scheme || scheme.status !== "processing") redirect(back("tc=state"));
+  // in processing; or, once the report is issued, for a correction's file (7.4)
+  const checking = (sc: Scheme) => sc.status === "processing" || (sc.status === "report" && !!sc.reportIssues?.length);
+  if (!scheme || !checking(scheme)) redirect(back("tc=state"));
   const exportId = String(formData.get("exportId") ?? ""), importId = String(formData.get("importId") ?? ""), reportSha = String(formData.get("reportSha") ?? "");
   let corrections: { at: string }[];
   try { corrections = await listCorrections(schemeId); } catch { redirect(back("tc=failed")); }
@@ -6489,7 +6576,7 @@ export async function recordTransferCheckAction(formData: FormData): Promise<voi
   let outcome = "gone" as "recorded" | "moved" | "stale" | "gone";
   try {
     await updateSchemeWith(schemeId, (cur) => {
-      if (cur.status !== "processing") { outcome = "moved"; return {}; }
+      if (!checking(cur)) { outcome = "moved"; return {}; }
       // re-read under the lock: the export, the lock and the report in force as the form saw them
       const again = schemeTransferState(cur, corrections!);
       if (again.state === "no-export" || again.export?.id !== exportId || again.importId !== importId || again.reportSha !== reportSha) { outcome = "stale"; return {}; }
@@ -6506,4 +6593,119 @@ export async function recordTransferCheckAction(formData: FormData): Promise<voi
   }
   revalidatePath(`/schemes/${schemeId}`, "layout");
   redirect(back("tc=ok"));
+}
+
+// ── The report reaches a participation by hand (part 7.4; D7) ─────────────────────────────────
+// The scheme manager opens the issued report for a participation not marked paid — with the reason
+// (a state institution, say). Recorded, journalled without the reason's words; it is told.
+export async function openReportByHandAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? "");
+  await requireCap("scheme.edit", schemeId); // the scheme manager (D7)
+  const back = (q: string) => `/schemes/${encodeURIComponent(schemeId)}?${q}#report-issue`;
+  const issued = (sc: Scheme) => (sc.status === "report" || sc.status === "closed") && !!sc.reportIssues?.length;
+  const scheme = await getScheme(schemeId);
+  if (!scheme || !issued(scheme)) redirect(back("ri=state"));
+  const code = String(formData.get("code") ?? "").trim();
+  const read = readHandOpen({ reason: formData.get("reason") });
+  if (!read.ok) redirect(back("ri=reason"));
+  const reason = (read as Extract<typeof read, { ok: true }>).reason;
+  let part: Awaited<ReturnType<typeof listParticipants>>[number] | undefined;
+  try { part = (await listParticipants(schemeId)).filter((p) => inFinalRound(scheme!, p)).find((p) => p.code === code); } catch { redirect(back("ri=failed")); }
+  if (!part) redirect(back("ri=code"));
+  if (scheme!.reportAccess?.[code]) redirect(back("ri=already"));
+  const by = await actorNow();
+  // who to tell — before anything is recorded (2.3); not reachable: nothing recorded
+  let labId: string | undefined;
+  try { labId = (await labIdsFor(schemeId, [part!], by)).get(code); } catch { redirect(back("ri=failed")); }
+  const at = new Date().toISOString();
+  let outcome = "gone" as "recorded" | "moved" | "already" | "gone";
+  let r: ReportIssue | null = null;
+  try {
+    await updateSchemeWith(schemeId, (cur) => {
+      if (!issued(cur)) { outcome = "moved"; return {}; }
+      if (cur.reportAccess?.[code]) { outcome = "already"; return {}; }
+      outcome = "recorded";
+      r = issueInForce(cur.reportIssues);
+      return { reportAccess: { ...(cur.reportAccess ?? {}), [code]: { at, by, via: "hand" as const, reason } } };
+    });
+  } catch { outcome = "gone"; }
+  if (outcome !== "recorded") redirect(back(outcome === "moved" ? "ri=state" : outcome === "already" ? "ri=already" : "ri=failed"));
+  const inForce = r as ReportIssue | null;
+  await logActivity("report.access", { schemeId, targetCode: code, subject: inForce ? `edition:${inForce.editionId}` : `scheme:${schemeId}`, summary: `The final report${inForce ? ` (${rLabel(inForce.r)})` : ""} opened for ${code} by hand — with its reason (D7)`, after: { via: "hand", r: inForce?.r } });
+  await notifyReportPublished(labId, schemeId, scheme!.number, code, inForce ? rLabel(inForce.r) : "");
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  revalidatePath("/lab", "layout");
+  redirect(back("ri=opened"));
+}
+
+// ── A correction of the issued report: R2, R3… (part 7.4; ISO/IEC 17043 §7.4.3) ────────────────
+// The scheme manager issues the report in force — another 2.0 file, its transfer check «the same» —
+// as the next R, with the reason and what changed, and the codes it concerns (none: all). Its
+// edition is identified as amended; the participations it reaches and concerns are told.
+export async function issueReportCorrectionAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? "");
+  await requireCap("scheme.edit", schemeId); // the scheme manager (7.4)
+  const back = (q: string) => `/schemes/${encodeURIComponent(schemeId)}?${q}#report-issue`;
+  const scheme = await getScheme(schemeId);
+  if (!scheme || scheme.status !== "report") redirect(back("ri=state"));
+  const s = scheme!;
+  if (!s.reportIssues?.length) redirect(back("ri=not-issued"));
+  let parts: Awaited<ReturnType<typeof listParticipants>> = [];
+  let corr: { at: string }[] = [];
+  try { [parts, corr] = await Promise.all([listParticipants(schemeId).then((ps) => ps.filter((p) => inFinalRound(s, p))), listCorrections(schemeId)]); } catch { redirect(back("ri=failed")); }
+  const read = readReportCorrection({ reason: formData.get("reason"), scope: formData.get("scope"), codes: formData.get("codes") }, parts.map((p) => p.code));
+  if (!read.ok) redirect(back(`ri=${read.problem}`));
+  const { reason, scope, codes } = read as Extract<typeof read, { ok: true }>;
+  const now = schemeTransferState(s, corr);
+  const problem = correctionProblem(s.reportIssues, now, !!reportInForce({ report: s.uploads?.report, active: s.docActive?.report ?? null, imports: s.analysisImports }));
+  if (problem) redirect(back(`ri=${problem}`));
+  let frozen: Frozen | null = null, latest: DocEdition | null = null;
+  let changes: Awaited<ReturnType<typeof listReleases>> = [], editions: DocEdition[] = [];
+  try { [frozen, latest, changes, editions] = await Promise.all([freezeNow(s, "report"), latestEdition(schemeId, "report"), listReleases(), listEditions(schemeId)]); } catch { redirect(back("ri=failed")); }
+  if (!frozen || frozen.source !== "uploaded" || sha256(frozen.bytes) !== now.reportSha) redirect(back("ri=stale"));
+  const n = s.reportIssues!.length, nextR = n + 1;
+  const version = s.uploads?.report?.analysisVersion ?? "";
+  const by = await actorNow();
+  // who to tell — those the report reaches, in the correction's scope — before anything is recorded (2.3)
+  const toTell = parts.filter((p) => reaches(s.reportAccess, p.code) && inScope({ kind: "correction", codes }, p.code));
+  let labOf = new Map<string, string | undefined>();
+  if (toTell.length) { try { labOf = await labIdsFor(schemeId, toTell, by); } catch { redirect(back("ri=failed")); } }
+  const reasonNow = issueReason(nextR, version, "correction", reason, scope);
+  let edition: DocEdition;
+  // an earlier edition only when it is this file and says this correction in these words (review)
+  if (latest && sameAs(frozen!, latest) && latest.id !== issueInForce(s.reportIssues)!.editionId && latest.reason === reasonNow && (await servable(latest))) edition = latest;
+  else {
+    const r = await issueEdition({ scheme: s, docKey: "report", frozen, by, reason: reasonNow, scope });
+    if (!r.ok) redirect(back(r.error === "too-long" ? "ri=too-long" : "ri=failed"));
+    edition = (r as Extract<typeof r, { ok: true }>).edition;
+    await logActivity("doc.edition", { schemeId, subject: `edition:${edition.id}`, summary: `${editionLabel("en", edition.no, edition.issuedOn)} of “report” kept for correction ${rLabel(nextR)}` });
+  }
+  // the corrections read again just before the lock (review)
+  try { corr = await listCorrections(schemeId); } catch { redirect(back("ri=failed")); }
+  const at = new Date().toISOString();
+  const issue: ReportIssue = {
+    id: randomUUID(), r: nextR, kind: "correction", editionId: edition.id, editionNo: edition.no, at, by, day: sofiaToday(schemeNowMs(s)),
+    reason, scope, codes, analysisVersion: version, importId: now.importId!, reportSha: now.reportSha!, transferCheckId: now.check!.id,
+    software: softwareRecord({ changes, roundStart: s.lifecycle?.acts?.find((a) => a.act === "open")?.at ?? null, at, configVersions: s.characteristicVersions, editions, gateTexts: gateB() ? GATE_TEXTS_VERSION : "—", reportVersion: version, imports: s.analysisImports }),
+  };
+  let outcome = "gone" as "recorded" | "moved" | "stale" | "gone";
+  try {
+    await updateSchemeWith(schemeId, (cur) => {
+      if (cur.status !== "report" || (cur.reportIssues?.length ?? 0) !== n) { outcome = cur.status !== "report" ? "moved" : "stale"; return {}; }
+      const again = schemeTransferState(cur, corr);
+      if (correctionProblem(cur.reportIssues, again) || again.reportSha !== issue.reportSha || again.check?.id !== issue.transferCheckId) { outcome = "stale"; return {}; }
+      outcome = "recorded";
+      return { reportIssues: [...(cur.reportIssues ?? []), issue] };
+    });
+  } catch { outcome = "gone"; }
+  if (outcome !== "recorded") redirect(back(outcome === "moved" ? "ri=state" : outcome === "stale" ? "ri=stale" : "ri=failed"));
+  await logActivity("report.corrected", {
+    schemeId, subject: `edition:${edition.id}`,
+    summary: `Correction ${rLabel(nextR)} of the final report issued — PTS_Analysis ${version}; edition № ${edition.no}; the transfer check relied on: ${issue.transferCheckId}; concerns ${codes.length ? codes.join(", ") : "all"}`,
+    after: { r: nextR, edition: edition.no, version, check: issue.transferCheckId, codes, told: toTell.map((p) => p.code) },
+  });
+  for (const p of toTell) await notifyReportCorrected(labOf.get(p.code), schemeId, s.number, p.code, rLabel(nextR));
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  revalidatePath("/lab", "layout");
+  redirect(back("ri=corrected"));
 }

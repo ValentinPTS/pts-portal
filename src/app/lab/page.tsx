@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { labReport } from "@/lib/report-issue-model";
 import { gateB } from "@/lib/gate-texts";
 import { isProvisional } from "@/lib/coding-model";
 import { inFinalRound } from "@/lib/announcement-model";
@@ -105,8 +106,11 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
         chain: await chainViewFor(scheme, p.code, lang, await actorNow()),
         view: viewOf.get(p.id),
         reported: scheme.status === "report" || scheme.status === "closed",
-        // the report reaches the lab only as the file PTS issued (Реш. 135)
-        officialReport: !!scheme.uploads?.report,
+        // the report reaches the lab only as the file PTS issued (Реш. 135) — the R in force, once it
+        // reaches this participation (7.4; D7: paid, or opened by hand)
+        officialReport: labReport(scheme, p.code).state === "issued",
+        reportLabel: labReport(scheme, p.code).label,
+        reportAwaiting: labReport(scheme, p.code).state === "awaiting",
         hasCert: !!labCertificate(scheme.certificates, p.code),
         deadline,
       };
@@ -177,7 +181,7 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
   const resultBlock = (it: Item, awaiting: string) => (
     <div style={{ background: "#f7faf8", borderRadius: 10, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
       <span style={{ fontSize: 13, color: "var(--muted)" }}>
-        {it.reported ? (it.officialReport ? tr("lab.resultInReport") : tr("lab.reportComing")) : awaiting}
+        {it.reported ? (it.officialReport ? tr("lab.resultInReport") : it.reportAwaiting ? <span data-report-awaiting>{tr("lab.reportAwaitsPayment")}</span> : tr("lab.reportComing")) : awaiting}
       </span>
     </div>
   );
@@ -223,7 +227,7 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
         const own = r.level === "participation" ? (lang === "bg" ? " — само за вашето участие" : " — for your participation alone") : "";
         return { key: r.key, label: docLabel(r.key) + (ed ? ` (${lang === "bg" ? "ред." : "ed."} № ${ed.no})` : "") + amLine + own, at: r.at.slice(0, 10), href: `/lab/doc/${it.scheme.id}/${r.key}?lang=${lang}&p=${encodeURIComponent(it.p.id)}` };
       }),
-      ...(it.reported && it.officialReport ? [{ key: "report", label: tr("lab.finalReport"), at: "", href: `/lab/doc/${it.scheme.id}/report?lang=${lang}` }] : []),
+      ...(it.reported && it.officialReport ? [{ key: "report", label: `${tr("lab.finalReport")}${it.reportLabel ? ` ${it.reportLabel}` : ""}`, at: "", href: `/lab/doc/${it.scheme.id}/report?lang=${lang}&p=${encodeURIComponent(it.p.id)}` }] : []),
       ...(it.hasCert ? [{ key: "certificate", label: tr("lab.certificate"), at: "", href: `/lab/doc/${it.scheme.id}/certificate?lang=${lang}` }] : []),
       // addressed to this laboratory alone, so it comes from its own route
       // ?p= names the participation: a lab that applied twice to one scheme has an

@@ -133,12 +133,12 @@ const tick = actions.slice(actions.indexOf("export async function stageTickActio
 t("acts: the scheme manager's, in the scheme", /await requireCap\("scheme\.edit", schemeId\);/.test(act));
 t("acts: re-checked inside the lock", /await updateSchemeWith\(schemeId, \(cur\) => \{[\s\S]{0,200}refused = actProblem\(cur, act, note, codes\);/.test(act));
 t("acts: a scheme gone from the lock is refused, not «done»", /let refused: ActProblem \| null = "gone";/.test(act));
-t("acts: the report issued is the file uploaded NOW (latest edition only if the same and servable)", /if \(!\(latest && sameAs\(frozen, latest\) && \(await servable\(latest\)\)\)\)/.test(act));
+t("acts: the report issued is the file uploaded NOW (latest edition only if the same, in this R's words, and servable)", /if \(latest && sameAs\(frozen, latest\) && latest\.reason === reasonNow && \(await servable\(latest\)\)\) edition = latest;/.test(act));
 t("acts: the lookups happen before the report's edition is kept", act.indexOf("labIdsFor(") < act.indexOf("issueEdition("));
 t("acts: who to tell looked up BEFORE the state is recorded (2.3)", act.indexOf("labIdsFor(") < act.indexOf("await updateSchemeWith(") && act.indexOf("labIdsFor(") > 0);
 t("acts: every act journalled with before/after", /logActivity\("scheme\.state", \{\s*schemeId, subject: `scheme:\$\{schemeId\}`, before: \{ status: from \}, after: \{ status: to \}/.test(act));
-t("acts: not held tells each participation; the report too", /if \(act === "not_held"\) await notifySchemeNotHeld\(labOf\.get\(p\.code\)/.test(act) && /if \(act === "report"\) await notifyReportPublished\(labOf\.get\(p\.code\)/.test(act));
-t("acts: the report kept as an edition at the act", /if \(act === "report"\) \{/.test(act) && /issueEdition\(\{ scheme, docKey: "report", frozen, by, reason \}\)/.test(act));
+t("acts: not held tells each participation; the report — those it reaches (7.4, D7)", /if \(act === "not_held"\) await notifySchemeNotHeld\(labOf\.get\(p\.code\)/.test(act) && /if \(act === "report" && reachedNow\.has\(p\.code\)\) await notifyReportPublished\(labOf\.get\(p\.code\)/.test(act));
+t("acts: the report kept as an edition at the act", /if \(act === "report"\) \{/.test(act) && /const reasonNow = issueReason\(nextR, version, "issue", note, ""\);/.test(act) && /issueEdition\(\{ scheme, docKey: "report", frozen, by, reason: reasonNow \}\)/.test(act));
 t("ticks: by the stage's role — a capability, or the designated person", /await requireCap\(ticker\.cap, schemeId\);/.test(tick) && /designation\[ticker\.designated\] === me/.test(tick));
 t("ticks: each processing act its own capability", /await requireCap\(ticker\.designated === "processor" \? "results\.process" : ticker\.designated === "reviewer" \? "review" : "approve", schemeId\);/.test(tick));
 t("ticks: a designation that no longer holds ticks nothing", /if \(st\.problems\.length\) return \{ error: TICK_REFUSAL\.stale \};/.test(tick));

@@ -166,6 +166,16 @@ export async function markDeployed(sha: string): Promise<boolean> {
   }
 }
 
+/** Every release (1.11), oldest first — for a round's software record (7.4). Unlike listChanges it
+ *  throws when the register cannot be read: a record that says «none» must mean none. */
+export async function listReleases(): Promise<ChangeEntry[]> {
+  const db = getDb();
+  if (!db) return mem.filter((e) => e.kind === "release");
+  const { data, error } = await db.from("change_register").select("*").eq("kind", "release").order("created_at", { ascending: true }).limit(5000);
+  if (error) throw error;
+  return ((data ?? []) as Row[]).map(fromRow);
+}
+
 export async function listChanges(limit = 200): Promise<ChangeEntry[]> {
   const db = getDb();
   if (!db) return mem.slice(0, limit);

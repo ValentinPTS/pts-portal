@@ -692,8 +692,9 @@ export interface Scheme {
   // today the proforma invoice, whose amount differs per lab. The mirror image
   // of labUploads: code → slot → file. JSONB, no migration.
   labDocs?: Record<string, Partial<Record<string, UploadedDoc>>>;
-  // Payment is settled outside the app by the accountant; this is only a note to
-  // self so the owner can see who still owes. It gates NOTHING. code → ISO date.
+  // Payment is settled outside the app by the accountant; this records it was marked.
+  // Since 7.4 (D7) the issued report — and the certificate — reach a participation once
+  // it is marked paid (or opened by hand, `reportAccess`). code → ISO date.
   paidAt?: Record<string, string>;
   // The four working dates that drive the LAB's view and the reminder. Kept apart
   // from `schedule` on purpose: schedule is document content the owner writes by
@@ -752,6 +753,12 @@ export interface Scheme {
   analysisExports?: import("./transfer-check-model").AnalysisExportRecord[];
   /** The transfer checks (7.3; Manual 7.5.2): 2.0's report lists the same codes and characteristics — yes / no. */
   transferChecks?: import("./transfer-check-model").TransferCheck[];
+  /** The report's issues (7.4): R1 at the act, each correction R2… with its reason and scope — the
+   *  edition, the 2.0 version, the check relied on, the scheme's software record. Appended. */
+  reportIssues?: import("./report-issue-model").ReportIssue[];
+  /** How the issued report reached each participation (7.4; D7): its payment marked, or opened by
+   *  hand with a reason — code → record. Once reached, it stays. */
+  reportAccess?: Record<string, import("./report-issue-model").ReportAccess>;
   // A calibration scheme's reference values per point (part 5.7, lib/reference-values-model)
   // — x_ref before and after, u_calibration, u_other, k, for 2.0's «Calibration» sheet (D3);
   // each save a version, appended. JSONB, no migration.
