@@ -192,7 +192,7 @@ t("notifyOrThrow(): the reminder job hears about it", (await probe(dead, strictJ
 // every store's fallback goes through the rule
 const lib = new URL("../src/lib/", import.meta.url);
 const stores = readdirSync(lib).filter((f) => f.endsWith(".ts") && /function warn\(e: unknown\)/.test(readFileSync(new URL(f, lib), "utf8")));
-t("14 stores with a memory fallback (2.3: the identity store)", stores.length === 14, stores.join(","));
+t("15 stores with a memory fallback (2.3: the identity store; 6.1: the results' drafts)", stores.length === 15, stores.join(","));
 for (const f of stores) {
   const s = readFileSync(new URL(f, lib), "utf8");
   t(`${f}: warn() refuses memory on a deployment first`, /function warn\(e: unknown\) \{\n\s+noMemoryFallback\(/.test(s));

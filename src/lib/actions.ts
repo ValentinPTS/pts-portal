@@ -81,6 +81,8 @@ import { finalListOf, splitFor, invoiceProblem, currentFinalList, inFinalRound, 
 import { readTarget, RELEASE_PROBLEM_TEXT, releaseFor, type TargetRelease } from "./release-model";
 import { ackRequiredFor, ackSettable, ackOf, kindOf, readAckForm, type Acknowledgement, type AckProblem } from "./ack-model";
 import { readMessage, messageBody, type SchemeMessage } from "./messages-model";
+import { resultRows, readDraft, notNumbers, rowsHaveIds } from "./results-model";
+import { putDraft } from "./submissions";
 import { drawCodes, drawObjects, toCode, codingProblem, objectsGiven, unfinished, sampleCodeOf, isProvisional, CODING_PROBLEM_TEXT, type CodingProblem, type CodingRecord } from "./coding-model";
 import { commitCoding } from "./coding-store";
 import { pointKeys, pointsReady, fingerprint, orphans, readReferenceTable, kNeedsReason, currentRows, sameRow, sameRows, type ReferenceRow } from "./reference-values-model";
@@ -2774,6 +2776,9 @@ export async function createProjectAction(formData: FormData) {
       scheme.scoresEn = ""; scheme.scoresBg = "";
     }
   }
+  // the characteristics' lasting ids from the start (3.6) — what a participation's results
+  // are kept by (6.1): never only once someone saves the editor (6.1 review)
+  { const withIds = ensureIds(scheme.parameters ?? [], scheme.characteristicSeq); scheme.parameters = withIds.params; scheme.characteristicSeq = withIds.seq; }
   // a create of the same number that landed first wins; this one is told, not merged
   if (!(await addScheme(scheme))) redirect(`${folderView(type, folderId)}?dupNumber=${encodeURIComponent(number)}`);
   if (scheme.status === "open") {
@@ -4180,7 +4185,10 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
     to = actTarget(cur, act);
     minAt = cur.minParticipants;
     const entry: LifecycleAct = { act, from, to, at, by, day, ...(note ? { note } : {}), ...(inRoundNow !== undefined ? { count: { inRound: inRoundNow, min: cur.minParticipants } } : {}) };
-    return { status: to, lifecycle: { ...(cur.lifecycle ?? {}), acts: [...(cur.lifecycle?.acts ?? []), entry] } };
+    // the first announcement: every characteristic has its lasting id from here on — a scheme
+    // from before 3.6, or never saved in the editor, gets them now (6.1 review: the results are kept by them)
+    const ids = act === "announce" && cur.parameters?.some((p) => !p.id) ? ensureIds(cur.parameters, cur.characteristicSeq) : null;
+    return { status: to, lifecycle: { ...(cur.lifecycle ?? {}), acts: [...(cur.lifecycle?.acts ?? []), entry] }, ...(ids ? { parameters: ids.params, characteristicSeq: ids.seq } : {}) };
   });
   if (refused) return { error: ACT_REFUSAL[refused as ActProblem] };
 
@@ -6027,3 +6035,32 @@ export async function sendEntityMessageAction(formData: FormData): Promise<void>
   redirect(back("msg=sent"));
 }
 
+
+// ── The results form — testing (part 6.1; Zadanie §7; К22; Реш. 88) ─────────────────────────
+// The participation's draft, saved as typed — autosaved by the form a moment after typing stops,
+// and by «Запази черновата». Its own participation only (ownGoingOn); a testing scheme that runs;
+// not once it is scored. Nothing is judged: the fields that are not numbers yet are named,
+// neutrally — never a word about a value (Реш. 88). Not journalled: a draft is no record; the
+// submission is (6.4).
+export async function saveResultDraftAction(schemeId: unknown, participantId: unknown, fields: unknown, baseRev: unknown): Promise<{ ok: true; savedAt: string; rev: number; notNumbers: { key: string; field: string }[] } | { error: "not-yours" | "state" | "stale" | "failed" }> {
+  const sid = String(schemeId ?? ""), pid = typeof participantId === "string" ? participantId.trim() : "";
+  const base = typeof baseRev === "number" && Number.isInteger(baseRev) && baseRev >= 0 ? baseRev : -1;
+  if (base < 0) return { error: "stale" };
+  const mine = await ownGoingOn(sid, pid);
+  if (!mine) return { error: "not-yours" };
+  const { scheme, part, by } = mine;
+  if (scheme.type !== "T" || scheme.status !== "running" || !canLabUploadNow(part.status)) return { error: "state" };
+  const rows = resultRows(scheme, part);
+  // characteristics from before 3.6 have no lasting ids yet: the form waits for them
+  if (!rowsHaveIds(rows)) return { error: "state" };
+  // only the rows' fields are read, by name — whatever else is posted is ignored
+  const posted = fields && typeof fields === "object" && !Array.isArray(fields) ? (fields as Record<string, unknown>) : {};
+  const draft = readDraft((name) => (Object.hasOwn(posted, name) ? posted[name] : undefined), rows);
+  try {
+    const saved = await putDraft({ participantId: pid, schemeId: sid, data: draft, configVersion: scheme.characteristicVersions?.at(-1)?.no, updatedBy: by }, base);
+    if (saved === "stale") return { error: "stale" };
+    return { ok: true, savedAt: saved.updatedAt, rev: saved.rev, notNumbers: notNumbers(draft, rows) };
+  } catch {
+    return { error: "failed" };
+  }
+}

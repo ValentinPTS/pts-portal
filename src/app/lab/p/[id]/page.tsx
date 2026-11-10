@@ -257,6 +257,14 @@ export default async function ParticipationPage({ params, searchParams }: { para
               </form>
             ), { id: "declaration" }) : null}
 
+            {/* 6.1: the results form, online — a draft kept as typed, the participation's own */}
+            {s.type === "T" && s.status === "running" && !v.finished ? card(L("Резултати", "Results"), (
+              <div data-results-link style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", fontSize: 13 }}>
+                <span style={{ color: "var(--muted)", flex: 1, minWidth: 220 }}>{L("Попълнете резултатите онлайн: определянията, средната стойност, U и k. Черновата се пази, както е написана.", "Fill in the results online: the determinations, the mean, U and k. The draft is kept as typed.")}</span>
+                <Link href={`${self}/results`} className="btn btn-primary btn-sm" data-open-results>{L("Към формуляра", "Open the form")}</Link>
+              </div>
+            )) : null}
+
             {s.type === "C" && chain ? (
               <DeviceChainCard schemeId={s.id} lang={lang} state={chain.state} position={chain.position?.position} total={chain.position?.total} wait={chain.wait} started={chain.started} closed={chain.closed} incoming={chain.incoming} next={chain.next} handOnBy={chain.handOnBy} />
             ) : null}

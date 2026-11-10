@@ -99,6 +99,8 @@ export const ROUTES = [
   { file: "lab/overview/page.tsx", names: "own", paths: () => ["/lab/overview", "/lab/overview?view=archive"] },
   // one participation's own page (5.5): only one of the reader's own — any other id is not found
   { file: "lab/p/[id]/page.tsx", names: "own", paths: (c) => [...(c.pid ? [`/lab/p/${c.pid}`] : []), "/lab/p/00000000-0000-4000-8000-000000000000"] },
+  // the results form (6.1): the participation's own, its draft as typed — never another's
+  { file: "lab/p/[id]/results/page.tsx", names: "own", paths: (c) => [...(c.pid ? [`/lab/p/${c.pid}/results`] : []), "/lab/p/00000000-0000-4000-8000-000000000000/results"] },
   { file: "lab/login/page.tsx", names: "never", paths: () => ["/lab/login"] },
   { file: "lab/doc/[scheme]/[doc]/route.ts", names: "own", paths: (c) => ["invitation", "report", "certificate", "results"].flatMap((d) => [`/lab/doc/${c.S}/${d}`, `/lab/doc/${c.OTHER}/${d}`]) },
   { file: "lab/labdoc/[scheme]/[slot]/route.ts", names: "own", paths: (c) => [`/lab/labdoc/${c.S}/proforma`, `/lab/labdoc/${c.OTHER}/proforma`] },

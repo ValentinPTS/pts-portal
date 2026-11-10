@@ -10,6 +10,7 @@ import { openParticipationSnapshots, inForce, openRoundParties } from "./partici
 import { listCaseEventsForScheme } from "./case-events";
 import { listNoticesForScheme } from "./notifications";
 import { pointKeys } from "./reference-values-model";
+import { listSubmissions } from "./submissions";
 import { listSentForScheme } from "./sent-messages";
 import { listActivityForScheme } from "./activity-store";
 import { listRevisionsForScheme } from "./doc-revisions";
@@ -81,11 +82,15 @@ export const ROUND_TABLES: Record<string, string[]> = {
   processing_roles: ["coded/processing_roles.csv"],
   // every edition of the round's documents and its frozen file (3.0) — none names a laboratory
   doc_editions: ["coded/editions.csv"],
+  // the submitted versions of the participations' results (6.1–6.4) — the account that
+  // submitted is a person's: identity/ only
+  submissions: ["coded/submissions.csv", "identity/submissions_by.csv"],
 };
 
 /** Each database table that is NOT round data, and why. */
 export const NOT_ROUND_TABLES: Record<string, string> = {
   app_environment: "which portal the database belongs to (1.2)",
+  submission_drafts: "a participation's draft of its results, as typed (6.1) — no record, never read by PTS; what is SUBMITTED is (submissions)",
   app_migrations: "which migrations the database has (1.1)",
   notification_reads: "who read which notice in the portal, per person (4.6) — the bell's state; the notices themselves are in notices.csv",
   app_settings: "the portal's own settings",
@@ -301,9 +306,10 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
   const s = await getSchemeIncludingArchived(schemeId);
   if (!s) return null;
   // every read throws on a database error: the export is whole, or it is not made
-  const [coded, events, notices, messages, journal, revisions] = await Promise.all([
+  const [coded, events, notices, messages, journal, revisions, submitted] = await Promise.all([
     listParticipants(schemeId), listCaseEventsForScheme(schemeId),
     listNoticesForScheme(schemeId), listSentForScheme(schemeId), listActivityForScheme(schemeId), listRevisionsForScheme(schemeId),
+    listSubmissions(schemeId),
   ]);
   // who is behind each code — to scrub it from coded/ (the coded part too) and to
   // export it in identity/: an opening of the identity store, on record (2.3)
@@ -362,6 +368,9 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
   // …and the round's own records (5.2–5.10, part 5.12) — by the codes as they are now
   const codeById = new Map(participants.map((p) => [p.id, p.code] as const));
   for (const [file, rows, cols] of roundTables(s, (pid) => codeById.get(pid) ?? "—")) addCoded(file, rows, cols);
+  // the submitted versions of the results (6.1–6.4) — by code; the data as submitted; the account
+  // that submitted is a person's: identity/submissions_by.csv
+  addCoded("coded/submissions.csv", submitted.map((x) => ({ code: codeById.get(x.participantId) ?? "—", version: x.version, submittedAt: x.submittedAt, roundAt: x.roundAt ?? "", configVersion: x.configVersion ?? "", data: JSON.stringify(x.data) })), ["code", "version", "submittedAt", "roundAt", "configVersion", "data"]);
   // old stamps carry a lab's e-mail and file name: redacted as for staff (N4)
   addCoded("coded/case_events.csv", events.map((e: CaseEvent) => { const r = redactCaseEventForStaff(e); return { ...r, recordedBy: r.recordedBy.startsWith("lab:") ? "laboratory" : r.recordedBy, schemeId: undefined }; }),
     ["id", "code", "kind", "at", "ref", "note", "recordedBy", "recordedAt", "source", "docKey", "voidedAt", "voidedBy", "voidReason"]);
@@ -520,6 +529,8 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
     add("identity/applications.csv", table((s.applications ?? []).map((a) => ({ ...a })), ["id", "submittedAt", "status", "labName", "companyName", "contactPerson", "email", "phone"]));
     // a notice's laboratory: its earlier account, or (4.6) the entity of its participation's copy
     const entityOfCode = new Map([...inForce(snapshots).values()].map((x) => [codeById.get(x.participantId) ?? "", x.entityId]));
+    // who submitted each version of the results (6.4) — an account: a laboratory's or a user's
+    add("identity/submissions_by.csv", table(submitted.map((x) => ({ code: codeById.get(x.participantId) ?? "—", version: x.version, submittedBy: x.submittedBy })), ["code", "version", "submittedBy"]));
     add("identity/notice_recipients.csv", table(notices.filter((n) => n.labId || (n.code && entityOfCode.get(n.code))).map((n) => ({ id: n.id, code: n.code, labId: n.labId, entityId: n.code ? entityOfCode.get(n.code) ?? "" : "" })), ["id", "code", "labId", "entityId"]));
     add("identity/message_recipients.csv", table(messages.map((m) => ({ id: m.id, code: m.code, labId: m.labId, entityId: m.entityId, to: m.to, error: m.error })), ["id", "code", "labId", "entityId", "to", "error"]));
     add("identity/journal_full.csv", table(journal, ["id", "at", "actorId", "actorName", "actorEmail", "actorRole", "action", "targetCode", "subject", "summary", "before", "after"]));
