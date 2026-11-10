@@ -1,4 +1,6 @@
 import type { Scheme, Participant, UploadedDoc, SupersededFile, CaseEvent, Notification, ActivityEvent, DocRevision, Lab, Lang } from "./types";
+import { labCertificate } from "./cert-number";
+import { legacyIssued } from "./cert-model";
 import { schemeMeta, providerRows } from "./scheme-meta";
 import { currentHomogeneity } from "./batches-model";
 import { listsOf } from "./scheme-lists-model";
@@ -517,9 +519,11 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
         docsOut.push({ docKey: def.key, formNumber: def.formNumber, lang, part: "identity", file: f });
       } else if (wantIdentity) {
         for (const p of participants) {
-          const cert = s.certificates?.[p.code];
-          if (!cert) continue;
-          const opts = { participant: { code: p.code, labName: p.labName, certNo: cert.no, certDate: cert.date } };
+          // only a certificate the laboratory received (7.7): released — in a language it was released in,
+          // as it was printed for it — or issued under 0.15 on a report before 7.4 (review)
+          const cert = labCertificate(s.certificates, p.code, legacyIssued(s));
+          if (!cert || (cert.released && !cert.released.langs.includes(lang))) continue;
+          const opts = { participant: { code: p.code, labName: p.labName, certNo: cert.no, certDate: cert.date, content: cert.content?.text[lang], scope: cert.content?.scope, fromR: cert.content?.fromR } };
           const f = `identity/files/documents/certificate-${safe(p.code)}-${lang}.html`;
           add(f, docPrintHtml(s, "certificate", lang, docDefaultBody(s, "certificate", lang, opts), opts, skin));
           docsOut.push({ docKey: "certificate", code: p.code, formNumber: def.formNumber, lang, part: "identity", file: f });
@@ -569,7 +573,13 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
       "entityLanguage", "entityState", "entityOrigin", "entityConfirmedAt", "mol", "officialEmail", "anonymisedAt",
       "laboratoryId", "laboratoryName", "laboratoryDeliveryAddress", "laboratoryMobileOffice", "laboratoryAccreditationNo", "laboratoryAccreditationBody", "contactUserId", "replacedLabName", "replacedDeliveryAddress"]));
     add("identity/scheme-identity.json", JSON.stringify(identityScheme(s), null, 2));
-    add("identity/certificates.csv", table(Object.entries(s.certificates ?? {}).map(([code, c]) => ({ code, ...c })), ["code", "no", "date", "registeredBy", "registeredAt"]));
+    // every step on record (7.7): the number, the content's R and who typed and checked it, the release
+    add("identity/certificates.csv", table(Object.entries(s.certificates ?? {}).map(([code, c]) => ({
+      code, no: c.no, date: c.date, registeredBy: c.registeredBy ?? "", registeredAt: c.registeredAt ?? "",
+      fromR: c.content?.fromR ?? "", contentLangs: c.content ? Object.keys(c.content.text).join("+") : "", typedBy: c.content?.by ?? "", typedAt: c.content?.at ?? "",
+      checkedBy: c.checked?.by ?? "", checkedAt: c.checked?.at ?? "",
+      releasedBy: c.released?.by ?? "", releasedAt: c.released?.at ?? "", releasedLangs: c.released?.langs.join("+") ?? "",
+    })), ["code", "no", "date", "registeredBy", "registeredAt", "fromR", "contentLangs", "typedBy", "typedAt", "checkedBy", "checkedAt", "releasedBy", "releasedAt", "releasedLangs"]));
     add("identity/applications.csv", table((s.applications ?? []).map((a) => ({ ...a })), ["id", "submittedAt", "status", "labName", "companyName", "contactPerson", "email", "phone"]));
     // a notice's laboratory: its earlier account, or (4.6) the entity of its participation's copy
     const entityOfCode = new Map([...inForce(snapshots).values()].map((x) => [codeById.get(x.participantId) ?? "", x.entityId]));

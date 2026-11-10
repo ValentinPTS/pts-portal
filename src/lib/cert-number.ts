@@ -49,13 +49,20 @@ export function certNumberProblem(typed: string, schemeNumber: string, others: s
   return "problem" in r ? r.problem : null;
 }
 
-type Certs = Record<string, { no: string; date: string; registeredBy?: string; registeredAt?: string; simulation?: boolean }> | undefined;
+type Certs = Record<string, import("./cert-model").CertRecord> | undefined;
 
-/** The certificate a laboratory may have: only one whose number PTS confirmed is in
- *  the ptsbg.eu register — or a simulation round's, which prints «not a certificate»
- *  (1.2). A number the portal made up before 0.15 is not one — the public lookup
- *  would call it invalid. */
-export function labCertificate(certs: Certs, code: string) {
+/** The certificate's number is on record: confirmed in the ptsbg.eu register — or a simulation
+ *  round's, which prints «not a certificate» (1.2). A number the portal made up before 0.15 is not
+ *  one — the public lookup would call it invalid. */
+export function numberedCertificate(certs: Certs, code: string) {
   const c = certs && Object.prototype.hasOwnProperty.call(certs, code) ? certs[code] : undefined;
   return c?.registeredAt || c?.simulation ? c : undefined;
+}
+/** The certificate a laboratory may have: numbered AND released by a person, from the approved
+ *  report (7.7; D2's conditions 2 and 3) — recording the number alone gives a laboratory nothing. On a
+ *  report issued before 7.4 (`legacy` — no R on record), a number recorded under 0.15 was the issue:
+ *  such a certificate stays the laboratory's (7.7 review). */
+export function labCertificate(certs: Certs, code: string, legacy = false) {
+  const c = numberedCertificate(certs, code);
+  return c && (c.released || legacy) ? c : undefined;
 }

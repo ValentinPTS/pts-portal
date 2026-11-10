@@ -1,4 +1,6 @@
 import type { NextRequest } from "next/server";
+import { issueInForce } from "@/lib/report-issue-model";
+import { legacyIssued } from "@/lib/cert-model";
 import { mayNow, requireCap, mayViewDoc } from "@/lib/access";
 import { getScheme } from "@/lib/store";
 import { getDoc, isRestrictedDoc, showsIdentities } from "@/lib/documents";
@@ -81,7 +83,12 @@ export async function GET(
       const p = one ? (await withIdentities([one], id, { actor: await actorOf(req, isInternal), purpose: "names.view" }))[0] : undefined;
       if (p) {
         const cert = scheme.certificates?.[code];
-        opts = { participant: { code: p.code, labName: p.labName, certNo: cert?.no, certDate: cert?.date } };
+        // PTS's preview: the content and the scope as typed, before and after the release (7.7) — marked
+        // «not released» (or «from an earlier R») until a person releases it: never a final-looking one (review)
+        const issue = issueInForce(scheme.reportIssues);
+        const preview = cert?.released || legacyIssued(scheme) ? undefined : cert?.content && issue && cert.content.fromR !== issue.r ? "stale" as const : "unreleased" as const;
+        const certLang = cert?.content?.text[lang] ? lang : "bg";
+        opts = { participant: { code: p.code, labName: p.labName, certNo: cert?.no, certDate: cert?.date, content: cert?.content?.text[certLang], scope: cert?.content?.scope, fromR: cert?.content?.fromR, preview } };
         if (!isInternal) await logActivity("names.viewed", { schemeId: id, targetCode: p.code, subject: `certificate:${p.code}`, summary: "A laboratory's name shown with its code — its certificate" });
       }
     }

@@ -31,6 +31,7 @@ import LanguageToggle from "@/components/LanguageToggle";
 import NotificationBell from "@/components/NotificationBell";
 import { getServerT } from "@/lib/i18n-server";
 import { labCertificate } from "@/lib/cert-number";
+import { legacyIssued } from "@/lib/cert-model";
 import { schemeNowMs } from "@/lib/clock";
 
 export const dynamic = "force-dynamic";
@@ -111,7 +112,7 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
         officialReport: labReport(scheme, p.code, inFinalRound(scheme, p)).state === "issued",
         reportLabel: labReport(scheme, p.code, inFinalRound(scheme, p)).label,
         reportAwaiting: labReport(scheme, p.code, inFinalRound(scheme, p)).state === "awaiting",
-        hasCert: !!labCertificate(scheme.certificates, p.code),
+        hasCert: !!labCertificate(scheme.certificates, p.code, legacyIssued(scheme)),
         deadline,
       };
     })))
@@ -228,7 +229,7 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
         return { key: r.key, label: docLabel(r.key) + (ed ? ` (${lang === "bg" ? "ред." : "ed."} № ${ed.no})` : "") + amLine + own, at: r.at.slice(0, 10), href: `/lab/doc/${it.scheme.id}/${r.key}?lang=${lang}&p=${encodeURIComponent(it.p.id)}` };
       }),
       ...(it.reported && it.officialReport ? [{ key: "report", label: `${tr("lab.finalReport")}${it.reportLabel ? ` ${it.reportLabel}` : ""}`, at: "", href: `/lab/doc/${it.scheme.id}/report?lang=${lang}&p=${encodeURIComponent(it.p.id)}` }] : []),
-      ...(it.hasCert ? [{ key: "certificate", label: tr("lab.certificate"), at: "", href: `/lab/doc/${it.scheme.id}/certificate?lang=${lang}` }] : []),
+      ...(it.hasCert ? [{ key: "certificate", label: tr("lab.certificate"), at: "", href: `/lab/doc/${it.scheme.id}/certificate?lang=${lang}&p=${encodeURIComponent(it.p.id)}` }] : []),
       // addressed to this laboratory alone, so it comes from its own route
       // ?p= names the participation: a lab that applied twice to one scheme has an
       // invoice per code, and the link must fetch the one this card is showing.

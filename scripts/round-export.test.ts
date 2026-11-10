@@ -100,7 +100,8 @@ const lab = await addLab({ email: SECRET.email, name: SECRET.name });
 const p = await addParticipant({ schemeId: S, labName: SECRET.name, email: SECRET.email, phone: SECRET.phone, country: "BG", labId: lab.id }, "test");
 const pdf = `data:application/pdf;base64,${Buffer.from("%PDF-1.4 protocol").toString("base64")}`;
 await updateSchemeWith(S, (cur) => ({
-  certificates: { ...(cur.certificates ?? {}), [p.code]: { no: SECRET.cert, date: "2027-10-01" } },
+  // 7.7: a certificate the laboratory received — numbered (in the register) and released in BG
+  certificates: { ...(cur.certificates ?? {}), [p.code]: { no: SECRET.cert, date: "2027-10-01", registeredBy: "m@ptsbg.eu", registeredAt: "2027-10-01T08:00:00Z", released: { by: "head@ptsbg.eu", at: "2027-10-01T09:00:00Z", langs: ["bg"] } } },
   applications: [...(cur.applications ?? []), { id: "app-x", schemeId: S, submittedAt: "2026-11-01T10:00:00Z", labName: SECRET.name, accreditationCert: "", manager: "", contactPerson: "", email: SECRET.email, phone: SECRET.phone, companyName: SECRET.name, registeredAddress: "", eik: "", vat: "", mol: "", deliveryAddress: "", postalCode: "", selections: {}, status: "pending" } as never],
   labUploads: { ...(cur.labUploads ?? {}), [p.code]: { protocol: { path: pdf, name: SECRET.file, mime: "application/pdf", size: 17, uploadedAt: "2026-11-02T10:00:00Z", uploadedBy: `lab:${lab.id}` } } },
   scoring: { assigned: { "0": { xpt: 10, sigma: 1, u: 0.1 } }, results: { [p.code]: { "0": { value: 10.2, u: 0.2 } } } },
@@ -213,7 +214,9 @@ t("a formula from a public form is text in the CSV", /'=HYPERLINK/.test(id("iden
 t("…and a negative result stays a number", csv(["v"], [{ v: -1.67 }, { v: "-2.5" }]).includes("-1.67") && !csv(["v"], [{ v: "-2.5" }]).includes("'-2.5"));
 t("every document as a printable page: coded without names, the lists and the certificate named in identity/",
   zAll.has("coded/files/documents/plan-bg.html") && zAll.has("identity/files/documents/results-coded-bg.html") && id("identity/files/documents/results-coded-bg.html").includes(COPY.lab) /* the frozen name — what its documents say (4.5) */
-  && zAll.has(`identity/files/documents/certificate-${p.code}-bg.html`) && ![...zAll.keys()].some((n) => n.startsWith("coded/files/documents/results-coded") || n.startsWith("coded/files/documents/certificate")));
+  && zAll.has(`identity/files/documents/certificate-${p.code}-bg.html`) && ![...zAll.keys()].some((n) => n.startsWith("coded/files/documents/results-coded") || n.startsWith("coded/files/documents/certificate"))
+  // …only in the language it was released in (7.7 review)
+  && !zAll.has(`identity/files/documents/certificate-${p.code}-en.html`));
 t("revision texts are files, not CSV cells", [...zAll.keys()].some((n) => /files\/revisions\/plan-v\d+-bg\.html$/.test(n)) && !(zAll.get("coded/doc_revisions.csv")?.toString("utf8") ?? "").includes("<p>"));
 t("the laboratories' accounts (invoice data) are in identity/", id("identity/labs.csv").includes(SECRET.email));
 t("a file recorded but not in storage: listed missing, the export says INCOMPLETE", all.missing.some((m) => m.includes("uploads/instruction")) && /НЕПЪЛЕН/.test(id("README.md")));

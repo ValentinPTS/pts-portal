@@ -2,7 +2,7 @@
 // 0.15; PTS, 02.11.2026, condition 1): the scheme number, «-», five digits (К7).
 // Stored as the scheme's own number + the digits, however the prefix was typed;
 // a laboratory gets only a certificate PTS confirmed is in the register.
-import { certNumberFor, certNumberProblem, sameCertNumber, labCertificate } from "../src/lib/cert-number.ts";
+import { certNumberFor, certNumberProblem, sameCertNumber, labCertificate, numberedCertificate } from "../src/lib/cert-number.ts";
 import { readFileSync } from "node:fs";
 
 let pass = 0, fail = 0;
@@ -38,12 +38,15 @@ const certs = {
   "261101": { no: `${S}-48217`, date: "02.11.2026", registeredBy: "m@ptsbg.eu", registeredAt: "2026-11-02T10:00:00Z" },
   "261102": { no: `${S}-99999`, date: "01.11.2026" }, // made up by the portal before 0.15
 };
-t("lab: a registered certificate is given", labCertificate(certs, "261101")?.no === `${S}-48217`);
+t("a registered number is on record; the laboratory gets nothing until a person releases it (7.7)", numberedCertificate(certs, "261101")?.no === `${S}-48217` && labCertificate(certs, "261101") === undefined);
+const released = { "261101": { ...certs["261101"], released: { by: "head@ptsbg.eu", at: "2026-12-01T10:00:00Z", langs: ["bg" as const] } } };
+t("lab: a registered AND released certificate is given", labCertificate(released, "261101")?.no === `${S}-48217`);
+t("lab: on a report issued before 7.4, a registered number is the issue (0.15) — kept (7.7 review)", labCertificate(certs, "261101", true)?.no === `${S}-48217` && labCertificate(certs, "261102", true) === undefined);
 t("lab: an old made-up number is not", labCertificate(certs, "261102") === undefined);
 t("lab: no certificate, nothing", labCertificate(certs, "261103") === undefined && labCertificate(undefined, "261101") === undefined);
 t("lab: «__proto__» is not a code", labCertificate(certs, "__proto__") === undefined);
 const simCerts = { "261101": { no: "SIM 26/11-T-1-12345", date: "02.11.2026", simulation: true } };
-t("lab: a simulation round's certificate is shown (it prints «not a certificate»)", labCertificate(simCerts, "261101")?.no === "SIM 26/11-T-1-12345");
+t("lab: a simulation round's certificate, once released, is shown (it prints «not a certificate»)", labCertificate(simCerts, "261101") === undefined && labCertificate({ "261101": { ...simCerts["261101"], released: { by: "h", at: "a", langs: ["bg" as const] } } }, "261101")?.no === "SIM 26/11-T-1-12345");
 t("a SIM scheme's number is stored in its own series", "no" in certNumberFor("sim 26/11-т-1-12345", "SIM 26/11-T-1", []) && (certNumberFor("sim 26/11-т-1-12345", "SIM 26/11-T-1", []) as { no: string }).no === "SIM 26/11-T-1-12345");
 t("a PTS prefix is not a SIM scheme's", certNumberProblem("PTS 26/11-T-1-12345", "SIM 26/11-T-1", []) === "scheme");
 

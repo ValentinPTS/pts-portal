@@ -19,6 +19,7 @@ import type { DocOptions } from "@/lib/types";
 import { labCertificate } from "@/lib/cert-number";
 import { docImgSrc } from "@/lib/image-hosts";
 import { issueInForce, reaches, rLabel } from "@/lib/report-issue-model";
+import { legacyIssued } from "@/lib/cert-model";
 
 // Lab-scoped document view. A laboratory can fetch ONLY:
 //   • documents for a scheme it actually participates in (verified by lab_id),
@@ -78,7 +79,7 @@ async function serve(req: NextRequest, ctx: { params: Promise<{ scheme: string; 
     : canLabFetchDoc(doc, {
       sent: scheme.sentToParticipants,
       reported: scheme.status === "report" || scheme.status === "closed",
-      hasCert: !!ls && !!labCertificate(scheme.certificates, mine.code), // a certificate: the laboratory account's (names, §7.4)
+      hasCert: !!ls && !!labCertificate(scheme.certificates, mine.code, legacyIssued(scheme)), // a certificate: the laboratory account's (names, §7.4)
       // an issued R stays the official report whatever the uploads slot holds now (7.4 review)
       officialReport: !!scheme.uploads?.report || !!issueInForce(scheme.reportIssues),
     });
@@ -129,9 +130,13 @@ async function serve(req: NextRequest, ctx: { params: Promise<{ scheme: string; 
   // certificate (§4.2). Never the cohort's uploaded slot either.
   if (doc === "certificate" && def.render) {
     const skin = await resolveSkinAsync(scheme);
-    const cert = labCertificate(scheme.certificates, mine.code);
-    const opts: DocOptions = { participant: { code: mine.code, labName: mine.labName ?? "", certNo: cert?.no, certDate: cert?.date } };
-    return { res: html(stripBodyMarkers(withSkin(skin, () => def.render!(scheme, lang, opts)))), log: { code: mine.code, actor, subject: `certificate:${mine.code}`, summary: "The laboratory's certificate opened" } };
+    // released only (7.7) — or issued under 0.15 on a report before 7.4; in a language it was released in
+    const cert = labCertificate(scheme.certificates, mine.code, legacyIssued(scheme));
+    if (!cert) return { res: new Response("Not available yet", { status: 403 }) };
+    const langs = cert.released?.langs ?? (["bg", "en"] as const);
+    const certLang = langs.includes(lang) ? lang : langs[0];
+    const opts: DocOptions = { participant: { code: mine.code, labName: mine.labName ?? "", certNo: cert.no, certDate: cert.date, content: cert.content?.text[certLang], scope: cert.content?.scope, fromR: cert.content?.fromR } };
+    return { res: html(stripBodyMarkers(withSkin(skin, () => def.render!(scheme, certLang, opts)))), log: { code: mine.code, actor, subject: `certificate:${mine.code}`, summary: "The laboratory's certificate opened" } };
   }
   return { res: new Response("Not found", { status: 404 }) };
 }

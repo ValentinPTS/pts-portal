@@ -40,13 +40,14 @@ import { listActivity } from "@/lib/activity-store";
 import { listNoticesForScheme } from "@/lib/notifications";
 import { processingRecord, schemeTransferState, stageEventOf, reportInForce, RECORD_STAGES, type RecordEvent, type StageEvent } from "@/lib/transfer-check-model";
 import { metaGaps, META_GAP_TEXT } from "@/lib/scheme-meta";
-import { lockEntries, lockCounts, isNR, resultsOutsideForm, lockInForce } from "@/lib/submission-lock-model";
+import { lockEntries, lockCounts, isNR, resultsOutsideForm, lockInForce, lockEntryOf } from "@/lib/submission-lock-model";
 import { analysisGaps } from "@/lib/analysis-export";
 import AnalysisImportPanel from "@/components/AnalysisImportPanel";
 import ProcessingRecordCard from "@/components/ProcessingRecordCard";
 import ReportIssueCard from "@/components/ReportIssueCard";
 import { uxptInForce, type UxptCheck } from "@/lib/uxpt-model";
-import { transferProblem, correctionProblem, recipients, type IssueProblem, type RecipientRow } from "@/lib/report-issue-model";
+import { certState } from "@/lib/cert-model";
+import { transferProblem, correctionProblem, recipients, reaches, type IssueProblem, type RecipientRow } from "@/lib/report-issue-model";
 import { activeUnlock, submissionOpen } from "@/lib/submission-model";
 import { needsAmendment } from "@/lib/amendments-model";
 import { chainWindow, deadlineState, windowDays, resultsDeadline } from "@/lib/deadlines-model";
@@ -162,7 +163,7 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
     };
   }
   // 7.4: issuing the report — what the act needs, the R editions, who received which (D7)
-  let issueView: { ready: { approved: boolean; report: { version: string } | null; problem: IssueProblem | null }; rows: RecipientRow[] | null; correctable: { version: string; problem: IssueProblem | null } | null; showReasons: boolean; uxpt: { reportSha: string | null; inForce: UxptCheck | null; canRecord: boolean; type: string; version: string; notes: Record<string, string> } } | null = null;
+  let issueView: { ready: { approved: boolean; report: { version: string } | null; problem: IssueProblem | null }; rows: RecipientRow[] | null; correctable: { version: string; problem: IssueProblem | null } | null; showReasons: boolean; certs: { ready: number; unchecked: number; released: number } | null; uxpt: { reportSha: string | null; inForce: UxptCheck | null; canRecord: boolean; type: string; version: string; notes: Record<string, string> } } | null = null;
   if (recordView) {
     const issues = s.reportIssues ?? [];
     const inForceReport = reportInForce({ report: s.uploads?.report, active: s.docActive?.report ?? null, imports: s.analysisImports });
@@ -189,6 +190,13 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
       correctable: s.status === "report" && issues.length ? { version, problem: correctionProblem(issues, recordView.transfer, !!inForceReport) ?? (uxptInForce(s.uxptChecks, inForceReport?.sha, inForceReport?.importId) ? null : "no-uxpt") } : null,
       showReasons: await mayNow("names.view", id),
       // the confirmation: in processing; once issued — only for a corrected file (another than the R in force's — review)
+      // 7.7: the certificates that wait for a person — ready to release, or for a check (review)
+      certs: (() => {
+        if (!issues.length) return null;
+        const lockNow = lockInForce(s.submissionLocks), issueNow = issues.at(-1)!;
+        const st = participantsNow.filter((p) => inFinalRound(s, p)).map((p) => { const e = lockEntryOf(lockNow, p.id); return certState({ cert: s.certificates?.[p.code], issue: issueNow, nr: !!e && isNR(e), reached: reaches(s.reportAccess, p.code) }); });
+        return { ready: st.filter((x) => x === "ready").length, unchecked: st.filter((x) => x === "unchecked").length, released: st.filter((x) => x === "released").length };
+      })(),
       uxpt: {
         reportSha: inForceReport?.sha ?? null, inForce: uxptInForce(s.uxptChecks, inForceReport?.sha, inForceReport?.importId),
         canRecord: s.status === "processing" || (s.status === "report" && issues.length > 0 && !!inForceReport && inForceReport.sha !== issues.at(-1)!.reportSha),
@@ -439,7 +447,7 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
       {/* 7.3: the processing record and the transfer check */}
       {recordView && issueView && (
         <ReportIssueCard schemeId={id} lang={lg === "bg" ? "bg" : "en"} status={s.status} ready={issueView.ready} issues={s.reportIssues ?? []} rows={issueView.rows}
-          canAct={canAct} correctable={issueView.correctable} answer={sp.ri} codesNotReached={(issueView.rows ?? []).filter((r) => !r.access).map((r) => r.code)} showReasons={issueView.showReasons} uxpt={issueView.uxpt} />
+          canAct={canAct} correctable={issueView.correctable} answer={sp.ri} codesNotReached={(issueView.rows ?? []).filter((r) => !r.access).map((r) => r.code)} showReasons={issueView.showReasons} uxpt={issueView.uxpt} certs={issueView.certs} />
       )}
       {recordView && (
         <ProcessingRecordCard schemeId={id} lang={lg === "bg" ? "bg" : "en"} record={recordView.record} ticksFromJournal={recordView.ticksFromJournal}

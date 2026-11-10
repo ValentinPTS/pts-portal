@@ -29,6 +29,10 @@ export const EXTRA_CSS = `
   .iso{font-size:11pt;color:var(--muted);margin-top:8px;}
   .chars{margin:16px 0 4px;font-size:11pt;}
   .chars b{font-family:var(--sans);color:var(--green-dark);}
+  .certcontent{margin:6px 0 2px;font-size:10.5pt;max-width:85%;display:flex;flex-direction:column;gap:2px;}
+  .certcontent b{font-family:var(--sans);color:var(--green-dark);}
+  .certfrom{font-size:9pt;color:var(--muted);margin-top:2px;}
+  .certpreview{border:3px solid #8f2f2f;color:#8f2f2f;font-family:var(--sans);font-weight:800;text-align:center;padding:6px;margin-bottom:6px;letter-spacing:1px;}
   .marks{display:flex;gap:24px;justify-content:center;align-items:center;margin:22px 0 8px;}
   .marks .ilac{height:74px;}
   .snasbox{border:1px solid var(--ink);padding:6px 12px;font-family:var(--sans);}
@@ -46,13 +50,33 @@ export const EXTRA_CSS = `
   @media screen{.page{padding:calc(16mm + 10mm) calc(14mm + 10mm) calc(18mm + 10mm) calc(14mm + 10mm);}}
 `;
 
+// 7.7: the content as typed from the approved report and checked by a second person (D2, condition 3)
+// — never a value the portal computed (Реш. 135)
+export function contentHtml(lang: Lang, content: { conclusion: string; results: string; period: string; methods: string } | undefined, fromR?: number): string {
+  if (!content) return "";
+  const L = (en: string, bg: string) => esc(pick(lang, en, bg));
+  const row = (label: string, v: string) => `<div><b>${label}</b> ${esc(v)}</div>`;
+  // the R it came from — a correction after the release leaves no doubt which report it rests on (review)
+  const from = fromR ? `<div class="certfrom">${L(`According to the final report R${fromR}`, `По окончателния доклад R${fromR}`)}</div>` : "";
+  return `<div class="certcontent">${row(L("Result:", "Резултат:"), content.conclusion)}${row(L("Scores:", "Оценки:"), content.results)}${row(L("Period:", "Период:"), content.period)}${row(L("Methods:", "Методи:"), content.methods)}${from}</div>`;
+}
+
+/** PTS's preview of a certificate not released (or typed from an earlier R): marked across it — never a
+ *  final-looking certificate to send around (review). */
+export function previewMark(lang: Lang, preview: "unreleased" | "stale" | undefined): string {
+  if (!preview) return "";
+  const L = (en: string, bg: string) => esc(pick(lang, en, bg));
+  const text = preview === "stale" ? L("PREVIEW — the content is from an earlier R; NOT RELEASED", "ПРЕГЛЕД — съдържанието е от предишно R; НЕ Е ИЗДАДЕН") : L("PREVIEW — NOT RELEASED", "ПРЕГЛЕД — НЕ Е ИЗДАДЕН");
+  return `<div class="certpreview" data-cert-preview="${preview}">${text}</div>`;
+}
+
 export function renderCertificate(s: Scheme, lang: Lang, opts?: DocOptions): string {
   const L = (en: string, bg: string) => esc(pick(lang, en, bg));
 
-  // Scheme characteristics, derived from s.parameters and joined with a middot.
-  const chars = s.parameters
-    .map((p) => esc(pick(lang, p.characteristicEn, p.characteristicBg)))
-    .join(" · ");
+  // the scope: what this participation reported (7.7); a template — the scheme's characteristics
+  const chars = opts?.participant?.scope
+    ? opts.participant.scope.map((x) => esc(lang === "bg" ? x.bg : x.en)).join(" · ")
+    : s.parameters.map((p) => esc(pick(lang, p.characteristicEn, p.characteristicBg))).join(" · ");
 
   const mgr = s.team[0];
 
@@ -63,7 +87,7 @@ export function renderCertificate(s: Scheme, lang: Lang, opts?: DocOptions): str
   const certNo = part?.certNo ? esc(part.certNo) : "____________";
   const certDate = part?.certDate ? esc(part.certDate) : "";
 
-  const body = `<div class="frame">
+  const body = `${previewMark(lang, opts?.participant?.preview)}<div class="frame">
     <img class="logo" src="/brand/logo.png" alt="PTS Bulgaria">
     <img class="tagline-img" src="/brand/tagline.png" alt="">
     <img class="emb" src="/brand/embroidery-border.png" alt="">
@@ -82,6 +106,7 @@ export function renderCertificate(s: Scheme, lang: Lang, opts?: DocOptions): str
     <div class="iso">${L("conducted in accordance with", "проведена в съответствие с")} ${esc(s.standard)}</div>
 
     <div class="chars"><b>${L("Characteristics:", "Характеристики:")}</b> <span>${chars}</span></div>
+    ${contentHtml(lang, opts?.participant?.content, opts?.participant?.fromR)}
 
     ${marksHtml(s, lang)}
 

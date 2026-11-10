@@ -92,9 +92,12 @@ t("who to tell is looked up BEFORE a step is recorded — a failure records noth
   && acts.indexOf("const got = await editionToSend(scheme, docKey") < acts.indexOf("labOf = await labIdsFor(schemeId, parts")
   && acts.indexOf("const invoiceTell = ") < acts.indexOf("const upload: UploadedDoc", acts.indexOf("const invoiceTell = "))
   && acts.indexOf("const upload: UploadedDoc", acts.indexOf("const invoiceTell = ")) < acts.indexOf("notifyInvoiceReady(invoiceTell.labId")
-  && acts.indexOf("const certTell = ") < acts.indexOf("const out: { problem?: CertNumberProblem")
+  // 7.7: the laboratory is told at the release — looked up before the release is recorded
+  && acts.indexOf("const tell = await labToTell(schemeId, code);", acts.indexOf("export async function releaseCertificateAction")) < acts.indexOf("released: { by, at: new Date().toISOString(), langs", acts.indexOf("export async function releaseCertificateAction"))
+  && acts.indexOf("const tell = await labToTell(schemeId, code);", acts.indexOf("export async function releaseCertificateAction")) > acts.indexOf("export async function releaseCertificateAction")
   && acts.indexOf("const tell0 = ") < acts.indexOf("return { chain: { ...s.chain, dispatchedAt: at } }")
-  && (acts.match(/if \(!(tell0|tellNext|invoiceTell|certTell)\) return \{ error: /g) ?? []).length === 5);
+  && (acts.match(/if \(!(tell0|tellNext|invoiceTell)\) return \{ error: /g) ?? []).length === 4
+  && /if \(!tell\) redirect\(back\("cert=reach"\)\);/.test(acts));
 t("the round export: an opening for «export», and the round's openings in identity/", /withIdentities\(coded, schemeId, \{ actor, purpose: "export" \}\)/.test(read("src/lib/round-export.ts")) && /identity\/identity_openings\.csv/.test(read("src/lib/round-export.ts")));
 
 // ── the database keeps the rules ────────────────────────────────────────────

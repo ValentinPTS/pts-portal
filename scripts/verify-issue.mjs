@@ -98,6 +98,16 @@ try {
   await waitFor(async () => (await page.locator("[data-coding-done]").count()) === 1, 60);
   const codeA = await page.locator(`[data-coded-from="${refs[NAME_A]}"]`).getAttribute("data-coded");
   const codeB = await page.locator(`[data-coded-from="${refs[NAME_B]}"]`).getAttribute("data-coded");
+  const coded = await page.locator("[data-coded-from]").evaluateAll((els) => els.map((e) => e.getAttribute("data-coded")));
+  const codeL0 = coded.find((c) => c && c !== codeA && c !== codeB);
+  // 7.7: L's results came outside the form (a sheet by e-mail, recorded by PTS) — not N/R at the lock
+  await go(`/schemes/${S}/participants/${codeL0}`);
+  const sheetStep = page.locator('form:has(input[name="ref"])');
+  await sheetStep.locator('select[name="kind"]').selectOption("results_returned");
+  await sheetStep.locator('input[name="ref"]').fill(`SHEET-${stamp}`);
+  await sheetStep.locator('button[type="submit"]').click();
+  await page.waitForLoadState("domcontentloaded");
+  await go(`/schemes/${S}#stages`);
   answers.push(true, `Обработката започва — издаване ${stamp}`);
   await page.locator('[data-act="process"]').click();
   t("setup: A and B coded; the scheme in processing", !!codeA && !!codeB && await waitFor(async () => { await go(`/schemes/${S}`); return /Обработка|Processing/.test(await state()); }, 20));
@@ -168,7 +178,7 @@ try {
   t("7.5 — the card: R1 · PTS_Analysis 2.0.3, issued; «Отвори» and «Изтегли» serve exactly 2.0's file (the download as an attachment)", /PTS_Analysis 2\.0\.3/.test(await textOf(page.locator('[data-lab-report="reached"] [data-lab-report-current="R1"]'))) && Buffer.from(await viaOpen.body()).equals(BG1) && Buffer.from(await viaDl.body()).equals(BG1) && /attachment/.test(viaDl.headers()["content-disposition"] ?? ""));
   await go(`/lab/p/${pidL}`);
   const sofiaDay = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Sofia", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date()).replace(/\//g, ".");
-  t("…its first opening shown, on Sofia's day; L sent no results — N/R at the lock: «no scores for you», never a scores line (Реш. 135)", (await page.locator('[data-lab-report-opened="1"]').count()) === 1 && (await textOf(page.locator('[data-lab-report-opened="1"]'))).includes(sofiaDay) && (await page.locator("[data-lab-report-nr]").count()) === 1 && (await page.locator("[data-lab-report-scores]").count()) === 0 && (await page.locator("[data-lab-report-correction], [data-lab-report-earlier]").count()) === 0);
+  t("…its first opening shown, on Sofia's day; L's results came outside the form — not N/R: the scores are in the report, the portal shows none of its own (Реш. 135)", (await page.locator('[data-lab-report-opened="1"]').count()) === 1 && (await textOf(page.locator('[data-lab-report-opened="1"]'))).includes(sofiaDay) && (await page.locator("[data-lab-report-nr]").count()) === 0 && /PTS_Analysis 2\.0 — порталът не ги изчислява|computed by PTS_Analysis 2\.0/.test(await textOf(page.locator("[data-lab-report-scores]"))) && (await page.locator("[data-lab-report-correction], [data-lab-report-earlier]").count()) === 0);
 
   // ── B: opened by hand, with a reason — never in the journal ──
   await go("/dev/persona?role=manager");
@@ -216,6 +226,70 @@ try {
   await go("/dev/persona?role=manager");
   await go(`/schemes/${S}/editions?doc=report`);
   t("«Редакции» keeps both editions — the participants hold R2; the report is no longer offered for issuing there", (await page.locator('[data-edition^="report:"]').count()) >= 2 && (await page.locator('[data-edition^="report:"] [data-held]').count()) === 1 && (await page.locator('[data-issue-edition] select option[value="report"]').count()) === 0);
+
+  // ── 7.7: certificates — the number, the content from the report, a second person's check, the release ──
+  const schemeNo = ((await (await page.request.get(`${BASE}/schemes/${S}`)).text()).match(/PTS \d{2}\/\d{2}-T-\d+/) ?? [""])[0];
+  const CERT_NO = `${schemeNo}-${String(10000 + (stamp % 90000)).slice(0, 5)}`;
+  const certPage = async () => { await go(`/schemes/${S}/doc/certificate`); await page.locator("[data-certificate-steps]").waitFor(); };
+  await certPage();
+  t("7.7 — the steps per participation on the final list: A and B N/R at the lock — no certificate; L awaits its number", (await page.locator(`[data-cert-row="${codeA}"][data-cert-state="nr"]`).count()) === 1 && (await page.locator(`[data-cert-row="${codeB}"][data-cert-state="nr"]`).count()) === 1 && (await page.locator(`[data-cert-row="${codeL}"][data-cert-state="no-number"]`).count()) === 1);
+  const pick = page.locator("select").filter({ has: page.locator(`option[value="${codeL}"]`) }).first();
+  for (let i = 0; i < 20 && (await page.locator("[data-cert-none]").count()) === 0; i++) { await pick.selectOption(codeA); await page.waitForTimeout(500); }
+  t("…an N/R participation: no number form — no register entry for one that gets no certificate (review)", (await page.locator("[data-cert-none]").count()) === 1 && (await page.locator("[data-cert-form]").count()) === 0);
+  for (let i = 0; i < 20 && (await page.locator("[data-cert-form]").count()) === 0; i++) { await pick.selectOption(codeL); await page.waitForTimeout(500); }
+  const nf = page.locator("[data-cert-form]");
+  await nf.locator('input[name="no"]').fill(CERT_NO);
+  await nf.locator('input[name="inRegister"]').check();
+  await nf.getByRole("button", { name: /^(Запиши номера|Record the number)$/ }).click();
+  await waitFor(async () => /Номерът е записан|Number recorded/.test(await textOf(nf.locator('[role="status"]'))), 40);
+  await go("/dev/persona?role=lab");
+  const certBefore = await page.request.get(`${BASE}/lab/doc/${S}/certificate`);
+  await go("/dev/persona?role=manager");
+  await certPage();
+  t("…the number recorded (step 1): the laboratory gets nothing yet (403); L awaits the content", certBefore.status() === 403 && (await page.locator(`[data-cert-row="${codeL}"][data-cert-state="no-content"]`).count()) === 1);
+  // the statistics expert types the content from the issued report (R2 in force)
+  await go(`/dev/persona?model=statistics_expert@${S}`);
+  await certPage();
+  const ccf = page.locator(`[data-cert-row="${codeL}"] [data-cert-content-form]`);
+  await ccf.locator('input[name="bg_conclusion"]').fill(`Удовлетворително ${stamp}`);
+  await ccf.locator('input[name="bg_results"]').fill("z = 0,4 (по доклада R2)");
+  await ccf.locator('input[name="bg_period"]').fill("01.10.2026 – 30.11.2026");
+  await ccf.locator('input[name="bg_methods"]').fill("БДС EN 1097-6");
+  await ccf.locator('input[name="en_conclusion"]').fill(`Satisfactory ${stamp}`);
+  await ccf.locator('input[name="en_results"]').fill("z = 0.4 (per report R2)");
+  await ccf.locator('input[name="en_period"]').fill("01.10.2026 – 30.11.2026");
+  await ccf.locator('input[name="en_methods"]').fill("BDS EN 1097-6");
+  await ccf.locator("[data-cert-content-submit]").click();
+  await waitFor(async () => /[?&]cert=typed(?:[&#]|$)/.test(page.url()), 30);
+  await certPage();
+  t("…the content typed from R2 by the statistics expert, in BG and EN, the scope confirmed (offered as applied for — the sheet came outside the form); awaits a SECOND person: not offered to the one who typed it", (await page.locator(`[data-cert-row="${codeL}"][data-cert-state="unchecked"]`).count()) === 1 && /R2/.test(await textOf(page.locator(`[data-cert-row="${codeL}"]`))) && /потвърден|confirmed/.test(await textOf(page.locator(`[data-cert-row="${codeL}"] [data-cert-scope]`))) && (await page.locator(`[data-cert-row="${codeL}"] [data-cert-content-lang]`).count()) === 2 && (await page.locator(`[data-cert-row="${codeL}"] [data-cert-check-form]`).count()) === 0 && (await page.locator(`[data-cert-row="${codeL}"] [data-cert-check-other]`).count()) === 1);
+  // the scheme manager checks it, then releases it
+  await go("/dev/persona?role=manager");
+  await certPage();
+  t("…the checker sees what is checked — the content in both languages, read-only, beside the check (review)", (await textOf(page.locator(`[data-cert-row="${codeL}"] [data-cert-content-shown]`))).includes(`Удовлетворително ${stamp}`) && (await textOf(page.locator(`[data-cert-row="${codeL}"] [data-cert-content-shown]`))).includes(`Satisfactory ${stamp}`) && (await page.locator(`[data-cert-row="${codeL}"] [data-cert-check-form]`).count()) === 1);
+  await page.locator(`[data-cert-row="${codeL}"] [data-cert-check-submit]`).click();
+  await waitFor(async () => /[?&]cert=checked(?:[&#]|$)/.test(page.url()), 30);
+  await certPage();
+  t("…checked by a second person: ready to release", (await page.locator(`[data-cert-row="${codeL}"][data-cert-state="ready"]`).count()) === 1);
+  const rf = page.locator(`[data-cert-row="${codeL}"] [data-cert-release-form]`);
+  await rf.locator('input[name="lang"][value="en"]').check();
+  await rf.locator("[data-cert-release-submit]").click();
+  await waitFor(async () => /[?&]cert=released-ok(?:[&#]|$)/.test(page.url()), 30);
+  await certPage();
+  t("…released by a person — BG and EN; A and B (N/R) offered nothing", (await page.locator(`[data-cert-row="${codeL}"][data-cert-state="released"] [data-cert-released="bg,en"]`).count()) === 1 && (await page.locator(`[data-cert-row="${codeA}"] form, [data-cert-row="${codeB}"] form`).count()) === 0);
+  await go("/dev/persona?role=lab");
+  const certBg = await page.request.get(`${BASE}/lab/doc/${S}/certificate?lang=bg`);
+  const certHtml = await certBg.text();
+  const certEn = await (await page.request.get(`${BASE}/lab/doc/${S}/certificate?lang=en`)).text();
+  t("…the laboratory now gets its certificate — the number, the content as typed in each language, the R it rests on", certBg.status() === 200 && certHtml.includes(CERT_NO) && certHtml.includes(`Удовлетворително ${stamp}`) && /Резултат:/.test(certHtml) && /По окончателния доклад R2/.test(certHtml) && certEn.includes(`Satisfactory ${stamp}`) && !certEn.includes(`Удовлетворително ${stamp}`) && /According to the final report R2/.test(certEn));
+  await go("/dev/persona?role=manager");
+  await go("/notices");
+  // a laboratory's notice is held until a person releases it (0.8) — the certificate's is raised, for L's code
+  t("…and it is told — the certificate's notice raised for its code (held for release, 0.8)", (await page.locator("[data-held]", { hasText: codeL }).filter({ hasText: /Сертификатът ви за схема|Your certificate for scheme/ }).count()) >= 1);
+  await go("/dev/persona?role=lab");
+  await go("/dev/persona?role=manager");
+  const jr = await (await page.request.get(`${BASE}/activity?scheme=${S}`)).text();
+  t("…journalled: the number recorded, the content typed, checked, released — never the number or a value", /Certificate number recorded for/.test(jr) && /Certificate content for .* typed from the final report R2/.test(jr) && /checked by a second person/.test(jr) && /Certificate released for .* in bg and en/.test(jr) && !jr.includes(CERT_NO) && !jr.includes(`Удовлетворително ${stamp}`));
 } catch (e) {
   fail++;
   console.error("FAIL: crashed", e);

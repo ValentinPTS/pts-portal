@@ -5,7 +5,7 @@ import { issueCertificateAction } from "@/lib/actions";
 import { looksLikeSimNumber } from "@/lib/environment";
 import { useLang } from "@/components/LangProvider";
 
-type Participant = { code: string; labName?: string; certNo?: string; certDate?: string };
+type Participant = { code: string; labName?: string; certNo?: string; certDate?: string; noCert?: boolean };
 
 export default function DocViewer({
   id,
@@ -98,7 +98,10 @@ export default function DocViewer({
 
       {/* certificate — the number as the ptsbg.eu register holds it, typed by PTS
           (the portal makes none up: PTS, 02.11.2026, condition 1), + the date */}
-      {doc === "certificate" && participant && canIssue && (
+      {doc === "certificate" && participant && canIssue && sel?.noCert && (
+        <p className="text-sm mb-3" data-cert-none style={{ color: "#8f2f2f" }}>{t("dv.certErr.nr")}</p>
+      )}
+      {doc === "certificate" && participant && canIssue && !sel?.noCert && (
         <form
           // onSubmit, not action={…}: React resets a form after its action, and a
           // refused number would wipe what was typed

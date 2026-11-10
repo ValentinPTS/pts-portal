@@ -22,7 +22,17 @@ export type Lang = "en" | "bg";
 // renderer). `participant` = one lab (Certificate); `participants` = the full
 // list (List of Registered Participants).
 export interface DocOptions {
-  participant?: { code: string; labName: string; certNo?: string; certDate?: string };
+  participant?: {
+    code: string; labName: string; certNo?: string; certDate?: string;
+    /** 7.7: as typed from the approved report and checked — the conclusion, the results, the period, the methods (this language's) */
+    content?: { conclusion: string; results: string; period: string; methods: string };
+    /** 7.7: the R the content was typed from — printed («по окончателния доклад R1») */
+    fromR?: number;
+    /** 7.7: PTS's preview of a certificate not released (or typed from an earlier R) — marked so on it */
+    preview?: "unreleased" | "stale";
+    /** 7.7: what was reported — printed instead of every characteristic */
+    scope?: { key: string; bg: string; en: string }[];
+  };
   participants?: {
     code: string;
     labName: string;
@@ -638,7 +648,9 @@ export interface Scheme {
   // confirmed it is in the register, and when — absent on numbers the portal made up
   // before 0.15, which labs no longer get (labCertificate)
   // `simulation`: a SIM round's — never entered in the register (Реш. 130, 1.2)
-  certificates?: Record<string, { no: string; date: string; registeredBy?: string; registeredAt?: string; simulation?: boolean }>;
+  // 7.7: the content typed from the issued report, its check by a second person, its release
+  // (lib/cert-model) — a laboratory gets the certificate only once released
+  certificates?: Record<string, import("./cert-model").CertRecord>;
   // the round's moved clock — honoured in the TEST environment only (part 1.3, lib/clock)
   testClock?: { offsetMs: number; setAt: string; setBy: string };
   // self-service applications (заявки) submitted by labs while the scheme is open

@@ -10,7 +10,7 @@ import { getDoc } from "@/lib/documents";
 // correction with its reason and scope), the 2.0 version beside each, who received which, a hand
 // opening (D7), a correction, and the scheme's software record (Zadanie §6).
 
-export default function ReportIssueCard({ schemeId, lang, status, ready, issues, rows, canAct, correctable, answer, codesNotReached, showReasons, uxpt }: {
+export default function ReportIssueCard({ schemeId, lang, status, ready, issues, rows, canAct, correctable, answer, codesNotReached, showReasons, uxpt, certs }: {
   schemeId: string; lang: "bg" | "en"; status: string;
   /** before the act: the three conditions, each true or the reason it is not */
   ready: { approved: boolean; report: { version: string } | null; problem: IssueProblem | null };
@@ -25,6 +25,8 @@ export default function ReportIssueCard({ schemeId, lang, status, ready, issues,
   showReasons: boolean;
   /** 7.6: the u(x_pt) ≤ 0.3·σ_pt confirmation for the report in force; whether it may be recorded now */
   uxpt: { reportSha: string | null; inForce: UxptCheck | null; canRecord: boolean; type: string; version: string; notes: Record<string, string> };
+  /** 7.7: the certificates waiting for a person */
+  certs?: { ready: number; unchecked: number; released: number } | null;
 }) {
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const okAnswer = answer === "ok" || answer === "opened" || answer === "corrected" || answer === "uxpt";
@@ -63,6 +65,9 @@ export default function ReportIssueCard({ schemeId, lang, status, ready, issues,
             </li>
           ))}
         </ol>
+      )}
+      {certs && (certs.ready > 0 || certs.unchecked > 0 || certs.released > 0) && (
+        <p className="text-sm" data-certs-waiting={certs.ready} style={{ margin: "8px 0 0" }}>{L("Сертификати", "Certificates")}: <b>{L(`${certs.ready} готови за издаване`, `${certs.ready} ready to release`)}</b>, {L(`${certs.unchecked} чакат проверка`, `${certs.unchecked} await a check`)}, {L(`${certs.released} издадени`, `${certs.released} released`)} — <a href={`/schemes/${schemeId}/doc/certificate#certificate-steps`}>{L("към сертификатите", "to the certificates")}</a></p>
       )}
       {answer && <p role={okAnswer ? "status" : "alert"} className="text-sm mt-2" data-issue-answer={answer} style={{ color: okAnswer ? "var(--green-dark)" : "#8f2f2f" }}>{answer === "uxpt" ? L("Потвърждението за u(x_pt) е записано.", "The u(x_pt) confirmation is recorded.") : answer === "opened" ? L("Докладът е отворен за участието — уведомено е.", "The report is opened for the participation — it is told.") : answer === "corrected" ? L("Поправката е издадена — засегнатите участия са уведомени.", "The correction is issued — the participations concerned are told.") : said ? L(said.bg, said.en) : L("Не е записано.", "Not recorded.")}</p>}
       {status === "report" && uxpt.canRecord && uxpt.reportSha && (

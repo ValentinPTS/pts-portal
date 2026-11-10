@@ -8,6 +8,7 @@ import { participantViewer, participationViews } from "@/lib/participation-view"
 import { isProvisional } from "@/lib/coding-model";
 import { selectionsOf } from "@/lib/application-model";
 import { labCertificate } from "@/lib/cert-number";
+import { legacyIssued } from "@/lib/cert-model";
 import { writtenInstructions } from "@/lib/docs/instruction-common";
 import { chainViewFor } from "@/lib/chain-view";
 import { canLabUploadNow, LAB_UPLOAD_SLOTS, fmtPhaseDate, type LabUploadSlot } from "@/lib/lab-phases";
@@ -92,7 +93,7 @@ export default async function ParticipationPage({ params, searchParams }: { para
   const d7Line = inFinal && s.status !== "not_held" && (!reported ? true : repCard.state === "awaiting");
   // the certificate is served to a laboratory's account (the document route); a user of the
   // entity gets it with phase 7 — never a row whose link answers «no» (5.5 review)
-  const hasCert = viewer.kind === "lab" && !!labCertificate(s.certificates, p.code);
+  const hasCert = viewer.kind === "lab" && !!labCertificate(s.certificates, p.code, legacyIssued(s));
   // the proforma and, after the payment, the original invoice — each with its number (5.8; Реш. 35, 36)
   const invoice = s.labDocs?.[p.code]?.proforma;
   const original = s.labDocs?.[p.code]?.invoice;

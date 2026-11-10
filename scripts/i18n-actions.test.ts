@@ -71,7 +71,9 @@ t("every logged action has an act.* label", missing.length === 0, `missing: ${mi
 // Retired actions: no longer logged, but old journal lines still carry them, so
 // their labels stay (part 0.9: schemes are archived and timeline steps voided,
 // never deleted).
-const RETIRED = new Set(["scheme.deleted", "case.removed"]);
+// «certificate.issued»: 0.15's «number recorded = issued», in the journal of rounds before 7.7 (7.7 logs
+// certificate.numbered and certificate.released)
+const RETIRED = new Set(["scheme.deleted", "case.removed", "certificate.issued"]);
 const orphans = [...labels.keys()].filter((l) => !actions.has(l) && !RETIRED.has(l)).sort();
 t("no orphan act.* labels", orphans.length === 0, `orphans: ${orphans.join(", ")}`);
 

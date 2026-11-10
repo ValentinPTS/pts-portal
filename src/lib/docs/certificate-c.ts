@@ -2,6 +2,7 @@ import type { Scheme, Lang, DocOptions } from "../types";
 import { marksHtml } from "../accreditation-mark";
 import { esc, pick, wrapDoc, footer } from "../doc-shell";
 import { looksLikeSimNumber } from "../environment";
+import { contentHtml, previewMark } from "./certificate";
 
 // An issued document, not a form of the management system: no form number, and
 // the old "proposed" placeholder is gone (Q23, Реш. 100).
@@ -47,6 +48,10 @@ export const EXTRA_CSS = `
   /* keep the on-screen A4 simulation's printed margins while preserving this
      certificate's tighter 10mm inner padding (print gets the plain 10mm above) */
   @media screen{.page{padding:calc(16mm + 10mm) calc(14mm + 10mm) calc(18mm + 10mm) calc(14mm + 10mm);}}
+  .certcontent{margin:6px 0 2px;font-size:10.5pt;max-width:85%;display:flex;flex-direction:column;gap:2px;}
+  .certcontent b{font-family:var(--sans);color:var(--green-dark);}
+  .certfrom{font-size:9pt;color:var(--muted);margin-top:2px;}
+  .certpreview{border:3px solid #8f2f2f;color:#8f2f2f;font-family:var(--sans);font-weight:800;text-align:center;padding:6px;margin-bottom:6px;letter-spacing:1px;}
 `;
 
 export function renderCertificateC(s: Scheme, lang: Lang, opts?: DocOptions): string {
@@ -66,7 +71,9 @@ export function renderCertificateC(s: Scheme, lang: Lang, opts?: DocOptions): st
   // e.g. "Tension force · Compression force (20–200 kN)".
   // When `s.calibration` is undefined, the scope is left blank.
   let scope = "";
-  if (c) {
+  // the scope: the points this participation reported (7.7); a template — the scheme's range
+  if (opts?.participant?.scope) scope = opts.participant.scope.map((x) => esc(lang === "bg" ? x.bg : x.en)).join(" · ");
+  else if (c) {
     const dirs = lang === "bg" ? c.directionsBg : c.directionsEn;
     const quantity = pick(lang, c.quantityEn, c.quantityBg).toLowerCase();
     const labels =
@@ -79,7 +86,7 @@ export function renderCertificateC(s: Scheme, lang: Lang, opts?: DocOptions): st
     scope = esc(range ? `${labels} (${range})` : labels);
   }
 
-  const body = `<div class="frame">
+  const body = `${previewMark(lang, opts?.participant?.preview)}<div class="frame">
     <img class="logo" src="/brand/logo.png" alt="PTS Bulgaria">
     <img class="tagline-img" src="/brand/tagline.png" alt="">
     <img class="emb" src="/brand/embroidery-border.png" alt="">
@@ -96,6 +103,7 @@ export function renderCertificateC(s: Scheme, lang: Lang, opts?: DocOptions): st
     <div class="iso">${L("conducted in accordance with", "проведено в съответствие с")} ${esc(s.standard)}</div>
 
     <div class="chars"><b>${L("Quantities:", "Величини:")}</b> <span>${scope}</span></div>
+    ${contentHtml(lang, opts?.participant?.content, opts?.participant?.fromR)}
 
     ${marksHtml(s, lang)}
 

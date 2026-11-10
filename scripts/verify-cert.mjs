@@ -3,7 +3,8 @@
 // The certificate number is the one the ptsbg.eu register holds, typed by PTS — the
 // portal makes none up (PTS, 02.11.2026, condition 1). Without the «in the register»
 // tick nothing is saved; a malformed or another participant's number is refused;
-// the saved number is what the certificate prints.
+// the saved number is what the certificate prints. 7.7: recording the number is step 1 only — the
+// laboratory gets nothing, and the journal says «number recorded», never «issued».
 import { chromium } from "playwright";
 
 const BASE = process.env.BASE ?? "http://localhost:3000";
@@ -56,7 +57,7 @@ try {
     await form.locator('input[name="no"]').fill(no);
     const box = form.locator('input[name="inRegister"]');
     if (tick) await box.check(); else await box.uncheck();
-    await form.getByRole("button", { name: /^(Запази и издай|Save and issue)$/ }).click();
+    await form.getByRole("button", { name: /^(Запиши номера|Record the number)$/ }).click();
   };
   // the message that answers THIS save — the previous one stays until it is replaced
   const says = async (form, re) => {
@@ -82,8 +83,8 @@ try {
   // typed loosely, stored as the scheme's number; a double click saves once
   await form.locator('input[name="no"]').fill(`pts 26/01-т-1-${N5}`);
   await form.locator('input[name="inRegister"]').check();
-  await form.getByRole("button", { name: /^(Запази и издай|Save and issue)$/ }).dblclick();
-  t("saved — and said so, in the scheme's spelling", await says(form, new RegExp(`(Записано|Saved): ${NUMBER.replace(/[/]/g, "\\/")}-${N5}`)));
+  await form.getByRole("button", { name: /^(Запиши номера|Record the number)$/ }).dblclick();
+  t("saved — and said so, in the scheme's spelling, «not released yet»", await says(form, new RegExp(`(Номерът е записан|Number recorded): ${NUMBER.replace(/[/]/g, "\\/")}-${N5}`)));
   await page.waitForTimeout(1000);
   const certA = await get(`/schemes/${S}/doc/certificate/print?lang=bg&p=${A}`);
   t("the typed number is saved and printed", certA.includes(`${NUMBER}-${N5}`));
@@ -97,11 +98,11 @@ try {
   const act = await get("/activity");
   t("the journal says it is in the register", /in the ptsbg\.eu register/.test(act));
   // counted in the visible page — the raw HTML repeats each row in Next's page data
-  await go("/activity?action=certificate.issued");
+  await go("/activity?action=certificate.numbered");
   await page.locator("tbody tr").first().waitFor({ timeout: 30000 }).catch(() => {}); // a streamed page
   const shown = await page.locator("main").innerText();
   // the journal names no certificate number beside a code (part 1.10, Реш. 115)
-  const once = (shown.match(new RegExp(`Certificate recorded for ${A}\\b`, "g")) ?? []).length;
+  const once = (shown.match(new RegExp(`Certificate number recorded for ${A}\\b`, "g")) ?? []).length;
   t("…once, though the button was clicked twice", once === 1, `${once} lines`);
   t("…and never the certificate's number", !shown.includes(`${NUMBER}-${N5}`));
 
@@ -112,7 +113,7 @@ try {
   form = await openFor(A);
   await form.locator('input[name="date"]').fill("03.11.2026");
   await save(form, `${NUMBER}-${N5}`, true);
-  await says(form, /Записано|Saved/);
+  await says(form, /Номерът е записан|Number recorded/);
   const caseAfter = await steps();
   t("a date correction adds no case-file step", caseAfter === caseBefore, `${caseBefore} → ${caseAfter}`);
   await form.locator('input[name="date"]').fill("3.11.2026");

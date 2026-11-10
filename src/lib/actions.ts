@@ -26,7 +26,7 @@ import { raiseDueReminders } from "./notify-reminders";
 import { schemeNowIso, schemeNowMs, sofiaToday, MAX_CLOCK_SHIFT_MS, sofiaNowWallShifted } from "./clock";
 import { certNumberFor, type CertNumberProblem } from "./cert-number";
 import { addParticipant, listParticipants, updateParticipant, labIdsFor, labIdOf, schemePrefix, NoLabNumberError } from "./participants";
-import { actorNow } from "./identities";
+import { actorNow, actorKeyNow } from "./identities";
 
 // Who to tell, looked up BEFORE a step is recorded (part 2.3): the laboratory behind
 // a code is in the identity store, and if it cannot be reached nothing is recorded —
@@ -83,7 +83,9 @@ import { ackRequiredFor, ackSettable, ackOf, kindOf, readAckForm, type Acknowled
 import { readMessage, messageBody, type SchemeMessage } from "./messages-model";
 import { resultRows, readValue, readDraft, notNumbers, rowsHaveIds, calRows, calRowsReady, readCalDraft, notNumbersCal, orphansOf, draftFor, calDraftFor, checkTesting, checkCalibration, blocking, type CheckProblem } from "./results-model";
 import { putDraft, getDraft, addSubmission, listSubmissions, listSubmissionsFor, addCorrection, listCorrections, listCorrectionsFor, correctionExists } from "./submissions";
-import { lockEntries, lockCounts, lockInForce, isNR, resultsOutsideForm, type SubmissionLock } from "./submission-lock-model";
+import { lockEntries, lockCounts, lockInForce, lockEntryOf, isNR, resultsOutsideForm, type SubmissionLock } from "./submission-lock-model";
+import { readCertContent, readScope, sameText, scopeOf, certState, readRelease, legacyIssued, type CertRecord, type CertLang } from "./cert-model";
+import { versionInForce } from "./round-export-submissions";
 import { correctableFields, activeCorrections, readCorrection, type ResultCorrection } from "./corrections-model";
 import { readNote, noteInForce, type ReviewNote } from "./review-model";
 import { IMPORT_KINDS, checkImport, servedName, type ImportKind, type ImportedFile, type AnalysisImport } from "./analysis-import-model";
@@ -2353,7 +2355,7 @@ export async function rejectApplicationAction(formData: FormData) {
 // No redirect — revalidate in place so the doc page keeps the selected lab.
 export async function issueCertificateAction(
   formData: FormData,
-): Promise<{ ok: true; no: string } | { error: CertNumberProblem | "register" | "date" | "no-scheme" | "no-participant" | "not-reached" }> {
+): Promise<{ ok: true; no: string } | { error: CertNumberProblem | "register" | "date" | "no-scheme" | "no-participant" | "not-reached" | "released" | "nr" }> {
   const actor = (await getRoleContext()).email ?? "";
   const schemeId = String(formData.get("schemeId") ?? "");
   await requireCap("approve", schemeId); // in THIS scheme, by the role model (2.4)
@@ -2368,10 +2370,17 @@ export async function issueCertificateAction(
   // only one of the scheme's own participants gets a certificate (and no "__proto__")
   // …and only a coded one: an application has no certificate before the coding act (5.3)
   if (isProvisional(code) || !(await listParticipants(schemeId)).some((p) => p.code === code)) return { error: "no-participant" };
+  // 7.7 review: no number — and so no public register entry — for a participation that gets no
+  // certificate: N/R at the lock, or off the final list
+  {
+    const sc = await getScheme(schemeId);
+    const p = sc ? (await listParticipants(schemeId)).find((x) => x.code === code) : undefined;
+    if (sc && p && (!inFinalRound(sc, p) || certNR(sc, p.id))) return { error: "nr" };
+  }
 
-  // a first certificate is news for the laboratory: who it is, before it is recorded (2.3)
-  const certTell = (await getScheme(schemeId))?.certificates?.[code] ? {} : await labToTell(schemeId, code);
-  if (!certTell) return { error: "not-reached" };
+  // 7.7: recording the number is step 1 — nothing reaches the laboratory until a person releases it
+  // (D2, conditions 2 and 3); a released certificate is not changed
+  if ((await getScheme(schemeId))?.certificates?.[code]?.released) return { error: "released" };
   const day = sofiaToday(schemeNowMs(await getScheme(schemeId))); // yyyy-mm-dd, the round's clock (1.3)
   const today = `${day.slice(8, 10)}.${day.slice(5, 7)}.${day.slice(0, 4)}`;
   // decided on the fresh scheme, inside the lock
@@ -2383,22 +2392,26 @@ export async function issueCertificateAction(
     const r = certNumberFor(typed, s.number, others);
     if ("problem" in r) { out.problem = r.problem; return {}; }
     const existing = Object.prototype.hasOwnProperty.call(certs, code) ? certs[code] : undefined;
+    if (existing?.released) { out.problem = "released" as CertNumberProblem; return {}; }
     out.first = !existing;
     out.changed = !!existing && existing.no !== r.no;
     out.old = existing?.no;
     out.number = s.number;
     out.no = r.no;
+    // the content and its check stay with the participation's record (7.7)
+    const kept: Partial<CertRecord> = existing ? { ...(existing.content ? { content: existing.content } : {}), ...(existing.checked ? { checked: existing.checked } : {}) } : {};
     certs[code] = simulation
-      ? { no: r.no, date: dateInput || existing?.date || today, simulation: true }
+      ? { no: r.no, date: dateInput || existing?.date || today, simulation: true, ...kept }
       : {
           no: r.no,
           date: dateInput || existing?.date || today,
           registeredBy: actor,
           registeredAt: new Date().toISOString(),
+          ...kept,
         };
     return { certificates: certs };
   });
-  if (out.problem) return { error: out.problem };
+  if (out.problem) return { error: out.problem as CertNumberProblem | "released" };
   if (!out.no) return { error: "no-scheme" };
 
   if (out.first || out.changed) {
@@ -2407,23 +2420,155 @@ export async function issueCertificateAction(
     // laboratory (Реш. 115), and both are read by staff and auditors, and exported
     // in the coded part (1.10). The number is on the certificate record itself.
     if (out.first) {
-      await logActivity("certificate.issued", { schemeId, targetCode: code, summary: simulation ? `Simulation certificate recorded for ${code} (not in the register)` : `Certificate recorded for ${code} (in the ptsbg.eu register)` });
+      await logActivity("certificate.numbered", { schemeId, targetCode: code, summary: simulation ? `Simulation certificate number recorded for ${code} (not in the register) — not released` : `Certificate number recorded for ${code} (in the ptsbg.eu register) — not released` });
     } else {
       await logActivity("certificate.updated", { schemeId, targetCode: code, summary: `Certificate number for ${code} corrected (in the ptsbg.eu register)` });
     }
-    await addCaseEvent({ schemeId, code, kind: "report_issued", at: day, ref: "certificate", source: "auto" });
   } else {
     // the same number again — a date correction: journalled, no new case-file step
     await logActivity("certificate.updated", { schemeId, targetCode: code, summary: `Certificate for ${code}: details updated` });
   }
-  // Tell that one laboratory its certificate is out. Only on the FIRST issue —
-  // editing the date afterwards is a correction, not news worth another notice.
-  // The notice is held until a person releases it (0.8).
-  if (out.first) {
-    await notifyReportIssued("labId" in certTell ? certTell.labId : await labIdOf(schemeId, code, await actorNow()).catch(() => undefined), schemeId, out.number!, code);
-  }
+  // the laboratory is told at the release (7.7), not here
   revalidatePath(`/schemes/${schemeId}/doc/certificate`, "page");
   return { ok: true, no: out.no };
+}
+
+// ── Certificates: the content, its check, the release (part 7.7; D2 conditions 2 and 3; D7) ────
+// The content is typed from the issued report (the R in force) — 2.0 returns documents only (D3) —
+// by the statistics expert or the scheme manager; a SECOND person checks it; a person who may approve
+// releases it, with the issue date and the language(s), once the report reached the participation. An
+// N/R participation gets no certificate. Journalled by code and R — never a value, never the number.
+const certBack = (schemeId: string, code: string, q: string) => `/schemes/${encodeURIComponent(schemeId)}/doc/certificate?${q}#cert-${encodeURIComponent(code)}`;
+async function certSituation(schemeId: string, code: string) {
+  const scheme = await getScheme(schemeId);
+  if (!scheme) return null;
+  const part = (await listParticipants(schemeId)).find((p) => p.code === code && inFinalRound(scheme, p));
+  if (!part) return { scheme, part: null };
+  return { scheme, part };
+}
+const certNR = (sc: Scheme, participantId: string) => { const e = lockEntryOf(lockInForce(sc.submissionLocks), participantId); return !!e && isNR(e); };
+const certStateOf = (sc: Scheme, code: string, participantId: string) =>
+  certState({ cert: sc.certificates?.[code], issue: issueInForce(sc.reportIssues), nr: certNR(sc, participantId), reached: reaches(sc.reportAccess, code), legacy: legacyIssued(sc) });
+
+export async function recordCertContentAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? ""), code = String(formData.get("code") ?? "").trim();
+  await requireOneOf(["results.process", "scheme.edit"], schemeId); // the statistics expert or the scheme manager
+  const back = (q: string) => certBack(schemeId, code, q);
+  const sit = await certSituation(schemeId, code);
+  if (!sit) redirect(back("cert=failed"));
+  if (!sit!.part) redirect(back("cert=code"));
+  const { scheme, part } = sit as { scheme: Scheme; part: NonNullable<typeof sit>["part"] & object };
+  const st = certStateOf(scheme, code, part.id);
+  // typed once the report is issued and the number is on record; again when stale or not yet checked
+  if (!["no-content", "stale", "unchecked", "awaiting-payment", "ready"].includes(st)) redirect(back(st === "released" ? "cert=released" : "cert=state"));
+  const read = readCertContent(Object.fromEntries([...formData.entries()].filter(([k]) => /^(bg|en)_/.test(k))));
+  if (!read.ok) redirect(back(`cert=${read.problem}`));
+  const text = (read as Extract<typeof read, { ok: true }>).text;
+  const issue = issueInForce(scheme.reportIssues)!;
+  let version: { data: unknown } | null = null;
+  try { version = versionInForce(part, await listSubmissions(schemeId, part.id), scheme.submissionLocks, scheme.labUploads).sub; } catch { redirect(back("cert=failed")); }
+  const final = currentFinalList(scheme);
+  // results by a sheet (no version): the characteristics it ran for — the final selections (5.2), else its own
+  const selections = final?.runs ? finalSelectionsOf(part, { runs: final.runs }, scheme.parameters.length) : selectionsOf(part, scheme.parameters.length);
+  const selected = Object.entries(selections).filter(([, n]) => (n as number) > 0).map(([i]) => Number(i));
+  // the scope offered from the version in force (or what it ran for) — CONFIRMED by the typist (review)
+  const scope = scopeOf(scheme, pointKeys(scheme.calibration ?? undefined), version, selected);
+  const picked = readScope(formData.getAll("scope"), scope.items);
+  if (!picked.ok) redirect(back("cert=scope"));
+  const items = (picked as Extract<typeof picked, { ok: true }>).items;
+  // a «retype» that changes nothing is not a new typing — the content stays with the one who typed it
+  const had = scheme.certificates?.[code]?.content;
+  if (had && had.fromR === issue.r && sameText(had.text, text) && JSON.stringify(had.scope.map((x) => x.key)) === JSON.stringify(items.map((x) => x.key))) redirect(back("cert=same-text"));
+  const by = await actorNow();
+  const content = { text, scope: items, scopeFrom: scope.from, fromR: issue.r, reportSha: issue.reportSha, by, byKey: await actorKeyNow(), at: new Date().toISOString() };
+  let outcome = "gone" as "recorded" | "state" | "released" | "gone";
+  try {
+    await updateSchemeWith(schemeId, (cur) => {
+      const c = cur.certificates?.[code];
+      if (c?.released) { outcome = "released"; return {}; }
+      if (!c || issueInForce(cur.reportIssues)?.r !== issue.r || certNR(cur, part.id)) { outcome = "state"; return {}; }
+      outcome = "recorded";
+      // typed again: its check is cleared — a second person checks what is there now
+      const { checked: _old, ...rest } = c;
+      return { certificates: { ...(cur.certificates ?? {}), [code]: { ...rest, content } } };
+    });
+  } catch { outcome = "gone"; }
+  if (outcome !== "recorded") redirect(back(outcome === "released" ? "cert=released" : outcome === "state" ? "cert=state" : "cert=failed"));
+  await logActivity("certificate.content_typed", { schemeId, targetCode: code, summary: `Certificate content for ${code} typed from the final report ${rLabel(issue.r)} — ${items.length} ${scheme.type === "C" ? "points" : "characteristics"} confirmed, in ${Object.keys(text).join(" and ")}`, after: { r: issue.r, scope: items.map((x) => x.key), scopeFrom: scope.from, langs: Object.keys(text) } });
+  revalidatePath(`/schemes/${schemeId}/doc/certificate`, "page");
+  redirect(back("cert=typed"));
+}
+
+export async function checkCertContentAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? ""), code = String(formData.get("code") ?? "").trim();
+  await requireOneOf(["results.process", "scheme.edit", "approve"], schemeId);
+  const back = (q: string) => certBack(schemeId, code, q);
+  const sit = await certSituation(schemeId, code);
+  if (!sit) redirect(back("cert=failed"));
+  if (!sit!.part) redirect(back("cert=code"));
+  const { scheme, part } = sit as { scheme: Scheme; part: NonNullable<typeof sit>["part"] & object };
+  if (certStateOf(scheme, code, part.id) !== "unchecked") redirect(back("cert=state"));
+  const typedAt = String(formData.get("typedAt") ?? "");
+  const content = scheme.certificates![code].content!;
+  if (content.at !== typedAt) redirect(back("cert=stale"));
+  const by = await actorNow();
+  // a SECOND person — never the one who typed it (D2, condition 3), told apart by their key
+  if ((await actorKeyNow()) === (content.byKey ?? content.by.toLowerCase())) redirect(back("cert=same-person"));
+  let outcome = "gone" as "recorded" | "state" | "stale" | "gone";
+  try {
+    await updateSchemeWith(schemeId, (cur) => {
+      const c = cur.certificates?.[code];
+      if (certStateOf(cur, code, part.id) !== "unchecked") { outcome = "state"; return {}; }
+      if (c!.content!.at !== typedAt) { outcome = "stale"; return {}; }
+      outcome = "recorded";
+      return { certificates: { ...(cur.certificates ?? {}), [code]: { ...c!, checked: { by, at: new Date().toISOString() } } } };
+    });
+  } catch { outcome = "gone"; }
+  if (outcome !== "recorded") redirect(back(outcome === "state" ? "cert=state" : outcome === "stale" ? "cert=stale" : "cert=failed"));
+  await logActivity("certificate.checked", { schemeId, targetCode: code, summary: `Certificate content for ${code} checked by a second person (${rLabel(content.fromR)})`, after: { r: content.fromR } });
+  revalidatePath(`/schemes/${schemeId}/doc/certificate`, "page");
+  redirect(back("cert=checked"));
+}
+
+export async function releaseCertificateAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? ""), code = String(formData.get("code") ?? "").trim();
+  await requireCap("approve", schemeId); // a person who may approve releases it — never automatically (D2, condition 2)
+  const back = (q: string) => certBack(schemeId, code, q);
+  const sit = await certSituation(schemeId, code);
+  if (!sit) redirect(back("cert=failed"));
+  if (!sit!.part) redirect(back("cert=code"));
+  const { scheme, part } = sit as { scheme: Scheme; part: NonNullable<typeof sit>["part"] & object };
+  if (certStateOf(scheme, code, part.id) !== "ready") redirect(back("cert=state"));
+  const day = sofiaToday(schemeNowMs(scheme));
+  const seen = scheme.certificates![code].content!;
+  // the content the releaser saw is what is released (review)
+  const typedAt = String(formData.get("typedAt") ?? "");
+  if (typedAt !== seen.at) redirect(back("cert=stale"));
+  const read = readRelease({ date: formData.get("date"), langs: formData.getAll("lang") }, scheme.certificates![code].date || `${day.slice(8, 10)}.${day.slice(5, 7)}.${day.slice(0, 4)}`, Object.keys(seen.text) as CertLang[]);
+  if (!read.ok) redirect(back(`cert=${read.problem}`));
+  const { date, langs } = read as Extract<typeof read, { ok: true }>;
+  // who to tell — before anything is recorded (2.3); not reachable, nothing recorded
+  const tell = await labToTell(schemeId, code);
+  if (!tell) redirect(back("cert=reach"));
+  const by = await actorNow();
+  let outcome = "gone" as "recorded" | "state" | "gone";
+  try {
+    await updateSchemeWith(schemeId, (cur) => {
+      const c = cur.certificates?.[code];
+      if (certStateOf(cur, code, part.id) !== "ready" || c!.content!.at !== typedAt) { outcome = "state"; return {}; }
+      outcome = "recorded";
+      return { certificates: { ...(cur.certificates ?? {}), [code]: { ...c!, date, released: { by, at: new Date().toISOString(), langs: langs as CertLang[] } } } };
+    });
+  } catch { outcome = "gone"; }
+  if (outcome !== "recorded") redirect(back(outcome === "state" ? "cert=state" : "cert=failed"));
+  const fromR = scheme.certificates![code].content!.fromR;
+  await logActivity("certificate.released", { schemeId, targetCode: code, summary: `Certificate released for ${code} — from the final report ${rLabel(fromR)}, in ${langs.join(" and ")}`, after: { r: fromR, langs } });
+  await addCaseEvent({ schemeId, code, kind: "report_issued", at: day, ref: "certificate", source: "auto" });
+  // «ready to download» — only to a laboratory's account, the one that can download it (review)
+  if (tell!.labId) await notifyReportIssued(tell!.labId, schemeId, scheme.number, code);
+  revalidatePath(`/schemes/${schemeId}/doc/certificate`, "page");
+  revalidatePath("/lab", "layout");
+  redirect(back("cert=released-ok"));
 }
 
 export async function addParticipantAction(formData: FormData) {
