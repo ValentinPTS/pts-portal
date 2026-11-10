@@ -116,6 +116,8 @@ export const NOT_ROUND_TABLES: Record<string, string> = {
   staff_declarations: "PTS's own people's Ф 4.2-1 (2.8) — per person, across rounds",
   holiday_entries: "PTS's holiday calendar (3.4) — the working days of every round, not one round's",
   staff_declaration_voids: "the voidings of those declarations, with the reason (2.8)",
+  validation_criteria: "the portal's acceptance criteria, signed by PTS (8.1, Реш. 134) — the portal's own validation, across rounds; no participant",
+  validation_criteria_voids: "the voidings of those editions, with the reason (8.1)",
 };
 
 /** The storage buckets: which hold round files. */
@@ -125,6 +127,7 @@ export const NOT_ROUND_BUCKETS: Record<string, string> = {
   "round-exports": "the exports themselves, kept briefly for their download",
   "staff-declarations": "the signed Ф 4.2-1 of PTS's own people (2.8) — per person, across rounds",
   "entity-proofs": "a legal entity's registration document (4.1) — per entity, across rounds",
+  "validation-docs": "the signed acceptance criteria and the validation evidence (8.1) — the portal's own, across rounds",
 };
 
 // Every field of a scheme has its part. "split": kept in coded/ without names,

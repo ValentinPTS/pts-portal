@@ -42,7 +42,7 @@ t("review: a record write that threw — the file dropped only when the record i
 t("review: the kept files read through the export's own reader — a storage error stops the export, only «not found» is missing; a few at a time; 2.0's returned files too", /storageBytes\(ANALYSIS_EXPORT_BUCKET, e\.path\)/.test(exp) && /sent\.slice\(i, i \+ 5\)/.test(exp) && /const got = await storageBytes\(SCHEME_DOC_BUCKET, f\.path\);/.test(exp) && !/\.catch\(\(\) => null\)/.test(exp));
 const store = readFileSync(new URL("../src/lib/analysis-export-store.ts", import.meta.url), "utf8");
 const sys = readFileSync(new URL("../src/lib/system-check.ts", import.meta.url), "utf8");
-t("review: the bucket made public by hand — refused; watched by the system check; checked once per instance; a removal that fails is logged", /if \(bucket\?\.public\) throw new Error/.test(store) && /bucketReady \?\?=/.test(store) && /if \(error\) console\.error\(`\[analysis export\] a file not handed out could not be removed/.test(store) && /DECLARATION_BUCKET, ENTITY_PROOF_BUCKET, ANALYSIS_EXPORT_BUCKET\]/.test(sys));
+t("review: the bucket made public by hand — refused; watched by the system check; checked once per instance; a removal that fails is logged", /if \(bucket\?\.public\) throw new Error/.test(store) && /bucketReady \?\?=/.test(store) && /if \(error\) console\.error\(`\[analysis export\] a file not handed out could not be removed/.test(store) && /DECLARATION_BUCKET, ENTITY_PROOF_BUCKET, ANALYSIS_EXPORT_BUCKET, VALIDATION_BUCKET\]/.test(sys));
 
 console.log(`round-export-phase7.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

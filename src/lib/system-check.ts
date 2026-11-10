@@ -12,6 +12,7 @@ import { listDesignations, designationStatus } from "./processing-roles";
 import { declarationsInForce, ofPts, DECLARATION_BUCKET } from "./staff-declarations";
 import { ENTITY_PROOF_BUCKET } from "./entity-proofs";
 import { ANALYSIS_EXPORT_BUCKET } from "./analysis-export-store";
+import { VALIDATION_BUCKET } from "./validation-criteria";
 import { listSchemeSummaries } from "./store";
 
 // The manager-only system check (part 1.1): is the database there, does it have
@@ -61,7 +62,7 @@ export function peopleCheck(env: Record<string, string | undefined> = process.en
 // "lab-docs" (lab registration papers) and "skin-assets" (logos, covers) are made
 // in actions.ts; the others by their own modules — the files handed out to 2.0 (7.10)
 // at the first export in processing; watched, as the others, for being made public
-const BUCKETS = [SCHEME_DOC_BUCKET, EDITION_BUCKET, "lab-docs", "skin-assets", DECLARATION_BUCKET, ENTITY_PROOF_BUCKET, ANALYSIS_EXPORT_BUCKET];
+const BUCKETS = [SCHEME_DOC_BUCKET, EDITION_BUCKET, "lab-docs", "skin-assets", DECLARATION_BUCKET, ENTITY_PROOF_BUCKET, ANALYSIS_EXPORT_BUCKET, VALIDATION_BUCKET];
 
 // The switches come from the page (lib/auth reads the request's cookies, so this
 // module stays loadable on its own — and testable).

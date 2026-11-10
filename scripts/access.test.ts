@@ -33,9 +33,9 @@ for (const [role, allowed] of Object.entries(IN_SCHEME)) {
 
 // ── permanent roles: anywhere ───────────────────────────────────────────────
 const PERMANENT: Record<string, Capability[]> = {
-  head: ["people.manage", "order.manage", "order.view", "register.authorise", "twofa.reset", "codes.view", "journal.read", "scheme.create", "library.manage", "texts.approve", "system.technical"],
+  head: ["people.manage", "order.manage", "order.view", "register.authorise", "twofa.reset", "codes.view", "journal.read", "scheme.create", "library.manage", "texts.approve", "system.technical", "validation.record"],
   // the Zadanie's matrix: «кодове и резултати без имена» — да (2.5: the review needs them)
-  quality: ["journal.read", "codes.view", "results.read", "review"],
+  quality: ["journal.read", "codes.view", "results.read", "review", "validation.record"],
   software_admin: ["system.technical", "register.propose", "journal.read"],
 };
 for (const [role, allowed] of Object.entries(PERMANENT)) {

@@ -7,7 +7,7 @@ export type SectionKey =
   | "dashboard" | "schemes" | "organizations" | "batches" | "deliveries" | "invoices"
   | "journal" | "people"
   // the portal's own pages the design does not draw: under «Още»
-  | "notices" | "library" | "skins" | "system" | "changes" | "holidays";
+  | "notices" | "library" | "skins" | "system" | "changes" | "holidays" | "validation";
 
 export interface Section {
   key: SectionKey;
@@ -33,6 +33,8 @@ export const SECTIONS: readonly Section[] = [
   { key: "skins", href: "/skins", bg: "Облици", en: "Skins", group: "more" },
   { key: "changes", href: "/changes", bg: "Регистър на промените", en: "Change register", group: "more" },
   { key: "holidays", href: "/holidays", bg: "Почивни дни", en: "Days off", group: "more" },
+  // the acceptance criteria and the validation record (8.1, 8.6)
+  { key: "validation", href: "/validation", bg: "Валидиране", en: "Validation", group: "more" },
   { key: "system", href: "/system", bg: "Проверка на системата", en: "System check", group: "more" },
 ];
 

@@ -62,12 +62,15 @@ export const CAPABILITIES = [
   "participants.manage", // add or edit a participant, decide an application — with names
   "labs.manage",       // the laboratory accounts and account applications — names, no codes
   "texts.approve",     // approve the words sent to laboratories (reminder templates, 1.8)
+  // part 8.1 — the acceptance criteria and the validation record (Реш. 134; Manual 7.5.2): the
+  // head and the quality manager; never the software administrator, whose work is validated
+  "validation.record",
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
 export const RIGHTS: Record<RoleType, readonly Capability[]> = {
-  head: ["people.manage", "order.manage", "order.view", "register.authorise", "twofa.reset", "codes.view", "journal.read", "scheme.create", "library.manage", "texts.approve", "system.technical"],
-  quality: ["journal.read", "codes.view", "results.read", "review"],
+  head: ["people.manage", "order.manage", "order.view", "register.authorise", "twofa.reset", "codes.view", "journal.read", "scheme.create", "library.manage", "texts.approve", "system.technical", "validation.record"],
+  quality: ["journal.read", "codes.view", "results.read", "review", "validation.record"],
   software_admin: ["system.technical", "register.propose", "journal.read"],
   scheme_manager: ["names.view", "codes.view", "results.read", "order.view", "scheme.edit", "docs.release", "dispatch", "journal.read", "approve", "library.manage", "participants.manage", "labs.manage"],
   coding_expert: ["names.view", "codes.view", "results.read", "order.view", "results.enter", "dispatch", "participants.manage", "labs.manage"],

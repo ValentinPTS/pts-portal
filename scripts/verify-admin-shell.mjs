@@ -30,13 +30,14 @@ const rail = async () => { await go("/dashboard"); await page.locator("[data-adm
 
 // «Почивни дни» joined «Още» in part 3.4
 const MORE = "library skins changes holidays";
-const ALL = ["dashboard", "schemes", "organizations", "batches", "deliveries", "invoices", "journal", "people", "notices", "library", "skins", "changes", "holidays", "system"];
-const HREF = { dashboard: "/dashboard", schemes: "/", organizations: "/organizations", batches: "/batches", deliveries: "/deliveries", invoices: "/invoices", journal: "/activity", people: "/users", notices: "/notices", library: "/items", skins: "/skins", changes: "/changes", holidays: "/holidays", system: "/system" };
+const ALL = ["dashboard", "schemes", "organizations", "batches", "deliveries", "invoices", "journal", "people", "notices", "library", "skins", "changes", "holidays", "validation", "system"];
+const HREF = { dashboard: "/dashboard", schemes: "/", organizations: "/organizations", batches: "/batches", deliveries: "/deliveries", invoices: "/invoices", journal: "/activity", people: "/users", notices: "/notices", library: "/items", skins: "/skins", changes: "/changes", holidays: "/holidays", validation: "/validation", system: "/system" };
 const PERSONAS = [
-  ["role=manager", `dashboard schemes organizations batches deliveries invoices journal people notices ${MORE} system`], // login off: the build
-  ["model=head", `dashboard schemes journal people notices ${MORE} system`],
-  ["model=quality", `dashboard schemes journal notices ${MORE}`],
-  ["model=software_admin", `dashboard journal notices ${MORE} system`],
+  ["role=manager", `dashboard schemes organizations batches deliveries invoices journal people notices ${MORE} validation system`], // login off: the build
+  // «Валидиране» (8.1): who records the validation, and the software administrator, who reads it
+  ["model=head", `dashboard schemes journal people notices ${MORE} validation system`],
+  ["model=quality", `dashboard schemes journal notices ${MORE} validation`],
+  ["model=software_admin", `dashboard journal notices ${MORE} validation system`],
   [`model=scheme_manager@${T}`, `dashboard schemes organizations batches deliveries invoices journal people notices ${MORE}`],
   [`model=statistics_expert@${T}`, `dashboard schemes ${MORE}`],
   [`model=technical_expert@${T}`, `dashboard schemes batches ${MORE}`],
@@ -73,7 +74,7 @@ try {
   t("«Фактури» is built (5.8): no longer a planned section", (await page.locator('[data-planned-section="invoices"]').count()) === 0);
   await go("/dashboard");
   // another check may have archived a scheme: at least the one this check uses
-  t("the dashboard lists the live schemes and the sections", (await page.locator(`[data-dashboard-schemes] a[href="/schemes/${T}"]`).count()) === 1 && (await page.locator("[data-dashboard-sections] a").count()) === 13); // + «Почивни дни» (3.4)
+  t("the dashboard lists the live schemes and the sections", (await page.locator(`[data-dashboard-schemes] a[href="/schemes/${T}"]`).count()) === 1 && (await page.locator("[data-dashboard-sections] a").count()) === 14); // + «Почивни дни» (3.4), «Валидиране» (8.1)
   await go(`/schemes/${T}`);
   t("on a scheme, «Схеми» is the section lit", (await page.locator('[data-admin-rail] [data-section="schemes"][aria-current="page"]').count()) === 1);
 

@@ -38,6 +38,9 @@ export function maySection(key: SectionKey, v: Viewer, managesPeople: boolean): 
     // the calendar every working-day count reads: read by PTS's people, kept by the head
     case "holidays": return true;
     case "system": return any("system.technical");
+    // the acceptance criteria and the validation record (8.1): who records it (the head, the
+    // quality manager), and the software administrator, who reads — never records — it
+    case "validation": return any("validation.record") || any("system.technical");
   }
 }
 
