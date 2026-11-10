@@ -1,6 +1,7 @@
 import { type ReplayDiff } from "@/lib/replay-model";
 import { compareReplay } from "@/lib/replay-import";
 import { fmtMoment } from "@/lib/scheme-dates";
+import { numberReading, roundKind, KIND_TEXT } from "@/lib/validation-test-model";
 import type { Scheme } from "@/lib/types";
 
 // «Възпроизвеждане» (plan part 8.2): a replay round's own card — the closed round it was loaded
@@ -11,6 +12,8 @@ import type { Scheme } from "@/lib/types";
 export default async function ReplayCard({ s, lang }: { s: Scheme; lang: "bg" | "en" }) {
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const r = s.replay!;
+  // how the portal reads the original number (Zadanie §13: the old forms too) — or «not read», never guessed
+  const reading = numberReading(r.of);
   let diffs: ReplayDiff[] | null = null;
   let unreadable = false;
   // a load that did not finish is never compared as a replay
@@ -38,6 +41,9 @@ export default async function ReplayCard({ s, lang }: { s: Scheme; lang: "bg" | 
       <p className="text-sm" style={{ color: "var(--muted)", margin: "2px 0 8px" }}>
         {L("Приключил кръг, внесен от входния файл за 2.0 — само кодове, в тестовата среда (част 8.2). Номерът е от симулационната поредица (Реш. 130).", "A closed round loaded from its 2.0 input file — codes only, in the test environment (part 8.2). Its number is from the simulation series (Реш. 130).")}
       </p>
+      <p className="text-sm" style={{ margin: "0 0 6px" }} data-replay-reading={reading ? reading.form : "none"}>{L("Вид", "Kind")}: <b data-replay-kind={roundKind(s)}>{L(KIND_TEXT[roundKind(s)].bg, KIND_TEXT[roundKind(s)].en)}</b> · {L("номерът", "the number")} «{r.of}» {reading
+        ? L(`се чете: ${reading.form === "old" ? "стара форма" : "днешна форма"}${reading.kind ? `, ${reading.kind}` : ""}${reading.activity ? `, дейност ${reading.activity}` : ""}${reading.na ? ", NA" : ""}${reading.form === "old" && !reading.activity && !reading.kind ? (r.kindGiven ? " — видът не е в номера: посочен при внасянето" : " — видът не е в номера: взет като изпитване") : ""}`, `reads: ${reading.form === "old" ? "an old form" : "today's form"}${reading.kind ? `, ${reading.kind}` : ""}${reading.activity ? `, activity ${reading.activity}` : ""}${reading.na ? ", NA" : ""}${reading.form === "old" && !reading.activity && !reading.kind ? (r.kindGiven ? " — the kind is not in the number: given at the load" : " — the kind is not in the number: taken as testing") : ""}`)
+        : L("не се чете — не е нито днешна, нито стара форма", "is not read — neither today's form nor an old one")}</p>
       <div className="text-sm" style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
         <span>{L("внесен", "loaded")} {fmtMoment(r.importedAt)} · {r.by}</span>
         <span style={{ fontFamily: "monospace" }} title={r.fileSha256}>SHA-256 {r.fileSha256.slice(0, 12)}…</span>

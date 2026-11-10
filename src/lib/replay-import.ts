@@ -30,7 +30,29 @@ import type { ReferenceRow } from "./reference-values-model";
 // submission locked and the round in processing — an act on record. The source file is kept with
 // the validation documents (private), so its re-export can be compared with it (8.3).
 
-export type ImportProblem = "environment" | "file" | "read" | "failed";
+export type ImportProblem = "environment" | "file" | "read" | "failed" | "kind" | "simulation";
+/** What the importer says the round is, when its number does not (an old form — «PTS 20/10»): testing,
+ *  sampling or an ILC; calibration is the file's own (8.4). */
+export type KindHint = "" | "T" | "S" | "ILC";
+
+/** The round's kind (8.4; 8.4 review): what the number states and what the file is decide — the importer's
+ *  word only fills a gap an OLD number leaves (it states no kind and no activity), never against either.
+ *  A number the portal cannot read, or a simulation's own number, takes no word at all. Calibration: the
+ *  file and the number agree (C in the number ⇔ a calibration file), as the scheme's own rule (3.1).
+ *  Null — refused. */
+export function replayKind(type: "T" | "C", reading: { form: string; kind: string | null; activity: string | null; simulation?: boolean } | null, hint: KindHint): { kind: "PTS" | "ILC"; activity: "T" | "S" | "C"; given: KindHint } | null {
+  const act = reading?.activity ?? null, knd = reading?.kind ?? null;
+  // the number says calibration and the file is not, or the file is and the number says otherwise
+  if ((act === "C") !== (type === "C") && act !== null) return null;
+  if (type === "C") return hint === "" ? { kind: knd === "ILC" ? "ILC" : "PTS", activity: "C", given: "" } : null;
+  if (hint) {
+    // a word only for an old number that states neither the kind nor the activity
+    if (!reading || reading.simulation || reading.form !== "old" || act !== null || knd !== null) return null;
+    return hint === "ILC" ? { kind: "ILC", activity: "T", given: hint } : { kind: "PTS", activity: hint === "S" ? "S" : "T", given: hint };
+  }
+  // an ILC keeps its activity (8.4 review)
+  return { kind: knd === "ILC" ? "ILC" : "PTS", activity: act === "S" ? "S" : "T", given: "" };
+}
 export interface ImportOutcome { ok: true; schemeId: string; number: string; round: ReplayRound }
 export interface ImportRefusal { ok: false; problem: ImportProblem; problems?: ReplayProblem[]; detail?: string; /** a round made half-way: kept, marked failed, said */ schemeId?: string; number?: string }
 
@@ -88,7 +110,7 @@ export async function compareSent(s: Scheme, exportPath: string | undefined): Pr
 }
 
 /** Read, check and load. Nothing is made unless the whole file reads and checks. */
-export async function importReplay(p: { bytes: Uint8Array; by: string }): Promise<ImportOutcome | ImportRefusal> {
+export async function importReplay(p: { bytes: Uint8Array; by: string; kindHint?: KindHint }): Promise<ImportOutcome | ImportRefusal> {
   if (!replayAllowedHere()) return { ok: false, problem: "environment" };
   if (!p.bytes.byteLength || p.bytes.byteLength > 16_000_000) return { ok: false, problem: "file" };
   let sheets;
@@ -99,8 +121,11 @@ export async function importReplay(p: { bytes: Uint8Array; by: string }): Promis
 
   // the number: SIM, in a series of its own (Реш. 130) — of the original's kind and activity
   const orig = readSchemeNumber(round.number);
-  const kind = orig?.kind === "ILC" ? "ILC" : "PTS";
-  const activity = round.type === "C" ? "C" : orig?.activity === "S" ? "S" : "T";
+  // a simulation is not a closed round (8.4 review): never replayed as one
+  if (orig?.simulation) return { ok: false, problem: "simulation" };
+  const k = replayKind(round.type, orig, p.kindHint ?? "");
+  if (!k) return { ok: false, problem: "kind" };
+  const { kind, activity } = k;
   const today = sofiaYearMonth();
   const auto = nextProject(await listSchemeSummaries({ includeArchived: true }), { kind, activity, na: orig?.na ?? false, simulation: true }, today.year, today.month);
   const baseId = schemeIdFromNumber(auto.number) || auto.id;
@@ -144,7 +169,9 @@ export async function importReplay(p: { bytes: Uint8Array; by: string }): Promis
     scheme.batches = [batch];
   }
   const nr = round.results.filter((r) => r.status === "N/R").length;
-  scheme.replay = { of: round.number, importId, fileSha256: sha256(p.bytes), sourcePath, importedAt: at, by: p.by, counts: { participants: round.participants.length, characteristics: round.characteristics.length, results: round.results.length - nr, nr }, said: round.said };
+  // the kind FROZEN with the replay (8.4 review): what decides its level never follows a later edit
+  const frozenKind = round.type === "C" ? "calibration" : kind === "ILC" ? "ilc" : activity === "S" ? "sampling" : "pts-t";
+  scheme.replay = { of: round.number, kind: frozenKind, ...(k.given ? { kindGiven: k.given } : {}), importId, fileSha256: sha256(p.bytes), sourcePath, importedAt: at, by: p.by, counts: { participants: round.participants.length, characteristics: round.characteristics.length, results: round.results.length - nr, nr }, said: round.said };
 
   // a round that could not be made leaves no source file behind (8.2 review)
   if (!(await addScheme(scheme).catch(() => false))) { await dropSource(sourcePath); return { ok: false, problem: "failed", detail: "the scheme could not be made" }; }

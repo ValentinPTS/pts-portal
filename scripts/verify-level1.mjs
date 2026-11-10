@@ -103,7 +103,7 @@ try {
   const p2 = await record(S, "z");
   t("one item «не съвпада» (with why): recorded — FAILS", p2 === "recorded-fail" && (await page.locator('[data-level-test-row][data-test-result="fail"]').count()) >= 1);
   const journal = await (await page.request.get(`${BASE}/activity?scheme=${S}`)).text();
-  t("journalled: «Level 1 test … PASSES / FAILS, against acceptance criteria edition N»", new RegExp(`Level 1 test on [^<]* — PASSES, against acceptance criteria edition ${edition}`).test(journal) && /— FAILS, against acceptance criteria edition/.test(journal));
+  t("journalled: «Level 1 test … PASSES / FAILS, against acceptance criteria edition N»", new RegExp(`Level 1 test \\(pts-t\\) on [^<]* — PASSES, against acceptance criteria edition ${edition}`).test(journal) && /— FAILS, against acceptance criteria edition/.test(journal));
 
   // ── «Валидиране»: the tests; the criteria they rest on cannot be voided ──
   await go("/validation#tests");

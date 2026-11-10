@@ -3429,6 +3429,13 @@ export async function updateSchemeAction(formData: FormData) {
       number = current.number;
       markers = kept;
     }
+    // a replay round (8.2) keeps the number and the markers it was loaded with — its kind decides its
+    // validation level (8.4 review)
+    if (current.replay && (number !== current.number || JSON.stringify(markers) !== JSON.stringify(kept))) {
+      markersLockedRefused = true;
+      number = current.number;
+      markers = kept;
+    }
     // issued certificates carry the status — the accreditation mark or the NA sentence —
     // so once there are any it stays, as the number does (3.9 review)
     if (hasCerts(current)) {

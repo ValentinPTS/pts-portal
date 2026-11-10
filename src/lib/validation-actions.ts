@@ -13,9 +13,8 @@ import { getScheme } from "./store";
 import type { ReplayImportState } from "./replay-model";
 import { listCriteria } from "./validation-criteria";
 import { readTestForm, testResult, criteriaOf, restsOn, isReference, editionUnderTests } from "./validation-test-model";
-import { levelOneState, type LevelOneState } from "./validation-level";
+import { levelState, type LevelState } from "./validation-level";
 import { recordTest, voidTest, listTests } from "./validation-tests";
-import type { Level } from "./validation-model";
 
 // «Валидиране» (plan part 8.1; Реш. 134): record a signed edition of the acceptance criteria, or
 // void one recorded by mistake. The head and the quality manager (validation.record) — never the
@@ -84,7 +83,8 @@ export async function importReplayAction(_prev: ReplayImportState, formData: For
   const by = (await getRoleContext()).email ?? "build";
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0 || file.size > 16_000_000) return { problem: "file" };
-  const r = await importReplay({ bytes: new Uint8Array(await file.arrayBuffer()), by });
+  const hint = String(formData.get("kind") ?? "");
+  const r = await importReplay({ bytes: new Uint8Array(await file.arrayBuffer()), by, kindHint: hint === "T" || hint === "S" || hint === "ILC" ? hint : "" });
   if (!r.ok) {
     // a round made half-way stays, marked failed — and is journalled (8.2 review)
     if (r.schemeId) await logActivity("validation.replay_failed", { schemeId: r.schemeId, subject: `scheme:${r.schemeId}`, summary: `Replay load not finished — ${r.number}, kept and marked failed: ${r.detail ?? ""}` });
@@ -93,7 +93,7 @@ export async function importReplayAction(_prev: ReplayImportState, formData: For
   const s = await getScheme(r.schemeId);
   const logged = await logActivity("validation.replay_imported", {
     schemeId: r.schemeId, subject: `scheme:${r.schemeId}`,
-    after: { of: r.round.number, sha256: s?.replay?.fileSha256, counts: s?.replay?.counts },
+    after: { of: r.round.number, sha256: s?.replay?.fileSha256, counts: s?.replay?.counts, kind: s?.replay?.kind, kindGiven: s?.replay?.kindGiven ?? null },
     summary: `Replay of ${r.round.number} loaded as ${r.number} — ${r.round.participants.length} participations by code, ${r.round.results.length} result rows; the submission locked, in processing`,
   });
   revalidatePath("/validation");
@@ -110,17 +110,18 @@ export async function recordTestAction(formData: FormData): Promise<void> {
   await requireCapAnywhere("validation.record");
   const by = (await getRoleContext()).email ?? "build";
   const schemeId = String(formData.get("schemeId") ?? "");
-  const level = Number(formData.get("level")) as Level;
   const s = await getScheme(schemeId);
   if (!s || !s.replay || s.replay.failed) redirect("/validation?vt=scheme#tests");
   const sc = s!;
-  if (level === 1 && !isReference(sc.replay!.of)) backTo(schemeId, "reference");
-  // the chain and what the portal checks by itself — computed NOW, the same as the card shows (8.3 review)
-  let state: LevelOneState;
-  try { state = await levelOneState(sc); } catch { backTo(schemeId, "failed"); }
+  // the chain and what the portal checks by itself — computed NOW, the same as the card shows (8.3
+  // review); the level and the kind are the ROUND's, never the form's (8.4)
+  let state: LevelState;
+  try { state = await levelState(sc); } catch { backTo(schemeId, "failed"); }
   const st = state!;
+  const level = st.level;
+  if (st.kind === "pts-t" && !isReference(sc.replay!.of)) backTo(schemeId, "reference");
   if (st.missing.length) backTo(schemeId, "not-ready");
-  const read = readTestForm(level, { testedOn: formData.get("testedOn"), scope: formData.get("scope"), conclusion: formData.get("conclusion"), item: (k) => ({ result: formData.get(`item_${k}`), note: formData.get(`note_${k}`) }) }, sofiaDay(new Date().toISOString()), st.earliest);
+  const read = readTestForm(st.kind, { testedOn: formData.get("testedOn"), scope: formData.get("scope"), conclusion: formData.get("conclusion"), item: (k) => ({ result: formData.get(`item_${k}`), note: formData.get(`note_${k}`) }) }, sofiaDay(new Date().toISOString()), st.earliest);
   if (!read.ok) backTo(schemeId, read.problem);
   const v = read as Extract<typeof read, { ok: true }>;
   let criteria;
@@ -131,16 +132,16 @@ export async function recordTestAction(formData: FormData): Promise<void> {
   const f = file instanceof File && file.size > 0 ? file : null;
   const bytes = f ? new Uint8Array(await f.arrayBuffer()) : null;
   const r = await recordTest({
-    level, kind: "pts-t", testedOn: v.testedOn, schemeId, schemeNumber: sc.number, replayOf: sc.replay!.of,
+    level, kind: st.kind, testedOn: v.testedOn, schemeId, schemeNumber: sc.number, replayOf: sc.replay!.of,
     criteriaId: c.edition.id, criteriaEdition: c.edition.edition, criteriaRecordedAfter: c.recordedAfter,
-    scope: v.scope, items: v.items, auto: st.auto, result: testResult(v.items, st.auto, level), conclusion: v.conclusion, recordedBy: by,
+    scope: v.scope, items: v.items, auto: st.auto, result: testResult(v.items, st.auto, st.kind), conclusion: v.conclusion, recordedBy: by,
   }, f && bytes ? { bytes, mime: sniffMime(bytes) ?? f.type, name: f.name } : null);
   if (!r.ok) backTo(schemeId, r.error);
   const e = (r as Extract<typeof r, { ok: true }>).entry;
   const logged = await logActivity("validation.test_recorded", {
     schemeId, subject: `validation_test:${e.id}`,
     after: { level: e.level, testedOn: e.testedOn, result: e.result, criteriaEdition: e.criteriaEdition, unexpected: e.auto.unexpected, importId: e.auto.importId ?? null },
-    summary: `Level ${e.level} test on ${sc.number} (replay of ${sc.replay!.of}), ${e.testedOn} — ${e.result === "pass" ? "PASSES" : "FAILS"}, against acceptance criteria edition ${e.criteriaEdition}`,
+    summary: `Level ${e.level} test (${e.kind}) on ${sc.number} (replay of ${sc.replay!.of}), ${e.testedOn} — ${e.result === "pass" ? "PASSES" : "FAILS"}, against acceptance criteria edition ${e.criteriaEdition}`,
   });
   revalidatePath("/validation");
   backTo(schemeId, logged ? `recorded-${e.result}` : "recorded-unlogged");

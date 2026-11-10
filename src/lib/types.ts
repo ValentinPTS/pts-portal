@@ -783,7 +783,7 @@ export interface Scheme {
   /** a REPLAY round (plan part 8.2; Реш. 130, 134): a closed round loaded from its 2.0 input file,
    *  codes only, in the test environment — the original number, the file kept and its hash, what
    *  was carried and what was said; its re-export is compared with the file (8.3) */
-  replay?: { of: string; importId: string; fileSha256: string; sourcePath: string; importedAt: string; by: string; counts: { participants: number; characteristics: number; results: number; nr: number }; said: { excluded: string[]; nrNotes: string[] }; failed?: string };
+  replay?: { of: string; /** the round's kind, frozen at the load (8.4 review) */ kind?: "pts-t" | "calibration" | "ilc" | "sampling"; /** the importer's word on the kind, where the old number said none */ kindGiven?: "T" | "S" | "ILC"; importId: string; fileSha256: string; sourcePath: string; importedAt: string; by: string; counts: { participants: number; characteristics: number; results: number; nr: number }; said: { excluded: string[]; nrNotes: string[] }; failed?: string };
   // chosen document skin (visual theme) id; absent → the built-in "Classic" skin.
   skin?: string;
   // friendly folder name shown in the explorer; absent → falls back to the title/number.

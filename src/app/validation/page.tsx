@@ -12,7 +12,7 @@ import { listSchemes } from "@/lib/store";
 import { replayAllowedHere } from "@/lib/replay-import";
 import { listTests } from "@/lib/validation-tests";
 import { voidTestAction } from "@/lib/validation-actions";
-import { TEST_PROBLEM_TEXT, ITEM_TEXT } from "@/lib/validation-test-model";
+import { TEST_PROBLEM_TEXT, ITEM_TEXT, KIND_TEXT, levelTwoCoverage, latestTest } from "@/lib/validation-test-model";
 
 export const dynamic = "force-dynamic";
 
@@ -143,6 +143,18 @@ export default async function ValidationPage({ searchParams }: { searchParams: P
       <section className="card p-4 mt-4" id="tests" data-tests={tests.length}>
         <h2 className="font-bold" style={{ color: "var(--green-dark)", fontSize: 15, margin: 0 }}>{L("Изпитвания", "Tests")}</h2>
         <p className="text-sm" style={{ color: "var(--muted)", margin: "4px 0 8px", maxWidth: 820 }}>{L("Всяко изпитване — спрямо редакцията на критериите в сила в деня му за нивото му. Записва се от картата на кръга (ниво 1: кръгът за повторение). Нищо не се трие: изпитване, записано по грешка, се анулира с причина.", "Each test — against the criteria edition in force on its day for its level. Recorded from the round's card (level 1: the replay round). Nothing is deleted: a test recorded by mistake is voided with its reason.")}</p>
+        {!testsUnread && (() => {
+          // the latest test not voided rules — a later failure never hidden behind an earlier pass (8.4 review)
+          const l1 = latestTest(tests, 1);
+          const l2 = levelTwoCoverage(tests);
+          const cell = (t: (typeof tests)[number] | null, label: string, key: string) => <span data-coverage={key} data-covered={t?.result === "pass" ? "1" : "0"} style={{ color: t?.result === "pass" ? "var(--green-dark)" : t ? "#8f2f2f" : "#7a5416" }}>{label}: {!t ? L("още не", "not yet") : t.result === "pass" ? L(`премина на ${day(t.testedOn)}`, `passed on ${day(t.testedOn)}`) : L(`последното НЕ премина (${day(t.testedOn)})`, `the latest FAILED (${day(t.testedOn)})`)}</span>;
+          return (
+            <div className="text-sm" style={{ display: "grid", gap: 2, margin: "0 0 8px" }} data-coverage-box>
+              <div>{cell(l1, L("Ниво 1 — PTS 26/03-T-1", "Level 1 — PTS 26/03-T-1"), "1")}</div>
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>{L("Ниво 2", "Level 2")} — {(["calibration", "ilc", "sampling"] as const).map((k) => <span key={k}>{cell(l2[k], L(KIND_TEXT[k].bg, KIND_TEXT[k].en), `2-${k}`)}</span>)}</div>
+            </div>
+          );
+        })()}
         {testAnswer && <p role={testAnswer === "voided" ? "status" : "alert"} className="text-sm" data-tests-answer={testAnswer} style={{ color: testAnswer === "voided" ? "var(--green-dark)" : "#8f2f2f" }}>{testAnswer === "voided" ? L("Изпитването е анулирано.", "The test is voided.") : testAnswer === "voided-unlogged" ? L("Изпитването е анулирано, но редът в журнала не се записа — съобщете на администратора.", "The test is voided, but its journal line was not written — tell the administrator.") : L((TEST_PROBLEM_TEXT as Record<string, { bg: string; en: string }>)[testAnswer]?.bg ?? "Не е записано.", (TEST_PROBLEM_TEXT as Record<string, { bg: string; en: string }>)[testAnswer]?.en ?? "Not recorded.")}</p>}
         {testsUnread ? <p role="alert" className="text-sm" style={{ color: "#8f2f2f" }} data-tests-unread>{L("Изпитванията не можаха да се прочетат — презаредете.", "The tests could not be read — reload.")}</p> : tests.length === 0 ? <p className="text-sm" style={{ color: "var(--muted)" }}>{L("Още няма записани изпитвания.", "No tests recorded yet.")}</p> : (
           <div style={{ display: "grid", gap: 8 }}>

@@ -35,4 +35,7 @@ if (process.argv[1]?.endsWith("replay-fixture.ts") && process.argv[2]) {
   writeFileSync(join(dir, "replay-good.xlsx"), xlsx(good));
   const named = good.map((s) => (s.name === "Participants" ? { ...s, rows: [s.rows[0], ["Лаборатория Пример ЕООД", "", "Да", "Да"], ...s.rows.slice(2)] } : s));
   writeFileSync(join(dir, "replay-name.xlsx"), xlsx(named));
+  // level 2 (8.4): a sampling round by an old number that does not say its kind, and an old ILC number
+  writeFileSync(join(dir, "replay-sampling.xlsx"), xlsx(replaySheets("PTS 20/10")));
+  writeFileSync(join(dir, "replay-ilc.xlsx"), xlsx(replaySheets("PTS 25/08-NA-1")));
 }

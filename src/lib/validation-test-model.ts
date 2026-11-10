@@ -8,7 +8,7 @@
 
 import type { Level, CriteriaEdition } from "./validation-model";
 import { criteriaFor } from "./validation-model";
-import { sameSchemeNumber } from "./scheme-number";
+import { sameSchemeNumber, readSchemeNumber, type SchemeNumberReading } from "./scheme-number";
 
 /** Level 1's reference round (PTS, 31.10, А17; Zadanie §13): closed, by the current system, with a
  *  full corrected set of records. Level 1 is a replay of THIS round — never another (8.3 review). */
@@ -30,6 +30,8 @@ export interface AutoEvidence {
   importId?: string; analysisVersion?: string; reportSha?: string;
   /** the transfer check (7.3): «the same» or not */
   transferSame?: boolean;
+  /** level 2: the original number read (today's or an old form) — not a simulation's (8.4 review) */
+  numberRead?: boolean;
 }
 export interface ValidationTest {
   id: string;
@@ -61,15 +63,56 @@ export const ITEM_TEXT: Record<string, { bg: string; en: string }> = {
   verdicts: { bg: "Оценките (удовлетворителна / съмнителна / неудовлетворителна)", en: "The verdicts (satisfactory / questionable / unsatisfactory)" },
   tables: { bg: "Таблиците на доклада", en: "The report's tables" },
   uxpt: { bg: "Проверката u(x_pt) ≤ 0,3·σ_pt", en: "The check u(x_pt) ≤ 0.3·σ_pt" },
+  // level 2 (8.4)
+  points: { bg: "Точките, мерната единица, номиналните стойности", en: "The points, the unit, the nominal values" },
+  refvalues: { bg: "Референтните стойности и тяхната U", en: "The reference values and their U" },
+  ustab: { bg: "u_stab", en: "u_stab" },
+  en: { bg: "Eₙ по код и точка", en: "Eₙ per code and point" },
+  ilcvalues: { bg: "Стойностите и изводите в доклада от сравнението", en: "The values and conclusions of the comparison report" },
+  carried: { bg: "Суровите резултати, пренесени (сравнени от портала)", en: "The raw results, carried (compared by the portal)" },
+  number: { bg: "Номерът — прочетен както е (и в старите форми)", en: "The number — read as it is (old forms too)" },
 };
-/** Level 1's items (PLAN 8.3; the draft criteria) — in this order. */
-export const LEVEL_ITEMS: Partial<Record<Level, string[]>> = {
-  1: ["codes", "design", "raw", "xpt", "z", "verdicts", "tables", "uxpt"],
+/** Each kind's items (PLAN 8.3, 8.4; the draft criteria) — in this order. */
+export const KIND_ITEMS: Record<RoundKind, string[]> = {
+  "pts-t": ["codes", "design", "raw", "xpt", "z", "verdicts", "tables", "uxpt"],
+  calibration: ["codes", "points", "raw", "refvalues", "ustab", "en", "verdicts", "tables", "number"],
+  ilc: ["codes", "design", "raw", "ilcvalues", "tables", "number"],
+  // sampling: the data model and the number only (А9)
+  sampling: ["codes", "design", "carried", "number"],
 };
-/** The items that MUST match — what PLAN 8.3's «Done when» names: never «неприложимо» (8.3 review). */
-export const MUST_MATCH: Partial<Record<Level, string[]>> = {
-  1: ["codes", "raw", "xpt", "z", "verdicts", "tables"],
+/** The items that MUST match — never «неприложимо». */
+export const KIND_MUST: Record<RoundKind, string[]> = {
+  "pts-t": ["codes", "raw", "xpt", "z", "verdicts", "tables"],
+  // u_stab and the points too — П 7.4.1 т. 4.6.2 names u_stab (8.4 review)
+  calibration: ["codes", "points", "raw", "refvalues", "ustab", "en", "verdicts", "tables", "number"],
+  ilc: ["codes", "raw", "ilcvalues", "tables", "number"],
+  sampling: ["codes", "carried", "number"],
 };
+export const KIND_TEXT: Record<RoundKind, { bg: string; en: string }> = {
+  "pts-t": { bg: "изпитване за пригодност", en: "proficiency testing" },
+  calibration: { bg: "калибриране", en: "calibration" },
+  ilc: { bg: "междулабораторно сравнение (ILC)", en: "interlaboratory comparison (ILC)" },
+  sampling: { bg: "пробовземане", en: "sampling" },
+};
+/** A replay round's kind — the scheme's own markers (8.2 keeps them from the number or the importer's word). */
+export function roundKind(s: { type: string; kind?: string; activity?: string; replay?: { kind?: RoundKind } }): RoundKind {
+  // a replay's kind is the one frozen at its load — never a later edit's (8.4 review)
+  if (s.replay?.kind) return s.replay.kind;
+  if (s.type === "C") return "calibration";
+  if (s.kind === "ILC") return "ilc";
+  if (s.activity === "S") return "sampling";
+  return "pts-t";
+}
+/** Level 1: a replay of PTS testing (the reference round); level 2: calibration, ILC, sampling (8.4). */
+export const levelOfKind = (k: RoundKind): Level => (k === "pts-t" ? 1 : 2);
+/** Sampling is read for the data model and the number only (А9): no run of 2.0. */
+export const needs20 = (k: RoundKind) => k !== "sampling";
+/** How the portal reads an original number (Zadanie §13) — or null: not read (said, never guessed). */
+export const numberReading = (number: string): SchemeNumberReading | null => readSchemeNumber(number);
+/** Level 1's items — the PTS testing kind's (kept for the record's readers). */
+export const LEVEL_ITEMS: Partial<Record<Level, string[]>> = { 1: KIND_ITEMS["pts-t"] };
+/** What PLAN 8.3's «Done when» names: never «неприложимо» (8.3 review). */
+export const MUST_MATCH: Partial<Record<Level, string[]>> = { 1: KIND_MUST["pts-t"] };
 
 export const SCOPE_MAX = 1000, NOTE_MAX = 500, CONCLUSION_MIN = 5, CONCLUSION_MAX = 2000;
 const cut = (t: string, max: number) => Array.from(t).slice(0, max).join("");
@@ -82,9 +125,9 @@ export type TestProblem = "level" | "date" | "future" | "early" | "scope" | "ite
 /** The form: the day tested (not after today, and not before what it rests on happened — the round
  *  loaded, the export, 2.0's report: `earliest`, 8.3 review), the scope, each item's result (a note
  *  where it is not «съвпада»), the conclusion. The level's items all answered. */
-export function readTestForm(level: Level, input: { testedOn: unknown; scope: unknown; conclusion: unknown; item: (key: string) => { result: unknown; note: unknown } }, today: string, earliest = "2026-01-01"):
+export function readTestForm(kind: RoundKind, input: { testedOn: unknown; scope: unknown; conclusion: unknown; item: (key: string) => { result: unknown; note: unknown } }, today: string, earliest = "2026-01-01"):
   { ok: true; testedOn: string; scope: string; items: TestItem[]; conclusion: string } | { ok: false; problem: TestProblem; key?: string } {
-  const keys = LEVEL_ITEMS[level];
+  const keys = KIND_ITEMS[kind];
   if (!keys) return { ok: false, problem: "level" };
   const testedOn = typeof input.testedOn === "string" ? input.testedOn.trim() : "";
   if (!realDay(testedOn) || testedOn < "2026-01-01") return { ok: false, problem: "date" };
@@ -115,8 +158,16 @@ export function readTestForm(level: Level, input: { testedOn: unknown; scope: un
  *  after it); 2.0's report imported AFTER that export; the transfer check of that pair «the same»; the
  *  file that was sent compared with the source. Said, item by item. */
 export function levelOneReady(x: { reference: boolean; exported: boolean; reportIn: boolean; reportAfterExport: boolean; checkedSame: boolean; compared: boolean }): string[] {
-  const out: string[] = [];
-  if (!x.reference) out.push("reference");
+  return levelReady("pts-t", x);
+}
+
+/** What a kind's test needs (8.4): level 1 — the reference round and the whole chain; calibration and
+ *  ILC — the chain (2.0 runs them); sampling — only the re-export compared with its source (no 2.0, А9). */
+export function levelReady(kind: RoundKind, x: { reference: boolean; exported: boolean; reportIn: boolean; reportAfterExport: boolean; checkedSame: boolean; compared: boolean; numberRead?: boolean }): string[] {
+  const number = levelOfKind(kind) === 2 && x.numberRead === false ? ["number"] : [];
+  if (!needs20(kind)) return [...(x.compared ? [] : ["compared"]), ...number];
+  const out: string[] = [...number];
+  if (kind === "pts-t" && !x.reference) out.push("reference");
   if (!x.exported) out.push("export");
   if (!x.reportIn) out.push("report");
   else if (!x.reportAfterExport) out.push("report-after");
@@ -131,10 +182,22 @@ export const isReference = (replayOf: string | undefined) => !!replayOf && sameS
 /** The result: passes only when every item the level must match matches, the others match or are not
  *  applicable (with why), the portal found no unexpected difference in what was SENT, 2.0's report is
  *  in and the transfer check says «the same». Never the checker's word alone. */
-export function testResult(items: readonly TestItem[], auto: AutoEvidence, level: Level = 1): "pass" | "fail" {
-  const must = MUST_MATCH[level] ?? [];
+export function testResult(items: readonly TestItem[], auto: AutoEvidence, kind: RoundKind = "pts-t"): "pass" | "fail" {
+  const must = KIND_MUST[kind] ?? [];
   const itemsOk = items.length > 0 && items.every((i) => i.result === "match" || (i.result === "na" && !must.includes(i.key))) && must.every((k) => items.some((i) => i.key === k && i.result === "match"));
-  return itemsOk && auto.unexpected === 0 && !!auto.importId && auto.transferSame === true ? "pass" : "fail";
+  // sampling: no 2.0 run (А9) — the comparison alone; the others: 2.0's report in and «the same»
+  // level 2: the original number read by the portal — a person's tick alone never says old numbers are read (8.4 review)
+  const numberOk = levelOfKind(kind) !== 2 || auto.numberRead === true;
+  return itemsOk && numberOk && auto.unexpected === 0 && (!needs20(kind) || (!!auto.importId && auto.transferSame === true)) ? "pass" : "fail";
+}
+
+/** The coverage (8.4): per level and kind, the LATEST test not voided rules — a later failure is never
+ *  hidden behind an earlier pass (8.4 review); null — none yet. */
+export function latestTest(tests: readonly ValidationTest[], level: Level, kind?: RoundKind): ValidationTest | null {
+  return tests.filter((t) => !t.voided && t.level === level && (!kind || t.kind === kind)).sort((a, b) => b.testedOn.localeCompare(a.testedOn) || b.recordedAt.localeCompare(a.recordedAt))[0] ?? null;
+}
+export function levelTwoCoverage(tests: readonly ValidationTest[]): Record<"calibration" | "ilc" | "sampling", ValidationTest | null> {
+  return { calibration: latestTest(tests, 2, "calibration"), ilc: latestTest(tests, 2, "ilc"), sampling: latestTest(tests, 2, "sampling") };
 }
 
 /** The criteria a test of this level on this day is judged against (8.1) — and whether that edition
