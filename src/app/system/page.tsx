@@ -112,7 +112,8 @@ export default async function SystemPage() {
             b.exposed
               ? <span data-bucket-public={b.name}>{chip(false, "", L("ПУБЛИЧЕН — направете го частен в Supabase", "PUBLIC — make it private in Supabase"))}</span>
               : chip(b.exists, L("има го", "exists"), L("още го няма", "not yet")),
-            b.name === "doc-editions" && b.exists === false ? L("Създава се при първата издадена редакция.", "Created when the first edition is issued.") : undefined))}
+            b.name === "doc-editions" && b.exists === false ? L("Създава се при първата издадена редакция.", "Created when the first edition is issued.")
+              : b.name === "analysis-exports" && b.exists === false ? L("Създава се при първото изнасяне към 2.0 по време на обработката.", "Created at the first export to 2.0 during processing.") : undefined))}
         </tbody></table>
       </section>
 

@@ -14,6 +14,8 @@ export interface AnalysisExportRecord {
   lockId?: string;
   /** the file handed out */
   sha256: string;
+  /** where the file handed out is kept (7.10) — the round export carries it */
+  path?: string;
   codes: string[];
   characteristics: string[];
   /** codes whose results came outside the form (typed into the file by hand) and codes with N/R only */

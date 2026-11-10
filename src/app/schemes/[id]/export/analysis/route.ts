@@ -11,6 +11,7 @@ import { logActivity } from "@/lib/activity";
 import { randomUUID } from "crypto";
 import { sha256 } from "@/lib/editions";
 import { manifestOf, type AnalysisExportRecord } from "@/lib/transfer-check-model";
+import { keepExportFile, dropExportFile } from "@/lib/analysis-export-store";
 
 // «Изнеси към PTS_Analysis 2.0» (plan part 7.1; schema_version 2.1, Реш. 148; D3): the template's
 // eight sheets, codes only — for the statistics expert and the coding expert. Before the submission
@@ -52,13 +53,22 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   let recorded = false;
   const records = (st: string) => st === "processing" || st === "report";
   if (records(s!.status)) {
+    // the file itself kept as handed out (7.10) — the round export carries what went to 2.0
+    try { manifest.path = await keepExportFile(id, manifest.id, bytes); }
+    catch { return new Response("The file is ready, but it could not be kept on record — so it is not handed out. Try again.", { status: 503 }); }
     try {
       await updateSchemeWith(id, (cur) => {
         if (!records(cur.status)) return {};
         recorded = true;
         return { analysisExports: [...(cur.analysisExports ?? []), manifest] };
       });
-    } catch { return new Response("The file is ready, but what it sends could not be recorded — so it is not handed out. Try again.", { status: 503 }); }
+    } catch {
+      // a write that went through but failed to answer leaves the record: then the file stays with it (review)
+      const cur = await getScheme(id).catch(() => undefined);
+      if (cur && !(cur.analysisExports ?? []).some((x) => x.id === manifest.id)) await dropExportFile(manifest.path);
+      return new Response("The file is ready, but what it sends could not be recorded — so it is not handed out. Try again.", { status: 503 });
+    }
+    if (!recorded) await dropExportFile(manifest.path);
   }
   const logged = await logActivity("results.exported_2_0", {
     schemeId: id,
@@ -68,7 +78,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   });
   if (!logged) {
     // nothing handed out — so nothing «sent» stays on record for a check to confirm (review)
-    if (recorded) { try { await updateSchemeWith(id, (cur) => ({ analysisExports: (cur.analysisExports ?? []).filter((x) => x.id !== manifest.id) })); } catch (e) { console.error("[analysis export] the record of an export not handed out could not be taken back:", (e as Error)?.message ?? e); } }
+    if (recorded) {
+      // the file goes only with its record — a record left behind keeps its file (review)
+      let takenBack = false;
+      try { await updateSchemeWith(id, (cur) => ({ analysisExports: (cur.analysisExports ?? []).filter((x) => x.id !== manifest.id) })); takenBack = true; } catch (e) { console.error("[analysis export] the record of an export not handed out could not be taken back:", (e as Error)?.message ?? e); }
+      if (takenBack && manifest.path) await dropExportFile(manifest.path);
+    }
     return new Response("The file is ready, but its journal entry could not be written — so it is not handed out. Try again.", { status: 503 });
   }
   const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");

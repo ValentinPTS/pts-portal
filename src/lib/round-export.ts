@@ -1,4 +1,5 @@
 import type { Scheme, Participant, UploadedDoc, SupersededFile, CaseEvent, Notification, ActivityEvent, DocRevision, Lab, Lang } from "./types";
+import { ANALYSIS_EXPORT_BUCKET } from "./analysis-export-store";
 import { labCertificate } from "./cert-number";
 import { legacyIssued } from "./cert-model";
 import { schemeMeta, providerRows } from "./scheme-meta";
@@ -28,7 +29,7 @@ import { hasCohortNames } from "./doc-release";
 import { renderCohortDoc } from "./cohort-doc";
 import { docPrintHtml, docDefaultBody } from "./doc-template";
 import { resolveSkinAsync } from "../skins";
-import { SCHEME_DOC_BUCKET, uploadedDocBytes } from "./scheme-uploads";
+import { SCHEME_DOC_BUCKET } from "./scheme-uploads";
 import { EDITION_BUCKET, listEditions, sha256 } from "./editions";
 import { getDb } from "./supabase";
 import { zip, type ZipEntry } from "./zip";
@@ -62,7 +63,9 @@ export type Part = "coded" | "identity";
 
 /** Each database table that holds round data, and the files of the export that carry it. */
 export const ROUND_TABLES: Record<string, string[]> = {
-  schemes: ["coded/scheme.json", "coded/results.csv", "coded/assigned.csv", "identity/scheme-identity.json", "identity/certificates.csv", "identity/applications.csv"],
+  schemes: ["coded/scheme.json", "coded/results.csv", "coded/assigned.csv", "identity/scheme-identity.json", "identity/certificates.csv", "identity/applications.csv",
+    // the exchange with 2.0 and the issue (7.2–7.10)
+    "coded/analysis_imports.csv", "coded/analysis_exports.csv", "coded/transfer_checks.csv", "coded/uxpt_checks.csv", "coded/report_issues.csv", "coded/report_access.csv", "coded/software_record.csv"],
   participants: ["coded/codes.csv", "identity/participants.csv"],
   // the identity store (2.3): who is behind each code, and every opening of it
   "identity.participants": ["identity/participants.csv"],
@@ -116,7 +119,7 @@ export const NOT_ROUND_TABLES: Record<string, string> = {
 };
 
 /** The storage buckets: which hold round files. */
-export const ROUND_BUCKETS = ["scheme-docs", EDITION_BUCKET, "skin-assets"];
+export const ROUND_BUCKETS = ["scheme-docs", EDITION_BUCKET, "skin-assets", ANALYSIS_EXPORT_BUCKET];
 export const NOT_ROUND_BUCKETS: Record<string, string> = {
   "lab-docs": "documents of laboratory ACCOUNT requests — across rounds",
   "round-exports": "the exports themselves, kept briefly for their download",
@@ -159,8 +162,10 @@ export const SCHEME_FIELDS = {
   // what came back from 2.0 (7.2): the version, each file's kind, size and hash — coded; its name,
   // storage path and who brought it in identity/ (a file is often named after a laboratory, §4.2)
   analysisImports: "split",
-  // what was sent to 2.0, and the transfer checks (7.3) — codes and PTS's own words, by PTS's people
-  analysisExports: "coded", transferChecks: "coded", reportIssues: "coded", reportAccess: "split", uxptChecks: "coded",
+  // what was sent to 2.0, the transfer checks (7.3), the R's (7.4), how the report reached each code,
+  // the u(x_pt) confirmations (7.6): codes, hashes and answers coded; the words PTS's people typed —
+  // a check's note, an R's reason and scope — may name a laboratory: whole only in identity/ (7.10 review)
+  analysisExports: "split", transferChecks: "split", reportIssues: "split", reportAccess: "split", uxptChecks: "split",
   // a release to one user names that user (an entity user's id is the same in every round):
   // its user kept only in identity/ (5.4 review)
   releases: "split", skin: "coded", name: "coded", folderId: "coded",
@@ -264,6 +269,12 @@ export function codedScheme(s: Scheme): Record<string, unknown> {
       case "messages": out[k] = (s.messages ?? []).map(({ bg: _b, en: _e, ...m }) => m); break;
       // how the report reached each code — never the hand opening's words (they may name the institution)
       case "reportAccess": out[k] = mapValues(s.reportAccess, ({ reason: _r, by: _b, ...a }) => a); break;
+      // where the handed-out file is kept is storage's, not the round's: the file itself is in coded/files/analysis/exports/ (7.10)
+      case "analysisExports": out[k] = (s.analysisExports ?? []).map(({ path: _p, ...e }) => e); break;
+      // what was checked and confirmed, never the words typed with it (7.10 review)
+      case "transferChecks": out[k] = (s.transferChecks ?? []).map(({ note: _n, ...c }) => c); break;
+      case "uxptChecks": out[k] = (s.uxptChecks ?? []).map(({ note: _n, ...c }) => c); break;
+      case "reportIssues": out[k] = (s.reportIssues ?? []).map(({ reason: _r, scope: _s, ...i }) => i); break;
       case "analysisImports": out[k] = (s.analysisImports ?? []).map(({ by: _b, files, ...i }) => ({ ...i, files: files.map(({ name: _n, path: _p, ...f }) => f) })); break;
     }
   }
@@ -439,9 +450,14 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
   // participants hold marked. None names a laboratory (the lists and the certificate
   // have no editions; a frozen file is rendered as the participants receive it).
   const eds: Record<string, unknown>[] = [];
+  // a corrected report's edition carries the reason and scope PTS's people typed (7.4) — they may name a
+  // laboratory: in coded/ the edition says only which R it is; the words are whole in identity/ (7.10 review)
+  const correctionR = new Map((s.reportIssues ?? []).filter((i) => i.kind === "correction").map((i) => [i.editionId, i.r]));
   for (const e of await listEditions(schemeId)) {
     const base = `coded/files/editions/${safe(e.docKey)}/${e.no}`;
-    const row = { id: e.id, docKey: e.docKey, no: e.no, issuedOn: e.issuedOn, issuedAt: e.issuedAt, issuedBy: e.issuedBy, reason: e.reason, scope: e.scope, source: e.source,
+    const corrected = correctionR.get(e.id);
+    const row = { id: e.id, docKey: e.docKey, no: e.no, issuedOn: e.issuedOn, issuedAt: e.issuedAt, issuedBy: e.issuedBy,
+      reason: corrected ? `Поправка R${corrected} — причината и обхватът: в identity/scheme-identity.json (reportIssues)` : e.reason, scope: corrected ? "" : e.scope, source: e.source,
       withParticipants: s.sentToParticipants?.[e.docKey] && s.releasedEditions?.[e.docKey]?.id === e.id ? "yes" : "" };
     // the frozen files go in byte for byte — never through the scrubber, or they would
     // stop being the files their hashes name; each is checked against its hash here
@@ -478,13 +494,32 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
   const imports: Record<string, unknown>[] = [];
   for (const imp of s.analysisImports ?? []) {
     for (const [i, f] of imp.files.entries()) {
-      const got = await uploadedDocBytes({ path: f.path, name: f.kind, mime: f.mime, size: f.size, uploadedAt: imp.at, uploadedBy: imp.by }).catch(() => null);
+      // a storage error stops the export; only a file truly not there is missing (7.10 review)
+      const got = await storageBytes(SCHEME_DOC_BUCKET, f.path);
       const name = `coded/files/analysis/${imp.id}/${i + 1}-${f.kind}.${f.mime === "image/png" ? "png" : f.mime === "image/jpeg" ? "jpg" : "pdf"}`;
-      if (got) add(name, got.bytes); else missing.push(name);
-      imports.push({ import: imp.id, version: imp.version, at: imp.at, kind: f.kind, n: i + 1, mime: f.mime, size: f.size, sha256: f.sha256, file: got ? name : "", altered: got && sha256(got.bytes) !== f.sha256 ? "yes" : "", missing: got ? "" : "yes" });
+      if (got) add(name, got); else missing.push(name);
+      imports.push({ import: imp.id, version: imp.version, at: imp.at, kind: f.kind, n: i + 1, mime: f.mime, size: f.size, sha256: f.sha256, file: got ? name : "", altered: got && sha256(got) !== f.sha256 ? "yes" : "", missing: got ? "" : "yes" });
     }
   }
   addCoded("coded/analysis_imports.csv", imports, ["import", "version", "at", "kind", "n", "mime", "size", "sha256", "file", "altered", "missing"]);
+
+  // what went to PTS_Analysis 2.0 (7.10): each export handed out while in processing or once issued —
+  // the file as it was handed out, checked against the hash recorded then; codes only, as it is
+  // read a few at a time (review: one after another, every export ever handed out adds a round trip);
+  // a storage error stops the export, only a file truly not there is missing
+  const sent = s.analysisExports ?? [];
+  const sentBytes: (Uint8Array | null)[] = [];
+  for (let i = 0; i < sent.length; i += 5) sentBytes.push(...(await Promise.all(sent.slice(i, i + 5).map((e) => (e.path ? storageBytes(ANALYSIS_EXPORT_BUCKET, e.path) : Promise.resolve(null))))));
+  const exportsOut: Record<string, unknown>[] = [];
+  for (const [n, e] of sent.entries()) {
+    const bytes = sentBytes[n];
+    const name = `coded/files/analysis/exports/${safe(e.id)}.xlsx`;
+    if (bytes) add(name, bytes); else if (e.path) missing.push(name);
+    exportsOut.push({ id: e.id, at: e.at, by: e.by, preliminary: e.preliminary ? "yes" : "", lockId: e.lockId ?? "", sha256: e.sha256, results: e.results, nr: e.nr,
+      codes: e.codes.join(" "), characteristics: e.characteristics.join(" "), outside: (e.outside ?? []).join(" "), nrOnly: (e.nrOnly ?? []).join(" "),
+      file: bytes ? name : "", altered: bytes && sha256(bytes) !== e.sha256 ? "yes" : "", missing: e.path && !bytes ? "yes" : "", kept: e.path ? "yes" : "" });
+  }
+  addCoded("coded/analysis_exports.csv", exportsOut, ["id", "at", "by", "preliminary", "lockId", "sha256", "results", "nr", "codes", "characteristics", "outside", "nrOnly", "file", "altered", "missing", "kept"]);
 
   // the scheme's own uploaded documents: coded/ unless the document names laboratories
   const uploads: Record<string, unknown>[] = [];
@@ -636,6 +671,8 @@ function readme(s: Scheme, want: "all" | "coded", now: Date, files: string[], mi
 - **Метрика** (\`metric\` в results.csv / assigned.csv): при изпитване — номерът на характеристиката в \`scheme.json → parameters\` (от 0); при калибриране — \`посока:точка\`. · **metric**: testing — the index into scheme.json → parameters (from 0); calibration — \`direction:point\`.
 - **Резултатите** · **the results**: \`coded/results_in_force.csv\` — какво се обработва за всеки код: версията, взета при заключването (иначе последната), подадената и използваната стойност (корекциите), N/R, N/A — **оттук кръгът продължава по действащите формуляри**; \`coded/submitted_values.csv\` — всяка стойност от всяка подадена версия, както е въведена и като число. · what is processed for each code — the version the lock took (else the latest), the submitted and the used value (the corrections), N/R, N/A — **the round goes on from here on the current forms**; every value of every submitted version, as typed and as a number. Числата са и с точка (\`reported_number\`, \`used_number\`, \`number\`); използваната U е винаги при k = 2 · the numbers also with a point; the used U is always at k = 2. Резултатите, дошли извън формуляра (лист — \`source\` = outside), са в \`identity/files/lab-uploads/\` · results that came outside the form (a sheet) are in \`identity/files/lab-uploads/\`.
 - **PTS_Analysis 2.0:** \`coded/files/analysis/\` — всеки файл от всяко внасяне, както е дошъл (докладите, графиките, валидирането, досието), с версията на модула и хеша в \`analysis_imports.csv\` · every file of every import from 2.0, as it came, with the module's version and hash in \`analysis_imports.csv\`.
+- **Към PTS_Analysis 2.0:** \`coded/files/analysis/exports/\` — всеки изнесен файл, както е даден (по време на обработката и след издаването), с хеша, кодовете и характеристиките в \`analysis_exports.csv\` · what went to 2.0: every exported file as it was handed out, with its hash, codes and characteristics in \`analysis_exports.csv\`.
+- **Издаването (част 7):** \`transfer_checks.csv\` (проверките на преноса), \`uxpt_checks.csv\` (потвържденията за u(x_pt)), \`report_issues.csv\` (R1, R2… — източник, версия, проверката и потвърждението, на които се опират), \`report_access.csv\` (как докладът е стигнал до всеки код, D7), \`software_record.csv\` (софтуерният запис при всяко R). Бележките, причините и обхватите, написани от хората на PTS, са само в \`identity/scheme-identity.json\` (може да назовават лаборатория) · the issue: the transfer checks, the u(x_pt) confirmations, the R's, how the report reached each code, the software record per R; the notes, reasons and scopes PTS's people typed are only in \`identity/scheme-identity.json\` (they may name a laboratory).
 - \`coded/files/documents/\` — всеки документ като страница за печат (без имена); \`coded/files/editions/\` — всяка редакция на документите, замразена (\`editions.csv\`: номер, дата, причина, обхват, SHA-256, коя е при участниците). · every document as a printable page (no names); every edition of the documents, frozen (editions.csv: number, date, reason, scope, SHA-256, which one the participants hold).
 - Текстовете на запазените версии от редактора са файлове в \`files/revisions/\`; таблицата сочи към тях (това не са редакциите — те са в \`files/editions/\`). · The editor's saved versions are files; the table points to them (not the editions — those are in files/editions/).
 
@@ -740,6 +777,13 @@ export function roundTables(s: Scheme, codeOf: (participantId: string) => string
     // who stamped it (the laboratory, or PTS with its source); a PTS note is a person's words: identity/
     ["coded/chain_stops.csv", (s.chain?.stops ?? []).map((x, i) => ({ order: i + 1, id: x.id, kind: x.kind, code: x.code ?? "", receivedAt: x.receivedAt ?? "", receivedBy: x.received?.by ?? "", receivedSource: x.received?.source ?? "", receivedRecordedBy: x.received?.recordedBy ?? "", sentAt: x.sentAt ?? "", sentBy: x.sent?.by ?? "", sentSource: x.sent?.source ?? "", sentRecordedBy: x.sent?.recordedBy ?? "", windowDue: x.windowDue ?? "" })), ["order", "id", "kind", "code", "receivedAt", "receivedBy", "receivedSource", "receivedRecordedBy", "sentAt", "sentBy", "sentSource", "sentRecordedBy", "windowDue"]],
     // which documents ask for an acknowledgement (5.9) — kept only while set: the export of the moment holds it (review)
+    // Phase 7 (7.10): the transfer checks, the u(x_pt) confirmations, the R's, who the report reached,
+    // the software record — codes only; a note, a reason or a scope stays in scheme.json
+    ["coded/transfer_checks.csv", (s.transferChecks ?? []).map((c) => ({ id: c.id, at: c.at, by: c.by, exportId: c.exportId, importId: c.importId, reportSha: c.reportSha ?? "", same: c.same ? "yes" : "no" })), ["id", "at", "by", "exportId", "importId", "reportSha", "same"]],
+    ["coded/uxpt_checks.csv", (s.uxptChecks ?? []).map((c) => ({ id: c.id, at: c.at, by: c.by, importId: c.importId, reportSha: c.reportSha, answer: c.answer })), ["id", "at", "by", "importId", "reportSha", "answer"]],
+    ["coded/report_issues.csv", (s.reportIssues ?? []).map((i) => ({ id: i.id, r: i.r, kind: i.kind, source: i.source ?? "2.0", ilc: i.ilc ? "yes" : "", editionId: i.editionId, editionNo: i.editionNo, at: i.at, by: i.by, day: i.day, analysisVersion: i.analysisVersion, importId: i.importId, reportSha: i.reportSha, transferCheckId: i.transferCheckId, uxptId: i.uxpt?.id ?? "", uxptAnswer: i.uxpt?.answer ?? "", codes: i.codes.join(" ") })), ["id", "r", "kind", "source", "ilc", "editionId", "editionNo", "at", "by", "day", "analysisVersion", "importId", "reportSha", "transferCheckId", "uxptId", "uxptAnswer", "codes"]],
+    ["coded/report_access.csv", Object.entries(s.reportAccess ?? {}).map(([code, a]) => ({ code, via: a.via, at: a.at, r: a.r ?? "" })).sort((a, b) => a.code.localeCompare(b.code)), ["code", "via", "at", "r"]],
+    ["coded/software_record.csv", (s.reportIssues ?? []).map((i) => ({ r: i.r, reportSource: i.software.reportSource ?? i.source ?? "2.0", releases: i.software.releases.map((x) => `${x.title}${x.ref ? ` (${x.ref})` : ""} @ ${x.deployedAt}`).join("; "), configVersion: i.software.configVersion ?? "", templates: i.software.templates.map((x) => `${x.docKey} №${x.no} (${x.issuedOn})`).join("; "), gateTexts: i.software.gateTexts, analysisVersions: i.software.analysisVersions.join(" ") })), ["r", "reportSource", "releases", "configVersion", "templates", "gateTexts", "analysisVersions"]],
     ["coded/ack_required.csv", Object.entries(s.ackRequired ?? {}).map(([docKey, v]) => ({ docKey, at: v.at, by: v.by })), ["docKey", "at", "by"]],
     // the round's settings that are not the scheme's design: the replacement's minimum days (А16,
     // 5.6), the chain's window and estimate, its dispatch and return

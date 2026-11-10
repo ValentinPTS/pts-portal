@@ -25,8 +25,10 @@ import { putEntity } from "../src/lib/entities.ts";
 import { putLaboratory } from "../src/lib/laboratories.ts";
 import { putEntityUser } from "../src/lib/entity-users.ts";
 import { freezeParticipation } from "../src/lib/participation-snapshots.ts";
+import { sha256 } from "../src/lib/editions.ts";
 
 let pass = 0, fail = 0;
+const identitySchemeOf = (z: Map<string, Buffer>) => z.get("identity/scheme-identity.json")?.toString("utf8") ?? "";
 const t = (name: string, ok: boolean, extra = "") => { if (ok) pass++; else { fail++; console.error("FAIL:", name, extra); } };
 const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 
@@ -162,8 +164,38 @@ const TYPED_LAB2 = "Вложена Лабораторийка ТАЙНА", TYPED
 (globalThis as unknown as { __ptsSubmissionsMem?: unknown[] }).__ptsSubmissionsMem?.push({ id: "sub-z", participantId: p.id, schemeId: S, version: 3, submittedAt: "2026-11-08T09:00:00Z", submittedBy: `entityuser:${CU5}`, data: { v: 1, kind: "C", draft: { v: 1, kind: "C", general: { labName: TYPED_LAB2, signedBy: TYPED_PERSON2 }, points: { "pt-x": { ref: "20,00", meas: "20,03", U: "0,02", cmc: "", na: false } } }, values: { "pt-x": { ref: 20, meas: 20.03, error: "0.03", U: 0.02, cmc: null } }, notices: [], confirmations: { truthful: true, subcontracted: false, errorsConfirmed: true } } });
 // …and a correction next to it (6.5): reported and used, the reason, by whom
 (globalThis as unknown as { __ptsCorrectionsMem?: unknown[] }).__ptsCorrectionsMem?.push({ id: "cor-x", participantId: p.id, schemeId: S, version: 3, key: "pt-x", field: "error", reported: "0.03", used: "0,030", reason: "грешка-при-въвеждане-КОРЕКЦИЯ", at: "2026-11-08T10:00:00Z", by: "coder@ptsbg.eu" });
+// Phase 7 (7.10): four exports handed out to 2.0 — kept and whole; kept but altered since; recorded but
+// not in storage; from before 7.10 (no file kept) — and the words PTS's people typed with the checks and R's
+const X_GOOD = new Uint8Array(Buffer.from("PK xlsx handed out — good")), X_ALT = new Uint8Array(Buffer.from("PK xlsx handed out — altered"));
+const dataX = (b: Uint8Array) => `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${Buffer.from(b).toString("base64")}`;
+const exp7 = (id: string, extra: Record<string, unknown>) => ({ id, at: "2026-11-20T10:00:00Z", by: "stat@ptsbg.eu", preliminary: false, lockId: "L1", codes: [p.code], characteristics: ["0"], results: 1, nr: 0, ...extra });
+const NOTE7 = { check: "БЕЛЕЖКА-ПРОВЕРКА-ТАЙНА", uxpt: "БЕЛЕЖКА-UXPT-ТАЙНА", reason: "ПРИЧИНА-ПОПРАВКА-ТАЙНА", scope: "ОБХВАТ-ПОПРАВКА-ТАЙНА" };
+const sw7 = { releases: [], templates: [], gateTexts: "6.8", analysisVersions: ["2.0.3"], reportSource: "2.0" };
+(globalThis as unknown as { __ptsEditionsMem?: unknown[] }).__ptsEditionsMem?.push({ id: "ed-r2", schemeId: S, docKey: "report", no: 2, issuedOn: "2026-12-02", issuedAt: "2026-12-02T10:00:00Z", issuedBy: "m@ptsbg.eu", reason: `Поправка R2 — ${NOTE7.reason}. Поправено: ${NOTE7.scope}.`, scope: NOTE7.scope, source: "uploaded", file: { path: pdf, name: "r2.pdf", mime: "application/pdf", size: 17, uploadedAt: "2026-12-02T09:00:00Z", uploadedBy: "m@ptsbg.eu" }, sha: { file: sha256(new Uint8Array(Buffer.from("%PDF-1.4 protocol"))) } });
+await updateSchemeWith(S, () => ({
+  analysisExports: [exp7("x-good", { sha256: sha256(X_GOOD), path: dataX(X_GOOD) }), exp7("x-alt", { sha256: "0".repeat(64), path: dataX(X_ALT) }), exp7("x-gone", { sha256: "1".repeat(64), path: `${S}/x-gone.xlsx` }), exp7("x-old", { sha256: "2".repeat(64) })] as never,
+  transferChecks: [{ id: "tc1", at: "2026-11-21T10:00:00Z", by: "stat@ptsbg.eu", exportId: "x-good", importId: "i1", reportSha: "R1", same: false, note: NOTE7.check }] as never,
+  uxptChecks: [{ id: "u1", at: "2026-11-21T11:00:00Z", by: "m@ptsbg.eu", importId: "i1", reportSha: "R1", answer: "exceeded", note: NOTE7.uxpt }] as never,
+  reportIssues: [{ id: "ri2", r: 2, kind: "correction", editionId: "ed-r2", editionNo: 2, at: "2026-12-02T10:00:00Z", by: "m@ptsbg.eu", day: "2026-12-02", reason: NOTE7.reason, scope: NOTE7.scope, codes: [p.code], analysisVersion: "2.0.3", importId: "i1", reportSha: "R2", transferCheckId: "tc1", source: "2.0", software: sw7 }] as never,
+}));
 const all = (await buildRoundExport(S, "all"))!;
 const zAll = unzip(all.zip);
+{
+  const ax = zAll.get("coded/analysis_exports.csv")?.toString("utf8") ?? "";
+  const row = (id: string) => ax.split("\r\n").find((l) => l.startsWith(`${id},`)) ?? "";
+  t("7.10: each export handed out — the file as it went, byte for byte, in coded/files/analysis/exports/", Buffer.from(zAll.get("coded/files/analysis/exports/x-good.xlsx") ?? []).equals(Buffer.from(X_GOOD)) && /,coded\/files\/analysis\/exports\/x-good\.xlsx,,,yes$/.test(row("x-good")), row("x-good"));
+  t("…a file changed since: carried, said altered", zAll.has("coded/files/analysis/exports/x-alt.xlsx") && /,coded\/files\/analysis\/exports\/x-alt\.xlsx,yes,,yes$/.test(row("x-alt")), row("x-alt"));
+  t("…recorded but not in storage: listed missing — the export is INCOMPLETE", all.missing.includes("coded/files/analysis/exports/x-gone.xlsx") && /,,,yes,yes$/.test(row("x-gone")), row("x-gone"));
+  t("…from before 7.10 (no file kept): neither missing nor kept", !all.missing.some((m) => m.includes("x-old")) && /,,,,$/.test(row("x-old")), row("x-old"));
+  const cs = zAll.get("coded/scheme.json")?.toString("utf8") ?? "";
+  t("…the coded scheme: no storage path, no inline file", !cs.includes(`${S}/x-gone.xlsx`) && !cs.includes("spreadsheetml.sheet;base64"));
+  t("…the identity part keeps where each is kept (an inline one said so, not twice)", identitySchemeOf(zAll).includes(`${S}/x-gone.xlsx`) && identitySchemeOf(zAll).includes("(inline — see files/)"));
+  const notes7 = [...zAll].filter(([n, b]) => n.startsWith("coded/") && Object.values(NOTE7).some((x) => b.toString("utf8").includes(x))).map(([n]) => n);
+  t("7.10 review: the words PTS's people typed — a transfer check's note, a u(x_pt) note, a correction's reason and scope — in NO coded file (scheme.json and the editions' table included)", notes7.length === 0, notes7.join());
+  t("…the editions' table names the R the edition is", /Поправка R2 — причината и обхватът: в identity/.test(zAll.get("coded/editions.csv")?.toString("utf8") ?? ""));
+  t("…while the checks, answers and R's stay coded", /tc1,.*,x-good,i1,R1,no/.test(zAll.get("coded/transfer_checks.csv")?.toString("utf8") ?? "") && /exceeded/.test(zAll.get("coded/uxpt_checks.csv")?.toString("utf8") ?? "") && /ri2,2,correction/.test(zAll.get("coded/report_issues.csv")?.toString("utf8") ?? "") && /"transferChecks"/.test(cs) && /"reportIssues"/.test(cs));
+  t("…and identity/ keeps the words whole", Object.values(NOTE7).every((x) => identitySchemeOf(zAll).includes(x)));
+}
 t("the export is made", !!all && zAll.size === all.files.length && zAll.has("README.md"), String(all?.files.length));
 const listed = Object.values(ROUND_TABLES).flat();
 t("each round table's files are in the ZIP", listed.every((f) => zAll.has(f)), listed.filter((f) => !zAll.has(f)).join());

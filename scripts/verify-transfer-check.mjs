@@ -6,6 +6,8 @@
 // force; an addition (charts) leaves it in force; a new report, or a new export, takes it out; a
 // HEAD never runs the export.
 import { chromium } from "playwright";
+import { inflateRawSync } from "node:zlib";
+import { createHash } from "node:crypto";
 
 const BASE = process.env.BASE ?? "http://localhost:3000";
 let pass = 0, fail = 0;
@@ -20,6 +22,17 @@ const waitFor = async (fn, tries = 40) => { for (let i = 0; i < tries; i++) { if
 const stamp = Date.now() % 100000;
 const pdf = (tag) => Buffer.from(`%PDF-1.4\n% ${tag} ${stamp}\n1 0 obj <<>> endobj\ntrailer <<>>\n%%EOF\n`);
 const png = Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4b40000000049454e44ae426082", "hex");
+const unzip = (buf) => {
+  const out = new Map();
+  for (let i = 0; i + 30 <= buf.length && buf.readUInt32LE(i) === 0x04034b50;) {
+    const method = buf.readUInt16LE(i + 8), size = buf.readUInt32LE(i + 18), nameLen = buf.readUInt16LE(i + 26), extra = buf.readUInt16LE(i + 28);
+    const name = buf.subarray(i + 30, i + 30 + nameLen).toString("utf8");
+    const data = buf.subarray(i + 30 + nameLen + extra, i + 30 + nameLen + extra + size);
+    out.set(name, method === 8 ? inflateRawSync(data) : data);
+    i += 30 + nameLen + extra + size;
+  }
+  return out;
+};
 const state = async () => (await page.locator("[data-lifecycle] [data-state]").innerText()).trim();
 
 try {
@@ -58,7 +71,13 @@ try {
 
   // ── export, import ──
   const rx = await page.request.get(`${BASE}/schemes/${S}/export/analysis`);
+  const handed = Buffer.from(await rx.body());
   t("exported to 2.0 — the file handed out", rx.status() === 200);
+  // 7.10: the round export carries that very file — what went to 2.0 — and its table
+  const zipped = unzip(Buffer.from(await (await page.request.get(`${BASE}/schemes/${S}/export?part=coded`)).body()));
+  const kept = [...zipped.keys()].filter((n) => /^coded\/files\/analysis\/exports\/.+\.xlsx$/.test(n));
+  const table = zipped.get("coded/analysis_exports.csv")?.toString("utf8") ?? "";
+  t("7.10 — the round export holds the file handed out to 2.0, byte for byte, with its hash in analysis_exports.csv", kept.length === 1 && zipped.get(kept[0]).equals(handed) && table.includes(createHash("sha256").update(handed).digest("hex")), `${kept.length} ${table.slice(0, 200)}`);
   await go(`/schemes/${S}#analysis-import`);
   const form = page.locator("[data-import-form]");
   await form.locator('input[name="version"]').fill("2.0.3");
