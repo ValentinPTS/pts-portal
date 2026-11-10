@@ -9,6 +9,7 @@
 import type { Level, CriteriaEdition } from "./validation-model";
 import { criteriaFor } from "./validation-model";
 import { sameSchemeNumber, readSchemeNumber, type SchemeNumberReading } from "./scheme-number";
+import { SCENARIOS, SCENARIO_TEXT, type ScenarioRecords, type Scenario } from "./dry-run-model";
 
 /** Level 1's reference round (PTS, 31.10, А17; Zadanie §13): closed, by the current system, with a
  *  full corrected set of records. Level 1 is a replay of THIS round — never another (8.3 review). */
@@ -32,6 +33,8 @@ export interface AutoEvidence {
   transferSame?: boolean;
   /** level 2: the original number read (today's or an old form) — not a simulation's (8.4 review) */
   numberRead?: boolean;
+  /** level 3: what the round's own records show, scenario by scenario (8.5) */
+  scenarios?: { records: ScenarioRecords; happened: Record<Scenario, boolean> };
 }
 export interface ValidationTest {
   id: string;
@@ -109,6 +112,11 @@ export const levelOfKind = (k: RoundKind): Level => (k === "pts-t" ? 1 : 2);
 export const needs20 = (k: RoundKind) => k !== "sampling";
 /** How the portal reads an original number (Zadanie §13) — or null: not read (said, never guessed). */
 export const numberReading = (number: string): SchemeNumberReading | null => readSchemeNumber(number);
+// level 3's items are the dry run's scenarios — each must match AND have happened (8.5)
+for (const sc of SCENARIOS) ITEM_TEXT[sc] = SCENARIO_TEXT[sc];
+/** The items of a level and kind: level 3 — the scenarios; else the kind's. */
+export const itemsFor = (level: Level, kind: RoundKind): readonly string[] => (level === 3 ? SCENARIOS : KIND_ITEMS[kind]);
+export const mustFor = (level: Level, kind: RoundKind): readonly string[] => (level === 3 ? SCENARIOS : KIND_MUST[kind]);
 /** Level 1's items — the PTS testing kind's (kept for the record's readers). */
 export const LEVEL_ITEMS: Partial<Record<Level, string[]>> = { 1: KIND_ITEMS["pts-t"] };
 /** What PLAN 8.3's «Done when» names: never «неприложимо» (8.3 review). */
@@ -125,9 +133,9 @@ export type TestProblem = "level" | "date" | "future" | "early" | "scope" | "ite
 /** The form: the day tested (not after today, and not before what it rests on happened — the round
  *  loaded, the export, 2.0's report: `earliest`, 8.3 review), the scope, each item's result (a note
  *  where it is not «съвпада»), the conclusion. The level's items all answered. */
-export function readTestForm(kind: RoundKind, input: { testedOn: unknown; scope: unknown; conclusion: unknown; item: (key: string) => { result: unknown; note: unknown } }, today: string, earliest = "2026-01-01"):
+export function readTestForm(kind: RoundKind, input: { testedOn: unknown; scope: unknown; conclusion: unknown; item: (key: string) => { result: unknown; note: unknown } }, today: string, earliest = "2026-01-01", level?: Level):
   { ok: true; testedOn: string; scope: string; items: TestItem[]; conclusion: string } | { ok: false; problem: TestProblem; key?: string } {
-  const keys = KIND_ITEMS[kind];
+  const keys = level === 3 ? SCENARIOS : KIND_ITEMS[kind];
   if (!keys) return { ok: false, problem: "level" };
   const testedOn = typeof input.testedOn === "string" ? input.testedOn.trim() : "";
   if (!realDay(testedOn) || testedOn < "2026-01-01") return { ok: false, problem: "date" };
@@ -182,7 +190,13 @@ export const isReference = (replayOf: string | undefined) => !!replayOf && sameS
 /** The result: passes only when every item the level must match matches, the others match or are not
  *  applicable (with why), the portal found no unexpected difference in what was SENT, 2.0's report is
  *  in and the transfer check says «the same». Never the checker's word alone. */
-export function testResult(items: readonly TestItem[], auto: AutoEvidence, kind: RoundKind = "pts-t"): "pass" | "fail" {
+export function testResult(items: readonly TestItem[], auto: AutoEvidence, kind: RoundKind = "pts-t", level: Level = levelOfKind(kind)): "pass" | "fail" {
+  // level 3 — the dry run: every scenario ticked AND its record in the round; a scenario ticked that
+  // never happened is never a pass (8.5)
+  if (level === 3) {
+    const h = auto.scenarios?.happened;
+    return !!h && SCENARIOS.every((sc) => items.some((i) => i.key === sc && i.result === "match") && h[sc] === true) ? "pass" : "fail";
+  }
   const must = KIND_MUST[kind] ?? [];
   const itemsOk = items.length > 0 && items.every((i) => i.result === "match" || (i.result === "na" && !must.includes(i.key))) && must.every((k) => items.some((i) => i.key === k && i.result === "match"));
   // sampling: no 2.0 run (А9) — the comparison alone; the others: 2.0's report in and «the same»

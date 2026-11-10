@@ -3,7 +3,8 @@ import { listCriteria } from "@/lib/validation-criteria";
 import { listTests } from "@/lib/validation-tests";
 import { levelState, type LevelState } from "@/lib/validation-level";
 import { sofiaDay } from "@/lib/chain";
-import { KIND_ITEMS, KIND_MUST, KIND_TEXT, ITEM_TEXT, TEST_PROBLEM_TEXT, LEVEL_ONE_REFERENCE, criteriaOf, roundKind, levelOfKind, needs20, SCOPE_MAX, NOTE_MAX, CONCLUSION_MAX, type ValidationTest } from "@/lib/validation-test-model";
+import { itemsFor, mustFor, KIND_TEXT, ITEM_TEXT, TEST_PROBLEM_TEXT, LEVEL_ONE_REFERENCE, criteriaOf, roundKind, levelOfKind, needs20, SCOPE_MAX, NOTE_MAX, CONCLUSION_MAX, type ValidationTest } from "@/lib/validation-test-model";
+import { SCENARIOS } from "@/lib/dry-run-model";
 import PendingSubmit from "@/components/PendingSubmit";
 import type { Scheme } from "@/lib/types";
 
@@ -31,7 +32,8 @@ const OK_TEXT: Record<string, [string, string]> = {
 export default async function LevelTestCard({ s, lang, canRecord, answer }: { s: Scheme; lang: "bg" | "en"; canRecord: boolean; answer?: string }) {
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   // the round's kind decides the level (8.4): PTS testing — level 1; calibration, ILC, sampling — level 2
-  const kind = roundKind(s), level = levelOfKind(kind);
+  // a dry run's round (no replay) is level 3 (8.5)
+  const kind = roundKind(s), level = s.replay ? levelOfKind(kind) : (3 as const);
   const today = sofiaDay(new Date().toISOString());
   let state: LevelState | null = null, tests: ValidationTest[] = [], criteria = null as ReturnType<typeof criteriaOf>, unread = false;
   try {
@@ -42,7 +44,9 @@ export default async function LevelTestCard({ s, lang, canRecord, answer }: { s:
   } catch {
     unread = true;
   }
-  const shownItems: readonly string[] = !needs20(kind) ? ["compared", "number"] : kind === "pts-t" ? ["reference", "export", "report", "check", "compared"] : ["export", "report", "check", "compared", "number"];
+  const shownItems: readonly string[] = level === 3 ? [] : !needs20(kind) ? ["compared", "number"] : kind === "pts-t" ? ["reference", "export", "report", "check", "compared"] : ["export", "report", "check", "compared", "number"];
+  const happened = state?.auto.scenarios?.happened;
+  const records = state?.auto.scenarios?.records;
   const missing: string[] = state ? state.missing : [...shownItems];
   const unexpected = state?.auto.unexpected ?? null;
   const said = answer ? OK_TEXT[answer] ?? ((p) => (p ? [p.bg, p.en] as [string, string] : null))((TEST_PROBLEM_TEXT as Record<string, { bg: string; en: string }>)[answer]) : null;
@@ -51,10 +55,23 @@ export default async function LevelTestCard({ s, lang, canRecord, answer }: { s:
   const day = (d: string) => `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}`;
   return (
     <section className="card p-4 mt-4" id="level-test" data-level-test={level} data-level-ready={missing.length ? "no" : "yes"}>
-      <h2 className="font-bold" style={{ color: "var(--green-dark)", fontSize: 15, margin: 0 }} data-level-kind={kind}>{L(`Изпитване ниво ${level} — повторение на приключил кръг (${KIND_TEXT[kind].bg})`, `Level ${level} test — the replay of a closed round (${KIND_TEXT[kind].en})`)}</h2>
+      <h2 className="font-bold" style={{ color: "var(--green-dark)", fontSize: 15, margin: 0 }} data-level-kind={kind}>{level === 3 ? L(`Изпитване ниво 3 — пробно изпълнение (${KIND_TEXT[kind].bg})`, `Level 3 test — a dry run (${KIND_TEXT[kind].en})`) : L(`Изпитване ниво ${level} — повторение на приключил кръг (${KIND_TEXT[kind].bg})`, `Level ${level} test — the replay of a closed round (${KIND_TEXT[kind].en})`)}</h2>
+      {level === 3 ? <p className="text-sm" style={{ color: "var(--muted)", margin: "2px 0 8px", maxWidth: 820 }}>{L("Пробно изпълнение (Реш. 131–133): кръгът минава от начало до край с хората на PTS като провайдър и тестовите пощи като лаборатории, с преместен часовник. Всеки сценарий оставя запис в кръга — до всеки е какво показват записите; отметнат сценарий без запис не минава.", "A dry run (Реш. 131–133): the round runs end to end with PTS's people as the provider and the test mailboxes as the laboratories, the clock moved. Every scenario leaves a record in the round — beside each, what the records show; a scenario ticked without its record never passes.")}</p> :
       <p className="text-sm" style={{ color: "var(--muted)", margin: "2px 0 8px", maxWidth: 820 }}>{!needs20(kind)
         ? L("Пробовземане — само моделът на данните и номерът (А9): порталът внася кръга и го изнася отново, сравнено с изходния файл; човек проверява точките срещу подписаните критерии.", "Sampling — the data model and the number only (А9): the portal loads the round and exports it again, compared with the source file; a person checks the items against the signed criteria.")
-        : L("Изнасяне → 2.0 → внасяне трябва да възпроизведе издадения доклад. Порталът не изчислява (Реш. 135): сравнява човек, точка по точка, срещу подписаните критерии; каквото порталът проверява сам, се записва с изпитването.", "Export → 2.0 → import must reproduce the issued report. The portal computes nothing (Реш. 135): a person compares, item by item, against the signed criteria; what the portal checks by itself is recorded with the test.")}</p>
+        : L("Изнасяне → 2.0 → внасяне трябва да възпроизведе издадения доклад. Порталът не изчислява (Реш. 135): сравнява човек, точка по точка, срещу подписаните критерии; каквото порталът проверява сам, се записва с изпитването.", "Export → 2.0 → import must reproduce the issued report. The portal computes nothing (Реш. 135): a person compares, item by item, against the signed criteria; what the portal checks by itself is recorded with the test.")}</p>}
+      {level === 3 && missing.includes("kind") && <p className="text-sm" role="alert" style={{ color: "#8f2f2f" }} data-level-kind-refused>{L("Пробовземането не е вид за ниво 3 — пробното изпълнение е на изпитване за пригодност, калибриране и ILC при изпитване (Реш. 131).", "Sampling is not a kind for level 3 — the dry run is of PT testing, calibration and ILC testing (Реш. 131).")}</p>}
+      {level === 3 && (
+        <ul className="text-sm" style={{ margin: "0 0 6px", paddingLeft: 18 }} data-scenarios>
+          {SCENARIOS.map((sc) => {
+            const h = happened?.[sc] === true;
+            const what = !records ? "" : sc === "mail" ? L(`${records.mail.sent} доставени, ${records.mail.pending} чакащи, ${records.mail.failedAddresses} адреса с неуспешно последно`, `${records.mail.sent} delivered, ${records.mail.pending} pending, ${records.mail.failedAddresses} addresses whose latest failed`)
+              : sc === "deadlines" ? L(`часовникът преместен ${records.clockMoves} път(и); срок, минал по него — отключване: ${records.unlocks}`, `the clock moved ${records.clockMoves} time(s); a deadline passed on it — an unlock: ${records.unlocks}`)
+              : sc === "reminder" ? `${records.reminders}` : sc === "late" ? `${records.unlocks}` : sc === "extension" ? `${records.extensions}` : sc === "reissued" ? `${records.corrections}` : `${records.exports}`;
+            return <li key={sc} data-scenario={sc} data-happened={h ? "1" : "0"} style={{ color: h ? "var(--green-dark)" : "#7a5416" }}>{h ? "✓" : "○"} {L(ITEM_TEXT[sc].bg, ITEM_TEXT[sc].en)} — {h ? L("има запис", "on record") : L("още няма запис", "no record yet")}{what ? ` (${what})` : ""}</li>;
+          })}
+        </ul>
+      )}
       {said && <p role={good ? "status" : "alert"} className="text-sm" data-level-answer={answer} style={{ color: good ? "var(--green-dark)" : "#8f2f2f", margin: "0 0 6px" }}>{L(said[0], said[1])}</p>}
       {unread && <p role="alert" className="text-sm" style={{ color: "#8f2f2f" }}>{L("Не можа да се прочете какво е готово — презаредете.", "What is ready could not be read — reload.")}</p>}
       <ul className="text-sm" style={{ margin: "0 0 6px", paddingLeft: 18 }} data-level-ready-list>
@@ -80,10 +97,10 @@ export default async function LevelTestCard({ s, lang, canRecord, answer }: { s:
             <label className="text-sm" style={{ display: "grid", gap: 3, width: 180 }}>{L("Дата на изпитването", "The test's date")}<input type="date" name="testedOn" required min={state?.earliest} max={today} defaultValue={today} style={input} /></label>
             <label className="text-sm" style={{ display: "grid", gap: 3 }}>{L("Обхват (по желание)", "Scope (optional)")}<input name="scope" maxLength={SCOPE_MAX} style={input} /></label>
             <fieldset style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", display: "grid", gap: 6 }}>
-              <legend className="text-sm">{needs20(kind) ? L("Точките — сравнени от вас срещу издадения доклад", "The items — compared by you against the issued report") : L("Точките — сравнени от вас срещу записите на приключилия кръг", "The items — compared by you against the closed round's records")}</legend>
-              {KIND_ITEMS[kind].map((k) => (
+              <legend className="text-sm">{level === 3 ? L("Сценариите — проверени от вас в кръга", "The scenarios — checked by you in the round") : needs20(kind) ? L("Точките — сравнени от вас срещу издадения доклад", "The items — compared by you against the issued report") : L("Точките — сравнени от вас срещу записите на приключилия кръг", "The items — compared by you against the closed round's records")}</legend>
+              {itemsFor(level, kind).map((k) => (
                 <div key={k} className="text-sm" data-level-item={k} style={{ display: "grid", gap: 3 }}>
-                  <span>{L(ITEM_TEXT[k].bg, ITEM_TEXT[k].en)}{KIND_MUST[kind].includes(k) ? <b style={{ color: "#7a5416" }}>{L(" — трябва да съвпада", " — must match")}</b> : null}</span>
+                  <span>{L(ITEM_TEXT[k].bg, ITEM_TEXT[k].en)}{mustFor(level, kind).includes(k) ? <b style={{ color: "#7a5416" }}>{L(" — трябва да съвпада", " — must match")}</b> : null}</span>
                   <span style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                     {(["match", "mismatch", "na"] as const).map((r) => <label key={r} style={{ display: "flex", gap: 4 }}><input type="radio" name={`item_${k}`} value={r} required />{r === "match" ? L("съвпада", "matches") : r === "mismatch" ? L("не съвпада", "does not match") : L("неприложимо", "not applicable")}</label>)}
                   </span>
@@ -93,7 +110,9 @@ export default async function LevelTestCard({ s, lang, canRecord, answer }: { s:
             </fieldset>
             <label className="text-sm" style={{ display: "grid", gap: 3 }}>{L("Заключение", "Conclusion")}<textarea name="conclusion" required minLength={5} maxLength={CONCLUSION_MAX} rows={2} style={input} /></label>
             <label className="text-sm" style={{ display: "grid", gap: 3 }}>{L("Доказателство (по желание — PDF, PNG или JPG)", "Evidence (optional — PDF, PNG or JPG)")}<input type="file" name="file" accept="application/pdf,image/png,image/jpeg" /></label>
-            <p className="text-sm" style={{ color: "var(--muted)", margin: 0 }}>{needs20(kind)
+            <p className="text-sm" style={{ color: "var(--muted)", margin: 0 }}>{level === 3
+              ? L("Резултатът не се избира: изпитването преминава само ако всеки сценарий съвпада и записът му е в кръга.", "The result is not chosen: the test passes only if every scenario matches and its record is in the round.")
+              : needs20(kind)
               ? L("Резултатът не се избира: изпитването преминава само ако точките, които трябва да съвпадат, съвпадат, другите съвпадат или са неприложими (с причина), в изпратения към 2.0 файл няма неочаквана разлика, а проверката на преноса казва «същите».", "The result is not chosen: the test passes only if the items that must match match, the others match or are not applicable (with why), the file sent to 2.0 has no unexpected difference, and the transfer check says «the same».")
               : L("Резултатът не се избира: изпитването преминава само ако точките, които трябва да съвпадат, съвпадат, порталът е прочел номера и в изнасянето на кръга няма неочаквана разлика.", "The result is not chosen: the test passes only if the items that must match match, the portal read the number, and the round's export has no unexpected difference.")}</p>
             <div><PendingSubmit className="btn btn-sm btn-primary" mark="data-level-submit" label={L("Запиши изпитването", "Record the test")} /></div>

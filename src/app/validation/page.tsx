@@ -152,6 +152,8 @@ export default async function ValidationPage({ searchParams }: { searchParams: P
             <div className="text-sm" style={{ display: "grid", gap: 2, margin: "0 0 8px" }} data-coverage-box>
               <div>{cell(l1, L("Ниво 1 — PTS 26/03-T-1", "Level 1 — PTS 26/03-T-1"), "1")}</div>
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>{L("Ниво 2", "Level 2")} — {(["calibration", "ilc", "sampling"] as const).map((k) => <span key={k}>{cell(l2[k], L(KIND_TEXT[k].bg, KIND_TEXT[k].en), `2-${k}`)}</span>)}</div>
+              {/* level 3 — the dry run's three rounds (Реш. 131) */}
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>{L("Ниво 3", "Level 3")} — {(["pts-t", "calibration", "ilc"] as const).map((k) => <span key={k}>{cell(latestTest(tests, 3, k), L(KIND_TEXT[k].bg, KIND_TEXT[k].en), `3-${k}`)}</span>)}</div>
             </div>
           );
         })()}

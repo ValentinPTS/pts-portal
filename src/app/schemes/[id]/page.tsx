@@ -27,6 +27,7 @@ import { hasEditions, fmtDay } from "@/lib/editions-model";
 import SchemeTestClock from "@/components/SchemeTestClock";
 import ReplayCard from "@/components/ReplayCard";
 import LevelTestCard from "@/components/LevelTestCard";
+import { testableRound } from "@/lib/validation-level";
 import { isTestEnvironment } from "@/lib/environment";
 import { clockOffsetMs } from "@/lib/clock";
 import { listParticipants } from "@/lib/participants";
@@ -148,7 +149,9 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
   const canAct = await mayNow("scheme.edit", id);
   const mayReview = (await mayNow("results.read", id)) || (await mayNow("results.enter", id)) || (await mayNow("results.process", id));
   // the validation's recorders (8.1/8.3): the head and the quality manager
-  const canValidate = !!s.replay && (await mayAnywhereNow("validation.record"));
+  const testable = testableRound(s);
+  const mayValidate = await mayAnywhereNow("validation.record");
+  const canValidate = testable && mayValidate;
   // 7.2: who may import 2.0's documents — while the scheme is in processing; once the report is
   // issued (R1, 7.4), a correction's file too (it reaches nobody until a correction R2… is issued)
   const mayImport = ((await mayNow("results.process", id)) || (await mayNow("scheme.edit", id))) && (s.status === "processing" || (s.status === "report" && !!s.reportIssues?.length));
@@ -443,9 +446,10 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
       {/* the 19 stages and the scheme's state (3.2) */}
       <SchemeLifecycle schemeId={id} lang={lg} stateLabel={STATE_LABEL[s.status][lg]} stages={stageRows} acts={acts} history={history} />
       {/* 8.2: a replay round — the closed round it was loaded from, and its re-export against the file */}
-      {s.replay && (mayReview || canValidate) && <ReplayCard s={s} lang={lg === "bg" ? "bg" : "en"} />}
+      {/* the replay card for a failed load too — its «load again» (8.5 review) */}
+      {s.replay && (mayReview || mayValidate) && <ReplayCard s={s} lang={lg === "bg" ? "bg" : "en"} />}
       {/* 8.3: the level-1 test on the replay — for who records the validation, and who reads results */}
-      {s.replay && !s.replay.failed && (mayReview || canValidate) && <LevelTestCard s={s} lang={lg === "bg" ? "bg" : "en"} canRecord={canValidate} answer={sp.vt} />}
+      {testable && (mayReview || canValidate) && <LevelTestCard s={s} lang={lg === "bg" ? "bg" : "en"} canRecord={canValidate} answer={sp.vt} />}
       {/* 7.1: the export to PTS_Analysis 2.0 — the template's sheets, codes only */}
       {mayExport && analysisLink && (
         <div className="text-sm mt-2" data-analysis-export>

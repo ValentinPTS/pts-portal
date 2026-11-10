@@ -13,7 +13,7 @@ import { getScheme } from "./store";
 import type { ReplayImportState } from "./replay-model";
 import { listCriteria } from "./validation-criteria";
 import { readTestForm, testResult, criteriaOf, restsOn, isReference, editionUnderTests } from "./validation-test-model";
-import { levelState, type LevelState } from "./validation-level";
+import { levelState, testableRound, type LevelState } from "./validation-level";
 import { recordTest, voidTest, listTests } from "./validation-tests";
 
 // «Валидиране» (plan part 8.1; Реш. 134): record a signed edition of the acceptance criteria, or
@@ -111,7 +111,8 @@ export async function recordTestAction(formData: FormData): Promise<void> {
   const by = (await getRoleContext()).email ?? "build";
   const schemeId = String(formData.get("schemeId") ?? "");
   const s = await getScheme(schemeId);
-  if (!s || !s.replay || s.replay.failed) redirect("/validation?vt=scheme#tests");
+  // a replay that finished (levels 1–2), or a dry run's simulation round (level 3)
+  if (!s || !testableRound(s)) redirect("/validation?vt=scheme#tests");
   const sc = s!;
   // the chain and what the portal checks by itself — computed NOW, the same as the card shows (8.3
   // review); the level and the kind are the ROUND's, never the form's (8.4)
@@ -119,9 +120,9 @@ export async function recordTestAction(formData: FormData): Promise<void> {
   try { state = await levelState(sc); } catch { backTo(schemeId, "failed"); }
   const st = state!;
   const level = st.level;
-  if (st.kind === "pts-t" && !isReference(sc.replay!.of)) backTo(schemeId, "reference");
+  if (level === 1 && !isReference(sc.replay?.of)) backTo(schemeId, "reference");
   if (st.missing.length) backTo(schemeId, "not-ready");
-  const read = readTestForm(st.kind, { testedOn: formData.get("testedOn"), scope: formData.get("scope"), conclusion: formData.get("conclusion"), item: (k) => ({ result: formData.get(`item_${k}`), note: formData.get(`note_${k}`) }) }, sofiaDay(new Date().toISOString()), st.earliest);
+  const read = readTestForm(st.kind, { testedOn: formData.get("testedOn"), scope: formData.get("scope"), conclusion: formData.get("conclusion"), item: (k) => ({ result: formData.get(`item_${k}`), note: formData.get(`note_${k}`) }) }, sofiaDay(new Date().toISOString()), st.earliest, level);
   if (!read.ok) backTo(schemeId, read.problem);
   const v = read as Extract<typeof read, { ok: true }>;
   let criteria;
@@ -132,16 +133,16 @@ export async function recordTestAction(formData: FormData): Promise<void> {
   const f = file instanceof File && file.size > 0 ? file : null;
   const bytes = f ? new Uint8Array(await f.arrayBuffer()) : null;
   const r = await recordTest({
-    level, kind: st.kind, testedOn: v.testedOn, schemeId, schemeNumber: sc.number, replayOf: sc.replay!.of,
+    level, kind: st.kind, testedOn: v.testedOn, schemeId, schemeNumber: sc.number, ...(sc.replay ? { replayOf: sc.replay.of } : {}),
     criteriaId: c.edition.id, criteriaEdition: c.edition.edition, criteriaRecordedAfter: c.recordedAfter,
-    scope: v.scope, items: v.items, auto: st.auto, result: testResult(v.items, st.auto, st.kind), conclusion: v.conclusion, recordedBy: by,
+    scope: v.scope, items: v.items, auto: st.auto, result: testResult(v.items, st.auto, st.kind, level), conclusion: v.conclusion, recordedBy: by,
   }, f && bytes ? { bytes, mime: sniffMime(bytes) ?? f.type, name: f.name } : null);
   if (!r.ok) backTo(schemeId, r.error);
   const e = (r as Extract<typeof r, { ok: true }>).entry;
   const logged = await logActivity("validation.test_recorded", {
     schemeId, subject: `validation_test:${e.id}`,
     after: { level: e.level, testedOn: e.testedOn, result: e.result, criteriaEdition: e.criteriaEdition, unexpected: e.auto.unexpected, importId: e.auto.importId ?? null },
-    summary: `Level ${e.level} test (${e.kind}) on ${sc.number} (replay of ${sc.replay!.of}), ${e.testedOn} — ${e.result === "pass" ? "PASSES" : "FAILS"}, against acceptance criteria edition ${e.criteriaEdition}`,
+    summary: `Level ${e.level} test (${e.kind}) on ${sc.number}${sc.replay ? ` (replay of ${sc.replay.of})` : " (dry run)"}, ${e.testedOn} — ${e.result === "pass" ? "PASSES" : "FAILS"}, against acceptance criteria edition ${e.criteriaEdition}`,
   });
   revalidatePath("/validation");
   backTo(schemeId, logged ? `recorded-${e.result}` : "recorded-unlogged");
