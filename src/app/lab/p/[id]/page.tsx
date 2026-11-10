@@ -258,9 +258,9 @@ export default async function ParticipationPage({ params, searchParams }: { para
             ), { id: "declaration" }) : null}
 
             {/* 6.1: the results form, online — a draft kept as typed, the participation's own */}
-            {s.type === "T" && s.status === "running" && !v.finished ? card(L("Резултати", "Results"), (
+            {(s.type === "T" ? s.status === "running" : (s.status === "open" || s.status === "running") && (s.chain?.stops ?? []).some((x) => x.kind === "lab" && x.code === p.code && !!x.receivedAt)) && !v.finished ? card(L("Резултати", "Results"), (
               <div data-results-link style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", fontSize: 13 }}>
-                <span style={{ color: "var(--muted)", flex: 1, minWidth: 220 }}>{L("Попълнете резултатите онлайн: определянията, средната стойност, U и k. Черновата се пази, както е написана.", "Fill in the results online: the determinations, the mean, U and k. The draft is kept as typed.")}</span>
+                <span style={{ color: "var(--muted)", flex: 1, minWidth: 220 }}>{s.type === "C" ? L("Попълнете резултатите от калибрирането онлайн: общата информация и за всяка точка референтната и измерената стойност. Черновата се пази, както е написана.", "Fill in the calibration results online: the general info and, for each point, the reference and the measured value. The draft is kept as typed.") : L("Попълнете резултатите онлайн: определянията, средната стойност, U и k. Черновата се пази, както е написана.", "Fill in the results online: the determinations, the mean, U and k. The draft is kept as typed.")}</span>
                 <Link href={`${self}/results`} className="btn btn-primary btn-sm" data-open-results>{L("Към формуляра", "Open the form")}</Link>
               </div>
             )) : null}

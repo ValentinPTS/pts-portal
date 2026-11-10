@@ -152,8 +152,27 @@ try {
   if (lk) await labRow.locator(`[data-field="mean_${lk}"]`).fill("7,7");
   if (lk) await page.locator("[data-save-draft]").click();
   t("a laboratory's account: its own participation's form, saved", !!hrefT && !!lk && await waitFor(async () => (await attr(page.locator("[data-draft-state]"), "data-draft-state")) === "saved", 30));
+  // ── a calibration participation: the form per M2 (6.2) ──
   await go(`${hrefC}/results`);
-  t("a calibration scheme: no testing form — the calibration one is 6.2", !!hrefC && (await page.locator("[data-results-calibration]").count()) === 1 && (await page.locator("[data-results-form]").count()) === 0);
+  const calForm = page.locator('[data-results-form][data-results-kind="C"]');
+  const calRows = page.locator("[data-cal-row]");
+  t("a calibration scheme: the M2 form — general info, a row per point × direction, the units row", !!hrefC && (await calForm.count()) === 1 && (await page.locator("[data-general]").count()) === 1 && (await calRows.count()) >= 1 && (await page.locator("[data-units]").count()) === 1);
+  const r0 = calRows.first(), k0 = await r0.getAttribute("data-cal-row");
+  await page.locator('[data-field="g_labName"]').fill(`Калибровъчна лаб. ${stamp}`);
+  await r0.locator(`[data-field="ref_${k0}"]`).fill("20,00");
+  await r0.locator(`[data-field="meas_${k0}"]`).fill("20,03");
+  t("…the error computed and shown as the two are typed — measured minus reference, exactly (D1)", await waitFor(async () => (await r0.locator("[data-error]").getAttribute("data-error")) === "0.03", 10));
+  const r1 = (await calRows.count()) > 1 ? calRows.nth(1) : null;
+  if (r1) await r1.locator('input[type="checkbox"]').check();
+  t("…a point outside the scope: N/A declared — never an arithmetic error", !!r1 && (await r1.getAttribute("data-na")) === "1" && (await r1.locator("[data-error]").getAttribute("data-error")) === "N/A");
+  await page.locator("[data-save-draft]").click();
+  t("…saved", await waitFor(async () => (await attr(page.locator("[data-draft-state]"), "data-draft-state")) === "saved", 30));
+  await go(`${hrefC}/results`);
+  const back0 = page.locator(`[data-cal-row="${k0}"]`);
+  t("…after a reload: as typed — the readings, the laboratory's name, N/A; the error computed again, a comma in Bulgarian", (await back0.locator(`[data-field="meas_${k0}"]`).inputValue()) === "20,03" && (await page.locator('[data-field="g_labName"]').inputValue()) === `Калибровъчна лаб. ${stamp}` && (await back0.locator("[data-error]").getAttribute("data-error")) === "0.03" && /0[,.]03/.test(await back0.locator("[data-error]").innerText()) && (await page.locator("[data-cal-row]").nth(1).getAttribute("data-na")) === "1");
+  // the participation's page asks a calibration laboratory to fill it in once its device has arrived (review)
+  await go(hrefC);
+  t("…the participation's page: no «fill in the results» call before the device has arrived here", (await page.locator("[data-open-results]").count()) === 0);
 
   // ── PTS sees no draft ──
   await go("/dev/persona?role=manager");

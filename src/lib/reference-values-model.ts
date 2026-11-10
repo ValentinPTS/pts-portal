@@ -41,7 +41,13 @@ export function pointKeys(cal: { points: string[]; pointIds?: string[]; directio
   const ids = cal.points.map((_, i) => cal.pointIds?.[i] || `pt-${i + 1}`);
   const en = cal.directionsEn ?? [];
   if (!en.length) return cal.points.map((nominal, i) => ({ key: ids[i], nominal, pointIdx: i }));
-  return en.flatMap((dEn, d) => cal.points.map((nominal, i) => ({ key: `${ids[i]}|${slug(dEn)}`, nominal, pointIdx: i, dirIdx: d, direction: { bg: cal.directionsBg?.[d] || dEn, en: dEn } })));
+  // directions whose words give the same slug («+» and «−», «Up» and «up») would share one key —
+  // two rows bound to one value: such a direction's slug carries its place (6.2 review). A
+  // direction whose slug is its own keeps the key it always had.
+  const slugs = en.map(slug);
+  const dup = (x: string) => slugs.filter((y) => y === x).length > 1;
+  const dirKey = (d: number) => (dup(slugs[d]) ? `${slugs[d]}-${d + 1}` : slugs[d]);
+  return en.flatMap((dEn, d) => cal.points.map((nominal, i) => ({ key: `${ids[i]}|${dirKey(d)}`, nominal, pointIdx: i, dirIdx: d, direction: { bg: cal.directionsBg?.[d] || dEn, en: dEn } })));
 }
 
 /** Points with their stable ids (3.6) — a scheme saved before 3.6 has none, and a key by place

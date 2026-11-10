@@ -151,6 +151,9 @@ await sendToLab({ class: "provider", kind: "docs.sent", labId: lab.id, schemeId:
 globalThis.fetch = realFetch;
 for (const k of ["MAIL_PROVIDER", "MAIL_API_KEY", "MAIL_FROM"]) delete process.env[k];
 
+// a calibration form submitted (6.2/6.4): the laboratory's name as typed, and again inside its method
+const TYPED_LAB = "Типирана Лабораторийка ТАЙНА", TYPED_PERSON = "Пенка Попълващова";
+(globalThis as unknown as { __ptsSubmissionsMem?: unknown[] }).__ptsSubmissionsMem?.push({ id: "sub-x", participantId: p.id, schemeId: S, version: 1, submittedAt: "2026-11-06T10:00:00Z", submittedBy: `entityuser:${CU5}`, data: { v: 1, kind: "C", general: { labName: TYPED_LAB, signedBy: TYPED_PERSON, method: `пряко сравнение в ${TYPED_LAB}`, manufacturer: "Tecsis" }, points: {} } });
 const all = (await buildRoundExport(S, "all"))!;
 const zAll = unzip(all.zip);
 t("the export is made", !!all && zAll.size === all.files.length && zAll.has("README.md"), String(all?.files.length));
@@ -168,6 +171,9 @@ t("the round's tables (5.12): a row each, by the code — the shipment, the rece
 const roundLeaks = coded.filter(([, b]) => ["КУРИЕР-ТАЙНА", "ЗАБЕЛЕЖКА-ТАЙНА", "ДУМИ-НА-СИГНАЛ-ТАЙНА", "ТЕКСТ-НА-СЪОБЩЕНИЕ-ТАЙНА", "MESSAGE-TEXT-SECRET", CU5].some((x) => b.toString("utf8").includes(x))).map(([n]) => n);
 t("…and nothing of what they leave out reaches ANY coded file: the carrier, the remarks, a problem's words, a message's text, the account", roundLeaks.length === 0, roundLeaks.join());
 const identityScheme5 = zAll.get("identity/scheme-identity.json")?.toString("utf8") ?? "";
+const subsCsv = zAll.get("coded/submissions.csv")?.toString("utf8") ?? "", subsBy = zAll.get("identity/submissions_by.csv")?.toString("utf8") ?? "";
+t("submissions (6.2): the coded part — by code, the data without the typed laboratory and person, even inside its method (scrubbed)", subsCsv.includes(p.code) && subsCsv.includes("Tecsis") && !coded.some(([, b]) => b.toString("utf8").includes(TYPED_LAB) || b.toString("utf8").includes(TYPED_PERSON)));
+t("…the identity part names them, with who submitted", subsBy.includes(TYPED_LAB) && subsBy.includes(TYPED_PERSON) && subsBy.includes(CU5));
 t("…the identity part keeps them whole", identityScheme5.includes("ТЕКСТ-НА-СЪОБЩЕНИЕ-ТАЙНА") && identityScheme5.includes("ДУМИ-НА-СИГНАЛ-ТАЙНА") && identityScheme5.includes("КУРИЕР-ТАЙНА"));
 t("…the code itself", (zAll.get("coded/codes.csv")?.toString("utf8") ?? "").includes(p.code));
 t("…and the message's words, without its address", /Документите са изпратени/.test(zAll.get("coded/messages.csv")?.toString("utf8") ?? ""));

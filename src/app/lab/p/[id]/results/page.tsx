@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { participantViewer, participationViews } from "@/lib/participation-view";
 import { canLabUploadNow } from "@/lib/lab-phases";
-import { resultRows, draftFor, fieldName, rowsHaveIds } from "@/lib/results-model";
+import { resultRows, draftFor, fieldName, rowsHaveIds, calRows, calRowsReady, calDraftFor, calField, genField, orphansOf, GENERAL_FIELDS } from "@/lib/results-model";
 import { getDraft } from "@/lib/submissions";
 import { isProvisional } from "@/lib/coding-model";
 import { getServerT } from "@/lib/i18n-server";
@@ -10,6 +10,7 @@ import { signOutLabAction } from "@/lib/auth-actions";
 import ParticipantNav from "@/components/ParticipantNav";
 import LanguageToggle from "@/components/LanguageToggle";
 import ResultsForm from "@/components/ResultsForm";
+import CalibrationResultsForm from "@/components/CalibrationResultsForm";
 
 export const dynamic = "force-dynamic";
 
@@ -30,10 +31,31 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
   const { scheme: s, part: p } = v;
   const self = `/lab/p/${encodeURIComponent(v.participantId)}`;
   const rows = s.type === "T" ? resultRows(s, p) : [];
+  // a calibration (6.2): the points × the directions, by the points' lasting ids
+  const cRows = s.type === "C" && s.calibration ? calRows(s.calibration) : [];
   // a draft that cannot be read is never shown as none: the form then waits, read-only — one
   // keystroke would otherwise write an empty draft over the real one (6.1 review)
   let readFailed = false;
-  const stored = rows.length ? await getDraft(v.participantId, s.id).catch(() => { readFailed = true; return null; }) : null;
+  const stored = rows.length || cRows.length ? await getDraft(v.participantId, s.id).catch(() => { readFailed = true; return null; }) : null;
+  const cInitial: Record<string, string> = {};
+  if (cRows.length) {
+    const cd = calDraftFor(stored?.data, cRows);
+    for (const f of GENERAL_FIELDS) cInitial[genField(f)] = cd.general[f];
+    for (const r of cRows) { const x = cd.points[r.key]; cInitial[calField("ref", r.key)] = x.ref; cInitial[calField("meas", r.key)] = x.meas; cInitial[calField("U", r.key)] = x.U; cInitial[calField("cmc", r.key)] = x.cmc; cInitial[calField("na", r.key)] = x.na ? "on" : ""; }
+  }
+  const cReady = s.type === "C" && calRowsReady(s.calibration);
+  const cEditable = s.type === "C" && (s.status === "open" || s.status === "running") && !v.finished && canLabUploadNow(p.status) && !readFailed && cReady;
+  const reminder = lang === "bg" ? s.staticReminder?.bg : s.staticReminder?.en;
+  // what the draft keeps for points or characteristics no longer in the scheme — shown, never dropped (6.2 review)
+  const orphans = Object.entries(orphansOf(stored?.data, s.type === "C" ? cRows.map((r) => r.key) : rows.map((r) => r.key)));
+  const orphanText = (v: unknown) => Object.entries((v ?? {}) as Record<string, unknown>).filter(([, x]) => (typeof x === "string" && x) || (Array.isArray(x) && x.some(Boolean)) || x === true).map(([k, x]) => `${k}: ${Array.isArray(x) ? x.filter(Boolean).join(" / ") : x === true ? "N/A" : x}`).join(" · ");
+  const orphanBox = orphans.length ? (
+    <section className="card" data-orphans={orphans.length} style={{ padding: "10px 14px", fontSize: 12.5, background: "#f7f6f2" }}>
+      <b>{L("Вече не са в схемата", "No longer in the scheme")}</b>
+      <span style={{ color: "var(--muted)" }}>{L(" — PTS е променил точките или характеристиките. Написаното за тях се пази в черновата и не се губи; за подаване важат редовете по-горе.", " — PTS changed the points or characteristics. What was typed for them is kept in the draft and never lost; the rows above are what is submitted.")}</span>
+      <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>{orphans.map(([k, v]) => <li key={k} data-orphan={k}>{k} — {orphanText(v) || "—"}</li>)}</ul>
+    </section>
+  ) : null;
   const draft = draftFor(stored?.data, rows);
   // the form as its fields: what the draft holds, as typed
   const initial: Record<string, string> = {};
@@ -62,10 +84,28 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
       <main data-results-page={v.participantId} style={{ maxWidth: 980, margin: "0 auto", padding: "22px 24px 40px", display: "flex", flexDirection: "column", gap: 14 }}>
         <nav style={{ fontSize: 12.5, color: "var(--muted)" }}><Link href={self}>← {L("Към участието", "Back to the participation")}</Link> · {s.number}{!isProvisional(p.code) ? ` · ${L("код", "code")} ${p.code}` : ""}</nav>
         <h1 className="section-title" style={{ fontSize: 24, margin: 0 }}>{L("Резултати", "Results")}</h1>
-        {s.type !== "T" ? (
-          <p data-results-calibration className="card" style={{ padding: 14, margin: 0, fontSize: 13.5 }}>
-            {L("Онлайн формулярът за калибриране предстои (по Листа с резултати M2). Засега попълнете Листа с резултати и го изпратете, както казва Инструкцията.", "The online form for calibration is coming (after the M2 Results Sheet). For now, fill in the Results Sheet and send it as the Instruction says.")}
-          </p>
+        {/* the scheme's static reminder (3.6) — «one decimal place», «U to two significant figures» … */}
+        {reminder ? <p role="note" data-static-reminder className="card" style={{ padding: "10px 14px", margin: 0, fontSize: 13, background: "#faf2e0", border: "1px solid #ecd9ae" }}>{reminder}</p> : null}
+        {s.type === "C" ? (
+          cRows.length === 0 ? (
+            <p data-results-none className="card" style={{ padding: 14, margin: 0, fontSize: 13.5, color: "var(--muted)" }}>{L("Схемата още няма точки на калибриране.", "The scheme has no calibration points yet.")}</p>
+          ) : (
+            <>
+              <p style={{ margin: 0, fontSize: 13, color: "var(--muted)", maxWidth: 820 }}>
+                {L("Резултати от калибрирането по Листа с резултати (Ф 7.2.1-7): общата информация, после за всяка точка — референтната и измерената стойност; грешката се изчислява от формуляра. Всичко се пази, както е написано; проверява се само дали полетата са попълнени и дали са числа, никога стойността.",
+                  "Calibration results per the Results Sheet (F 7.2.1-7): the general info, then for each point — the reference and the measured value; the form computes the error. Everything is kept as typed; only whether the fields are filled and are numbers is checked, never the value.")}
+              </p>
+              {readFailed ? <p role="alert" data-results-unread style={{ margin: 0, fontSize: 13, color: "#8f2f2f" }}>{L("Черновата не можа да се прочете — формулярът изчаква, за да не я запише отгоре празна. Презаредете страницата след малко.", "The draft could not be read — the form waits, so as not to write an empty one over it. Reload the page in a moment.")}</p>
+                : !cReady ? <p role="note" data-results-ids style={{ margin: 0, fontSize: 13, color: "#7a5416" }}>{L("Точките на калибриране още нямат постоянни идентификатори — PTS трябва да запише схемата веднъж. Дотогава формулярът не приема данни.", "The calibration points have no lasting ids yet — PTS needs to save the scheme once. Until then the form takes no data.")}</p>
+                : !cEditable ? <p role="note" data-results-closed style={{ margin: 0, fontSize: 13, color: "#7a5416" }}>{L("Формулярът не приема промени: схемата не е в ход или участието е приключило.", "The form takes no changes: the scheme is not running, or the participation is finished.")}</p> : null}
+              <CalibrationResultsForm schemeId={s.id} participantId={v.participantId} lang={lang} editable={cEditable} savedAt={stored?.updatedAt} rev={stored?.rev ?? 0}
+                unit={s.calibration?.unit ?? ""} quantity={lang === "bg" ? s.calibration?.quantityBg ?? "" : s.calibration?.quantityEn ?? ""} code={isProvisional(p.code) ? undefined : p.code}
+                rows={cRows.map((r) => ({ key: r.key, nominal: r.nominal, direction: r.direction ? (lang === "bg" ? r.direction.bg : r.direction.en) : undefined }))}
+                initial={cInitial} />
+              {orphanBox}
+              <p style={{ margin: 0, fontSize: 12.5, color: "var(--muted)" }}>{L("Това е чернова — вижда я само участието. Подаването (с потвърждение на грешките и разписка) идва в следващата част.", "This is a draft — only the participation sees it. Submission (with the errors confirmed and a receipt) comes in the next part.")}</p>
+            </>
+          )
         ) : rows.length === 0 ? (
           <p data-results-none className="card" style={{ padding: 14, margin: 0, fontSize: 13.5, color: "var(--muted)" }}>{L("За това участие няма характеристики за докладване.", "This participation has no characteristics to report.")}</p>
         ) : (
@@ -80,6 +120,7 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
             <ResultsForm schemeId={s.id} participantId={v.participantId} lang={lang} editable={editable} savedAt={stored?.updatedAt} rev={stored?.rev ?? 0}
               rows={rows.map((r) => ({ key: r.key, name: lang === "bg" ? r.name.bg : r.name.en, method: lang === "bg" ? r.method.bg : r.method.en, unit: r.unit, determinations: r.determinations, uRequired: r.uRequired }))}
               initial={initial} />
+            {orphanBox}
             <p style={{ margin: 0, fontSize: 12.5, color: "var(--muted)" }}>{L("Това е чернова — вижда я само участието. Подаването (с потвърждение и разписка) идва в следващата част; дотогава резултатите се изпращат, както казва Инструкцията.", "This is a draft — only the participation sees it. Submission (with a confirmation and a receipt) comes in the next part; until then, results are sent as the Instruction says.")}</p>
           </>
         )}

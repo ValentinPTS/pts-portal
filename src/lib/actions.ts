@@ -81,8 +81,8 @@ import { finalListOf, splitFor, invoiceProblem, currentFinalList, inFinalRound, 
 import { readTarget, RELEASE_PROBLEM_TEXT, releaseFor, type TargetRelease } from "./release-model";
 import { ackRequiredFor, ackSettable, ackOf, kindOf, readAckForm, type Acknowledgement, type AckProblem } from "./ack-model";
 import { readMessage, messageBody, type SchemeMessage } from "./messages-model";
-import { resultRows, readDraft, notNumbers, rowsHaveIds } from "./results-model";
-import { putDraft } from "./submissions";
+import { resultRows, readDraft, notNumbers, rowsHaveIds, calRows, calRowsReady, readCalDraft, notNumbersCal, orphansOf } from "./results-model";
+import { putDraft, getDraft } from "./submissions";
 import { drawCodes, drawObjects, toCode, codingProblem, objectsGiven, unfinished, sampleCodeOf, isProvisional, CODING_PROBLEM_TEXT, type CodingProblem, type CodingRecord } from "./coding-model";
 import { commitCoding } from "./coding-store";
 import { pointKeys, pointsReady, fingerprint, orphans, readReferenceTable, kNeedsReason, currentRows, sameRow, sameRows, type ReferenceRow } from "./reference-values-model";
@@ -2779,6 +2779,8 @@ export async function createProjectAction(formData: FormData) {
   // the characteristics' lasting ids from the start (3.6) — what a participation's results
   // are kept by (6.1): never only once someone saves the editor (6.1 review)
   { const withIds = ensureIds(scheme.parameters ?? [], scheme.characteristicSeq); scheme.parameters = withIds.params; scheme.characteristicSeq = withIds.seq; }
+  // …and a calibration's points theirs (6.2: a calibration participation's results are kept by them)
+  if (scheme.calibration?.points?.length && !pointsReady(scheme.calibration)) { const pi = ensurePointIds(scheme.calibration.points, undefined, undefined, scheme.pointSeq); scheme.calibration = { ...scheme.calibration, pointIds: pi.ids }; scheme.pointSeq = pi.seq; }
   // a create of the same number that landed first wins; this one is told, not merged
   if (!(await addScheme(scheme))) redirect(`${folderView(type, folderId)}?dupNumber=${encodeURIComponent(number)}`);
   if (scheme.status === "open") {
@@ -4188,7 +4190,9 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
     // the first announcement: every characteristic has its lasting id from here on — a scheme
     // from before 3.6, or never saved in the editor, gets them now (6.1 review: the results are kept by them)
     const ids = act === "announce" && cur.parameters?.some((p) => !p.id) ? ensureIds(cur.parameters, cur.characteristicSeq) : null;
-    return { status: to, lifecycle: { ...(cur.lifecycle ?? {}), acts: [...(cur.lifecycle?.acts ?? []), entry] }, ...(ids ? { parameters: ids.params, characteristicSeq: ids.seq } : {}) };
+    // …and a calibration's points theirs (6.2)
+    const pts = act === "announce" && cur.calibration?.points?.length && !pointsReady(cur.calibration) ? ensurePointIds(cur.calibration.points, cur.calibration.points, cur.calibration.pointIds, cur.pointSeq) : null;
+    return { status: to, lifecycle: { ...(cur.lifecycle ?? {}), acts: [...(cur.lifecycle?.acts ?? []), entry] }, ...(ids ? { parameters: ids.params, characteristicSeq: ids.seq } : {}), ...(pts && cur.calibration ? { calibration: { ...cur.calibration, pointIds: pts.ids }, pointSeq: pts.seq } : {}) };
   });
   if (refused) return { error: ACT_REFUSAL[refused as ActProblem] };
 
@@ -6049,17 +6053,35 @@ export async function saveResultDraftAction(schemeId: unknown, participantId: un
   const mine = await ownGoingOn(sid, pid);
   if (!mine) return { error: "not-yours" };
   const { scheme, part, by } = mine;
-  if (scheme.type !== "T" || scheme.status !== "running" || !canLabUploadNow(part.status)) return { error: "state" };
-  const rows = resultRows(scheme, part);
-  // characteristics from before 3.6 have no lasting ids yet: the form waits for them
-  if (!rowsHaveIds(rows)) return { error: "state" };
-  // only the rows' fields are read, by name — whatever else is posted is ignored
+  // testing: while the round runs; calibration (6.2): while the device travels (open or running)
+  const open = scheme.type === "T" ? scheme.status === "running" : scheme.status === "open" || scheme.status === "running";
+  if (!open || !canLabUploadNow(part.status)) return { error: "state" };
+  // only the form's fields are read, by name — whatever else is posted is ignored
   const posted = fields && typeof fields === "object" && !Array.isArray(fields) ? (fields as Record<string, unknown>) : {};
-  const draft = readDraft((name) => (Object.hasOwn(posted, name) ? posted[name] : undefined), rows);
+  const get = (name: string) => (Object.hasOwn(posted, name) ? posted[name] : undefined);
+  // what the draft holds for points or characteristics no longer in the scheme is carried through
+  // every save — never dropped by a save drawn from the scheme as it is now (6.2 review). A draft
+  // that cannot be read: nothing written (it would lose them).
+  let prev: Awaited<ReturnType<typeof getDraft>>;
+  try { prev = await getDraft(pid, sid); } catch { return { error: "failed" }; }
+  let data: object, bad: { key: string; field: string }[];
+  if (scheme.type === "T") {
+    const rows = resultRows(scheme, part);
+    // characteristics from before 3.6 have no lasting ids yet: the form waits for them
+    if (!rowsHaveIds(rows)) return { error: "state" };
+    const d = readDraft(get, rows);
+    data = { ...d, rows: { ...orphansOf(prev?.data, rows.map((r) => r.key)), ...d.rows } }; bad = notNumbers(d, rows);
+  } else {
+    // a calibration's points without lasting ids (before 3.6): the form waits for them
+    if (!calRowsReady(scheme.calibration)) return { error: "state" };
+    const rows = calRows(scheme.calibration);
+    const d = readCalDraft(get, rows);
+    data = { ...d, points: { ...orphansOf(prev?.data, rows.map((r) => r.key)), ...d.points } }; bad = notNumbersCal(d, rows);
+  }
   try {
-    const saved = await putDraft({ participantId: pid, schemeId: sid, data: draft, configVersion: scheme.characteristicVersions?.at(-1)?.no, updatedBy: by }, base);
+    const saved = await putDraft({ participantId: pid, schemeId: sid, data, configVersion: scheme.characteristicVersions?.at(-1)?.no, updatedBy: by }, base);
     if (saved === "stale") return { error: "stale" };
-    return { ok: true, savedAt: saved.updatedAt, rev: saved.rev, notNumbers: notNumbers(draft, rows) };
+    return { ok: true, savedAt: saved.updatedAt, rev: saved.rev, notNumbers: bad };
   } catch {
     return { error: "failed" };
   }
