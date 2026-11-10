@@ -98,7 +98,7 @@ t("removing expired rejections: only those over their six years; their documents
 t("a document's removal says whether it went (Supabase answers in error, not by throwing)", /return !r\.error;/.test(readFileSync(new URL("../src/lib/entity-proofs.ts", import.meta.url), "utf8")));
 const org = readFileSync(new URL("../src/app/organizations/page.tsx", import.meta.url), "utf8");
 t("«Организации»: an erased profile shows only its request; one with participations says it is kept; the head is offered «Изтриване по искане» (review)", /if \(e\.erasedAt\) return \(/.test(org) && /e\.eraseRequestNo/.test(org) && /data-kept-for-rounds/.test(org) && /managesPeople && <EraseEntityForm lang=\{lg\} entityId=\{e\.id\} \/>/.test(org));
-t("«Потребители»: the rejected requests with their reason and the day each is kept until", /<RejectedRegistrations /.test(readFileSync(new URL("../src/app/users/page.tsx", import.meta.url), "utf8")));
+t("«Одобрения на регистрации» (9.1): the refused registrations with their reason and the day each is kept until", /<RejectedRegistrations /.test(readFileSync(new URL("../src/app/registrations/page.tsx", import.meta.url), "utf8")));
 
 console.log(`retention.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

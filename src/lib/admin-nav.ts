@@ -24,6 +24,8 @@ export function maySection(key: SectionKey, v: Viewer, managesPeople: boolean): 
     case "schemes": { const s = schemesFor(v, "codes.view"); return s === "all" || s.length > 0; }
     // the laboratory accounts and, from Phase 4, the organisations — with names (2.4)
     case "organizations": return any("labs.manage");
+    // the registrations of organisations and the requests to join (9.1) — the same people
+    case "registrations": return any("labs.manage");
     // the objects and batches: the technical expert (D18); the scheme manager plans them
     case "batches": return any("items.manage") || any("scheme.edit");
     // shipments go to a named laboratory (D18)

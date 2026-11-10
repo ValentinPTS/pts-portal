@@ -11,8 +11,12 @@ import { sameSchemeNumber, schemeIdFromNumber, sofiaYearMonth, readSchemeNumber,
 import { isTestEnvironment, mailAllowedHere, looksLikeSimNumber, testSubject } from "./environment";
 import { isMailConfigured, sendEmail } from "./mail";
 import { inviteLink, INVITE_RETURN, safeNext, siteOrigin } from "./auth-links";
-import { INVITE_SUBJECT, inviteText, invitePreview, PROFILE_CONFIRMED_SUBJECT, PROFILE_CONFIRMED_KEY, profileConfirmedText, fixedApproval } from "./fixed-texts";
-import { sendToLab, recordPending, settle, type Approval } from "./sent-messages";
+import { INVITE_SUBJECT, inviteText, invitePreview, PROFILE_CONFIRMED_SUBJECT, PROFILE_CONFIRMED_KEY, profileConfirmedText, fixedApproval,
+  PROFILE_CREATED_KEY, PROFILE_CREATED_SUBJECT, profileCreatedText, USER_JOINED_KEY, USER_JOINED_SUBJECT, userJoinedText,
+  ADMIN_CHANGED_KEY, ADMIN_CHANGED_SUBJECT, adminChangedText, officialNoticePreviews } from "./fixed-texts";
+import { JOIN_LETTER_BUCKET, keepMemLetter } from "./join-letters";
+import { readRegistration, registrationProblemText, inputOf, viesOf, adminJoinProblem, ptsJoinProblem, appointPlan, APPOINT_PROBLEM_TEXT, isEu, OFFICIAL_NOTICE_KINDS_91 } from "./registration-model";
+import { sendToLab, recordPending, settle, getSentMessage, type Approval } from "./sent-messages";
 import { saveReminderTemplate, approveReminderTemplate, getReminderTemplate, REMINDER_KINDS, type ReminderKind } from "./reminder-templates";
 import { proposeChange, decideChange, recordSettingChange, proposalProblem, listChanges, listReleases } from "./change-register";
 import { endAllRolesOf, assignSchemeRole, endSchemeRole, permanentRoleProblem, type AssignProblem } from "./scheme-roles";
@@ -63,7 +67,7 @@ import { readList, listsOf, listsDiff, listSeq, startingLists, MAX_ITEMS, type S
 import { M1_SPECIFIC_CLAUSES, M1_BLOCKS, MAX_M1_BLOCK, isM1Doc, m1Problems, usesM1 } from "./m1-render";
 import { readProviders, readPeriod, metaDiff, MAX_PROVIDERS } from "./scheme-meta";
 import { readEntity, entityDiff, entityChecked, stateProblem, eikKey, UUID_RE, ENTITY_PROBLEM_TEXT, ENTITY_STATES, type EntityState, type LegalEntity } from "./entities-model";
-import { openEntities, putEntity, entityKeyTaken, confirmEntity, eraseEntity } from "./entities";
+import { openEntities, putEntity, entityKeyTaken, entityIdByKey, confirmEntity, eraseEntity } from "./entities";
 import { readRejectReason, readEraseRequest, retentionOver, REJECT_REASON_MIN } from "./retention-model";
 import { storeProof, removeProof, PROOF_EXT, MAX_PROOF_BYTES } from "./entity-proofs";
 import { readLaboratory, laboratoryDiff, LABORATORY_PROBLEM_TEXT, type Laboratory, type LaboratoryState } from "./laboratories-model";
@@ -123,9 +127,8 @@ import { getDb, dbMode } from "./supabase";
 import { getLabByEmail, addLab, addLabOrThrow, getLab, labEmailInUse, updateLab } from "./labs";
 import {
   addLabApplication, getLabApplication, setLabApplicationReview, listLabApplications, removeLabApplication,
-  countPendingByEmail,
+  countPendingByEmail, patchLabApplication, eraseRegistrationsOf,
 } from "./lab-applications";
-import { validateEik } from "./verify-eik";
 import { checkVies } from "./verify-vies";
 import { getLabSession } from "./lab-auth";
 import { addStaff, updateStaff, getStaffByEmail, getStaff, staffEmailInUse } from "./staff";
@@ -151,7 +154,7 @@ import { addRevision, getRevision, approveRevision } from "./doc-revisions";
 import { createFolder, renameFolder, deleteFolder, getFolder, listChildFolders } from "./folder-tree";
 import { SAMPLE_SCHEMES } from "./sample-schemes";
 import { TYPE_SLUG, type FolderType } from "./folders";
-import type { ChainStamp, ChainStop, Scheme, Scoring, Parameter, StaffRole, StaffStatus, LabStatus, CaseEventKind, LabRegion, VatStatus, SchemeStatus, ParticipantStatus } from "./types";
+import type { ChainStamp, ChainStop, Scheme, Scoring, Parameter, StaffRole, StaffStatus, LabStatus, CaseEventKind, LabRegion, VatStatus, SchemeStatus, ParticipantStatus, LabApplication } from "./types";
 import {
   isIdentityMap, remapSelections, remapCharacteristics, remapScoring, paramsSignature,
   effectiveDirections, calibrationDataSlots, calibrationSlotsBroken, clearCalibrationSlots,
@@ -1796,57 +1799,54 @@ async function ensureLabDocsBucket(db: NonNullable<ReturnType<typeof getDb>>): P
   }
 }
 
-export async function submitLabApplicationAction(formData: FormData) {
-  const get = (k: string) => String(formData.get(k) ?? "").trim();
-  const cut = (s: string, n = 200) => s.slice(0, n);
+/** What the form typed — given back with a mistake, so nothing is typed twice (9.1 review). */
+export type RegistrationFormState = { error?: string; values?: Record<string, string>; at?: number };
+const REGISTRATION_FIELDS = ["orgName", "country", "eik", "vat", "address", "officialEmail", "mol", "language", "labName", "deliveryAddress", "accreditationNo", "accreditationBody", "contactPerson", "email", "position", "phone"] as const;
 
+export async function submitRegistrationAction(_prev: RegistrationFormState, formData: FormData): Promise<RegistrationFormState> {
+  // Part 9.1: the registration — the legal entity, its first laboratory and the person registering (the
+  // profile's administrator), each level read by its own Phase 4 reader. Every outcome that is not a
+  // mistake in the form ends on the same page with the same words (a neutral answer): whether the
+  // entity, the e-mail or the ЕИК exist is never said.
+  const get = (k: string) => String(formData.get(k) ?? "").trim();
+  const values = Object.fromEntries(REGISTRATION_FIELDS.map((k) => [k, get(k).slice(0, 300)]));
+  const mistake = (error: string): RegistrationFormState => ({ error, values, at: Date.now() });
   if (get("website")) redirect("/register/thanks"); // honeypot → drop quietly
+
+  const r = readRegistration({
+    name: get("orgName"), country: get("country"), eik: get("eik"), vat: get("vat"), correspondenceAddress: get("address"),
+    officialEmail: get("officialEmail"), mol: get("mol"), language: get("language"),
+    labName: get("labName"), deliveryAddress: get("deliveryAddress"), accreditationNo: get("accreditationNo"), accreditationBody: get("accreditationBody"),
+    personName: get("contactPerson"), email: get("email"), position: get("position"), phone: get("phone"),
+  });
+  if (!r.ok) return mistake(r.problem);
+  const { entity, laboratory, person } = r.value;
+  // the per-address limit counts what could be a registration — never a mistake in the form; reached,
+  // it is said (it tells nothing of any organisation): a valid registration is never dropped unsaid
   const h = await headers();
   const ip = (h.get("x-forwarded-for") ?? "local").split(",")[0].trim();
-  if (!allowSubmission(ip)) redirect("/register/thanks"); // rate-limited → drop quietly
+  if (!allowSubmission(ip)) return mistake("later");
+  // anti-spam: at most 3 pending registrations per e-mail — dropped quietly (neutral)
+  if ((await countPendingByEmail(person.email)) >= 3) redirect("/register/thanks");
+  const region: LabRegion = isEu(entity.country) ? "eu" : "non_eu";
 
-  const region: LabRegion = get("region") === "non_eu" ? "non_eu" : "eu";
-  const email = cut(get("email").toLowerCase(), 200);
-  const orgName = cut(get("orgName"), 200);
-  const country = cut(get("country"), 80);
-  const contactPerson = cut(get("contactPerson"), 160);
-
-  // Server-side required-field check (the client validates too).
-  if (!orgName || !country || !contactPerson || !email || !email.includes("@")) {
-    redirect("/register?e=missing");
-  }
-  // Anti-spam: at most 3 pending applications per e-mail.
-  if ((await countPendingByEmail(email)) >= 3) redirect("/register/thanks");
-
-  const phone = cut(get("phone"), 60);
-  const address = cut(get("address"), 300);
-  const accreditationBody = cut(get("accreditationBody"), 160);
-  const accreditationNo = cut(get("accreditationNo"), 120);
-
-  // EU path — instant EIK checksum + best-effort VIES VAT check.
-  let eik = "", vat = "";
+  // EU: the ЕИК's check digit (a Bulgarian one — readEntity checked it) and VIES, best effort
   let eikValid: boolean | undefined, vatStatus: VatStatus | undefined, vatName: string | undefined;
-  if (region === "eu") {
-    eik = cut(get("eik"), 20);
-    vat = cut(get("vat"), 20);
-    if (eik) { const v = validateEik(eik); eik = v.normalized; eikValid = v.ok; }
-    if (vat) { const r = await checkVies(vat, country.length === 2 ? country : ""); vatStatus = r.status; vatName = r.name ? cut(r.name, 200) : undefined; }
-  }
+  if (entity.country === "BG") eikValid = true;
+  if (region === "eu" && entity.vat) { const v = await checkVies(entity.vat, entity.country); vatStatus = v.status; vatName = v.name ? v.name.slice(0, 200) : undefined; }
 
-  // non-EU path — validate + store supporting documents in the private bucket.
+  // outside the EU — the supporting documents, validated and stored in the private bucket (as before)
   const docPaths: string[] = [];
   if (region === "non_eu") {
     const files = formData.getAll("documents").filter((f): f is File => f instanceof File && f.size > 0).slice(0, 3);
-    // Validate ALL files up front (outside the upload try/catch, so these redirects
-    // aren't swallowed by it): declared type ∈ allow-list, size cap, and the REAL
-    // bytes match the declared type (not just the client-reported MIME). Read each
-    // file's bytes once here and reuse them for the upload.
+    // every file checked up front (outside the upload's try/catch): the declared type allowed, the
+    // size, and the REAL bytes matching the type
     const prepared: { file: File; bytes: Uint8Array }[] = [];
     for (const f of files) {
-      if (!DOC_EXT[f.type]) redirect("/register?e=filetype");
-      if (f.size > 5_000_000) redirect("/register?e=filesize");
+      if (!DOC_EXT[f.type]) return mistake("filetype");
+      if (f.size > 5_000_000) return mistake("filesize");
       const bytes = new Uint8Array(await f.arrayBuffer());
-      if (!magicMatches(bytes, f.type)) redirect("/register?e=filetype");
+      if (!magicMatches(bytes, f.type)) return mistake("filetype");
       prepared.push({ file: f, bytes });
     }
     const db = getDb();
@@ -1861,17 +1861,27 @@ export async function submitLabApplicationAction(formData: FormData) {
           docPaths.push(path);
         }
       } catch (e) {
-        console.warn("[lab-apply] document upload failed:", (e as Error)?.message ?? e);
+        console.warn("[register] document upload failed:", (e as Error)?.message ?? e);
       }
     }
-    if (db && !docPaths.length) redirect("/register?e=docs"); // non-EU must attach at least one document
+    if (db && !docPaths.length) return mistake("docs"); // outside the EU a document is attached
   }
 
+  // a repeated ЕИК: a request to JOIN that entity — never a second entity, and never said. A lookup
+  // that fails makes it a registration; its approval asks again (and makes it a join then).
+  let joinOf: string | null = null;
+  try { joinOf = await entityIdByKey(REGISTRATION_ACTOR, entity.country, entity.eik); }
+  catch (e) { console.warn("[register] the ЕИК could not be looked up:", (e as Error)?.message ?? e); }
+
   await addLabApplication({
-    region, orgName, country, contactPerson, email, phone, address,
-    accreditationBody, accreditationNo, eik, vat, eikValid, vatStatus, vatName, docPaths,
+    kind: joinOf ? "join" : "entity", entityId: joinOf ?? undefined,
+    region, orgName: entity.name, country: entity.country, contactPerson: person.name, email: person.email, phone: person.phone,
+    address: entity.correspondenceAddress, accreditationBody: laboratory.accreditationBody, accreditationNo: laboratory.accreditationNo,
+    eik: entity.eik, vat: entity.vat, eikValid, vatStatus, vatName, docPaths,
+    officialEmail: entity.officialEmail, mol: entity.mol, language: entity.language,
+    labName: laboratory.name, deliveryAddress: laboratory.deliveryAddress, position: person.position,
   });
-  await logActivity("lab_application.submitted", { summary: `Lab account application received (${region})` });
+  await logActivity("registration.submitted", { summary: joinOf ? "A request to join an organisation received (9.1)" : "A registration of an organisation received (9.1)" });
   redirect("/register/thanks");
 }
 
@@ -1884,7 +1894,9 @@ export async function approveLabApplicationAction(
   await requireCapAnywhere("labs.manage"); // the role model (2.4)
   const id = String(formData.get("id") ?? "");
   const app = await getLabApplication(id);
-  if (!app || app.status !== "pending") return { error: "Application not found or already handled." };
+  // the earlier account requests only — a registration or a request to join is decided in
+  // «Одобрения на регистрации» (9.1 review)
+  if (!app || app.status !== "pending" || (app.kind ?? "account") !== "account") return { error: "Application not found or already handled." };
   const db = getDb();
   if (!db) return { error: "Approving needs Supabase configured." };
 
@@ -1965,7 +1977,8 @@ export async function rejectLabApplicationAction(formData: FormData): Promise<{ 
   const reason = readRejectReason(formData.get("reason"));
   if (!reason) return { error: `Напишете причината (поне ${REJECT_REASON_MIN} знака) — пази се с отказа 6 години. · Write the reason (${REJECT_REASON_MIN} characters at least) — it is kept with the rejection for 6 years.` };
   const app = await getLabApplication(id);
-  if (!app || app.status !== "pending") return { error: "Application not found or already handled." };
+  // the earlier account requests only (9.1 review)
+  if (!app || app.status !== "pending" || (app.kind ?? "account") !== "account") return { error: "Application not found or already handled." };
   const me = (await getRoleContext()).email ?? "manager";
   await setLabApplicationReview(id, { status: "rejected", rejectReason: reason, reviewedBy: me });
   await logActivity("lab_application.rejected", { targetCode: id, summary: "Lab account application rejected" });
@@ -5512,6 +5525,12 @@ export async function saveEntityUserAction(input: { id?: string; entityId: strin
   const m = was ? changedOnly(r.fields, readShown(input.shown), was) : { patch: r.fields, conflict: [] };
   if (m.conflict.length) return { error: `${CONFLICT_TEXT.bg}. · ${CONFLICT_TEXT.en}.` };
   if (was && !Object.keys(m.patch).length) return { ok: true, id }; // nothing changed
+  // a profile that is the laboratory's (registered in the portal, or confirmed — 4.4): its
+  // administrator changes only by «Назначи за администратор», which tells the official e-mail (9.1, К23)
+  if (was ? "role" in m.patch : r.fields.role === "admin") {
+    const ent = await oneEntity(entityId, actor);
+    if (ent && (ent.origin === "portal" || ent.confirmedAt)) return { error: "Профилът е на лабораторията: администраторът се сменя с «Назначи за администратор» — с уведомление до официалния e-mail (К23). Новият потребител се добавя като потребител. · The profile is the laboratory's: the administrator changes by «Appoint the administrator» — with a notice to the official e-mail (К23). A new user is added as a user." };
+  }
   try { await putEntityUser(id, was ? m.patch : { ...r.fields, entityId, state: "invited" }, actor); }
   catch (e) { return /administrator/.test(String((e as Error).message)) ? say("last-admin") : /duplicate key|unique/i.test(String((e as Error).message)) ? say("taken") : entityRefusal(e, ENTITY_USER_PROBLEM_TEXT.entity); }
   const [now] = await openEntityUsers({ actor, purpose: "write" }, { userId: id });
@@ -5607,7 +5626,7 @@ export async function inviteEntityUserAction(userId: string, textKey: string): P
  *  lib/participant-invite: a new sign-in account, or a new link to the one this user
  *  was linked to before (never another's), linked BEFORE the e-mail, the e-mail on
  *  record first. */
-async function sendParticipantInvite(u: EntityUser, approval: Approval, actor: string): Promise<{ ok: true } | { error: string }> {
+async function sendParticipantInvite(u: EntityUser, approval: Approval, actor: string, cls: "provider" | "triggered" = "provider"): Promise<{ ok: true } | { error: string }> {
   if (!mailAllowedHere(u.email)) return { error: "Тестова среда: канят се само адреси @ptsbg.eu. · Test environment: only @ptsbg.eu addresses are invited." };
   const db = getDb();
   const h = await headers();
@@ -5621,7 +5640,7 @@ async function sendParticipantInvite(u: EntityUser, approval: Approval, actor: s
       },
       link: (userId, authId) => linkEntityUserAccount(userId, authId, actor),
       linkFor: (token, type) => inviteLink(origin, token, type),
-      send: (link) => sendToLab({ class: "provider", kind: "invite", entityId: u.entityId, to: u.email, subject: testSubject(INVITE_SUBJECT), body: inviteText(link), secrets: [link] }, approval),
+      send: (link) => sendToLab({ class: cls, kind: "invite", entityId: u.entityId, to: u.email, subject: testSubject(INVITE_SUBJECT), body: inviteText(link), secrets: [link] }, approval),
     });
   } catch {
     return { error: "Поканата не тръгна — опитайте пак. · The invitation was not sent — try again." };
@@ -5697,10 +5716,16 @@ export async function saveProfileAction(input: Record<string, unknown>, confirm:
  *  on record whether or not it could go (no mail here, the test environment, a bad
  *  address: recorded «failed»), so PTS sees it and can send it again. */
 async function sendConfirmationNotice(entity: LegalEntity, by: { name: string }, confirmedAt: string, approval: Approval, cls: "triggered" | "provider"): Promise<boolean> {
-  const msg = {
-    class: cls, kind: "profile.confirmed", entityId: entity.id, to: entity.officialEmail, subject: testSubject(PROFILE_CONFIRMED_SUBJECT),
-    body: profileConfirmedText({ entity: entity.name, date: confirmDate(confirmedAt), by: by.name, privacy: privacyUrl() ?? "‹раздел М4 — още не е свързан · section M4 — not linked yet›" }),
-  };
+  return sendOfficialNotice(entity, "profile.confirmed", PROFILE_CONFIRMED_SUBJECT,
+    profileConfirmedText({ entity: entity.name, date: confirmDate(confirmedAt), by: by.name, privacy: privacyOrPlaceholder() }), approval, cls);
+}
+
+const privacyOrPlaceholder = () => privacyUrl() ?? "‹раздел М4 — още не е свързан · section M4 — not linked yet›";
+
+/** К23: a notice to the organisation's official e-mail — on record whether or not it could go (no mail
+ *  here, the test environment, a bad address: recorded «failed»), so PTS sees it. */
+async function sendOfficialNotice(entity: LegalEntity, kind: string, subject: string, body: string, approval: Approval, cls: "triggered" | "provider"): Promise<boolean> {
+  const msg = { class: cls, kind, entityId: entity.id, to: entity.officialEmail, subject: testSubject(subject), body };
   const res = await sendToLab(msg, approval);
   if (res.ok) return true;
   // sendToLab records nothing it cannot send — this notice is recorded all the same
@@ -5723,6 +5748,307 @@ export async function resendConfirmationNoticeAction(entityId: string): Promise<
   await logActivity("profile.notice_resent", { subject: `entity:${e.id}`, after: { notice: sent ? "sent" : "not sent" }, summary: `The notice of the laboratory's confirmation sent again: ${sent ? "sent" : "NOT sent"}` });
   revalidatePath("/organizations");
   return sent ? { ok: true } : { error: "Уведомлението не тръгна — вижте изпратените писма. · The notice did not go — see the sent messages." };
+}
+
+// ── Registration and joining (plan part 9.1; Реш. 112, 152; К23) ─────────────────
+// «Одобрения на регистрации»: PTS approves a registration — the entity («чака проверка», made from the
+// portal), its first laboratory and its administrator («поканен»; the invitation from «Организации», as
+// 4.4) — or refuses it with the reason, kept six years (4.7). A request to join an existing entity is
+// the entity's administrator's to decide; PTS decides it only as the fallback, always on the entity's
+// signed letter (PLAN §9.1). PTS appoints a new administrator. The organisation is told at its official
+// e-mail each time (К23) — fixed texts PTS approves (1.8).
+
+/** Who asks the identity store for a public registration — no one signed in. */
+const REGISTRATION_ACTOR = "registration (the public form)";
+const REG_GONE = "Регистрацията не е намерена или вече е решена. · The registration is not found, or is already decided.";
+const sayUser = (k: keyof typeof ENTITY_USER_PROBLEM_TEXT) => ({ error: `${ENTITY_USER_PROBLEM_TEXT[k].bg}. · ${ENTITY_USER_PROBLEM_TEXT[k].en}.` });
+const regProblem = (code: string) => { const t = registrationProblemText(code); return { error: t ? `${t.bg}. · ${t.en}.` : ENTITY_FAILED }; };
+
+/** A person's login for a participant's user: never one of PTS's people, nor an earlier laboratory
+ *  account, nor another user's (4.3) — `except` the user already made for it. A lookup that fails refuses. */
+async function personLoginProblem(actor: string, email: string, except?: string): Promise<{ error: string } | null> {
+  try {
+    if (await providerMailbox(email)) return sayUser("staff");
+    if ((await labEmailInUse(email)) || (await labEmailInUse(mailboxKey(email)))) return sayUser("lab-account");
+    if (await userEmailTaken(actor, email, except)) return sayUser("taken");
+  } catch { return { error: ENTITY_FAILED }; }
+  return null;
+}
+
+/** A registration that stopped half way is continued, never made twice: the entity it makes is saved on
+ *  it BEFORE it is made (only while it names none), and made at the next approval if it is not there. */
+export async function approveRegistrationAction(id: string): Promise<{ ok: true; entityId: string; notice: "sent" | "not-sent" } | { ok: true; becameJoin: true } | { error: string }> {
+  await requireCapAnywhere("labs.manage"); // the people of the laboratories (2.4)
+  const actor = await actorNow();
+  const me = (await getRoleContext()).email ?? "build";
+  let a = UUID_RE.test(String(id)) ? await getLabApplication(String(id)) : null;
+  if (!a || a.kind !== "entity" || a.status !== "pending") return { error: REG_GONE };
+  // read again by the same rules as the form
+  const r = readRegistration(inputOf(a));
+  if (!r.ok) return regProblem(r.problem);
+  const { entity, laboratory, person } = r.value;
+  if (!a.entityId) {
+    // the ЕИК registered meanwhile (by another): this is now a request to join that entity, for its
+    // administrator — guarded: only while it names no entity and waits
+    let other: string | null;
+    try { other = await entityIdByKey(actor, entity.country, entity.eik); } catch { return { error: ENTITY_FAILED }; }
+    if (other) {
+      if (!(await patchLabApplication(a.id, { kind: "join", entityId: other }, { pending: true, noEntity: true }).catch(() => false))) return { error: REG_GONE };
+      await logActivity("registration.became_join", { targetCode: a.id, summary: "A registration became a request to join: its ЕИК is an organisation's now" });
+      revalidatePath("/registrations");
+      return { ok: true, becameJoin: true };
+    }
+    // the entity's id saved first — a second approval at once, or a retry, continues with it
+    if (!(await patchLabApplication(a.id, { entityId: randomUUID() }, { pending: true, noEntity: true }).catch(() => false))) {
+      a = await getLabApplication(a.id);
+      if (!a?.entityId || a.status !== "pending") return { error: REG_GONE };
+    } else a = await getLabApplication(a.id);
+    if (!a?.entityId) return { error: ENTITY_FAILED };
+  }
+  const entityId = a.entityId;
+  const made = await openEntityUsers({ actor, purpose: "write" }, { entityId });
+  const madeAdmin = made.find((u) => u.email === person.email);
+  const refused = await personLoginProblem(actor, person.email, madeAdmin?.id);
+  if (refused) return refused;
+  const [there] = await openEntities({ actor, purpose: "write" }, entityId);
+  if (there?.state === "inactive") return { error: REG_GONE }; // refused meanwhile: its profile closed
+  if (!there) {
+    const vies = viesOf(a, entity);
+    try { await putEntity(entityId, { ...entity, origin: "portal", state: "pending", ...(vies ? { vies } : {}) }, actor); }
+    catch (e) { return { error: /duplicate key|unique/i.test(String((e as Error).message)) ? `${ENTITY_PROBLEM_TEXT.duplicate.bg}. · ${ENTITY_PROBLEM_TEXT.duplicate.en}.` : ENTITY_FAILED }; }
+    await logActivity("entity.created", { subject: `entity:${entityId}`, after: { created: true, origin: "portal" }, summary: "Legal entity made from a registration in the portal (9.1)" });
+  }
+  try {
+    const labs = await openLaboratories({ actor, purpose: "write" }, { entityId });
+    if (!labs.length) {
+      const labId = randomUUID();
+      await putLaboratory(labId, { ...laboratory, entityId, state: "active" }, actor);
+      await logActivity("laboratory.created", { subject: `laboratory:${labId}`, after: { entity: entityId }, summary: "Laboratory added from a registration (9.1)" });
+    }
+    if (!madeAdmin) {
+      const uid = randomUUID();
+      await putEntityUser(uid, { ...person, role: "admin", twoFactorRequired: false, receivesNotices: true, entityId, state: "invited" }, actor);
+      await logActivity("entityuser.created", { subject: `entityuser:${uid}`, after: { entity: entityId, role: "admin" }, summary: "Participant's user entered from a registration — profile administrator (9.1)" });
+    }
+  } catch (e) { return entityRefusal(e, ENTITY_USER_PROBLEM_TEXT.entity); }
+  if (!(await patchLabApplication(a.id, { status: "approved", reviewedBy: me }, true).catch(() => false))) return { error: REG_GONE };
+  const [ent] = await openEntities({ actor, purpose: "send" }, entityId);
+  const sent = ent ? await sendOfficialNotice(ent, "profile.created", PROFILE_CREATED_SUBJECT,
+    profileCreatedText({ entity: ent.name, date: confirmDate(new Date().toISOString()), admin: person.name, privacy: privacyOrPlaceholder() }),
+    { by: me, ref: fixedApproval(PROFILE_CREATED_KEY).ref }, "provider") : false;
+  await logActivity("registration.approved", { targetCode: a.id, subject: `entity:${entityId}`, after: { notice: sent ? "sent" : "not sent" }, summary: `Registration approved — the profile made, its administrator invited from «Организации»; the notice to the official e-mail ${sent ? "sent" : "NOT sent"}` });
+  revalidatePath("/registrations");
+  revalidatePath("/organizations");
+  return { ok: true, entityId, notice: sent ? "sent" : "not-sent" };
+}
+
+/** PTS refuses a registration, or a join it decides — with the reason, kept six years (4.7). A
+ *  registration whose approval stopped half way: the profile it began is made inactive (nothing deleted). */
+export async function rejectRegistrationAction(id: string, reasonIn: unknown): Promise<{ ok: true } | { error: string }> {
+  await requireCapAnywhere("labs.manage");
+  const reason = readRejectReason(reasonIn);
+  if (!reason) return { error: `Напишете причината (поне ${REJECT_REASON_MIN} знака) — пази се с отказа 6 години. · Write the reason (${REJECT_REASON_MIN} characters at least) — it is kept with the refusal for 6 years.` };
+  const a = UUID_RE.test(String(id)) ? await getLabApplication(String(id)) : null;
+  if (!a || a.status !== "pending" || (a.kind !== "entity" && a.kind !== "join")) return { error: REG_GONE };
+  const me = (await getRoleContext()).email ?? "build";
+  const actor = await actorNow();
+  if (!(await patchLabApplication(a.id, { status: "rejected", rejectReason: reason, reviewedBy: me, ...(a.kind === "join" ? { decidedAs: "pts" as const } : {}) }, true).catch(() => false))) return { error: REG_GONE };
+  if (a.kind === "entity" && a.entityId) {
+    const [begun] = await openEntities({ actor, purpose: "write" }, a.entityId);
+    if (begun && begun.state !== "inactive") {
+      try { await putEntity(begun.id, { state: "inactive" }, actor); } catch { /* said below */ }
+      await logActivity("entity.state", { subject: `entity:${begun.id}`, before: { state: begun.state }, after: { state: "inactive" }, summary: "Legal entity: made inactive — its registration was refused after its approval had begun (9.1)" });
+    }
+  }
+  await logActivity("registration.rejected", { targetCode: a.id, summary: a.kind === "join" ? "A request to join refused by PTS" : "A registration refused" });
+  revalidatePath("/registrations");
+  revalidatePath("/organizations");
+  return { ok: true };
+}
+
+/** The person a request to join names becomes a user of the entity — «поканен» (4.4). The person's login
+ *  checked and the request claimed FIRST (only while pending); then the letter stored; then the user made —
+ *  each step that fails gives the claim back and removes what it stored. The database makes the first
+ *  user of a profile with no administrator its administrator (0033): the role is read back. */
+async function joinUser(a: LabApplication, entityId: string, actor: string, decided: { as: "admin" | "pts"; by: string }, letter?: { bytes: Uint8Array; type: string }):
+  Promise<{ ok: true; user: EntityUser; letterPath?: string } | { error: string }> {
+  const r = readRegistration(inputOf(a));
+  if (!r.ok) return regProblem(r.problem);
+  const { person } = r.value;
+  const refused = await personLoginProblem(actor, person.email);
+  if (refused) return refused;
+  if (!(await patchLabApplication(a.id, { status: "approved", decidedAs: decided.as, reviewedBy: decided.by }, true).catch(() => false))) return { error: REG_GONE };
+  const db = getDb();
+  let letterPath: string | undefined;
+  const giveBack = async (why: string) => {
+    if (letterPath) { if (db) await db.storage.from(JOIN_LETTER_BUCKET).remove([letterPath]).catch(() => {}); }
+    try { await patchLabApplication(a.id, { status: "pending", decidedAs: undefined, reviewedBy: undefined, letterPath: undefined }); }
+    catch (e) { console.warn("[join] the request could not be given back:", (e as Error)?.message ?? e); await logActivity("registration.join_stuck", { targetCode: a.id, summary: `A request to join stayed «approved» with no user — ${why}; PTS refuses it or approves it again` }); }
+  };
+  if (letter) {
+    letterPath = `letters/${randomUUID()}.${DOC_EXT[letter.type]}`;
+    try {
+      if (db) {
+        await ensureLabDocsBucket(db);
+        const { error } = await db.storage.from(JOIN_LETTER_BUCKET).upload(letterPath, letter.bytes, { contentType: letter.type, upsert: false });
+        if (error) throw error;
+      } else keepMemLetter(letterPath, letter);
+      await patchLabApplication(a.id, { letterPath });
+    } catch (e) {
+      console.warn("[join] the letter was not stored:", (e as Error)?.message ?? e);
+      await giveBack("the letter was not stored");
+      return { error: "Писмото не се записа — нищо не е одобрено. Опитайте пак. · The letter was not stored — nothing approved. Try again." };
+    }
+  }
+  const uid = randomUUID();
+  try { await putEntityUser(uid, { ...person, role: "user", twoFactorRequired: false, receivesNotices: true, entityId, state: "invited" }, actor); }
+  catch (e) {
+    await giveBack("the user could not be made");
+    return /duplicate key|unique/i.test(String((e as Error).message)) ? sayUser("taken") : entityRefusal(e, ENTITY_USER_PROBLEM_TEXT.entity);
+  }
+  const [u] = await openEntityUsers({ actor, purpose: "write" }, { userId: uid });
+  return u ? { ok: true, user: u, letterPath } : { error: ENTITY_FAILED };
+}
+
+/** PTS decides a join — the fallback (PLAN §9.1), ALWAYS on the entity's signed letter (PDF or an image,
+ *  kept in the private bucket, opened only through its gate). The person comes in as a user — or, in a
+ *  profile with no administrator, as its administrator, and the official e-mail is told that too. */
+export async function approveJoinByPtsAction(formData: FormData): Promise<{ ok: true; notice: "sent" | "not-sent"; admin: boolean } | { error: string }> {
+  await requireCapAnywhere("labs.manage");
+  const actor = await actorNow();
+  const me = (await getRoleContext()).email ?? "build";
+  const id = String(formData.get("id") ?? "");
+  const a = UUID_RE.test(id) ? await getLabApplication(id) : null;
+  if (!a || a.kind !== "join" || a.status !== "pending" || !a.entityId) return { error: REG_GONE };
+  const ent = await oneEntity(a.entityId, actor);
+  if (!ent || ent.state === "inactive" || ent.erasedAt) return { error: "Организацията е неактивна — заявката може само да се откаже. · The organisation is inactive — the request can only be refused." };
+  const f = formData.get("letter");
+  const file = f instanceof File && f.size > 0 ? f : null;
+  if (ptsJoinProblem({ letter: !!file }) || !file) return { error: "PTS решава заявка за присъединяване само с подписаното писмо на организацията — приложете го. Без писмо я решава администраторът на профила. · PTS decides a request to join only on the organisation's signed letter — attach it. Without a letter, the profile's administrator decides it." };
+  // checked before anything is claimed or stored: the type allowed, the size, the REAL bytes
+  const LETTER_BAD = "Писмото е PDF или изображение, до 5 MB. · The letter is a PDF or an image, 5 MB at most.";
+  if (!DOC_EXT[file.type] || file.size > 5_000_000) return { error: LETTER_BAD };
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (!magicMatches(bytes, file.type)) return { error: LETTER_BAD };
+  const j = await joinUser(a, ent.id, actor, { as: "pts", by: me }, { bytes, type: file.type });
+  if ("error" in j) return j;
+  const today = confirmDate(new Date().toISOString());
+  const sent = await sendOfficialNotice(ent, "profile.user_joined", USER_JOINED_SUBJECT,
+    userJoinedText({ entity: ent.name, date: today, name: j.user.name, by: "letter", privacy: privacyOrPlaceholder() }),
+    { by: me, ref: fixedApproval(USER_JOINED_KEY).ref }, "provider");
+  // a profile with no administrator: the database made the person its administrator — told too (К23)
+  const admin = j.user.role === "admin";
+  const sentAdmin = admin ? await sendOfficialNotice(ent, "profile.admin_changed", ADMIN_CHANGED_SUBJECT,
+    adminChangedText({ entity: ent.name, date: today, name: j.user.name, privacy: privacyOrPlaceholder() }),
+    { by: me, ref: fixedApproval(ADMIN_CHANGED_KEY).ref }, "provider") : true;
+  await logActivity("registration.join_approved", { targetCode: a.id, subject: `entityuser:${j.user.id}`, after: { entity: ent.id, decidedAs: "pts", letter: true, admin, notice: sent && sentAdmin ? "sent" : "not sent" }, summary: `A request to join approved by PTS on the organisation's signed letter${admin ? " — the profile had no administrator: the person is its administrator" : ""}; the notice to the official e-mail ${sent && sentAdmin ? "sent" : "NOT sent"}` });
+  revalidatePath("/registrations");
+  revalidatePath("/organizations");
+  return { ok: true, notice: sent && sentAdmin ? "sent" : "not-sent", admin };
+}
+
+/** The profile's administrator decides a request to join its entity (9.1) — in the laboratory's portal.
+ *  Approved: the person a user, «поканен», the invitation sent (the portal's fixed text, shown to the
+ *  administrator before «Одобри» — its key sent with it, 1.8), the official e-mail told. Refused: with the
+ *  reason, kept six years. */
+export async function decideJoinAction(id: string, approve: boolean, reasonIn?: unknown, inviteKey?: string): Promise<{ ok: true; invite?: "sent" | "not-sent" } | { error: string }> {
+  const ps = await requireParticipant();
+  const { user, entity } = ps;
+  const actor = participantActor(user.id);
+  const a = UUID_RE.test(String(id)) ? await getLabApplication(String(id)) : null;
+  if (!a) return { error: REG_GONE };
+  const problem = adminJoinProblem(user, a);
+  if (problem === "not-admin") return { error: "Заявките за присъединяване решава активният администратор на профила. · The profile's active administrator decides the requests to join." };
+  if (problem) return { error: REG_GONE };
+  const whoId = user.authUserId ?? "dev-persona";
+  if (!approve) {
+    const reason = readRejectReason(reasonIn);
+    if (!reason) return { error: `Напишете причината (поне ${REJECT_REASON_MIN} знака). · Write the reason (${REJECT_REASON_MIN} characters at least).` };
+    if (!(await patchLabApplication(a.id, { status: "rejected", rejectReason: reason, decidedAs: "admin", reviewedBy: `entityuser:${user.id}` }, true).catch(() => false))) return { error: REG_GONE };
+    await logAs({ kind: "lab", userId: whoId }, "registration.join_rejected", { targetCode: a.id, subject: `entity:${entity.id}`, after: { by: `entityuser:${user.id}` }, summary: "A request to join refused by the profile's administrator" });
+    revalidatePath("/lab/joins");
+    return { ok: true };
+  }
+  const shown = invitePreview();
+  if (inviteKey !== shown.key) return { error: "Текстът на поканата е променен — отворете страницата отново. · The invitation's text has changed — open the page again." };
+  const j = await joinUser(a, entity.id, actor, { as: "admin", by: `entityuser:${user.id}` });
+  if ("error" in j) return j;
+  // the invitation — the portal's own fixed text, shown and sent on the administrator's action; when it
+  // cannot go, PTS sends it from «Организации» (the user waits there as «поканен»)
+  const inv = await sendParticipantInvite(j.user, { by: `entityuser:${user.id}`, ref: `invite:${shown.key}` }, actor, "triggered");
+  const sent = await sendOfficialNotice(entity, "profile.user_joined", USER_JOINED_SUBJECT,
+    userJoinedText({ entity: entity.name, date: confirmDate(new Date().toISOString()), name: j.user.name, by: "admin", privacy: privacyOrPlaceholder() }),
+    fixedApproval(USER_JOINED_KEY), "triggered");
+  await logAs({ kind: "lab", userId: whoId }, "registration.join_approved", { targetCode: a.id, subject: `entityuser:${j.user.id}`, after: { entity: entity.id, decidedAs: "admin", by: `entityuser:${user.id}`, invite: "error" in inv ? "not sent" : "sent", notice: sent ? "sent" : "not sent" }, summary: `A request to join approved by the profile's administrator; the invitation ${"error" in inv ? "NOT sent" : "sent"}; the notice to the official e-mail ${sent ? "sent" : "NOT sent"}` });
+  revalidatePath("/lab/joins");
+  revalidatePath("/organizations");
+  revalidatePath("/registrations");
+  return { ok: true, invite: "error" in inv ? "not-sent" : "sent" };
+}
+
+/** «Изпрати отново» (9.1 review): a notice to the official e-mail whose latest attempt did not go — the
+ *  same recorded words, to the official e-mail as it is now; PTS's person approves it. */
+export async function resendOfficialNoticeAction(messageId: string): Promise<{ ok: true } | { error: string }> {
+  await requireCapAnywhere("labs.manage");
+  if (!UUID_RE.test(String(messageId))) return { error: "Not found." };
+  const m = await getSentMessage(String(messageId)).catch(() => null);
+  if (!m || !m.entityId || !(OFFICIAL_NOTICE_KINDS_91 as readonly string[]).includes(m.kind) || m.outcome !== "failed") return { error: "Not found." };
+  const actor = await actorNow();
+  const ent = await oneEntity(m.entityId, actor);
+  if (!ent || ent.state === "inactive" || ent.erasedAt) return { error: `${ENTITY_USER_PROBLEM_TEXT.entity.bg}. · ${ENTITY_USER_PROBLEM_TEXT.entity.en}.` };
+  if (!ent.officialEmail) return { error: "Няма официален e-mail. · No official e-mail." };
+  const person = (await getRoleContext()).email ?? "build";
+  const msg = { class: "provider" as const, kind: m.kind, entityId: ent.id, to: ent.officialEmail, subject: m.subject, body: m.body };
+  const approval = { by: person, ref: m.approvalRef };
+  const res = await sendToLab(msg, approval);
+  if (!res.ok && !res.recordId) { const rid = await recordPending(msg, approval); if (rid) await settle(rid, false, res.error ?? "not sent"); }
+  await logActivity("profile.notice_resent", { subject: `entity:${ent.id}`, after: { kind: m.kind, notice: res.ok ? "sent" : "not sent" }, summary: `A notice to the official e-mail sent again (${m.kind}): ${res.ok ? "sent" : "NOT sent"}` });
+  revalidatePath("/organizations");
+  return res.ok ? { ok: true } : { error: "Уведомлението не тръгна — вижте изпратените писма. · The notice did not go — see the sent messages." };
+}
+
+/** PTS appoints another active user of the entity its administrator (9.1); `demote` — the
+ *  administrators before become users. The notice's exact text was shown (its key sent with it, 1.8).
+ *  Once the promotion is made, the organisation is told at its official e-mail (К23) and it is on record —
+ *  a demotion that fails after is said on its own and can be done again. */
+export async function appointEntityAdminAction(userId: string, demote: boolean, textKeyShown: string): Promise<{ ok: true; notice: "sent" | "not-sent" } | { error: string }> {
+  await requireCapAnywhere("labs.manage");
+  const shown = officialNoticePreviews().find((n) => n.key === ADMIN_CHANGED_KEY)!;
+  if (typeof textKeyShown !== "string" || textKeyShown !== shown.textKey) return { error: "Текстът на уведомлението е променен — отворете го отново. · The notice's text has changed — open it again." };
+  if (!UUID_RE.test(String(userId))) return { error: "Not found." };
+  const actor = await actorNow();
+  const me = (await getRoleContext()).email ?? "build";
+  const [target] = await openEntityUsers({ actor, purpose: "write" }, { userId: String(userId) });
+  if (!target) return { error: "Not found." };
+  const ent = await oneEntity(target.entityId, actor);
+  if (!ent || ent.state === "inactive") return { error: `${ENTITY_USER_PROBLEM_TEXT.entity.bg}. · ${ENTITY_USER_PROBLEM_TEXT.entity.en}.` };
+  if (!ent.officialEmail) return { error: "Първо въведете официалния e-mail на юридическото лице — там отива уведомлението (К23). · First enter the legal entity's official e-mail — the notice goes there (К23)." };
+  const users = await openEntityUsers({ actor, purpose: "write" }, { entityId: ent.id });
+  const plan = appointPlan(users, target.id, demote === true);
+  if (!plan.ok) { const t = APPOINT_PROBLEM_TEXT[plan.problem]; return { error: `${t.bg}. · ${t.en}.` }; }
+  let promoted = false;
+  const failed: string[] = [];
+  for (const c of plan.changes) {
+    try { await putEntityUser(c.id, { role: c.role }, actor); }
+    catch (e) {
+      // the promotion itself refused: nothing changed — said
+      if (c.role === "admin") return /administrator/.test(String((e as Error).message)) ? sayUser("last-admin") : entityRefusal(e, ENTITY_USER_PROBLEM_TEXT.entity);
+      failed.push(c.id);
+      continue;
+    }
+    if (c.role === "admin") promoted = true;
+    await logActivity("entityuser.updated", { subject: `entityuser:${c.id}`, after: { fields: ["role"], role: c.role }, summary: `Participant's user: ${c.role === "admin" ? "appointed the profile's administrator by PTS" : "no longer the profile's administrator"} (9.1)` });
+  }
+  let sent = true;
+  if (promoted) {
+    sent = await sendOfficialNotice(ent, "profile.admin_changed", ADMIN_CHANGED_SUBJECT,
+      adminChangedText({ entity: ent.name, date: confirmDate(new Date().toISOString()), name: target.name, privacy: privacyOrPlaceholder() }),
+      { by: me, ref: fixedApproval(ADMIN_CHANGED_KEY).ref }, "provider");
+    await logActivity("entity.admin_changed", { subject: `entity:${ent.id}`, after: { admin: `entityuser:${target.id}`, demoted: plan.changes.length - 1 - failed.length, demotionsFailed: failed.length, notice: sent ? "sent" : "not sent" }, summary: `PTS appointed a new profile administrator; the notice to the official e-mail ${sent ? "sent" : "NOT sent"}${failed.length ? ` — ${failed.length} administrator(s) before could not be made users` : ""}` });
+  }
+  revalidatePath("/organizations");
+  if (failed.length) return { error: `${promoted ? "Новият администратор е назначен и организацията е уведомена, но" : ""} ${failed.length} от досегашните администратори не станаха потребители — натиснете «Назначи» отново. · ${promoted ? "The new administrator is appointed and the organisation told, but" : ""} ${failed.length} of the administrators before were not made users — press «Appoint» again.`.trim() };
+  return { ok: true, notice: sent ? "sent" : "not-sent" };
 }
 
 // ── A frozen copy per participation (plan part 4.5; J12) ─────────────────────────
@@ -5804,6 +6130,7 @@ export async function removeExpiredRejectionsAction(): Promise<{ ok: true; remov
   }
   if (removed || failedDocs.length) await logActivity("lab_application.removed", { after: { removed, documentsNotRemoved: failedDocs }, summary: `Rejected registrations past their six years removed: ${removed} (Zadanie §10)${failedDocs.length ? ` — ${failedDocs.length} document(s) could not be removed, their records kept` : ""}` });
   revalidatePath("/users");
+  revalidatePath("/registrations");
   return removed === due.length ? { ok: true, removed } : { error: `Премахнати ${removed} от ${due.length} — останалите опитайте пак. · Removed ${removed} of ${due.length} — try the rest again.` };
 }
 
@@ -5839,9 +6166,20 @@ export async function eraseEntityAction(entityId: string, requestNo: unknown, re
   // the one-way messages PTS wrote to it (5.10): blanked and closed off — their text may name it
   let notices = 0, noticesLeft = false;
   try { notices = await eraseEntityNotices(String(entityId)); } catch { noticesLeft = true; }
-  await logActivity("entity.erased", { subject: `entity:${entityId}`, after: { laboratories: r.laboratories, users: r.users, messages: r.messages, organisationMessages: notices, organisationMessagesLeft: noticesLeft, accountsDeleted: r.accounts.length - accountsLeft.length, documentsRemoved: r.proofs.length - documentsLeft.length, accountsLeft, documentsLeft }, summary: `Legal entity erased on request (no participation): ${r.laboratories} laboratories, ${r.users} users, ${r.messages} messages blanked, ${r.accounts.length - accountsLeft.length} sign-in accounts deleted, ${r.proofs.length - documentsLeft.length} documents removed (Zadanie §10)${accountsLeft.length || documentsLeft.length ? ` — LEFT: ${accountsLeft.length} accounts, ${documentsLeft.length} documents` : ""}` });
+  // its registrations (9.1): the one that made it and the requests to join it — anonymised, a waiting
+  // one refused; their papers and the signed letters removed (9.1 review)
+  let registrations = 0;
+  try {
+    const reg = await eraseRegistrationsOf(String(entityId));
+    registrations = reg.rows;
+    if (db && reg.files.length) {
+      const rm = await db.storage.from(DOC_BUCKET).remove(reg.files).catch((e) => ({ error: e as Error }));
+      if (rm.error) documentsLeft.push(...reg.files);
+    }
+  } catch { noticesLeft = true; }
+  await logActivity("entity.erased", { subject: `entity:${entityId}`, after: { laboratories: r.laboratories, users: r.users, messages: r.messages, organisationMessages: notices, organisationMessagesLeft: noticesLeft, registrations, accountsDeleted: r.accounts.length - accountsLeft.length, documentsRemoved: r.proofs.length - documentsLeft.length, accountsLeft, documentsLeft }, summary: `Legal entity erased on request (no participation): ${r.laboratories} laboratories, ${r.users} users, ${r.messages} messages blanked, ${r.accounts.length - accountsLeft.length} sign-in accounts deleted, ${r.proofs.length - documentsLeft.length} documents removed (Zadanie §10)${accountsLeft.length || documentsLeft.length ? ` — LEFT: ${accountsLeft.length} accounts, ${documentsLeft.length} documents` : ""}` });
   revalidatePath("/organizations");
-  if (noticesLeft) return { error: "Профилът е изтрит, но съобщенията до организацията не можаха да се заличат — записано е в журнала; опитайте пак или съобщете на софтуерния администратор. · The profile is erased, but the messages to the organisation could not be blanked — in the journal; try again or tell PTS's software administrator." };
+  if (noticesLeft) return { error: "Профилът е изтрит, но съобщенията до организацията или регистрациите ѝ не можаха да се заличат — записано е в журнала; опитайте пак или съобщете на софтуерния администратор. · The profile is erased, but the messages to the organisation or its registrations could not be blanked — in the journal; try again or tell PTS's software administrator." };
   if (accountsLeft.length || documentsLeft.length) return { error: `Профилът е изтрит, но ${accountsLeft.length} профила за вход и ${documentsLeft.length} документа не можаха да се премахнат — записано е в журнала; софтуерният администратор ги премахва. · The profile is erased, but ${accountsLeft.length} sign-in accounts and ${documentsLeft.length} documents could not be removed — in the journal; PTS's software administrator removes them.` };
   return { ok: true };
 }

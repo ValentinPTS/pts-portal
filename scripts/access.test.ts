@@ -128,7 +128,7 @@ const allActions = [...actions.matchAll(/^export async function (\w+)/gm)].map((
 });
 const OPEN: Record<string, string> = {
   submitApplicationAction: "the public application to a scheme",
-  submitLabApplicationAction: "the public application for a laboratory account",
+  submitRegistrationAction: "the public registration of an organisation (9.1) — the honeypot, the per-address limit, a neutral answer",
   inviteLabAction: "a form wrapper of inviteLabByIdAction, which is gated",
 };
 const noGate = allActions.filter(([, name, head]) => !(name in OPEN) && !/await (requireCap|requireCapAnywhere|requireOneOf|requirePeopleManager|requireDocWriter|getLabSession|requireParticipant|myChainStop|ownGoingOn)\(/.test(head)).map(([, n]) => n);

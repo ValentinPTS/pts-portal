@@ -2,8 +2,8 @@
 // store, login off):   BASE=http://localhost:3000 node scripts/verify-retention.mjs
 // A profile with no participation is erased on request — the request named, confirmed
 // — and nothing of it is shown after; a profile with a participation is refused, kept.
-// A request for a laboratory account is rejected with its reason, required, and is
-// listed with the day it is kept until — six years on.
+// A registration (9.1) is refused with its reason, required, and is listed with the day
+// it is kept until — six years on.
 import { chromium } from "playwright";
 
 const BASE = process.env.BASE ?? "http://localhost:3000";
@@ -22,7 +22,7 @@ page.on("dialog", (d) => d.accept());
 const stamp = Date.now() % 100000;
 const w1 = [1, 2, 3, 4, 5, 6, 7, 8], w2 = [3, 4, 5, 6, 7, 8, 9, 10];
 const eikOf = (k) => { const d = String(10000000 + (stamp * k) % 89999999).slice(0, 8).split("").map(Number); let c = d.reduce((a, x, i) => a + x * w1[i], 0) % 11; if (c === 10) { c = d.reduce((a, x, i) => a + x * w2[i], 0) % 11; if (c === 10) c = 0; } return d.join("") + c; };
-const GONE = `Заличи ${stamp} ООД`, KEPT = `Пази ${stamp} ООД`, REQ = `Заявка за акаунт ${stamp}`;
+const GONE = `Заличи ${stamp} ООД`, KEPT = `Пази ${stamp} ООД`, REQ = `Регистрация ${stamp} ЕООД`;
 
 const entity = async (name, eik, lab) => {
   await go("/organizations");
@@ -92,23 +92,28 @@ try {
   t("a profile with a participation: no erasure offered — it is kept, and says why (review)", (await keptCard.locator("[data-erase-entity]").count()) === 0 && (await keptCard.locator("[data-kept-for-rounds]").count()) === 1);
   void kept;
 
-  // a request for an account, rejected with its reason — kept six years
+  // a registration (9.1), refused with its reason — kept six years
+  await page.context().setExtraHTTPHeaders({ "x-forwarded-for": `10.47.${Math.floor(stamp / 256) % 256}.${stamp % 256}` }); // its own address for the form's limit
   await go("/register");
-  await page.locator('[name="orgName"]').fill(REQ);
-  await page.locator('[name="contactPerson"]').fill("Лице");
-  await page.locator('[name="email"]').fill(`req${stamp}@lab-test.bg`);
-  await page.locator("select").first().selectOption({ index: 1 });
-  await Promise.all([page.waitForURL(/register\/thanks/, { timeout: 60000 }).catch(() => {}), page.locator('form button[type="submit"]').first().click()]);
-  await go("/users");
-  const card2 = page.locator(".card", { hasText: REQ }).first();
+  const rf = page.locator("[data-register-form]");
+  // a cold server hydrates late: the choice is made again until the form takes it
+  for (let i = 0; i < 40; i++) {
+    await rf.locator("[data-register-country]").selectOption("BG");
+    if (await rf.locator('button[type="submit"]').isEnabled().catch(() => false)) break;
+    await page.waitForTimeout(500);
+  }
+  for (const [k, v] of Object.entries({ orgName: REQ, eik: eikOf(83), address: "София 1", officialEmail: `office${stamp}@lab-test.bg`, labName: "Лаб.", deliveryAddress: "София 2", contactPerson: "Лице", email: `req${stamp}@lab-test.bg` })) await rf.locator(`[name="${k}"]`).fill(v);
+  await Promise.all([page.waitForURL(/register\/thanks/, { timeout: 60000 }).catch(() => {}), rf.locator('button[type="submit"]').click()]);
+  await go("/registrations");
+  const card2 = page.locator("[data-registration]", { hasText: REQ }).first();
   await waitFor(async () => (await card2.count()) === 1);
-  await card2.getByRole("button", { name: /^(Reject|Отхвърли)$/ }).click();
+  await card2.locator("[data-registration-reject] summary").click();
   const reason = card2.locator('[name="reason"]');
-  t("rejecting asks for its reason — required", (await reason.getAttribute("required")) !== null);
+  t("refusing asks for its reason — required", (await reason.getAttribute("required")) !== null);
   await reason.fill("дублирана заявка");
-  await card2.getByRole("button", { name: /Confirm reject|Потвърди/ }).click();
-  await page.waitForTimeout(1500);
-  await go("/users");
+  await card2.locator("[data-registration-reject-confirm]").click();
+  await waitFor(async () => (await page.locator("[data-registrations-done]").count()) === 1);
+  await go("/registrations");
   const list = page.locator("[data-rejected-registrations]");
   await list.locator("summary").click();
   const row = list.locator("tr", { hasText: REQ });

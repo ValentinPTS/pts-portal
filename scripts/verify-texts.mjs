@@ -60,8 +60,10 @@ try {
   const reg = await page.locator("form").first().innerText();
   t("registration: the accreditation fields say «if any»", /ако имате|if any/.test(reg), reg.slice(0, 300));
   const country = page.locator("form select").first();
-  await country.selectOption("Bulgaria");
-  await page.getByText(/Акредитацията не е условие за регистрация|Accreditation is not a condition for registering/).waitFor();
+  // a cold server hydrates late: the choice is made again until the form takes it (9.1)
+  const euNote = page.getByText(/Акредитацията не е условие за регистрация|Accreditation is not a condition for registering/);
+  for (let i = 0; i < 40 && !(await euNote.isVisible().catch(() => false)); i++) { await country.selectOption("BG"); await page.waitForTimeout(500); }
+  await euNote.waitFor();
   t("registration (EU): accreditation is not a condition", true);
   await country.selectOption({ index: (await country.locator("option").count()) - 1 }); // «outside the EU»
   await page.getByText(/фирмена регистрация и, ако имате, сертификат за акредитация|business registration and, if you have one, your accreditation/).waitFor();

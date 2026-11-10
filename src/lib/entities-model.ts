@@ -79,6 +79,21 @@ export function normVat(vat: string, country: string): string | null {
   return /^[A-Z]{2}[A-Z0-9]{4,14}$/.test(v) ? v : null;
 }
 
+/** ISO 3166-1 alpha-2 — and «XK» (Kosovo), in use though user-assigned. A company is one country's:
+ *  «EL» (VIES's Greece) is «GR», «UK» is «GB» — never one company twice under two codes (9.1 review). */
+const ISO = new Set(("AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ " +
+  "DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP " +
+  "KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ " +
+  "OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ " +
+  "UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS XK YE YT ZA ZM ZW").split(" "));
+const COUNTRY_ALIAS: Record<string, string> = { EL: "GR", UK: "GB" };
+/** A country as typed: its ISO code, or null when it is not one. */
+export function normCountry(v: string): string | null {
+  const c = v.trim().toUpperCase();
+  const k = COUNTRY_ALIAS[c] ?? c;
+  return ISO.has(k) ? k : null;
+}
+
 const clean = (v: unknown) => String(v ?? "").replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200F\uFEFF\uFFFD]/g, " ").replace(/\s+/g, " ").trim();
 
 export interface EntityInput { name: unknown; country: unknown; eik: unknown; vat: unknown; correspondenceAddress: unknown; officialEmail?: unknown; mol: unknown; language: unknown }
@@ -98,10 +113,11 @@ export function readEntity(input: EntityInput, others: readonly Pick<LegalEntity
   { ok: true; fields: Pick<LegalEntity, "name" | "country" | "eik" | "vat" | "correspondenceAddress" | "officialEmail" | "mol" | "language"> } | { ok: false; problem: EntityProblem } {
   const name = clean(input.name);
   if (!name || [...name].length > ENTITY_LIMITS.name) return { ok: false, problem: "name" };
-  const country = clean(input.country).toUpperCase() || "BG";
-  if (!/^[A-Z]{2}$/.test(country)) return { ok: false, problem: "country" };
+  const country = normCountry(clean(input.country) || "BG");
+  if (!country) return { ok: false, problem: "country" };
   let eik = clean(input.eik);
-  if (!eik || [...eik].length > ENTITY_LIMITS.eik) return { ok: false, problem: "eik" };
+  // a number whose normal form is empty («---») is no number (9.1 review)
+  if (!eik || [...eik].length > ENTITY_LIMITS.eik || !eikKey(eik)) return { ok: false, problem: "eik" };
   if (country === "BG") {
     const v = validateEik(eik);
     if (!v.ok) return { ok: false, problem: "eik-bg" };
@@ -123,7 +139,7 @@ export function readEntity(input: EntityInput, others: readonly Pick<LegalEntity
 
 export const ENTITY_PROBLEM_TEXT: Record<EntityProblem, { bg: string; en: string }> = {
   name: { bg: "наименованието е задължително, до 200 знака", en: "the name is required, 200 characters at most" },
-  country: { bg: "държавата е код от две букви (BG, RO …)", en: "the country is a two-letter code (BG, RO …)" },
+  country: { bg: "държавата е код по ISO 3166 от две букви (BG, RO …)", en: "the country is an ISO 3166 two-letter code (BG, RO …)" },
   eik: { bg: "ЕИК / регистрационният номер е задължителен, до 20 знака", en: "the ЕИК / registration number is required, 20 characters at most" },
   "eik-bg": { bg: "ЕИК не е валиден (9 или 13 цифри, контролна цифра)", en: "the ЕИК is not valid (9 or 13 digits, check digit)" },
   vat: { bg: "номерът по ДДС не се разчита (напр. BG123456789)", en: "the VAT number does not read (e.g. BG123456789)" },

@@ -77,6 +77,23 @@ export async function entityKeyTaken(actor: string, country: string, eik: string
   return !!hit;
 }
 
+/** Which entity this registration number (its normal form) is — the question only, not
+ *  the entities opened; recorded with the one matched (9.1: a repeated ЕИК is a request
+ *  to join, never a second entity). Throws when it cannot say. */
+export async function entityIdByKey(actor: string, country: string, eik: string): Promise<string | null> {
+  checkOpener({ actor, purpose: "write" });
+  const key = eikKey(eik);
+  const db = getDb();
+  if (db) {
+    const { data, error } = await db.rpc("identity_entity_by_key", { p_actor: actor.trim(), p_country: country, p_key: key });
+    if (error) throw new Error(`The registration number could not be checked: ${error.message}`, { cause: error });
+    return typeof data === "string" && UUID_RE.test(data) ? data : null;
+  }
+  const hit = mem.find((e) => e.country === country && eikKey(e.eik) === key);
+  recordMemOpening({ actor: actor.trim(), purpose: "write", entityIds: hit ? [hit.id] : undefined, rows: hit ? 1 : 0 });
+  return hit?.id ?? null;
+}
+
 /** A new entity, or some fields of one — recorded as a write. A new one needs every
  *  required field (lib/entities-model.readEntity checked them); never its origin,
  *  maker or creation changed after. */

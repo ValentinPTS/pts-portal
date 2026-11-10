@@ -26,7 +26,7 @@ export default function RejectedRegistrations({ lang, rows }: { lang: "bg" | "en
   return (
     <details className="card p-4 mt-4" data-rejected-registrations>
       <summary className="text-sm font-bold" style={{ cursor: "pointer", color: "var(--green-dark)" }}>
-        {L("Отхвърлени заявки за акаунт", "Rejected account requests")} ({rows.length}){over ? ` · ${L("изтекли", "past their time")}: ${over}` : ""}
+        {L("Отказани регистрации", "Refused registrations")} ({rows.length}){over ? ` · ${L("изтекли", "past their time")}: ${over}` : ""}
       </summary>
       <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>{L("Всяка се пази 6 години от отказа, с причината (Задание §10). След това се премахва — по-рано базата не позволява.", "Each is kept 6 years from the rejection, with its reason (Zadanie §10). Then it is removed — the database refuses earlier.")}</p>
       {rows.length === 0 ? <p className="text-sm mt-2" style={{ color: "var(--muted)" }}>{L("Няма.", "None.")}</p> : (

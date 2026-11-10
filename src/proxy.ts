@@ -168,8 +168,9 @@ export async function proxy(request: NextRequest) {
 export const config = {
   // run on everything except static assets, public brand images, the documents'
   // fonts (/fonts/ — a lab's document and the PDF renderer load them with no owner
-  // session), the public application flow (/apply = scheme заявка, /register =
-  // lab-account request), and API routes (which self-guard). Role checks live above
+  // session), the public application flow (/apply = scheme заявка, /register = the
+  // registration, 9.1 — /register and below only: «/registrations» is PTS's section and
+  // goes through here), and API routes (which self-guard). Role checks live above
   // (owner area vs lab) and in requireOwner()/requireLab() for mutations.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|brand|fonts/|apply|register|api).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|brand|fonts/|apply|register(?:/|$)|api).*)"],
 };

@@ -16,19 +16,19 @@ const viewer = (roles: PersonRoles, more: Partial<Viewer> = {}): Viewer => ({ em
 const keys = (v: Viewer, managesPeople = false) => visibleSections(v, managesPeople).map((s) => s.key).join(" ");
 
 // ── the design's order ──────────────────────────────────────────────────────
-t("the design's sections, in its order (without «Одобрения на регистрации» — 9.1)",
-  SECTIONS.filter((s) => s.group !== "more").map((s) => s.bg).join(" · ") === "Табло · Схеми · Организации и лаборатории · Обекти и партиди · Доставки · Фактури · Регистър на действията · Потребители на провайдъра");
+t("the design's sections, in its order («Одобрения на регистрации» after the organisations — 9.1)",
+  SECTIONS.filter((s) => s.group !== "more").map((s) => s.bg).join(" · ") === "Табло · Схеми · Организации и лаборатории · Одобрения на регистрации · Обекти и партиди · Доставки · Фактури · Регистър на действията · Потребители на провайдъра");
 t("every section is built («Обекти и партиди» in 3.5, «Доставки» in 5.6, «Фактури» in 5.8)", SECTIONS.filter((s) => s.comesIn).length === 0);
 
 // ── who sees what, role by role (hand-written) ──────────────────────────────
 const MORE = "library skins changes holidays";
 const EXPECT: [string, Viewer, boolean, string][] = [
-  ["the local build", viewer(NONE, { build: true }), false, `dashboard schemes organizations batches deliveries invoices journal people notices ${MORE} validation system`],
+  ["the local build", viewer(NONE, { build: true }), false, `dashboard schemes organizations registrations batches deliveries invoices journal people notices ${MORE} validation system`],
   ["the head (manages PTS's people)", viewer({ permanent: ["head"], schemes: {} }), true, `dashboard schemes journal people notices ${MORE} validation system`],
   ["the quality manager", viewer({ permanent: ["quality"], schemes: {} }), false, `dashboard schemes journal notices ${MORE} validation`],
   ["the software administrator", viewer(effectiveRoles({ permanent: ["software_admin"], schemes: { A: ["scheme_manager"] } })), false, `dashboard journal notices ${MORE} validation system`],
-  ["the scheme manager", viewer({ permanent: [], schemes: { A: ["scheme_manager"] } }), false, `dashboard schemes organizations batches deliveries invoices journal people notices ${MORE}`],
-  ["the coding expert", viewer({ permanent: [], schemes: { A: ["coding_expert"] } }), false, `dashboard schemes organizations deliveries invoices people ${MORE}`],
+  ["the scheme manager", viewer({ permanent: [], schemes: { A: ["scheme_manager"] } }), false, `dashboard schemes organizations registrations batches deliveries invoices journal people notices ${MORE}`],
+  ["the coding expert", viewer({ permanent: [], schemes: { A: ["coding_expert"] } }), false, `dashboard schemes organizations registrations deliveries invoices people ${MORE}`],
   ["the statistics expert", viewer({ permanent: [], schemes: { A: ["statistics_expert"] } }), false, `dashboard schemes ${MORE}`],
   ["the technical expert", viewer({ permanent: [], schemes: { A: ["technical_expert"] } }), false, `dashboard schemes batches ${MORE}`],
   ["the authorised reviewer", viewer({ permanent: [], schemes: { A: ["reviewer"] } }), false, `dashboard schemes journal notices ${MORE}`],
@@ -41,7 +41,7 @@ t("a laboratory: none at all", keys(viewer({ permanent: [], schemes: { A: ["sche
 t("a signed-out visitor (login on: no roles, no address): only what any page of PTS shows — and the layout gives such a one no panel at all", keys(viewer(NONE, { email: null })) === `dashboard ${MORE}`);
 
 // ── the highlight ───────────────────────────────────────────────────────────
-const at: [string, SectionKey | null][] = [["/", "schemes"], ["/files/testing", "schemes"], ["/schemes/26-01-T-1/results", "schemes"], ["/dashboard", "dashboard"], ["/activity", "journal"], ["/users/applications/x/0", "people"], ["/system", "system"], ["/validation", "validation"], ["/validation/criteria/x", "validation"], ["/account", null], ["/itemsx", null]];
+const at: [string, SectionKey | null][] = [["/", "schemes"], ["/files/testing", "schemes"], ["/schemes/26-01-T-1/results", "schemes"], ["/dashboard", "dashboard"], ["/activity", "journal"], ["/users/applications/x/0", "people"], ["/system", "system"], ["/validation", "validation"], ["/validation/criteria/x", "validation"], ["/registrations", "registrations"], ["/registrations/letter/x", "registrations"], ["/account", null], ["/itemsx", null]];
 for (const [path, want] of at) t(`${path} is under ${want ?? "no section"}`, sectionOf(path) === want, String(sectionOf(path)));
 
 t("the rail's list carries no rule — the client gets the sections, not the role model", !/access-matrix|role-model/.test(read("../src/lib/admin-sections.ts")) && /from "@\/lib\/admin-sections"/.test(read("../src/components/AdminRail.tsx")));

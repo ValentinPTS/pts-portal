@@ -293,6 +293,21 @@ export interface LabApplication {
   reviewedBy?: string;
   reviewedAt?: string; // ISO
   createdAt: string; // ISO
+  // ── part 9.1: the three levels at once (migration 0049) ──
+  /** «account» — the old request for a laboratory account; «entity» — a registration of a legal entity
+   *  with its first laboratory and its administrator; «join» — a request to join an existing entity */
+  kind?: "account" | "entity" | "join";
+  officialEmail?: string;
+  mol?: string;
+  language?: "bg" | "en";
+  labName?: string;
+  deliveryAddress?: string;
+  position?: string;
+  /** a join: the entity asked; an approved registration: the entity made */
+  entityId?: string;
+  /** who decided a join: the entity's administrator, or PTS on a signed letter */
+  decidedAs?: "admin" | "pts";
+  letterPath?: string;
 }
 
 // A ready-made file uploaded into a document's slot (PDF / image scan), instead of

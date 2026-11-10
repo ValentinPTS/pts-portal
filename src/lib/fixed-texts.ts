@@ -83,6 +83,57 @@ export const profileConfirmedPreview = () => {
   return { subject: PROFILE_CONFIRMED_SUBJECT, body, key: textKey(PROFILE_CONFIRMED_SUBJECT, body) };
 };
 
+// ── the notices to the official address on registration and joining (9.1, К23) ──
+// The organisation learns at its official e-mail, in time: when its profile is made (PTS approved the
+// registration), when a person joins it, and when its administrator changes. With the M4 link (Реш. 152).
+const officialNotice = (bg: string, en: string, privacy: string) => [
+  "Здравейте,", "", bg, "", `Как обработваме личните данни (раздел М4): ${privacy}`, "",
+  "Ако не очаквате това, пишете веднага на office@ptsbg.eu.", "", "—", "",
+  "Hello,", "", en, "", `How we process personal data (section M4): ${privacy}`, "",
+  "If you did not expect this, write to office@ptsbg.eu at once.", "", "PTS Bulgaria · office@ptsbg.eu",
+].join("\n");
+
+export const PROFILE_CREATED_KEY = "profile-created";
+export const PROFILE_CREATED_SUBJECT = "Профилът ви в портала на PTS Bulgaria е създаден · Your profile in the PTS Bulgaria portal is created";
+export function profileCreatedText(v: { entity: string; date: string; admin: string; privacy: string }): string {
+  return officialNotice(
+    `Регистрацията на ${v.entity} в портала на PTS Bulgaria е одобрена на ${v.date}. Администратор на профила е ${v.admin}; поканата за вход отива на e-mail адреса за вход, посочен при регистрацията. Данните са ваши — поддържате ги вие, в портала.`,
+    `The registration of ${v.entity} in the PTS Bulgaria portal was approved on ${v.date}. The profile's administrator is ${v.admin}; the invitation to sign in goes to the login e-mail given at the registration. The data is yours — you keep it up to date, in the portal.`,
+    v.privacy);
+}
+
+export const USER_JOINED_KEY = "user-joined";
+export const USER_JOINED_SUBJECT = "Нов потребител в профила ви в портала на PTS Bulgaria · A new user in your profile in the PTS Bulgaria portal";
+export const JOINED_BY = {
+  admin: { bg: "администратора на профила", en: "the profile's administrator" },
+  letter: { bg: "PTS Bulgaria, по подписаното писмо на организацията", en: "PTS Bulgaria, on the organisation's signed letter" },
+} as const;
+/** `by` null — the text as PTS approves it: both who may approve, in its place (one text, one key). */
+export function userJoinedText(v: { entity: string; date: string; name: string; by: keyof typeof JOINED_BY | null; privacy: string }): string {
+  const by = v.by ? JOINED_BY[v.by] : { bg: `‹${JOINED_BY.admin.bg} | ${JOINED_BY.letter.bg}›`, en: `‹${JOINED_BY.admin.en} | ${JOINED_BY.letter.en}›` };
+  return officialNotice(
+    `На ${v.date} ${v.name} стана потребител на профила на ${v.entity} в портала на PTS Bulgaria. Присъединяването одобри ${by.bg}.`,
+    `On ${v.date} ${v.name} became a user of the profile of ${v.entity} in the PTS Bulgaria portal. The joining was approved by ${by.en}.`,
+    v.privacy);
+}
+
+export const ADMIN_CHANGED_KEY = "admin-changed";
+export const ADMIN_CHANGED_SUBJECT = "Нов администратор на профила ви в портала на PTS Bulgaria · A new administrator of your profile in the PTS Bulgaria portal";
+export function adminChangedText(v: { entity: string; date: string; name: string; privacy: string }): string {
+  return officialNotice(
+    `От ${v.date} администратор на профила на ${v.entity} в портала на PTS Bulgaria е ${v.name}. Назначи го PTS Bulgaria.`,
+    `From ${v.date} the administrator of the profile of ${v.entity} in the PTS Bulgaria portal is ${v.name}. PTS Bulgaria appointed them.`,
+    v.privacy);
+}
+
+const P = { entity: "‹юридическото лице · the legal entity›", date: "‹дата · date›", name: "‹име · name›", privacy: "‹връзката към М4 · the link to M4›" };
+/** The three notices as PTS approves them — their words with the places the data goes. */
+export const officialNoticePreviews = () => [
+  { key: PROFILE_CREATED_KEY, subject: PROFILE_CREATED_SUBJECT, body: profileCreatedText({ ...P, admin: P.name }) },
+  { key: USER_JOINED_KEY, subject: USER_JOINED_SUBJECT, body: userJoinedText({ ...P, by: null }) },
+  { key: ADMIN_CHANGED_KEY, subject: ADMIN_CHANGED_SUBJECT, body: adminChangedText(P) },
+].map((t) => ({ ...t, textKey: textKey(t.subject, t.body) }));
+
 // ── Supabase's own e-mails (the dashboard templates) ──────────────────────────
 // {{ .SiteURL }} and {{ .TokenHash }} are Supabase's; the links match the ones in
 // AUTH-EMAILS-SETUP-BG.md (a test keeps them equal).
@@ -131,6 +182,6 @@ export const SUPABASE_TEMPLATES: SupabaseTemplate[] = [
 /** The approval a self-requested message carries: the fixed text's key. */
 export const fixedApproval = (key: string) => {
   const t = SUPABASE_TEMPLATES.find((x) => x.key === key);
-  const k = t ? textKey(t.subject, t.html) : key === PROFILE_CONFIRMED_KEY ? profileConfirmedPreview().key : "?";
+  const k = t ? textKey(t.subject, t.html) : key === PROFILE_CONFIRMED_KEY ? profileConfirmedPreview().key : officialNoticePreviews().find((n) => n.key === key)?.textKey ?? "?";
   return { by: `fixed text in the code${FIXED_TEXTS_APPROVED_AT ? ` (approved by PTS ${FIXED_TEXTS_APPROVED_AT})` : " (PTS approval pending)"}`, ref: `fixed:${key}@${k}` };
 };

@@ -68,7 +68,7 @@ try {
   await form2.getByRole("button").click();
   await page.waitForURL(/saved=1/, { timeout: 20000 }).catch(() => {});
   t("a changed text: v2, not approved until approved again", /не е одобрен · v2|not approved · v2/.test(await page.locator('[data-template="results.due"] [data-template-status]').innerText()));
-  t("the fixed texts are listed for PTS: the invitation, Supabase's four (incl. «Password changed») and the notice of a confirmed profile (4.4)", (await page.locator("[data-fixed]").count()) === 6 && (await page.locator('[data-fixed="password-changed"]').count()) === 1 && (await page.locator('[data-fixed="profile-confirmed"]').count()) === 1);
+  t("the fixed texts are listed for PTS: the invitation, Supabase's four (incl. «Password changed»), the notice of a confirmed profile (4.4) and 9.1's three (a profile made, a user joined, an administrator changed)", (await page.locator("[data-fixed]").count()) === 9 && (await page.locator('[data-fixed="password-changed"]').count()) === 1 && (await page.locator('[data-fixed="profile-confirmed"]').count()) === 1 && (await page.locator('[data-fixed="profile-created"], [data-fixed="user-joined"], [data-fixed="admin-changed"]').count()) === 3);
 
   // a laboratory's invitation: the exact text first, then «Изпрати»
   await go("/users");

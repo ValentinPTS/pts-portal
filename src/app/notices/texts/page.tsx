@@ -3,7 +3,7 @@ import { mayAnywhereNow, requireCapAnywhere } from "@/lib/access";
 import { getServerT } from "@/lib/i18n-server";
 import { listReminderTemplates, isTemplateApproved, renderTemplate, PLACEHOLDERS, MAX_TEMPLATE_LENGTH, REMINDER_LABEL } from "@/lib/reminder-templates";
 import { saveReminderTemplateAction, approveReminderTemplateAction } from "@/lib/actions";
-import { invitePreview, profileConfirmedPreview, SUPABASE_TEMPLATES, FIXED_TEXTS_APPROVED_AT } from "@/lib/fixed-texts";
+import { invitePreview, profileConfirmedPreview, officialNoticePreviews, SUPABASE_TEMPLATES, FIXED_TEXTS_APPROVED_AT } from "@/lib/fixed-texts";
 
 // «Текстове на напомнянията» (plan part 1.8, Реш. 138). The words of the automatic
 // reminders, which PTS approves: approved, a reminder goes out by itself with that
@@ -115,6 +115,14 @@ export default async function ReminderTextsPage({ searchParams }: { searchParams
         <div className="text-sm mt-1"><b>{L("Тема", "Subject")}:</b> {confirmed.subject}</div>
         <pre className="text-xs mt-1" style={{ whiteSpace: "pre-wrap" }}>{confirmed.body}</pre>
       </section>
+      {/* 9.1: on registration and joining — to the official e-mail (К23, Реш. 152) */}
+      {officialNoticePreviews().map((t) => (
+        <section key={t.key} className="card p-4 mt-3" data-fixed={t.key}>
+          <div className="font-bold text-sm">{({ "profile-created": L("Създаден профил (одобрена регистрация)", "A profile made (a registration approved)"), "user-joined": L("Нов потребител (одобрено присъединяване)", "A new user (a join approved)"), "admin-changed": L("Нов администратор на профила", "A new profile administrator") } as Record<string, string>)[t.key]} — {L("до официалния e-mail на юридическото лице (К23, Реш. 152)", "to the legal entity's official e-mail (К23, Decision 152)")}</div>
+          <div className="text-sm mt-1"><b>{L("Тема", "Subject")}:</b> {t.subject}</div>
+          <pre className="text-xs mt-1" style={{ whiteSpace: "pre-wrap" }}>{t.body}</pre>
+        </section>
+      ))}
       {SUPABASE_TEMPLATES.map((t) => (
         <section key={t.key} className="card p-4 mt-3" data-fixed={t.key}>
           <div className="font-bold text-sm">Supabase · {t.dashboard}</div>

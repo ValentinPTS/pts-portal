@@ -8,11 +8,12 @@ import { getServerT } from "@/lib/i18n-server";
 import { actorNow } from "@/lib/identities";
 import { openEntities } from "@/lib/entities";
 import { entityChecked, STATE_LABEL } from "@/lib/entities-model";
-import { invitePreview } from "@/lib/fixed-texts";
+import { invitePreview, officialNoticePreviews, ADMIN_CHANGED_KEY } from "@/lib/fixed-texts";
 import { testSubject } from "@/lib/environment";
 import { confirmDate } from "@/lib/profile-confirm-model";
-import { latestOutcomeByEntity } from "@/lib/sent-messages";
-import ResendNoticeButton from "@/components/ResendNoticeButton";
+import { latestOutcomeByEntity, failedLatestByEntity } from "@/lib/sent-messages";
+import ResendNoticeButton, { ResendOfficialNoticeButton } from "@/components/ResendNoticeButton";
+import { OFFICIAL_NOTICE_KINDS_91, OFFICIAL_NOTICE_LABEL } from "@/lib/registration-model";
 import EraseEntityForm from "@/components/EraseEntityForm";
 import { canManagePeople } from "@/lib/roles";
 import MessageComposer from "@/components/MessageComposer";
@@ -42,8 +43,12 @@ export default async function OrganizationsPage({ searchParams }: { searchParams
   const users = entities.length ? await openEntityUsers({ actor, purpose: "names.view" }) : [];
   // the notice of each confirmation (К23) — did it go (4.4 review)
   const notices = entities.some((e) => e.confirmedAt) ? await latestOutcomeByEntity("profile.confirmed") : new Map<string, string>();
+  // 9.1's notices to the official e-mail whose latest attempt did not go — a read that fails shows none
+  const failedNotices = entities.length ? await failedLatestByEntity(OFFICIAL_NOTICE_KINDS_91).catch(() => new Map<string, { id: string; kind: string; sentAt: string }[]>()) : new Map<string, { id: string; kind: string; sentAt: string }[]>();
   // the invitation, as the person sees it before «Изпрати» (1.8; 4.4)
   const invite = (({ subject, body, key }) => ({ subject: testSubject(subject), body, key }))(invitePreview());
+  // the notice of an administrator's appointment (9.1, К23) — its exact text before «Назначи» (1.8)
+  const appoint = (({ subject, body, textKey }) => ({ subject: testSubject(subject), body, key: textKey }))(officialNoticePreviews().find((n) => n.key === ADMIN_CHANGED_KEY)!);
   // 5.10: the one-way messages to each organisation — its history (the notices that name it)
   const sentTo = new Map<string, Awaited<ReturnType<typeof listEntityMessages>>>();
   for (const n of entities.length ? await listEntityMessages().catch(() => []) : []) sentTo.set(n.entityId!, [...(sentTo.get(n.entityId!) ?? []), n]);
@@ -94,13 +99,19 @@ export default async function OrganizationsPage({ searchParams }: { searchParams
                           {notices.get(e.id) !== "sent" && e.state !== "inactive" && <> <ResendNoticeButton entityId={e.id} lang={lg} /></>}
                         </span>
                       </>
-                    : <span style={{ color: "var(--muted)" }}>{L("чака потвърждение от администратора на профила", "awaiting the confirmation of the profile's administrator")}</span>}
+                    : e.origin === "portal"
+                      ? <span style={{ color: "var(--muted)" }}>{L("данните са на лабораторията — регистрира се сама (9.1)", "the data is the laboratory's — it registered itself (9.1)")}</span>
+                      : <span style={{ color: "var(--muted)" }}>{L("чака потвърждение от администратора на профила", "awaiting the confirmation of the profile's administrator")}</span>}
+                  {/* 9.1: a notice to the official e-mail that did not go — sent again from here */}
+                  {e.state !== "inactive" && (failedNotices.get(e.id) ?? []).map((n) => (
+                    <span key={n.id} style={{ display: "block", marginTop: 2 }}><ResendOfficialNoticeButton messageId={n.id} lang={lg} label={L(`Уведомление до официалния e-mail (${OFFICIAL_NOTICE_LABEL[n.kind as keyof typeof OFFICIAL_NOTICE_LABEL]?.bg ?? n.kind}, ${confirmDate(n.sentAt)})`, `Notice to the official e-mail (${OFFICIAL_NOTICE_LABEL[n.kind as keyof typeof OFFICIAL_NOTICE_LABEL]?.en ?? n.kind}, ${confirmDate(n.sentAt)})`)} /></span>
+                  ))}
                 </dd>
                 <dt style={{ color: "var(--muted)" }}>{L("Проверка от PTS", "PTS's check")}</dt><dd data-manual={ch.manual ? "1" : "0"}>{e.manualCheck ? `${e.manualCheck.at.slice(0, 10).split("-").reverse().join(".")} · ${e.manualCheck.by}${e.manualCheck.note ? ` — ${e.manualCheck.note}` : ""}` : "—"}</dd>
               </dl>
               <LaboratoryForms lang={lg} entityId={e.id} entityInactive={e.state === "inactive"}
                 labs={labs.filter((l) => l.entityId === e.id).map((l) => ({ id: l.id, name: l.name, deliveryAddress: l.deliveryAddress, mobileOffice: l.mobileOffice, accreditationNo: l.accreditationNo, accreditationBody: l.accreditationBody, state: l.state }))} />
-              <EntityUserForms lang={lg} entityId={e.id} entityInactive={e.state === "inactive"} invite={invite}
+              <EntityUserForms lang={lg} entityId={e.id} entityInactive={e.state === "inactive"} invite={invite} appoint={appoint} labOwned={e.origin === "portal" || !!e.confirmedAt}
                 users={users.filter((u) => u.entityId === e.id).map((u) => ({ id: u.id, email: u.email, name: u.name, position: u.position, phone: u.phone, role: u.role, twoFactorRequired: u.twoFactorRequired, receivesNotices: u.receivesNotices, state: u.state, linked: !!u.authUserId }))} />
               {e.hasParticipations
                 ? <p className="text-xs mt-3" data-kept-for-rounds style={{ color: "var(--muted)" }}>{L("Има участия — профилът се пази: данните му са в записите на кръговете (Задание §10).", "It has participations — the profile is kept: its data is in its rounds' records (Zadanie §10).")}</p>

@@ -52,6 +52,7 @@ export const MIGRATIONS = [
   "0046_validation_tests",
   "0047_validation_levels",
   "0048_validation_dry_run",
+  "0049_registrations",
 ] as const;
 
 /** The expected migrations the database has not recorded, in order. */

@@ -16,9 +16,6 @@ import { isEffectiveHead } from "@/lib/people-manager";
 import { getServerT } from "@/lib/i18n-server";
 import UsersTable, { type UserRow } from "@/components/UsersTable";
 import PendingLabApplications, { type PendingAppView } from "@/components/PendingLabApplications";
-import RejectedRegistrations from "@/components/RejectedRegistrations";
-import { keptUntil, retentionOver } from "@/lib/retention-model";
-import { schemeNowMs } from "@/lib/clock";
 import ProviderPeople, { type PersonView, type HeldRole } from "@/components/ProviderPeople";
 
 // Manager-only "Users & roles" screen (Phase RT1). Lists internal staff (editable
@@ -40,13 +37,13 @@ export default async function UsersPage() {
   const { tr, lang } = await getServerT();
   const me = ctx.email;
 
-  const [staff, labs, pendingApps, held, schemes, rejectedApps] = await Promise.all([
+  const [staff, labs, allPendingApps, held, schemes] = await Promise.all([
     listStaff(), manager ? listLabs() : Promise.resolve([]), manager ? listLabApplications("pending") : Promise.resolve([]),
-    listSchemeRoles(), listSchemeSummaries(), manager ? listLabApplications("rejected") : Promise.resolve([]),
+    listSchemeRoles(), listSchemeSummaries(),
   ]);
-  // the rejected ones, kept six years with their reason (4.7, Zadanie §10)
-  const nowMs = schemeNowMs(); // the real clock (no scheme's test clock)
-  const rejected = rejectedApps.map((a) => ({ id: a.id, orgName: a.orgName || a.email, reason: a.rejectReason ?? "", rejectedAt: a.reviewedAt ?? "", keptUntil: keptUntil(a.reviewedAt), over: retentionOver(a, nowMs) }));
+  // only the earlier account requests stay here — the registrations of organisations and the requests to
+  // join, with the refused ones (kept six years, 4.7), are «Одобрения на регистрации» (9.1)
+  const pendingApps = allPendingApps.filter((a) => (a.kind ?? "account") === "account");
   // Ф 4.2-1 (2.8) — the head's to keep: the one in force per person (newest first, not
   // voided), how many before it, how many voided. Nobody else gets the dates.
   const declarations = peopleManager ? await listDeclarations() : [];
@@ -135,7 +132,7 @@ export default async function UsersPage() {
       </div>
       <p className="text-sm mt-1" style={{ color: "var(--muted)", maxWidth: 720 }}>{tr("users.subtitle")}</p>
       {manager && <PendingLabApplications apps={pending} />}
-      {manager && <RejectedRegistrations lang={lang === "bg" ? "bg" : "en"} rows={rejected} />}
+      {manager && <p className="text-sm mt-4" data-registrations-moved style={{ color: "var(--muted)" }}>{lang === "bg" ? "Регистрациите на организации, заявките за присъединяване и отказаните — в " : "The registrations of organisations, the requests to join and the refused ones — in "}<Link href="/registrations" style={{ textDecoration: "underline" }}>{lang === "bg" ? "«Одобрения на регистрации»" : "«Registration approvals»"}</Link>.</p>}
       {/* the 2FA reset is the head of the PT provider's alone (Реш. 95) */}
       <UsersTable rows={rows} authEnabled={ctx.authEnabled} canReset2fa={ctx.authEnabled && (await mayNow("twofa.reset")) && (await isEffectiveHead(me))}
         canManagePeople={peopleManager} canManageLabs={manager}

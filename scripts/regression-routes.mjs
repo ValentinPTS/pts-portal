@@ -26,6 +26,8 @@ export const ROUTES = [
   { file: "page.tsx", names: "never", paths: () => ["/"] },
   { file: "dashboard/page.tsx", names: "never", paths: () => ["/dashboard"] },
   { file: "organizations/page.tsx", names: "never", paths: () => ["/organizations"] },
+  { file: "registrations/page.tsx", names: "never", paths: () => ["/registrations"] },
+  { file: "registrations/letter/[id]/route.ts", names: "never", paths: () => ["/registrations/letter/00000000-0000-4000-8000-000000000000"] },
   { file: "organizations/proof/[id]/route.ts", names: "never", paths: () => ["/organizations/proof/00000000-0000-4000-8000-000000000000"] },
   { file: "batches/page.tsx", names: "never", paths: () => ["/batches"] },
   // the shipments by code; the addresses to who sees names in that scheme, for dispatch (5.6, D18)
@@ -108,6 +110,7 @@ export const ROUTES = [
   { file: "lab/profile/page.tsx", names: "own", paths: () => ["/lab/profile"] },
   // a participant's user's review of its own entity's data (4.4)
   { file: "lab/confirm/page.tsx", names: "own", paths: () => ["/lab/confirm"] },
+  { file: "lab/joins/page.tsx", names: "own", paths: () => ["/lab/joins"] },
   // its two-step sign-in, where PTS requires it (4.4 review)
   { file: "lab/two-factor/page.tsx", names: "own", paths: () => ["/lab/two-factor"] },
   // its home: the laboratory switcher, its participations and notices (4.6)

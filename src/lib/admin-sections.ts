@@ -4,7 +4,7 @@
 // (a client component) carries the list, not the role model.
 
 export type SectionKey =
-  | "dashboard" | "schemes" | "organizations" | "batches" | "deliveries" | "invoices"
+  | "dashboard" | "schemes" | "organizations" | "registrations" | "batches" | "deliveries" | "invoices"
   | "journal" | "people"
   // the portal's own pages the design does not draw: under «Още»
   | "notices" | "library" | "skins" | "system" | "changes" | "holidays" | "validation";
@@ -23,6 +23,8 @@ export const SECTIONS: readonly Section[] = [
   { key: "dashboard", href: "/dashboard", bg: "Табло", en: "Dashboard", group: "main" },
   { key: "schemes", href: "/", bg: "Схеми", en: "Schemes", group: "main" },
   { key: "organizations", href: "/organizations", bg: "Организации и лаборатории", en: "Organisations and laboratories", group: "main" },
+  // the registrations and the requests to join waiting on PTS (9.1)
+  { key: "registrations", href: "/registrations", bg: "Одобрения на регистрации", en: "Registration approvals", group: "main" },
   { key: "batches", href: "/batches", bg: "Обекти и партиди", en: "Objects and batches", group: "main" },
   { key: "deliveries", href: "/deliveries", bg: "Доставки", en: "Deliveries", group: "main" }, // built in 5.6
   { key: "invoices", href: "/invoices", bg: "Фактури", en: "Invoices", group: "main" }, // built in 5.8

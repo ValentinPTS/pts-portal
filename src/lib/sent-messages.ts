@@ -239,6 +239,36 @@ export async function latestOutcomeByEntity(kind: string): Promise<Map<string, S
   return take(((data ?? []) as { entity_id: string; outcome: SentMessage["outcome"] }[]).map((r) => ({ entityId: r.entity_id, outcome: r.outcome })));
 }
 
+/** The notices to an organisation's official e-mail whose LATEST attempt did not go, per entity — of these
+ *  kinds (9.1: a profile made, a user joined, an administrator changed — for PTS to send again). Throws on
+ *  a database error. */
+export async function failedLatestByEntity(kinds: readonly string[]): Promise<Map<string, { id: string; kind: string; sentAt: string }[]>> {
+  const seen = new Set<string>();
+  const out = new Map<string, { id: string; kind: string; sentAt: string }[]>();
+  const take = (rows: { id: string; entityId?: string; kind: string; outcome: SentMessage["outcome"]; sentAt: string }[]) => {
+    for (const r of rows) {
+      if (!r.entityId || seen.has(`${r.entityId}|${r.kind}`)) continue;
+      seen.add(`${r.entityId}|${r.kind}`);
+      if (r.outcome === "failed") out.set(r.entityId, [...(out.get(r.entityId) ?? []), { id: r.id, kind: r.kind, sentAt: r.sentAt }]);
+    }
+    return out;
+  };
+  const db = getDb();
+  if (!db) return take(mem.filter((m) => kinds.includes(m.kind)).sort((a, b) => b.sentAt.localeCompare(a.sentAt)));
+  const { data, error } = await db.from("sent_messages").select("id,entity_id,kind,outcome,sent_at").in("kind", [...kinds]).not("entity_id", "is", null).order("sent_at", { ascending: false }).limit(2000);
+  if (error) throw error;
+  return take(((data ?? []) as { id: string; entity_id: string; kind: string; outcome: SentMessage["outcome"]; sent_at: string }[]).map((r) => ({ id: r.id, entityId: r.entity_id, kind: r.kind, outcome: r.outcome, sentAt: r.sent_at })));
+}
+
+/** One recorded message by its id — null when there is none. Throws on a database error. */
+export async function getSentMessage(id: string): Promise<SentMessage | null> {
+  const db = getDb();
+  if (!db) return mem.find((m) => m.id === id) ?? null;
+  const { data, error } = await db.from("sent_messages").select("*").eq("id", id).maybeSingle();
+  if (error) throw error;
+  return data ? fromRow(data as Row) : null;
+}
+
 /** Every message of one round, oldest first — for the round export (part 1.10). Throws on a database error. */
 export async function listSentForScheme(schemeId: string): Promise<SentMessage[]> {
   const db = getDb();
