@@ -748,6 +748,10 @@ export interface Scheme {
   /** What came back from PTS_Analysis 2.0 (7.2): each import — the module's version, the files as
    *  they came (never recomputed), who and when. Appended; the latest is in force. */
   analysisImports?: import("./analysis-import-model").AnalysisImport[];
+  /** Each export to 2.0 (7.3): what was sent — the codes and the characteristics, the file's hash. */
+  analysisExports?: import("./transfer-check-model").AnalysisExportRecord[];
+  /** The transfer checks (7.3; Manual 7.5.2): 2.0's report lists the same codes and characteristics — yes / no. */
+  transferChecks?: import("./transfer-check-model").TransferCheck[];
   // A calibration scheme's reference values per point (part 5.7, lib/reference-values-model)
   // — x_ref before and after, u_calibration, u_other, k, for 2.0's «Calibration» sheet (D3);
   // each save a version, appended. JSONB, no migration.

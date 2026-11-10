@@ -35,11 +35,14 @@ import { skinsForTypeAsync } from "@/skins";
 import { TYPE_SLUG, typeLabel, schemeName, statusChip, ACCENT } from "@/lib/folders";
 import { markerLabels, schemeMarkers } from "@/lib/scheme-number";
 import SchemeLifecycle, { type ActButton, type StageRow } from "@/components/SchemeLifecycle";
-import { listSubmissions, submittedParticipantIds } from "@/lib/submissions";
+import { listSubmissions, submittedParticipantIds, listCorrections } from "@/lib/submissions";
+import { listActivity } from "@/lib/activity-store";
+import { processingRecord, schemeTransferState, stageEventOf, RECORD_STAGES, type RecordEvent, type StageEvent } from "@/lib/transfer-check-model";
 import { metaGaps, META_GAP_TEXT } from "@/lib/scheme-meta";
 import { lockEntries, lockCounts, isNR, resultsOutsideForm, lockInForce } from "@/lib/submission-lock-model";
 import { analysisGaps } from "@/lib/analysis-export";
 import AnalysisImportPanel from "@/components/AnalysisImportPanel";
+import ProcessingRecordCard from "@/components/ProcessingRecordCard";
 import { activeUnlock, submissionOpen } from "@/lib/submission-model";
 import { needsAmendment } from "@/lib/amendments-model";
 import { chainWindow, deadlineState, windowDays, resultsDeadline } from "@/lib/deadlines-model";
@@ -62,7 +65,7 @@ import { requireStaff, getRoleContext, canManagePeople } from "@/lib/roles";
 // A scheme folder → its 14 documents grouped by workflow stage. Every document can be
 // built in the app OR filled with an uploaded ready-made file (PDF/image) — see
 // SchemeDocuments. The header shows the primary tools; the rest tuck under "Управление".
-export default async function SchemePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ack?: string; msg?: string; n?: string; of?: string; imp?: string }> }) {
+export default async function SchemePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ack?: string; msg?: string; n?: string; of?: string; imp?: string; tc?: string }> }) {
   await requireStaff(); // read gate: one of PTS's people
   const { id } = await params;
   const sp = await searchParams;
@@ -139,6 +142,20 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
   const mayReview = (await mayNow("results.read", id)) || (await mayNow("results.enter", id)) || (await mayNow("results.process", id));
   // 7.2: who may import 2.0's documents — while the scheme is in processing
   const mayImport = ((await mayNow("results.process", id)) || (await mayNow("scheme.edit", id))) && s.status === "processing";
+  // 7.3: the processing record — every designation, the ticks and their withdrawals (the journal), the
+  // exports, the imports, the checks — and the transfer check in force (the corrections read: one after
+  // the export takes it out of force)
+  let recordView: { record: RecordEvent[]; ticksFromJournal: boolean; transfer: ReturnType<typeof schemeTransferState> | null } | null = null;
+  if ((mayReview || canAct) && ["processing", "report", "closed"].includes(s.status)) {
+    const ticks = await listActivity({ schemeId: id, action: "scheme.stage", limit: 1000 }).then((es) => es.map(stageEventOf).filter((x): x is StageEvent => !!x)).catch(() => null);
+    // a tick in force the journal does not show (it could not be read): the ticks in force instead
+    const ticksFromJournal = !!ticks && RECORD_STAGES.every((no) => !s.lifecycle?.stages?.[no] || ticks.some((t) => t.stage === no && t.done));
+    const transfer = await listCorrections(id).then((c) => schemeTransferState(s, c)).catch(() => null);
+    recordView = {
+      record: processingRecord({ designations, stageEvents: ticksFromJournal ? ticks : null, stages: s.lifecycle?.stages ?? {}, exports: s.analysisExports, imports: s.analysisImports, checks: s.transferChecks }),
+      ticksFromJournal, transfer,
+    };
+  }
   // 7.1: who may export to 2.0 — and what the file will lack (the codes whose results came by a sheet; the meta)
   const mayExport = ((await mayNow("results.process", id)) || (await mayNow("results.enter", id))) && (["running", "processing", "report", "closed"].includes(s.status) || (s.type === "C" && s.status === "open"));
   let analysisLink: { preliminary: boolean; outside: string[] | null; gaps: string[]; extra: ReturnType<typeof analysisGaps> } | null = null;
@@ -378,6 +395,11 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
       {/* 7.2: what came back from PTS_Analysis 2.0 — the documents as files, with the module's version */}
       {(mayImport || ((mayReview || canAct) && (s.analysisImports?.length ?? 0) > 0)) && ["processing", "report", "closed"].includes(s.status) && (
         <AnalysisImportPanel schemeId={id} lang={lg === "bg" ? "bg" : "en"} imports={s.analysisImports ?? []} canImport={mayImport} answer={sp.imp} />
+      )}
+      {/* 7.3: the processing record and the transfer check */}
+      {recordView && (
+        <ProcessingRecordCard schemeId={id} lang={lg === "bg" ? "bg" : "en"} record={recordView.record} ticksFromJournal={recordView.ticksFromJournal}
+          transfer={recordView.transfer} imports={s.analysisImports ?? []} canCheck={mayImport} answer={sp.tc} />
       )}
       {/* 6.7: PTS's review after the deadline — a staff page, never shown to a laboratory */}
       {mayReview && (["running", "processing", "report", "closed"].includes(s.status) || (s.type === "C" && s.status === "open")) && (

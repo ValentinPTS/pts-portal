@@ -1,6 +1,6 @@
 import { requireOneOf } from "@/lib/access";
-import { requireStaff } from "@/lib/roles";
-import { getScheme } from "@/lib/store";
+import { requireStaff, getRoleContext } from "@/lib/roles";
+import { getScheme, updateSchemeWith } from "@/lib/store";
 import { listParticipants } from "@/lib/participants";
 import { listSubmissions, listCorrections } from "@/lib/submissions";
 import { inFinalRound } from "@/lib/announcement-model";
@@ -8,6 +8,9 @@ import { lockInForce } from "@/lib/submission-lock-model";
 import { analysisSheets, analysisGaps } from "@/lib/analysis-export";
 import { xlsx } from "@/lib/xlsx";
 import { logActivity } from "@/lib/activity";
+import { randomUUID } from "crypto";
+import { sha256 } from "@/lib/editions";
+import { manifestOf, type AnalysisExportRecord } from "@/lib/transfer-check-model";
 
 // «Изнеси към PTS_Analysis 2.0» (plan part 7.1; schema_version 2.1, Реш. 148; D3): the template's
 // eight sheets, codes only — for the statistics expert and the coding expert. Before the submission
@@ -38,13 +41,34 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     console.error("[analysis export] not made:", (e as Error)?.message ?? e);
     return new Response("The export could not be made — a part of the round could not be read. Nothing was exported; try again.", { status: 503 });
   }
-  const preliminary = !lockInForce(s!.submissionLocks);
+  const lock = lockInForce(s!.submissionLocks);
+  const preliminary = !lock;
+  // what was sent — recorded before the file is handed out, while the scheme is in processing
+  // (7.3: the transfer check compares 2.0's report with it); a record that cannot be written:
+  // nothing handed out. Outside processing the journal line alone records it — an export made
+  // after the issue never makes the check stale (review).
+  const manifest: AnalysisExportRecord = { id: randomUUID(), at: new Date().toISOString(), by: (await getRoleContext()).email ?? "", preliminary, ...(lock ? { lockId: lock.id } : {}), sha256: sha256(bytes), ...manifestOf(out.sheets, out.counts.outside) };
+  let recorded = false;
+  if (s!.status === "processing") {
+    try {
+      await updateSchemeWith(id, (cur) => {
+        if (cur.status !== "processing") return {};
+        recorded = true;
+        return { analysisExports: [...(cur.analysisExports ?? []), manifest] };
+      });
+    } catch { return new Response("The file is ready, but what it sends could not be recorded — so it is not handed out. Try again.", { status: 503 }); }
+  }
   const logged = await logActivity("results.exported_2_0", {
-    schemeId: id, subject: "export:analysis-2.0",
+    schemeId: id,
     summary: `Exported to PTS_Analysis 2.0 (schema 2.1)${preliminary ? " — PRELIMINARY, the submission not locked" : ""}: ${out.counts.participants} participations, ${out.counts.results} result rows (${out.counts.nr} N/R)${out.counts.outside.length ? `; results outside the form, not in the file: ${out.counts.outside.join(", ")}` : ""}${out.counts.homogeneityDropped ? `; ${out.counts.homogeneityDropped} homogeneity values of characteristics not in the file left out` : ""}`,
-    after: { participants: out.counts.participants, results: out.counts.results, nr: out.counts.nr, outside: out.counts.outside, preliminary, homogeneityDropped: out.counts.homogeneityDropped, sigmaMismatch: gaps.sigmaMismatch },
+    subject: `analysis-export:${manifest.id}`,
+    after: { participants: out.counts.participants, results: out.counts.results, nr: out.counts.nr, outside: out.counts.outside, preliminary, homogeneityDropped: out.counts.homogeneityDropped, sigmaMismatch: gaps.sigmaMismatch, sha256: manifest.sha256, recorded },
   });
-  if (!logged) return new Response("The file is ready, but its journal entry could not be written — so it is not handed out. Try again.", { status: 503 });
+  if (!logged) {
+    // nothing handed out — so nothing «sent» stays on record for a check to confirm (review)
+    if (recorded) { try { await updateSchemeWith(id, (cur) => ({ analysisExports: (cur.analysisExports ?? []).filter((x) => x.id !== manifest.id) })); } catch (e) { console.error("[analysis export] the record of an export not handed out could not be taken back:", (e as Error)?.message ?? e); } }
+    return new Response("The file is ready, but its journal entry could not be written — so it is not handed out. Try again.", { status: 503 });
+  }
   const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const name = `${s!.number.replace(/\//g, "-").replace(/[^\w-]+/g, "_")}_PTS_Analysis_input_v2.1${preliminary ? "_PRELIMINARY" : ""}_${stamp}.xlsx`;
   return new Response(bytes as unknown as BodyInit, {
@@ -56,3 +80,6 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     },
   });
 }
+
+// a HEAD would run GET — record an export and write its journal line for a file never handed out (review)
+export const HEAD = () => new Response(null, { status: 405, headers: { allow: "GET" } });

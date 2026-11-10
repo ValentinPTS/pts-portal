@@ -82,11 +82,12 @@ import { readTarget, RELEASE_PROBLEM_TEXT, releaseFor, type TargetRelease } from
 import { ackRequiredFor, ackSettable, ackOf, kindOf, readAckForm, type Acknowledgement, type AckProblem } from "./ack-model";
 import { readMessage, messageBody, type SchemeMessage } from "./messages-model";
 import { resultRows, readValue, readDraft, notNumbers, rowsHaveIds, calRows, calRowsReady, readCalDraft, notNumbersCal, orphansOf, draftFor, calDraftFor, checkTesting, checkCalibration, blocking, type CheckProblem } from "./results-model";
-import { putDraft, getDraft, addSubmission, listSubmissions, listSubmissionsFor, addCorrection, listCorrectionsFor, correctionExists } from "./submissions";
+import { putDraft, getDraft, addSubmission, listSubmissions, listSubmissionsFor, addCorrection, listCorrections, listCorrectionsFor, correctionExists } from "./submissions";
 import { lockEntries, lockCounts, lockInForce, isNR, resultsOutsideForm, type SubmissionLock } from "./submission-lock-model";
 import { correctableFields, activeCorrections, readCorrection, type ResultCorrection } from "./corrections-model";
 import { readNote, noteInForce, type ReviewNote } from "./review-model";
 import { IMPORT_KINDS, checkImport, servedName, type ImportKind, type ImportedFile, type AnalysisImport } from "./analysis-import-model";
+import { readCheck, schemeTransferState, type TransferCheck } from "./transfer-check-model";
 import { activeUnlock, submissionOpen, readConfirmations, submissionPayload, readUnlock, SUBMIT_PROBLEM_TEXT, type ResultUnlock } from "./submission-model";
 import { testPeriodLimits, calibrationWindows } from "./results-limits";
 import { drawCodes, drawObjects, toCode, codingProblem, objectsGiven, unfinished, sampleCodeOf, isProvisional, CODING_PROBLEM_TEXT, type CodingProblem, type CodingRecord } from "./coding-model";
@@ -6459,4 +6460,50 @@ export async function importAnalysisAction(formData: FormData): Promise<void> {
   await logActivity("results.imported_2_0", { schemeId, subject: `analysis-import:${id}`, summary: `Imported from PTS_Analysis ${version}: ${Object.entries(counts).map(([k, c]) => `${k} ×${c}`).join(", ")}${report ? " — the Bulgarian report is the scheme's report file" : " — added to the import in force (the report unchanged)"}`, after: { version, counts, adding: !report } });
   revalidatePath(`/schemes/${schemeId}`, "layout");
   redirect(back("imp=ok"));
+}
+
+// ── The transfer check (part 7.3; Manual 7.5.2; D3) ─────────────────────────────────────────
+// A person compares what the last export sent (its codes and characteristics) with 2.0's report in
+// the import in force, and records: the same — yes, or no with what differs. The check names that
+// export and that import; a later one makes it stale. Journalled without the note.
+export async function recordTransferCheckAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? "");
+  await requireOneOf(["results.process", "scheme.edit"], schemeId);
+  const back = (q: string) => `/schemes/${encodeURIComponent(schemeId)}?${q}#processing-record`;
+  const scheme = await getScheme(schemeId);
+  if (!scheme || scheme.status !== "processing") redirect(back("tc=state"));
+  const exportId = String(formData.get("exportId") ?? ""), importId = String(formData.get("importId") ?? ""), reportSha = String(formData.get("reportSha") ?? "");
+  let corrections: { at: string }[];
+  try { corrections = await listCorrections(schemeId); } catch { redirect(back("tc=failed")); }
+  // the pair a check must name now: the latest export — final, under the lock in force, no
+  // correction after it — and the report in force, the imported file the issue act issues (review)
+  const now = schemeTransferState(scheme!, corrections!);
+  if (now.state === "no-export") redirect(back("tc=missing"));
+  if (now.state === "preliminary" || now.state === "relocked" || now.state === "corrected" || now.state === "no-report") redirect(back(`tc=${now.state}`));
+  // the form was drawn for another export or another report — check again
+  if (now.export!.id !== exportId || now.importId !== importId || now.reportSha !== reportSha) redirect(back("tc=stale"));
+  const read = readCheck({ same: formData.get("same"), note: formData.get("note") });
+  if (!read.ok) redirect(back(`tc=${read.problem}`));
+  const value = read as Extract<typeof read, { ok: true }>;
+  const entry: TransferCheck = { id: randomUUID(), at: new Date().toISOString(), by: (await getRoleContext()).email ?? "", exportId, importId, reportSha, same: value.same, note: value.note };
+  let outcome = "gone" as "recorded" | "moved" | "stale" | "gone";
+  try {
+    await updateSchemeWith(schemeId, (cur) => {
+      if (cur.status !== "processing") { outcome = "moved"; return {}; }
+      // re-read under the lock: the export, the lock and the report in force as the form saw them
+      const again = schemeTransferState(cur, corrections!);
+      if (again.state === "no-export" || again.export?.id !== exportId || again.importId !== importId || again.reportSha !== reportSha) { outcome = "stale"; return {}; }
+      outcome = "recorded";
+      return { transferChecks: [...(cur.transferChecks ?? []), entry] };
+    });
+  } catch { outcome = "gone"; }
+  if (outcome !== "recorded") redirect(back(outcome === "moved" ? "tc=state" : outcome === "stale" ? "tc=stale" : "tc=failed"));
+  const logged = await logActivity("results.transfer_checked", { schemeId, subject: `transfer-check:${entry.id}`, summary: `Transfer check — 2.0's report ${value.same ? "lists the same codes and characteristics as" : "does NOT list the same codes and characteristics as"} the export`, after: { same: value.same, exportId, importId, reportSha } });
+  if (!logged) {
+    // a check with no journal line is not one the issue act may rely on — taken back (review)
+    try { await updateSchemeWith(schemeId, (cur) => ({ transferChecks: (cur.transferChecks ?? []).filter((x) => x.id !== entry.id) })); } catch (e) { console.error("[transfer check] an unjournalled check could not be taken back:", (e as Error)?.message ?? e); }
+    redirect(back("tc=failed"));
+  }
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  redirect(back("tc=ok"));
 }
