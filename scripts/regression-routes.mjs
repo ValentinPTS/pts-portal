@@ -63,6 +63,8 @@ export const ROUTES = [
   { file: "schemes/[id]/applications/page.tsx", names: "scheme", paths: (c) => [`/schemes/${c.S}/applications`] },
   { file: "schemes/[id]/results/page.tsx", names: "scheme", paths: (c) => [`/schemes/${c.S}/results`] },
   { file: "schemes/[id]/traceability/page.tsx", names: "scheme", paths: (c) => [`/schemes/${c.S}/traceability`] },
+  // PTS's review after the deadline (6.7): by code only — never a name, to anyone
+  { file: "schemes/[id]/review/page.tsx", names: "never", paths: (c) => [`/schemes/${c.S}/review`] },
   { file: "schemes/[id]/audit-pack/route.ts", names: "scheme", paths: (c) => [`/schemes/${c.S}/audit-pack`, `/schemes/${c.S}/audit-pack?names=1`] },
   { file: "schemes/[id]/export/route.ts", names: "scheme", paths: (c) => [`/schemes/${c.S}/export`, `/schemes/${c.S}/export?part=coded`] },
   { file: "schemes/[id]/build/page.tsx", names: "never", paths: (c) => [`/schemes/${c.S}/build`] },

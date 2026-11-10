@@ -178,7 +178,7 @@ export function calDraftFor(stored: unknown, rows: readonly CalRow[]): CalDraft 
 // exact decimal arithmetic for the error — never a float's noise (0.3 − 0.1 is 0.2, not 0.19999…),
 // an exponent included: «1.5e-3» is 15 × 10^−4 (6.2 review)
 const TEN = BigInt(10), ZERO = BigInt(0); // (no BigInt literals: the build targets below ES2020)
-function decimalOf(s: string): { int: bigint; scale: number } | null {
+export function decimalOf(s: string): { int: bigint; scale: number } | null {
   if (!s.trim() || readValue(s) === null) return null;
   const t = s.trim().replace(/\s/g, "").replace(",", ".");
   const m = /^([-+]?)(\d*)(?:\.(\d*))?(?:[eE]([-+]?\d+))?$/.exec(t);

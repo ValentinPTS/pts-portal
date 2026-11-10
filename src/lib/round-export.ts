@@ -150,6 +150,8 @@ export const SCHEME_FIELDS = {
   resultUnlocks: "coded",
   // «Заключи подаването» (6.6): the version taken per participation, or N/R — by code; and the reopenings
   submissionLocks: "coded",
+  // PTS's review notes (6.7) — PTS's words about a code: coded, in scheme.json only (never a table)
+  reviewNotes: "coded",
   // a release to one user names that user (an entity user's id is the same in every round):
   // its user kept only in identity/ (5.4 review)
   releases: "split", skin: "coded", name: "coded", folderId: "coded",

@@ -268,6 +268,9 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
     refLocEn: init.calibration?.referenceLabLocEn ?? "",
     methodBg: init.calibration?.methodBg ?? "",
     methodEn: init.calibration?.methodEn ?? "",
+    refTolerance: init.calibration?.refTolerance ?? "",
+    tempMin: init.calibration?.tempMin ?? "",
+    tempMax: init.calibration?.tempMax ?? "",
   }));
 
   const move = <T,>(arr: T[], i: number, d: -1 | 1): T[] => {
@@ -509,6 +512,11 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
               <FieldS label={L("Метод (БГ)", "Method (BG)")} value={cal.methodBg} placeholder={L("ISO 376 — метод на пряко сравнение", "…")} onChange={(v) => setCal((c) => ({ ...c, methodBg: v }))} />
               <FieldS label={L("Метод (EN)", "Method (EN)")} value={cal.methodEn} placeholder="ISO 376 — direct comparison method" onChange={(v) => setCal((c) => ({ ...c, methodEn: v }))} />
             </DestGroup>
+            <DestGroup title={L("Критерии за прегледа след срока (по избор) → 6.7", "Criteria for the review after the deadline (optional) → 6.7")}>
+              <FieldS label={L("Допуск на реализираната референтна стойност (±, в единицата)", "Tolerance of the realised reference value (±, in the unit)")} value={cal.refTolerance} placeholder="0,5" onChange={(v) => setCal((c) => ({ ...c, refTolerance: v }))} />
+              <FieldS label={L("Температура в измервателния обем — от (°C)", "Temperature in the measurement volume — from (°C)")} value={cal.tempMin} placeholder="20" onChange={(v) => setCal((c) => ({ ...c, tempMin: v }))} />
+              <FieldS label={L("Температура в измервателния обем — до (°C)", "Temperature in the measurement volume — to (°C)")} value={cal.tempMax} placeholder="25" onChange={(v) => setCal((c) => ({ ...c, tempMax: v }))} />
+            </DestGroup>
             {/* live preview: the заявка item labs will see, built from the fields above */}
             <PreviewApply
               label={L("Преглед — как ще го видят лабораториите в заявката:", "Preview — how labs will see it in the заявка:")}
@@ -532,6 +540,9 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
             <input type="hidden" name="cal_refLocEn" value={cal.refLocEn} />
             <input type="hidden" name="cal_methodBg" value={cal.methodBg} />
             <input type="hidden" name="cal_methodEn" value={cal.methodEn} />
+            <input type="hidden" name="cal_refTolerance" value={cal.refTolerance} />
+            <input type="hidden" name="cal_tempMin" value={cal.tempMin} />
+            <input type="hidden" name="cal_tempMax" value={cal.tempMax} />
           </div>
         </>
       ) : (

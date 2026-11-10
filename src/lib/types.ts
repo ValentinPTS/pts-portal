@@ -521,6 +521,10 @@ export interface CalibrationData {
   stabilityFormula: string; // "u_stab = |X_ref1 − X_ref2| / (2·√3)" (D22)
   enCriterionEn: string; // "Eₙ = (X_lab − X_ref)/√(U_lab²+U_ref²); satisfactory when |Eₙ| ≤ 1"
   enCriterionBg: string;
+  // PTS's review after the deadline (6.7) — optional; as typed, numbers (comma or point):
+  refTolerance?: string;  // ± the realised reference value may differ from the nominal, in the unit
+  tempMin?: string;       // the temperature in the measurement volume the scheme declares, °C — from
+  tempMax?: string;       // …to
 }
 
 // Manually-entered scoring inputs. The scores themselves (z / ζ / Eₙ) are always
@@ -735,6 +739,9 @@ export interface Scheme {
   /** «Заключи подаването» (6.6; Реш. 21): each lock (with «Започни обработката») — the version
    *  taken per participation in the final round, or none (N/R) — and each reopening («Върни»). */
   submissionLocks?: import("./submission-lock-model").SubmissionLock[];
+  /** PTS's review after the deadline (6.7): each participation's individual note — appended; the
+   *  latest is in force, an empty one withdraws it. Never shown to a laboratory before the report. */
+  reviewNotes?: import("./review-model").ReviewNote[];
   // A calibration scheme's reference values per point (part 5.7, lib/reference-values-model)
   // — x_ref before and after, u_calibration, u_other, k, for 2.0's «Calibration» sheet (D3);
   // each save a version, appended. JSONB, no migration.

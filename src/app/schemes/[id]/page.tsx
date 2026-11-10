@@ -133,6 +133,7 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
     };
   }));
   const canAct = await mayNow("scheme.edit", id);
+  const mayReview = (await mayNow("results.read", id)) || (await mayNow("results.enter", id)) || (await mayNow("results.process", id));
   const ACTS_IN: Record<string, ActKey[]> = {
     draft: ["open"], open: ["announce", "not_held", "back"], running: ["announce2", "process", "back"],
     processing: ["report", "back"], report: ["close"], closed: ["back"], not_held: ["back"],
@@ -342,6 +343,10 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
 
       {/* the 19 stages and the scheme's state (3.2) */}
       <SchemeLifecycle schemeId={id} lang={lg} stateLabel={STATE_LABEL[s.status][lg]} stages={stageRows} acts={acts} history={history} />
+      {/* 6.7: PTS's review after the deadline — a staff page, never shown to a laboratory */}
+      {mayReview && (["running", "processing", "report", "closed"].includes(s.status) || (s.type === "C" && s.status === "open")) && (
+        <p className="text-sm mt-2" data-review-link><Link href={`/schemes/${id}/review`} style={{ fontWeight: 700 }}>{L("Преглед след срока — трите проверки и индивидуалните забележки →", "Review after the deadline — the three checks and the individual notes →")}</Link></p>
+      )}
       {/* the second announcement (5.2): which characteristics run, and so the final list */}
       {canAct && s.status === "running" && !announced2 && (
         <SecondAnnouncementForm lang={lg} schemeId={id} min={MIN_PER_CHARACTERISTIC} inRound={inRoundNow.length}

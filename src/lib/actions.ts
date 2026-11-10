@@ -81,10 +81,11 @@ import { finalListOf, splitFor, invoiceProblem, currentFinalList, inFinalRound, 
 import { readTarget, RELEASE_PROBLEM_TEXT, releaseFor, type TargetRelease } from "./release-model";
 import { ackRequiredFor, ackSettable, ackOf, kindOf, readAckForm, type Acknowledgement, type AckProblem } from "./ack-model";
 import { readMessage, messageBody, type SchemeMessage } from "./messages-model";
-import { resultRows, readDraft, notNumbers, rowsHaveIds, calRows, calRowsReady, readCalDraft, notNumbersCal, orphansOf, draftFor, calDraftFor, checkTesting, checkCalibration, blocking, type CheckProblem } from "./results-model";
+import { resultRows, readValue, readDraft, notNumbers, rowsHaveIds, calRows, calRowsReady, readCalDraft, notNumbersCal, orphansOf, draftFor, calDraftFor, checkTesting, checkCalibration, blocking, type CheckProblem } from "./results-model";
 import { putDraft, getDraft, addSubmission, listSubmissions, listSubmissionsFor, addCorrection, listCorrectionsFor, correctionExists } from "./submissions";
 import { lockEntries, lockCounts, lockInForce, isNR, resultsOutsideForm, type SubmissionLock } from "./submission-lock-model";
 import { correctableFields, activeCorrections, readCorrection, type ResultCorrection } from "./corrections-model";
+import { readNote, noteInForce, type ReviewNote } from "./review-model";
 import { activeUnlock, submissionOpen, readConfirmations, submissionPayload, readUnlock, SUBMIT_PROBLEM_TEXT, type ResultUnlock } from "./submission-model";
 import { testPeriodLimits, calibrationWindows } from "./results-limits";
 import { drawCodes, drawObjects, toCode, codingProblem, objectsGiven, unfinished, sampleCodeOf, isProvisional, CODING_PROBLEM_TEXT, type CodingProblem, type CodingRecord } from "./coding-model";
@@ -3043,6 +3044,7 @@ export async function updateSchemeAction(formData: FormData) {
 
   // calibration block (only for C schemes that already carry calibration data)
   let calibration = existing.calibration;
+  const reviewRefused: string[] = []; // 6.7: the review's criteria that did not read
   if (existing.calibration) {
     // A POSTED empty field clears the list (the editor's labels promise "empty
     // if none"); the fallback applies only when the field wasn't posted at all
@@ -3052,6 +3054,15 @@ export async function updateSchemeAction(formData: FormData) {
       return str(k, "").split(",").map((x) => x.trim()).filter(Boolean);
     };
     const c = existing.calibration;
+    // a number as typed («±» in front allowed); one that does not read keeps what was saved — named,
+    // never wiped in silence (6.7 review)
+    const reviewNumber = (k: string, fb: string | undefined, label: string) => {
+      if (formData.get(k) === null) return fb;
+      const v = str(k, "").trim().replace(/^(±|\+\/-|\+-)\s*/, "").slice(0, 20);
+      if (!v) return undefined;
+      if (readValue(v) === null) { reviewRefused.push(label); return fb; }
+      return v;
+    };
     calibration = {
       ...c,
       quantityEn: str("cal_quantityEn", c.quantityEn),
@@ -3068,7 +3079,14 @@ export async function updateSchemeAction(formData: FormData) {
       referenceLabLocBg: str("cal_refLocBg", c.referenceLabLocBg),
       methodEn: str("cal_methodEn", c.methodEn),
       methodBg: str("cal_methodBg", c.methodBg),
+      // 6.7: the review's criteria — a number as typed, else none (never a word kept as a limit)
+      refTolerance: reviewNumber("cal_refTolerance", c.refTolerance, "tolerance"),
+      tempMin: reviewNumber("cal_tempMin", c.tempMin, "tempMin"),
+      tempMax: reviewNumber("cal_tempMax", c.tempMax, "tempMax"),
     };
+    // a range typed the wrong way round: refused, the saved one kept (6.7 review)
+    const lo = readValue(calibration.tempMin ?? ""), hi = readValue(calibration.tempMax ?? "");
+    if (typeof lo === "number" && typeof hi === "number" && lo > hi) { reviewRefused.push("tempRange"); calibration = { ...calibration, tempMin: c.tempMin, tempMax: c.tempMax }; }
   }
   // ONE static reminder text per scheme (А3, 3.6) — kept when the form does not carry it;
   // cut by characters, never inside one (3.6 review)
@@ -3426,13 +3444,15 @@ export async function updateSchemeAction(formData: FormData) {
   const mklQ = markersLockedRefused ? "mkl=1" : "";
   // …and the design data's (3.13)
   const metaQ = [metaRefusal ? `meta=${encodeURIComponent(metaRefusal)}` : "", periodRefused ? "per=1" : ""].filter(Boolean).join("&");
-  const back = (q: string) => `/schemes/${id}/edit?${[q, chars, comQ, lstQ, mklQ, metaQ, `t=${Date.now().toString(36)}`].filter(Boolean).join("&")}`;
+  // …and the review's criteria (6.7 review)
+  const revQ = reviewRefused.length ? `rev=${encodeURIComponent(reviewRefused.join(","))}` : "";
+  const back = (q: string) => `/schemes/${id}/edit?${[q, chars, comQ, lstQ, mklQ, metaQ, revQ, `t=${Date.now().toString(36)}`].filter(Boolean).join("&")}`;
   if (numberLocked) redirect(back(`err=numberLocked&number=${encodeURIComponent(newNumber)}`));
   if (simRefused) redirect(back(`err=simNumber&number=${encodeURIComponent(newNumber)}`));
   if (numberUnread) redirect(back(`err=badNumber&number=${encodeURIComponent(newNumber)}`));
   if (activityRefused) redirect(back(`err=numberActivity&number=${encodeURIComponent(newNumber)}`));
   if (numberTaken) redirect(back(`err=dupNumber&number=${encodeURIComponent(newNumber)}`));
-  redirect(chars || comQ || lstQ || mklQ || metaQ ? back("") : `/schemes/${id}`);
+  redirect(chars || comQ || lstQ || mklQ || metaQ || revQ ? back("") : `/schemes/${id}`);
 }
 
 // Parse a submitted results form into a Scoring object. Field naming uses
@@ -6333,4 +6353,37 @@ export async function recordCorrectionAction(formData: FormData): Promise<void> 
   revalidatePath(`/schemes/${schemeId}/participants/${code}`);
   revalidatePath(`/lab/p/${part!.id}/results`);
   redirect(back("corr=ok"));
+}
+
+// ── PTS's review after the deadline (part 6.7; Реш. 88) ─────────────────────────────────────
+// The three checks (and calibration's) are on a staff page, never shown to a laboratory. The
+// results are evaluated as declared; the findings go into the report as an INDIVIDUAL NOTE PTS
+// writes per participation — appended, the latest in force, an empty one withdraws it. Journalled
+// without its text.
+export async function recordReviewNoteAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? "");
+  await requireOneOf(["results.enter", "results.process"], schemeId); // the coding or the statistics expert
+  const code = String(formData.get("code") ?? "").trim();
+  const back = (q: string) => `/schemes/${encodeURIComponent(schemeId)}/review?${q}#p-${encodeURIComponent(code)}`;
+  const scheme = await getScheme(schemeId);
+  if (!scheme || !(scheme.status === "running" || scheme.status === "processing" || (scheme.type === "C" && scheme.status === "open"))) redirect(back("note=state"));
+  const part = (await listParticipants(schemeId)).find((p) => p.code === code);
+  // on the final list only — a withdrawn participation is not reviewed (review)
+  if (!part || !inFinalRound(scheme!, part)) redirect(back("note=state"));
+  const text = readNote(formData.get("text"));
+  const by = (await getRoleContext()).email ?? "build";
+  const entry: ReviewNote = { id: randomUUID(), participantId: part!.id, code, text, at: new Date().toISOString(), by };
+  let same = false, moved = false;
+  await updateSchemeWith(schemeId, (cur) => {
+    // the state again, inside the lock — the report may have moved the scheme on meanwhile (review)
+    if (!(cur.status === "running" || cur.status === "processing" || (cur.type === "C" && cur.status === "open"))) { moved = true; return {}; }
+    // the note in force already says this (a second press): nothing new
+    if ((noteInForce(cur.reviewNotes, part!.id)?.text ?? "") === text) { same = true; return {}; }
+    return { reviewNotes: [...(cur.reviewNotes ?? []), entry] };
+  });
+  if (moved) redirect(back("note=state"));
+  if (same) redirect(back("note=same"));
+  await logActivity("results.review_note", { schemeId, targetCode: code, subject: `review-note:${entry.id}`, summary: text ? `Review note written for ${code}` : `Review note withdrawn for ${code}`, after: { withdrawn: !text } });
+  revalidatePath(`/schemes/${schemeId}/review`);
+  redirect(back("note=ok"));
 }

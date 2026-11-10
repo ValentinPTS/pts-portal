@@ -21,12 +21,12 @@ export default async function EditSchemePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ err?: string; codes?: string; slots?: string; number?: string; chars?: string; com?: string; lship?: string; lrcpt?: string; mkl?: string; meta?: string; per?: string; t?: string }>;
+  searchParams: Promise<{ err?: string; codes?: string; slots?: string; number?: string; chars?: string; com?: string; lship?: string; lrcpt?: string; mkl?: string; meta?: string; per?: string; rev?: string; t?: string }>;
 }) {
   await requireStaff(); // read gate: manager/staff/auditor only
   const { id } = await params;
   await requireCap("codes.view", id); // in THIS scheme, by the role model (2.4)
-  const { err, codes, slots, number, chars, com, lship, lrcpt, mkl, meta, per, t } = await searchParams;
+  const { err, codes, slots, number, chars, com, lship, lrcpt, mkl, meta, per, rev, t } = await searchParams;
   // the design data's refusal: «problem[:row]» (3.13)
   const [metaProblem, metaRow] = (meta ?? "").split(":");
   const metaText = metaProblem && Object.hasOwn(PROVIDER_PROBLEM_TEXT, metaProblem) ? PROVIDER_PROBLEM_TEXT[metaProblem as ProviderProblem] : null;
@@ -134,6 +134,12 @@ export default async function EditSchemePage({
         </div>
       )}
 
+      {rev && (
+        <div className="card p-3 mt-3 text-sm" data-review-criteria-refused={rev} style={{ background: "#fbeeee", border: "1px solid #e3c8c8", color: "#8f2f2f" }}>
+          {lang === "bg" ? "Критериите за прегледа след срока не са записани — останаха предишните: " : "The criteria for the review after the deadline were not saved — the previous ones are kept: "}
+          {rev.split(",").map((k) => (lang === "bg" ? { tolerance: "допускът (число, напр. 0,5)", tempMin: "температурата «от» (число)", tempMax: "температурата «до» (число)", tempRange: "температурният диапазон («от» е по-голямо от «до»)" } : { tolerance: "the tolerance (a number, e.g. 0.5)", tempMin: "the temperature «from» (a number)", tempMax: "the temperature «to» (a number)", tempRange: "the temperature range («from» is above «to»)" } as Record<string, string>)[k] ?? k).join("; ")}.
+        </div>
+      )}
       {per && (
         <div className="card p-3 mt-3 text-sm" data-period-refused style={{ background: "#fbeeee", border: "1px solid #e3c8c8", color: "#8f2f2f" }}>
           <b>{L("Периодът НЕ е запазен.", "The period was NOT saved.")}</b> {L(`${PROVIDER_PROBLEM_TEXT.period.bg}. Другите промени са запазени.`, `${PROVIDER_PROBLEM_TEXT.period.en}. Your other changes are saved.`)}
