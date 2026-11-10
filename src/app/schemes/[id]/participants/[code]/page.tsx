@@ -11,6 +11,7 @@ import { requireStaff } from "@/lib/roles";
 import { logActivity } from "@/lib/activity";
 import LabInvoicePanel from "@/components/LabInvoicePanel";
 import { acksOfParticipation, ackDone, ackMoment } from "@/lib/ack-model";
+import { deliveryOf } from "@/lib/delivery-model";
 import MessageComposer from "@/components/MessageComposer";
 import { sendParticipationMessageAction } from "@/lib/actions";
 import { messageTargetLabel, messageReached } from "@/lib/messages-model";
@@ -222,6 +223,23 @@ export default async function CaseFilePage({
           </section>
         );
       })()}
+
+      {/* the receipt protocols (Ф 7.3.4-1) it filed online — a testing object's (also on «Доставки»)
+          and, since 5.11, the calibration device's at its chain stop; fit or not, the checks failed.
+          Who received it is a person's name — not shown here */}
+      {coded && deliveryOf(s, coded.id).receipts.length > 0 && (
+        <section className="card p-4 mt-4" data-participant-receipts={deliveryOf(s, coded.id).receipts.length}>
+          <h2 className="font-bold" style={{ color: "var(--green-dark)", fontSize: 15, margin: 0 }}>{lang === "bg" ? "Протоколи за получаване (Ф 7.3.4-1)" : "Receipt protocols (F 7.3.4-1)"}</h2>
+          <ul className="text-sm mt-2" style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+            {deliveryOf(s, coded.id).receipts.map((r) => (
+              <li key={r.id} data-receipt={r.suitable ? "fit" : "unfit"} style={{ color: r.suitable ? "var(--green-dark)" : "#8f2f2f" }}>
+                {r.shipmentId.startsWith("chain:") ? (lang === "bg" ? "Уредът" : "The device") : (lang === "bg" ? "Обектът" : "The object")} · {fmtSchemeDate(r.day)} {r.time} · {r.suitable ? (lang === "bg" ? "годен" : "fit") : (lang === "bg" ? "негоден" : "not fit")}
+                {(s.lists?.receiptChecks ?? []).filter((c) => r.checks[c.id] === false).map((c) => ` · ✗ ${lang === "bg" ? c.bg : c.en}`).join("")}{!r.undamaged ? (lang === "bg" ? " · нарушена опаковка" : " · packaging damaged") : ""}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* 5.10: a one-way message to this participation (Реш. 116; Реш. 22, 91 — e.g. its lateness) */}
       {canMessage && coded && (

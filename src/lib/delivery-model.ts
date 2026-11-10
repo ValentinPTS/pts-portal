@@ -246,3 +246,20 @@ export const RECEIPT_PROBLEM_TEXT: Record<ReceiptProblem, { bg: string; en: stri
   twice: { bg: "Протоколът за тази пратка вече е подаден.", en: "The protocol for this shipment is in already." },
   state: { bg: "Схемата вече не приема протоколи и сигнали — свържете се с PTS.", en: "The scheme no longer takes protocols or problems — contact PTS." },
 };
+
+// ── calibration: the device's receipt protocol at a chain stop (5.11, completing 5.6) ──
+// A calibration device travels the chain, not by a shipment: its arrival is stamped at the
+// laboratory's stop («Уредът пристигна при мен»). The receipt protocol (Ф 7.3.4-1) — the
+// calibration Instruction's checks, the packaging, remarks, who received it — is then filled
+// for THAT stop, once; it is kept with the receipts, by the stop: «chain:<stopId>».
+export const chainReceiptId = (stopId: string) => `chain:${stopId}`;
+
+/** The stop of this laboratory's code whose device has arrived and has no protocol yet — or null.
+ *  A chain may visit a laboratory twice: each visit its own protocol, the one holding the device
+ *  NOW first, then an earlier visit's still missing (5.11 review). */
+export function chainReceiptTarget(stops: readonly { id: string; kind: string; code?: string; receivedAt?: string; sentAt?: string }[] | undefined, code: string, receipts: readonly { shipmentId: string }[]): { id: string; receivedAt: string } | null {
+  const filed = new Set(receipts.map((r) => r.shipmentId));
+  const open = (stops ?? []).filter((x) => x.kind === "lab" && x.code === code && !!x.receivedAt && !filed.has(chainReceiptId(x.id)));
+  const stop = open.find((x) => !x.sentAt) ?? open[0];
+  return stop ? { id: chainReceiptId(stop.id), receivedAt: stop.receivedAt! } : null;
+}

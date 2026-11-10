@@ -1,5 +1,5 @@
 // M1 — the provider's texts for the calibration documents (31.10.2026), as data (plan part 3.10).
-import { gateB, P7 } from "./gate-texts";
+import { gateB, P7, P17_M1 } from "./gate-texts";
 
 export type M1Kind = "constant" | "fields" | "specific";
 export interface M1Point {
@@ -598,17 +598,23 @@ export const M1_INSTRUCTION: M1Point[] = [
     bg: [
       "Всички резултати от измерванията се представят по електронна поща не по-късно от срока, посочен в т. 10 на **Плана за изпитване за пригодност (Ф 7.2.1-1)**, чрез предоставения **„Лист с резултати“ (Ф 7.2.1-7)**.",
       "Ако участникът не представи резултати в определения срок, неговите резултати няма да бъдат включени в статистическата обработка и лабораторията няма да бъде включена в Окончателния доклад.",
-      "Заедно с резултатите участникът представя:",
-      "**Протокол за получаване на обект на изпитване за пригодност (Ф 7.3.4-1)** – изпраща се на РТ провайдъра непосредствено след получаване на обекта на РТ схемата и не по-късно от следващия работен ден;",
-      "**Декларация за конфиденциалност (Ф 4.2-2)** – представя се заедно с протокола за получаване и във всички случаи преди започване на дейностите по калибриране.",
+      // П17 from Gate B (5.11, D16): the arrival confirmed and the declaration signed in the portal —
+      // read when the module loads, as П7 above (the deployment's setting, fixed until a deploy)
+      ...(gateB() ? [P17_M1.bg] : [
+        "Заедно с резултатите участникът представя:",
+        "**Протокол за получаване на обект на изпитване за пригодност (Ф 7.3.4-1)** – изпраща се на РТ провайдъра непосредствено след получаване на обекта на РТ схемата и не по-късно от следващия работен ден;",
+        "**Декларация за конфиденциалност (Ф 4.2-2)** – представя се заедно с протокола за получаване и във всички случаи преди започване на дейностите по калибриране.",
+      ]),
       "**Лист за обратна връзка (Ф 8.6-2)** се предоставя под формата на електронна връзка към онлайн анкета в срок до 7 работни дни след изпращане на Окончателния доклад. Формулярът за обратна връзка се попълва в срок до 1 месец от получаването му.",
     ],
     en: [
       "All measurement results are submitted by e-mail no later than the deadline stated in item 10 of the **Plan for proficiency testing (F 7.2.1-1)**, using the provided **“Results Sheet” (F 7.2.1-7)**.",
       "If the participant does not submit results by the specified deadline, its results will not be included in the statistical processing and the laboratory will not be included in the Final Report.",
-      "Together with the results, the participant submits:",
-      "**Protocol for PT item receipt (F 7.3.4-1)** – sent to the PT provider immediately after receipt of the PT item and no later than the next working day;",
-      "**Confidentiality declaration (F 4.2-2)** – submitted together with the receipt protocol and in all cases before the calibration activities begin.",
+      ...(gateB() ? [P17_M1.en] : [
+        "Together with the results, the participant submits:",
+        "**Protocol for PT item receipt (F 7.3.4-1)** – sent to the PT provider immediately after receipt of the PT item and no later than the next working day;",
+        "**Confidentiality declaration (F 4.2-2)** – submitted together with the receipt protocol and in all cases before the calibration activities begin.",
+      ]),
       "**Feedback form (F 8.6-2)** is provided as a link to an online survey within 7 working days after the Final Report is sent. The feedback form is to be completed within 1 month of its receipt.",
     ],
     notes: [

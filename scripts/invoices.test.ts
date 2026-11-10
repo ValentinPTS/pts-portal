@@ -43,11 +43,11 @@ t("…a name that would be a formula to Excel is text («'=…»)", file.include
 
 // ── Gate B makes the invitation a new edition (review) ──
 const sch = pavingBlocks;
-const before = { inv: fingerprint(sch, "invitation"), instr: fingerprint(sch, "instruction") };
+const before = { inv: fingerprint(sch, "invitation"), plan: fingerprint(sch, "plan") };
 process.env.PTS_GATE_B = "on";
-const after = { inv: fingerprint(sch, "invitation"), instr: fingerprint(sch, "instruction") };
+const after = { inv: fingerprint(sch, "invitation"), plan: fingerprint(sch, "plan") };
 delete process.env.PTS_GATE_B;
-t("Gate B passed: the invitation's content changed — a new edition; the other documents not", before.inv !== after.inv && before.instr === after.instr);
+t("Gate B passed: the invitation's content changed — a new edition; the other documents not", before.inv !== after.inv && before.plan === after.plan /* the plan has no П-sentence; the Instruction switches too since 5.11 */);
 t("…Gate B off: the fingerprint as before it existed — no edition issued earlier is marked changed", fingerprint(sch, "invitation") === before.inv);
 
 // ── the wiring (source shape) ──

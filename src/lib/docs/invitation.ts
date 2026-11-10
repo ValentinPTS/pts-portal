@@ -1,5 +1,5 @@
 import type { Scheme, Lang, Clause } from "../types";
-import { gateB, P4, P5 } from "../gate-texts";
+import { gateB, P4, P5, OLD } from "../gate-texts";
 import { esc, pick, wrapDoc, cover, sec, footer } from "../doc-shell";
 import { transitRisk } from "./transit";
 
@@ -86,14 +86,8 @@ export function renderInvitation(s: Scheme, lang: Lang): string {
 
   const invoicing = `<h3 class="sub">${L("Invoicing and Payment", "Фактуриране и плащане")}</h3>
     <ul>
-      <li>${gateB() ? L(P4.en, P4.bg) /* П4 from Gate B (5.8, D16) */ : L(
-        "A pro forma invoice will be issued and sent to the e-mail address provided in the “Application for Participation” (F 7.2.1-3).",
-        "Проформа фактура се издава и изпраща на електронната поща, посочена в „Заявка за участие“ (Ф 7.2.1-3)."
-      )}</li>
-      <li>${gateB() ? L(P5.en, P5.bg) /* П5 from Gate B (5.8, D16) */ : L(
-        "After payment is received, an electronic invoice will be issued and sent to the same e-mail address.",
-        "След извършване на плащането се издава електронна фактура, която се изпраща на същия електронен адрес."
-      )}</li>
+      <li>${gateB() ? L(P4.en, P4.bg) /* П4 from Gate B (5.8, D16) */ : L(OLD.P4.en, OLD.P4.bg)}</li>
+      <li>${gateB() ? L(P5.en, P5.bg) /* П5 from Gate B (5.8, D16) */ : L(OLD.P5.en, OLD.P5.bg)}</li>
       <li>${L(
         "Payment is not a condition for dispatch: the item is sent according to the schedule. The final report and the certificate of participation are provided once payment for the application has been received.",
         "Плащането не е условие за изпращане: обектът се изпраща по графика. Окончателният доклад и сертификатът за участие се предоставят след постъпване на плащането по съответната заявка."

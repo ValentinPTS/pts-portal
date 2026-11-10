@@ -82,6 +82,26 @@ try {
   const arrived = card.getByRole("button", { name: /Уредът пристигна при мен|The device has arrived/ });
   await arrived.waitFor();
   await arrived.click();
+  // 5.11 (completing 5.6): the device's receipt protocol (Ф 7.3.4-1) online, at this stop — once, BEFORE the device travels on
+  await page.waitForTimeout(1200);
+  await go("/lab");
+  const pHref = await page.locator(`[data-lab-card="${S}"] a[href^="/lab/p/"]`).first().getAttribute("href").catch(() => null);
+  t("the laboratory's participation page is linked from its card", !!pHref, String(pHref));
+  await go(pHref);
+  const rform = page.locator('[data-receipt-form^="chain:"]');
+  t("the calibration device: its receipt protocol, at this laboratory's stop, after the arrival", (await rform.count()) === 1);
+  await rform.locator('input[name="time"]').fill("09:30");
+  await rform.locator('input[name="receivedBy"]').fill("Иван Иванов");
+  await rform.locator('input[name="undamaged"][value="yes"]').check();
+  const checks = rform.locator("fieldset[data-check]:not([data-check='undamaged'])");
+  const nChecks = await checks.count();
+  for (let i = 0; i < nChecks; i++) await checks.nth(i).locator(`input[value="${i === 0 ? "no" : "yes"}"]`).check();
+  await rform.locator('button[type="submit"]').click();
+  for (let i = 0; i < 40 && !/ok=receipt|e=receipt/.test(page.url()); i++) await page.waitForTimeout(400);
+  await go(pHref);
+  t("…filed: «негоден» — a check failed (the calibration Instruction's checks, 3.8); the form gone", nChecks >= 1 && (await page.locator('[data-chain-receipt][data-receipt="unfit"]').count()) === 1 && (await page.locator('[data-receipt-form^="chain:"]').count()) === 0, String(nChecks));
+
+  await go("/lab");
   const handOn = card.getByRole("button", { name: /Предадох уреда|I have sent it on/ });
   await handOn.waitFor();
   for (let i = 0; i < 20 && (await handOn.isDisabled()); i++) await page.waitForTimeout(400);
@@ -104,6 +124,7 @@ try {
   const caseFile = await (await page.request.get(`${BASE}/schemes/${S}/participants/${code}`)).text();
   t("the case file: received by the laboratory, timed", /device received \d{2}:\d{2} \(calibration chain\)/.test(caseFile));
   t("the case file: handed on by the laboratory, timed", /device handed on \d{2}:\d{2} \(calibration chain\)/.test(caseFile));
+  t("…and the device's receipt protocol, not fit — PTS sees it before the device travels on", /data-participant-receipts="1"/.test(caseFile) && /data-receipt="unfit"/.test(caseFile));
   await go(`/schemes/${S}`);
   const stop = await page.locator('div:has(> div > span:text-is("Веригата")) ol > li, div:has(> div > span:text-is("The chain")) ol > li').first().innerText();
   t("the chain shows the stop received → handed on", /→/.test(stop) && !/\(PTS,/.test(stop), stop);

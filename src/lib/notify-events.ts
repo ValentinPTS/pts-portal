@@ -379,7 +379,19 @@ export async function notifyItemsDispatched(labId: string | undefined, schemeId:
 }
 
 /** The participant's online receipt protocol is in (Ф 7.3.4-1) — fit or not (Реш. 79). To PTS, by code. */
-export async function notifyReceiptProtocol(schemeId: string, schemeNumber: string, code: string, suitable: boolean): Promise<void> {
+export async function notifyReceiptProtocol(schemeId: string, schemeNumber: string, code: string, suitable: boolean, what: "object" | "device" = "object"): Promise<void> {
+  // a calibration DEVICE's protocol (5.11) is on the participant's case file — «Доставки» holds testing objects only
+  if (what === "device") {
+    await notify({
+      kind: "receipt.confirmed",
+      audience: "provider",
+      schemeId, code,
+      bg: suitable ? `${code} подаде протокол за получаване на уреда (${schemeNumber}): уредът е годен.` : `${code} подаде протокол за получаване на уреда (${schemeNumber}): уредът е НЕГОДЕН — вижте участника, преди уредът да продължи по веригата.`,
+      en: suitable ? `${code} filed the device's receipt protocol (${schemeNumber}): the device is fit.` : `${code} filed the device's receipt protocol (${schemeNumber}): the device is NOT fit — see the participant before the device travels on.`,
+      href: `/schemes/${encodeURIComponent(schemeId)}/participants/${encodeURIComponent(code)}`,
+    });
+    return;
+  }
   await notify({
     kind: "receipt.confirmed",
     audience: "provider",

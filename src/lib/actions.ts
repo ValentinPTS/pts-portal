@@ -47,7 +47,8 @@ async function labAfter(schemeId: string, code: string, pre: { code?: string; te
 import { listVisibleParticipations, isStarted } from "./visibility";
 import { applyStamp, chainNewestMs, isStampSource, rebuildChain, returnProblem, sofiaDay, sofiaTime, sofiaWallToIso, stampProblem, stampSourceLabel, type StampProblem, type StampWhat } from "./chain";
 import { ONLINE_APPLICATIONS_OPEN } from "./online-applications";
-import { freezeNow, issueEdition, latestEdition, getEdition, sameAs, servable, reissueReason, amendmentStampFor, type DocEdition, type Frozen } from "./editions";
+import { freezeNow, issueEdition, latestEdition, getEdition, sameAs, servable, reissueReason, amendmentStampFor, GATE_DOCS, type DocEdition, type Frozen } from "./editions";
+import { stillByEmail } from "./gate-texts";
 import { hasEditions, editionLabel } from "./editions-model";
 import { addApplication, setApplicationStatus } from "./applications";
 import { getDoc, hasDocContent, isRestrictedDoc, markCodedList, usableForDoc, isListDoc, pairsNamesWithCodes, showsIdentities, ORDER_DOC } from "./documents";
@@ -75,7 +76,7 @@ import { freezeParticipation, participationEntity } from "./participation-snapsh
 import { readSelections, characteristicsOf, readRefusal, readSource, inRound, REFUSAL_CATEGORIES, STANDING_PROBLEM_TEXT, MAX_PER_CHARACTERISTIC, participationSets, selectionsOf, sameSelections, objectsNeeded, type Standing } from "./application-model";
 import { notifyParticipationRefused, notifyItemsDispatched, notifyReceiptProtocol, notifyDeliveryProblem, notifyMessage } from "./notify-events";
 import { readDocNumber, invoiceSlotProblem, INVOICE_PROBLEM_TEXT } from "./invoice-model";
-import { readShipment, readReceipt, deliveryOf, openShipment, openProblems, replacementProblem, replacementCalledFor, minDaysOf, readMinDays, LIMITS as DELIVERY_LIMITS, MAX_OPEN_PROBLEMS, type Shipment, type ShipmentKind, type Deliveries } from "./delivery-model";
+import { readShipment, readReceipt, deliveryOf, openShipment, openProblems, replacementProblem, replacementCalledFor, minDaysOf, readMinDays, chainReceiptTarget, LIMITS as DELIVERY_LIMITS, MAX_OPEN_PROBLEMS, type Shipment, type ShipmentKind, type Deliveries } from "./delivery-model";
 import { finalListOf, splitFor, invoiceProblem, currentFinalList, inFinalRound, finalSelectionsOf, ANNOUNCEMENT_PROBLEM_TEXT, type FinalList } from "./announcement-model";
 import { readTarget, RELEASE_PROBLEM_TEXT, releaseFor, type TargetRelease } from "./release-model";
 import { ackRequiredFor, ackSettable, ackOf, kindOf, readAckForm, type Acknowledgement, type AckProblem } from "./ack-model";
@@ -121,7 +122,7 @@ import { ACTS, ACT_PROBLEM_TEXT, TICK_PROBLEM_TEXT, STATE_LABEL, actProblem, act
 import { sanitizeDocHtml } from "./sanitize-html";
 import { SCHEME_DOC_BUCKET, SCHEME_DOC_EXT, MAX_SCHEME_DOC_BYTES, ensureSchemeDocsBucket } from "./scheme-uploads";
 import { isDocKey } from "./doc-stages";
-import type { UploadedDoc } from "./types";
+import type { UploadedDoc, CodedParticipant } from "./types";
 import { logActivity } from "./activity";
 import { decideNotice, getNotice, markRead, readerKey, listForProvider, listForLab, listForParticipations, listForEntity, eraseEntityNotices } from "./notifications";
 import {
@@ -793,6 +794,7 @@ const EDITION_REFUSAL: Record<string, string> = {
   editionless: "This document has no editions: it is drawn from the live data.",
   failed: "Could not keep the edition's file, so nothing was issued. Try again in a moment.",
   incomplete: "Документът не е готов за издаване: има места «за попълване», липсва заглавие от M1 или число, което вече не е на схемата. · The document is not ready to issue: a place to fill in, a missing M1 heading, or a number that is no longer the scheme's.",
+  "by-email": "След Gate B документът още казва, че фактурите, протоколът или декларацията се изпращат по имейл — създайте го наново от шаблона или поправете изречението, после го издайте. · Past Gate B, the document still says the invoices, the protocol or the declaration go by e-mail — rebuild it from the template or correct the sentence, then issue it.",
   amendment: "Планът и поканата на отворена схема се изменят само със заповед за изменение — «Изменения» на схемата (Zadanie §3). · Once the scheme is open, the plan and the invitation change only by an order of amendment — the scheme's «Amendments».",
 };
 
@@ -4468,11 +4470,16 @@ export async function recordAmendmentAction(schemeId: string, input: AmendmentIn
   const at = new Date().toISOString();
   const day = sofiaToday(schemeNowMs(scheme));
 
-  // each document it re-issues must have something in it — refused before anything
-  // is recorded
+  // each document it re-issues must have something in it, and be issuable — whole on M1, and
+  // past Gate B no longer sending by e-mail — refused before anything is recorded: an
+  // amendment never stands half-issued for a reason a retry cannot cure (5.11 review)
   try {
     for (const doc of v.docs) {
-      if (!(await freezeNow(scheme, doc))) return { error: `“${getDoc(doc)?.nameBg ?? doc}” е празен — няма какво да се издаде. · “${getDoc(doc)?.nameEn ?? doc}” is empty — there is nothing to issue.` };
+      const now = await freezeNow(scheme, doc);
+      if (!now) return { error: `“${getDoc(doc)?.nameBg ?? doc}” е празен — няма какво да се издаде. · “${getDoc(doc)?.nameEn ?? doc}” is empty — there is nothing to issue.` };
+      const notWhole = m1Refusal(scheme, doc, now);
+      if (notWhole) return { error: `“${getDoc(doc)?.nameBg ?? doc}”: ${notWhole}` };
+      if (now.source === "rendered" && GATE_DOCS.has(doc) && (stillByEmail(now.bg) || stillByEmail(now.en))) return { error: `“${getDoc(doc)?.nameBg ?? doc}”: ${EDITION_REFUSAL["by-email"]}` };
     }
   } catch {
     return { error: EDITION_REFUSAL.failed };
@@ -4526,7 +4533,7 @@ export async function recordAmendmentAction(schemeId: string, input: AmendmentIn
   revalidatePath(`/schemes/${schemeId}`, "layout");
   revalidatePath("/lab", "layout");
   return issued.left.length
-    ? { ok: true, no, incomplete: `Изменение № ${no} е записано, но не се издаде: ${issued.left.join(", ")} — довършете го от «Изменения». · Amendment No. ${no} is recorded, but not issued: ${issued.left.join(", ")} — complete it from «Amendments».` }
+    ? { ok: true, no, incomplete: `Изменение № ${no} е записано, но не се издаде: ${issued.left.join(", ")} — довършете го от «Изменения». · Amendment No. ${no} is recorded, but not issued: ${issued.left.join(", ")} — complete it from «Amendments».${issued.why ? ` ${issued.why}` : ""}` }
     : { ok: true, no };
 }
 
@@ -4534,7 +4541,7 @@ export async function recordAmendmentAction(schemeId: string, input: AmendmentIn
  *  amendment's line — and record them on it; where the participants had been sent the
  *  document, they now hold the new edition. Stops at the first failure: what is left
  *  stays pending, to be completed. */
-async function issueAmendmentEditions(schemeId: string, amendmentId: string, by: string): Promise<{ left: string[] }> {
+async function issueAmendmentEditions(schemeId: string, amendmentId: string, by: string): Promise<{ left: string[]; why?: string }> {
   const scheme = await getScheme(schemeId);
   const a = scheme?.amendments?.find((x) => x.id === amendmentId);
   if (!scheme || !a) return { left: [] };
@@ -4549,7 +4556,8 @@ async function issueAmendmentEditions(schemeId: string, amendmentId: string, by:
     const replaces = latest ? { issuedOn: latest.issuedOn } : undefined;
     const note = amendmentNote(a, replaces);
     const r = await issueEdition({ scheme, docKey: doc, frozen, by, reason: note.reason, scope: note.scope, amendment: { bg: amendmentLine("bg", a, replaces), en: amendmentLine("en", a, replaces) } });
-    if (!r.ok) break;
+    // the reason it stopped, said — never only «try again» (5.11 review)
+    if (!r.ok) return { left, why: EDITION_REFUSAL[r.error] };
     const entry = { id: r.edition.id, no: r.edition.no, ...(latest ? { replaces: { no: latest.no, issuedOn: latest.issuedOn } } : {}) };
     await updateSchemeWith(schemeId, (cur) => {
       const list = (cur.amendments ?? []).map((x) => x.id !== amendmentId ? x : {
@@ -4584,7 +4592,7 @@ export async function completeAmendmentAction(schemeId: string, amendmentId: str
   if (!a.pending?.length) return { ok: true };
   const r = await issueAmendmentEditions(schemeId, a.id, await actorNow());
   revalidatePath(`/schemes/${schemeId}`, "layout");
-  return r.left.length ? { error: `Не се издаде: ${r.left.join(", ")}. Опитайте пак. · Not issued: ${r.left.join(", ")}. Try again.` } : { ok: true };
+  return r.left.length ? { error: r.why ? `Не се издаде: ${r.left.join(", ")}. · Not issued: ${r.left.join(", ")}. ${r.why}` : `Не се издаде: ${r.left.join(", ")}. Опитайте пак. · Not issued: ${r.left.join(", ")}. Try again.` } : { ok: true };
 }
 
 // ── Deadlines (part 3.4; Zadanie §9, §11; Реш. 154; О6) ──────────────────────
@@ -5653,11 +5661,11 @@ export async function submitReceiptAction(formData: FormData): Promise<void> {
   const mine = await ownGoingOn(schemeId, pid);
   if (!mine) redirect("/lab");
   const { scheme, part, by, log } = mine!;
-  if (scheme.type === "C") redirect(ownBack(pid, "e=receipt-shipment"));
+  const posted = String(formData.get("shipmentId") ?? "");
+  if (scheme.type === "C") await submitChainReceipt(scheme, part, pid, posted, formData, by, log); // never returns
   // only while the round runs — never after the report, in a closed scheme or one not held (review)
   if (scheme.status !== "running") redirect(ownBack(pid, "e=receipt-state"));
   const d0 = deliveryOf(scheme, pid);
-  const posted = String(formData.get("shipmentId") ?? "");
   // a protocol for a shipment that has one already — a second press, a stale form: refused, said so
   if (d0.receipts.some((r) => r.shipmentId === posted)) redirect(ownBack(pid, "e=receipt-twice"));
   const open = openShipment(d0);
@@ -5687,6 +5695,38 @@ export async function submitReceiptAction(formData: FormData): Promise<void> {
   await log("receipt.protocol", { targetCode: part.code, subject: `receipt:${receipt.id}`, summary: `Receipt protocol of ${part.code}: ${fields.suitable ? "fit" : "NOT fit"}`, after: { shipment: open!.id, day: fields.day, time: fields.time, suitable: fields.suitable, undamaged: fields.undamaged, failed: Object.entries(fields.checks).filter(([, v]) => !v).map(([k]) => k) } });
   revalidatePath(`/lab/p/${pid}`);
   revalidatePath("/deliveries");
+  redirect(ownBack(pid, "ok=receipt"));
+}
+
+/** The calibration device's receipt protocol (Ф 7.3.4-1) at this laboratory's chain stop — after
+ *  its arrival is stamped, once (5.11, completing 5.6's protocol for calibration). The same
+ *  form and rules as a testing object's; the arrival already sits on the case file. */
+async function submitChainReceipt(scheme: Scheme, part: CodedParticipant, pid: string, posted: string, formData: FormData, by: string, log: (action: string, meta: { targetCode: string; subject?: string; summary: string; after?: Record<string, unknown> }) => Promise<void>): Promise<never> {
+  const schemeId = scheme.id;
+  // while the device travels — not once processing started, nor in a scheme closed or not held (3.2)
+  if (!chainOpen(scheme.status)) redirect(ownBack(pid, "e=receipt-state"));
+  const target = chainReceiptTarget(scheme.chain?.stops, part.code, deliveryOf(scheme, pid).receipts);
+  if (!target) redirect(ownBack(pid, deliveryOf(scheme, pid).receipts.some((r) => r.shipmentId === posted) ? "e=receipt-twice" : "e=receipt-shipment"));
+  if (posted !== target!.id) redirect(ownBack(pid, "e=receipt-shipment"));
+  const checks: Record<string, unknown> = {};
+  for (const i of scheme.lists?.receiptChecks ?? []) checks[i.id] = formData.get(`check_${i.id}`);
+  // not before the device arrived here
+  const read = readReceipt({ day: formData.get("day"), time: formData.get("time"), checks, undamaged: formData.get("undamaged"), remarks: formData.get("remarks"), receivedBy: formData.get("receivedBy") }, scheme.lists?.receiptChecks, sofiaToday(schemeNowMs(scheme)), sofiaDay(target!.receivedAt));
+  if (!read.ok) redirect(ownBack(pid, `e=receipt-${read.problem}`));
+  const fields = (read as Extract<typeof read, { ok: true }>).fields;
+  const receipt = { id: randomUUID(), shipmentId: target!.id, at: schemeNowIso(scheme), by, ...fields };
+  // in the lock: still the stop awaiting it — a second press is not a second protocol
+  let refused = false;
+  await updateSchemeWith(schemeId, (s) => {
+    if (chainReceiptTarget(s.chain?.stops, part.code, deliveryOf(s, pid).receipts)?.id !== target!.id) { refused = true; return {}; }
+    return { deliveries: putDelivery(s, pid, (x) => ({ ...x, receipts: [...x.receipts, receipt] })) };
+  });
+  if (refused) redirect(ownBack(pid, "e=receipt-twice"));
+  // PTS is told — a device not fit must be seen before it travels on
+  await notifyReceiptProtocol(schemeId, scheme.number, part.code, fields.suitable, "device");
+  await log("receipt.protocol", { targetCode: part.code, subject: `receipt:${receipt.id}`, summary: `Receipt protocol of ${part.code} (the calibration device): ${fields.suitable ? "fit" : "NOT fit"}`, after: { stop: target!.id, day: fields.day, time: fields.time, suitable: fields.suitable, undamaged: fields.undamaged, failed: Object.entries(fields.checks).filter(([, v]) => !v).map(([k]) => k) } });
+  revalidatePath(`/lab/p/${pid}`);
+  revalidatePath(`/schemes/${schemeId}`, "layout");
   redirect(ownBack(pid, "ok=receipt"));
 }
 

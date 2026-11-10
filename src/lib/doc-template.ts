@@ -1,5 +1,6 @@
 import type { Scheme, Lang, DocOptions } from "./types";
 import { refreshAccreditation } from "./accreditation-mark";
+import { refreshGateSentences } from "./gate-texts";
 import { refreshInstruction } from "./docs/instruction-common";
 import type { Skin } from "../skins/types";
 import { getDoc } from "./documents";
@@ -106,6 +107,9 @@ export function docPrintHtml(
   // …and a saved Instruction its contacts from the team as it is now, with Реш. 150's
   // sentence (3.11 review)
   const refreshed = refreshAccreditation(stripCoverMark(editedBody), s, lang);
-  const wrapped = `<div class="pts-docbody" style="position:relative">\n${sanitizeDocHtml(key === "instruction" ? refreshInstruction(refreshed, s, lang) : refreshed)}\n</div>`;
+  // …and, from Gate B, a saved invitation's or Instruction's e-mail sentences as the portal's
+  // (П4, П5, П7, П12, П17 — 5.8, 5.11 review): the swap makes it a new edition
+  const gated = key === "invitation" || key === "instruction" ? refreshGateSentences(refreshed) : refreshed;
+  const wrapped = `<div class="pts-docbody" style="position:relative">\n${sanitizeDocHtml(key === "instruction" ? refreshInstruction(gated, s, lang) : gated)}\n</div>`;
   return stripBodyMarkers(full.slice(0, start) + "\n" + wrapped + "\n" + full.slice(b.end));
 }

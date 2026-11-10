@@ -14,7 +14,8 @@ import { listForParticipations, withReadState } from "@/lib/notifications";
 import { labUploadDocAction, submitReceiptAction, reportDeliveryProblemAction, acknowledgeDocAction } from "@/lib/actions";
 import { ACK_PROBLEM_TEXT, ackDone, ackMoment, declarationWords, DECLARATION, type AckProblem } from "@/lib/ack-model";
 import type { DocAck } from "@/lib/participation-view";
-import { deliveryOf, openShipment, RECEIPT_PROBLEM_TEXT } from "@/lib/delivery-model";
+import { deliveryOf, openShipment, chainReceiptTarget, RECEIPT_PROBLEM_TEXT } from "@/lib/delivery-model";
+import { gateB } from "@/lib/gate-texts";
 import { schemeNowMs, sofiaToday } from "@/lib/clock";
 import { signOutLabAction } from "@/lib/auth-actions";
 import { confirmDate } from "@/lib/profile-confirm-model";
@@ -53,7 +54,13 @@ export default async function ParticipationPage({ params, searchParams }: { para
   const delivery = deliveryOf(s, v.participantId);
   const last = delivery.shipments[delivery.shipments.length - 1];
   // the protocol awaited — not once it was received some other way (a signed scan, PTS's step), nor after the round (5.6 review)
-  const awaiting = s.type !== "C" && !v.finished && s.status === "running" && !v.receivedOtherwise ? openShipment(delivery) : null;
+  const awaiting = s.type !== "C"
+    ? (!v.finished && s.status === "running" && !v.receivedOtherwise ? openShipment(delivery) : null)
+    // a calibration device: its protocol at this laboratory's chain stop, once its arrival is
+    // stamped — while it travels (5.11, completing 5.6)
+    : (!v.finished && (s.status === "open" || s.status === "running") ? chainReceiptTarget(s.chain?.stops, p.code, delivery.receipts) : null);
+  // the calibration device's protocols, filed at its stop
+  const chainReceipts = s.type === "C" ? delivery.receipts.filter((r) => r.shipmentId.startsWith("chain:")) : [];
   const today = sofiaToday(schemeNowMs(s));
   const field = { border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px", fontSize: 13, fontFamily: "inherit" } as const;
   const reported = s.status === "report" || s.status === "closed";
@@ -106,7 +113,8 @@ export default async function ParticipationPage({ params, searchParams }: { para
             <input type="file" name="file" required accept="application/pdf,image/png,image/jpeg" style={{ fontSize: 12, maxWidth: 220 }} />
             <button type="submit" className="btn btn-sm" style={{ fontSize: 12 }}>↑ {up ? L("Замени файла", "Replace file") : T(LAB_UPLOAD_SLOTS[slot])}</button>
           </form>
-        ) : when && viewer.kind === "entity" && !v.finished ? (
+        ) : when && viewer.kind === "entity" && !v.finished && !(slot === "protocol" && gateB()) ? (
+          // from Gate B the protocol is filed online on this page, never by e-mail (П12, П17 — 5.11)
           <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{slot === "protocol" ? L("Изпратете подписания протокол за получаване (Ф 7.3.4-1) на PTS по e-mail.", "Send the signed receipt protocol (Ф 7.3.4-1) to PTS by e-mail.") : L("Изпратете попълнения Лист за резултати на PTS по e-mail.", "Send the completed Results sheet to PTS by e-mail.")}</span>
         ) : null}
       </div>
@@ -287,7 +295,13 @@ export default async function ParticipationPage({ params, searchParams }: { para
                     ))}
                   </ul>
                 )}
-                {/* the online receipt protocol (Ф 7.3.4-1) for the shipment awaiting it — «годен» is every listed check passed (Реш. 79) */}
+                {chainReceipts.map((r) => (
+                  <div key={r.id} data-receipt={r.suitable ? "fit" : "unfit"} data-chain-receipt style={{ fontSize: 12.5, marginTop: 6, color: r.suitable ? "var(--green-dark)" : "#8f2f2f" }}>
+                    {L("Протокол за получаване на уреда", "The device's receipt protocol")} {fmtPhaseDate(r.day)} {r.time} · {r.suitable ? L("годен", "fit") : L("негоден", "not fit")}
+                    {(s.lists?.receiptChecks ?? []).filter((c) => r.checks[c.id] === false).map((c) => ` · ✗ ${T(c)}`).join("")}{!r.undamaged ? ` · ${L("нарушена опаковка", "packaging damaged")}` : ""}
+                  </div>
+                ))}
+                {/* the online receipt protocol (Ф 7.3.4-1) for the shipment — or, calibration, the device at this stop — awaiting it; «годен» is every listed check passed (Реш. 79) */}
                 {awaiting && (
                   <form action={submitReceiptAction} data-receipt-form={awaiting.id} style={{ marginTop: 12, padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 10, display: "grid", gap: 8, fontSize: 13 }}>
                     <b>{L("Протокол за получаване (Ф 7.3.4-1)", "Receipt protocol (Ф 7.3.4-1)")}</b>

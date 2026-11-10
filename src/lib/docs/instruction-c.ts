@@ -1,4 +1,5 @@
 import type { Scheme, Lang } from "../types";
+import { gateB, OLD, NEW_P17_ITEM } from "../gate-texts";
 import { instructionContacts, writtenInstructionsNote } from "./instruction-common";
 import { esc, pick, wrapDoc, docHeader, sec, footer } from "../doc-shell";
 import { usesM1, m1Sections, m1Fields } from "../m1-render";
@@ -146,10 +147,7 @@ export function renderInstructionC(s: Scheme, lang: Lang): string {
       `All results by e-mail no later than ${deadline}, using the Results Sheet (F 7.2.1-7). Late results may not be included in the final report.`,
       `Всички резултати по имейл не по-късно от ${deadline}, чрез Листа с резултати (F 7.2.1-7). Закъснелите резултати може да не бъдат включени в окончателния доклад.`
     )}
-    ${li(
-      "Also send by e-mail: the Protocol for PT Item Receipt (F 7.3.4-1) and the Confidentiality Declaration (F 4.2-2). A Feedback Sheet (F 8.6-2) link follows within 7 working days after the final report.",
-      "По имейл изпратете също: Протокола за получаване на обект (F 7.3.4-1) и Декларацията за конфиденциалност (F 4.2-2). Връзка към Лист за обратна връзка (F 8.6-2) се изпраща до 7 работни дни след окончателния доклад."
-    )}
+    ${gateB() /* П17 from Gate B (5.11, D16): the arrival and the protocol online, the declaration by a tick */ ? li(NEW_P17_ITEM.en, NEW_P17_ITEM.bg) : li(OLD.P17.en, OLD.P17.bg)}
   </ul>`;
 
   // 11 — Contacts

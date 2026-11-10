@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "crypto";
 import { usesM1, isM1Doc, m1Problems } from "./m1-render";
 import { shareOf } from "./commercial-model";
 import { windowDays } from "./deadlines-model";
-import { gateB } from "./gate-texts";
+import { gateB, stillByEmail } from "./gate-texts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Scheme, Lang, UploadedDoc } from "./types";
 import { getDb, noMemoryFallback } from "./supabase";
@@ -157,7 +157,7 @@ const stable = (v: unknown): unknown =>
  *  content whatever build of the portal renders it. */
 export const TEMPLATE_VERSION: Record<string, number> = { instruction: 2 };
 /** The documents whose words switch at Gate B (lib/gate-texts). */
-export const GATE_DOCS: ReadonlySet<string> = new Set(["invitation"]);
+export const GATE_DOCS: ReadonlySet<string> = new Set(["invitation", "instruction"]); // П4/П5/П7 (5.8); П12/П17 (5.11)
 export function fingerprint(scheme: Scheme, docKey: string): string {
   // the kind, activity and accreditation as they read (3.1): a scheme from before they
   // were kept as fields, and the same scheme once they are, are one content
@@ -173,8 +173,8 @@ export function fingerprint(scheme: Scheme, docKey: string): string {
     // Instruction since 3.11 (its contacts from the team, Реш. 150's sentence)
     ...(TEMPLATE_VERSION[docKey] ? { tv: TEMPLATE_VERSION[docKey] } : {}),
     // Gate B's sentences П4, П5, П7 (5.8, D16) change the invitation — the testing one, the
-    // calibration one and M1's — so passing Gate B makes it a new edition. Off, nothing is
-    // added: the editions issued before keep their fingerprint (review)
+    // calibration one and M1's — and П12, П17 (5.11) the instruction: passing Gate B makes each
+    // a new edition. Off, nothing is added: the editions issued before keep their fingerprint
     ...(GATE_DOCS.has(docKey) && gateB() ? { gate: "B" } : {}),
     // what an M1 document prints from fields kept out of the documents' content — the
     // share of a second participation, the days at a participant (3.10 review)
@@ -254,7 +254,7 @@ async function ensureBucket(db: SupabaseClient): Promise<void> {
   }
 }
 
-export type IssueProblem = NoteProblem | "empty" | "conflict" | "failed" | "editionless" | "incomplete";
+export type IssueProblem = NoteProblem | "empty" | "conflict" | "failed" | "editionless" | "incomplete" | "by-email";
 
 /** Issue the next edition of a document from what it is now (`frozen`), with its note.
  *  Refused: a document without editions, one with nothing in it, edition 2+ without a
@@ -271,6 +271,9 @@ export async function issueEdition(p: {
   // «Издай нова редакция», an amendment, a lifecycle act (3.10 review)
   if (frozen.source === "rendered" && usesM1(scheme) && isM1Doc(docKey)
     && (m1Problems(frozen.bg, docKey, "bg", scheme).length || m1Problems(frozen.en, docKey, "en", scheme).length)) return { ok: false, error: "incomplete" };
+  // from Gate B, a document that still sends the invoices, the protocol or the declaration by
+  // e-mail is not issued — its text is brought up to date first (П4–П17; 5.11 review)
+  if (frozen.source === "rendered" && GATE_DOCS.has(docKey) && (stillByEmail(frozen.bg ?? "") || stillByEmail(frozen.en ?? ""))) return { ok: false, error: "by-email" };
   const latest = await latestEdition(scheme.id, docKey);
   const no = nextEditionNo(latest);
   const note = checkNote(no, p.reason, p.scope);
