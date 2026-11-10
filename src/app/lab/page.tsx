@@ -108,9 +108,9 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
         reported: scheme.status === "report" || scheme.status === "closed",
         // the report reaches the lab only as the file PTS issued (Реш. 135) — the R in force, once it
         // reaches this participation (7.4; D7: paid, or opened by hand)
-        officialReport: labReport(scheme, p.code).state === "issued",
-        reportLabel: labReport(scheme, p.code).label,
-        reportAwaiting: labReport(scheme, p.code).state === "awaiting",
+        officialReport: labReport(scheme, p.code, inFinalRound(scheme, p)).state === "issued",
+        reportLabel: labReport(scheme, p.code, inFinalRound(scheme, p)).label,
+        reportAwaiting: labReport(scheme, p.code, inFinalRound(scheme, p)).state === "awaiting",
         hasCert: !!labCertificate(scheme.certificates, p.code),
         deadline,
       };

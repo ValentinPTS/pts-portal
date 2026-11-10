@@ -38,7 +38,7 @@ export interface ReportIssue {
 }
 
 /** How the report reached a participation (D7): payment marked, or opened by hand with a reason. */
-export interface ReportAccess { at: string; by: string; via: "paid" | "hand"; reason?: string }
+export interface ReportAccess { at: string; by: string; via: "paid" | "hand"; reason?: string; /** the R in force when it reached the participation — set in the lock (7.5 review) */ r?: number }
 
 export const rLabel = (r: number): string => `R${r}`;
 export const issueInForce = (issues: readonly ReportIssue[] | undefined): ReportIssue | null => issues?.at(-1) ?? null;
@@ -104,10 +104,19 @@ export function correctionProblem(issues: readonly ReportIssue[] | undefined, t:
 }
 
 /** Those the report reaches at the act: every participation of the round marked paid then (D7). */
-export function accessAtIssue(paidAt: Record<string, string> | undefined, codes: readonly string[], had: Record<string, ReportAccess> | undefined, at: string, by: string): Record<string, ReportAccess> {
+export function accessAtIssue(paidAt: Record<string, string> | undefined, codes: readonly string[], had: Record<string, ReportAccess> | undefined, at: string, by: string, r?: number): Record<string, ReportAccess> {
   const out: Record<string, ReportAccess> = {};
-  for (const c of codes) if (paidAt?.[c] && !had?.[c]) out[c] = { at, by, via: "paid" };
+  for (const c of codes) if (paidAt?.[c] && !had?.[c]) out[c] = { at, by, via: "paid", ...(r ? { r } : {}) };
   return out;
+}
+/** The R's that reached a participation: from the one in force when it was reached (recorded with
+ *  the access; for an older record, by the times), and every later one. */
+export function receivedIssues(issues: readonly ReportIssue[], a: ReportAccess | null | undefined): ReportIssue[] {
+  if (!a) return [];
+  if (a.r) return issues.filter((i) => i.r >= a.r!);
+  const t = Date.parse(a.at);
+  const k = issues.reduce((m, i, idx) => (Date.parse(i.at) <= t ? idx : m), -1);
+  return k < 0 ? [...issues] : issues.slice(k);
 }
 export const reaches = (access: Record<string, ReportAccess> | undefined, code: string): boolean => !!access?.[code];
 
@@ -145,13 +154,8 @@ export function recipients(input: {
   const notes = (input.notices ?? []).map((n) => ({ code: n.code ?? "", r: rOfNotice(n.bg), at: n.at }));
   return input.codes.map((code) => {
     const a = input.access?.[code] ?? null;
-    const received: { r: number; at: string }[] = [];
-    if (a) {
-      const t = Date.parse(a.at);
-      const atReach = [...issues].reverse().find((i) => Date.parse(i.at) <= t);
-      if (atReach) received.push({ r: atReach.r, at: a.at });
-      for (const i of issues) if (Date.parse(i.at) > t) received.push({ r: i.r, at: i.at });
-    }
+    // the first it received — when it was reached; each later one — when it was issued
+    const received = receivedIssues(issues, a).map((i, k) => ({ r: i.r, at: k === 0 ? a!.at : i.at }));
     return { code, access: a, received, told: firstOf(notes, code), opened: firstOf(opens, code) };
   });
 }
@@ -194,9 +198,10 @@ export function issueReason(r: number, version: string, kind: "issue" | "correct
 /** What a participation's own pages say of the report: not yet; issued and reaching it (R in force,
  *  the 2.0 version); issued but awaiting its payment (D7). A scheme issued before 7.4 (no R on
  *  record): the uploaded file, as 3.2 served it. */
-export function labReport(s: { status: string; uploads?: { report?: unknown }; reportIssues?: readonly ReportIssue[]; reportAccess?: Record<string, ReportAccess> }, code: string): { state: "none" | "issued" | "awaiting"; label: string } {
+export function labReport(s: { status: string; uploads?: { report?: unknown }; reportIssues?: readonly ReportIssue[]; reportAccess?: Record<string, ReportAccess> }, code: string, inFinal = true): { state: "none" | "issued" | "awaiting"; label: string } {
   if (s.status !== "report" && s.status !== "closed") return { state: "none", label: "" };
   const r = issueInForce(s.reportIssues);
-  if (r) return reaches(s.reportAccess, code) ? { state: "issued", label: `${rLabel(r.r)} · PTS_Analysis ${r.analysisVersion}` } : { state: "awaiting", label: "" };
+  // a participation that left the round never awaits it — nothing can open it for it (7.5 review)
+  if (r) return reaches(s.reportAccess, code) ? { state: "issued", label: `${rLabel(r.r)} · PTS_Analysis ${r.analysisVersion}` } : { state: inFinal ? "awaiting" : "none", label: "" };
   return s.uploads?.report ? { state: "issued", label: "" } : { state: "none", label: "" };
 }

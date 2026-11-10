@@ -1132,7 +1132,7 @@ export async function setParticipantPaidAction(
     else delete paidAt[code];
     if (mayReach && issuedNow(s) && inFinalRound(s, part) && !s.reportAccess?.[code]) {
       reached = issueInForce(s.reportIssues);
-      return { paidAt, reportAccess: { ...(s.reportAccess ?? {}), [code]: { at, by, via: "paid" as const } } };
+      return { paidAt, reportAccess: { ...(s.reportAccess ?? {}), [code]: { at, by, via: "paid" as const, ...(reached ? { r: (reached as ReportIssue).r } : {}) } } };
     }
     return { paidAt };
   });
@@ -4317,7 +4317,7 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
       const p = transferProblem(again);
       if (p || again.reportSha !== r1.issue.reportSha || again.check?.id !== r1.issue.transferCheckId) { issueRefused = p ?? "stale"; return {}; }
       // the final list's participations (5.2) — one dropped at the second announcement gets nothing more
-      const access = accessAtIssue(cur.paidAt, parts.filter((x) => inFinalRound(cur, x)).map((x) => x.code), cur.reportAccess, at, by);
+      const access = accessAtIssue(cur.paidAt, parts.filter((x) => inFinalRound(cur, x)).map((x) => x.code), cur.reportAccess, at, by, r1.issue.r);
       const all: Record<string, ReportAccess> = { ...(cur.reportAccess ?? {}), ...access };
       reachedNow = new Set(Object.keys(all));
       issueWrite = { reportIssues: [...(cur.reportIssues ?? []), { ...r1.issue, at, by, day }], reportAccess: all };
@@ -6626,7 +6626,7 @@ export async function openReportByHandAction(formData: FormData): Promise<void> 
       if (cur.reportAccess?.[code]) { outcome = "already"; return {}; }
       outcome = "recorded";
       r = issueInForce(cur.reportIssues);
-      return { reportAccess: { ...(cur.reportAccess ?? {}), [code]: { at, by, via: "hand" as const, reason } } };
+      return { reportAccess: { ...(cur.reportAccess ?? {}), [code]: { at, by, via: "hand" as const, reason, ...(r ? { r: (r as ReportIssue).r } : {}) } } };
     });
   } catch { outcome = "gone"; }
   if (outcome !== "recorded") redirect(back(outcome === "moved" ? "ri=state" : outcome === "already" ? "ri=already" : "ri=failed"));

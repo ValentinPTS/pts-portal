@@ -1,5 +1,8 @@
 import Link from "next/link";
-import { labReport } from "@/lib/report-issue-model";
+import { labReport, rLabel } from "@/lib/report-issue-model";
+import { labReportCard } from "@/lib/lab-report-model";
+import { inFinalRound } from "@/lib/announcement-model";
+import { listActivity } from "@/lib/activity-store";
 import { notFound, redirect } from "next/navigation";
 import { participantViewer, participationViews } from "@/lib/participation-view";
 import { isProvisional } from "@/lib/coding-model";
@@ -68,8 +71,25 @@ export default async function ParticipationPage({ params, searchParams }: { para
   const reported = s.status === "report" || s.status === "closed";
   const lockNR = (s.status === "processing" || s.status === "report" || s.status === "closed") && lockWord(lockEntryOf(lockInForce(s.submissionLocks), v.participantId)) === "nr";
   // the R in force once it reaches this participation (7.4; D7: paid, or opened by hand)
-  const rep = labReport(s, p.code);
+  // the final list's (5.2): one that left the round never awaits the report — nothing can open it (7.5 review)
+  const inFinal = inFinalRound(s, p);
+  const rep = labReport(s, p.code, inFinal);
   const officialReport = reported && rep.state === "issued";
+  // 7.5: the report card — the R in force, its version and day; its own first opening of it (its
+  // code's journal lines, oldest first, one row); a correction said in fixed words; scores only in
+  // 2.0's file (Реш. 135, D3). An unread journal is said, never «not opened».
+  const repCard0 = labReportCard(s, p.code, { nr: lockNR, inFinal });
+  let openings: { editionId: string; at: string }[] | null = [];
+  if (repCard0.current) {
+    const ed = repCard0.current.editionId;
+    openings = await listActivity({ schemeId: s.id, action: "file.downloaded", targetCodes: [p.code], subjects: [`edition:${ed}`], limit: 1, ascending: true, strict: true })
+      .then((es) => es.map((e) => ({ editionId: ed, at: e.at }))).catch(() => null);
+  }
+  const repCard = openings ? labReportCard(s, p.code, { nr: lockNR, inFinal, openings }) : repCard0;
+  const reportHref = `/lab/doc/${s.id}/report?lang=${lang}&p=${encodeURIComponent(v.participantId)}`;
+  // D7's sentence in the payment box: only while the report may still be awaited by it — on the final
+  // list, the scheme held, the report not yet issued (or issued under 7.4 and not yet reached)
+  const d7Line = inFinal && s.status !== "not_held" && (!reported ? true : repCard.state === "awaiting");
   // the certificate is served to a laboratory's account (the document route); a user of the
   // entity gets it with phase 7 — never a row whose link answers «no» (5.5 review)
   const hasCert = viewer.kind === "lab" && !!labCertificate(s.certificates, p.code);
@@ -404,12 +424,34 @@ export default async function ParticipationPage({ params, searchParams }: { para
               </div>
             ))}
 
+            {repCard.state !== "none" && card(L("Окончателен доклад", "Final report"), (
+              <div data-lab-report={repCard.state} style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
+                {repCard.state === "awaiting" && <span data-report-awaiting style={{ color: "#7a5416" }}>{L("Окончателният доклад е издаден — ще се отвори за вас, след като PTS отбележи плащането (или го отвори по друго основание).", "The final report is issued — it opens for you once PTS marks your payment (or opens it on another ground).")}</span>}
+                {repCard.state === "legacy" && <span><a href={reportHref} target="_blank" rel="noreferrer" data-lab-report-open>{L("Отвори окончателния доклад", "Open the final report")}</a></span>}
+                {repCard.current && (<>
+                  <div data-lab-report-current={rLabel(repCard.current.r)}><b>{rLabel(repCard.current.r)}</b> · PTS_Analysis {repCard.current.version} · {L("издаден", "issued")} {fmtPhaseDate(repCard.current.day)}</div>
+                  {repCard.current.correction && <div data-lab-report-correction style={{ color: "#7a5416" }}>{L(`Поправка ${rLabel(repCard.current.r)} на окончателния доклад${repCard.earlier.length ? ` — заменя ${rLabel(repCard.earlier.at(-1)!.r)}` : ""}.`, `Correction ${rLabel(repCard.current.r)} of the final report${repCard.earlier.length ? ` — replaces ${rLabel(repCard.earlier.at(-1)!.r)}` : ""}.`)}</div>}
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <a className="btn btn-sm" href={reportHref} target="_blank" rel="noreferrer" data-lab-report-open>{L("Отвори", "Open")}</a>
+                    <a className="btn btn-sm" href={`${reportHref}&download=1`} data-lab-report-download>{L("Изтегли", "Download")}</a>
+                  </div>
+                  {openings
+                    ? <div data-lab-report-opened={repCard.firstOpened ? "1" : "0"} style={{ fontSize: 12.5, color: "var(--muted)" }}>{repCard.firstOpened ? L(`Отворен за първи път на ${dayTime(repCard.firstOpened)}.`, `First opened on ${dayTime(repCard.firstOpened)}.`) : L("Още не е отварян.", "Not opened yet.")}</div>
+                    : <div data-lab-report-opened="unread" style={{ fontSize: 12.5, color: "#8f2f2f" }}>{L("Не можа да се прочете кога е отварян — презаредете.", "When it was opened could not be read — reload.")}</div>}
+                  {repCard.earlier.length > 0 && <ul data-lab-report-earlier style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: "var(--muted)" }}>{repCard.earlier.map((e) => <li key={e.r}>{rLabel(e.r)} · {fmtPhaseDate(e.day)} — {L("заменен", "replaced")}</li>)}</ul>}
+                </>)}
+                {repCard.nr && <span data-lab-report-nr style={{ color: "#7a5416" }}>{L("Участието е N/R — в доклада няма оценки за вас.", "The participation is N/R — the report has no scores for you.")}</span>}
+                {repCard.current && !repCard.nr && <span data-lab-report-scores style={{ fontSize: 12.5, color: "var(--muted)" }}>{L("Оценките ви (z, ζ, Eₙ) са в доклада — изчислени от PTS_Analysis 2.0 — порталът не ги изчислява (Реш. 135).", "Your scores (z, ζ, Eₙ) are in the report — computed by PTS_Analysis 2.0; the portal does not compute them (Реш. 135).")}</span>}
+                {repCard.state === "legacy" && !repCard.nr && <span data-lab-report-scores style={{ fontSize: 12.5, color: "var(--muted)" }}>{L("Оценките ви са в доклада — порталът не ги изчислява (Реш. 135).", "Your scores are in the report — the portal does not compute them (Реш. 135).")}</span>}
+              </div>
+            ), { "data-lab-report-card": "1" })}
+
             {card(L("Проформа, фактура и плащане", "Proforma, invoice and payment"), (
               <div data-payment-box={v.payment} style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }} data-proforma-number={invoice?.number ?? ""}><span style={{ color: "var(--muted)" }}>{L("Проформа", "Proforma")}</span><span>{invoice ? `${invoice.number ? `№ ${invoice.number} · ` : ""}${fmtPhaseDate(invoice.uploadedAt.slice(0, 10))}` : "—"}</span></div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }} data-invoice-number={original?.number ?? ""}><span style={{ color: "var(--muted)" }}>{L("Фактура", "Invoice")}</span><span>{original ? `${original.number ? `№ ${original.number} · ` : ""}${fmtPhaseDate(original.uploadedAt.slice(0, 10))}` : L("след плащането", "after the payment")}</span></div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}><span style={{ color: "var(--muted)" }}>{L("Състояние", "State")}</span><span style={{ fontWeight: 700 }}>{T(PAYMENT_LABEL[v.payment])}</span></div>
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>{L("Плащането не спира изпращането — обектът тръгва по графика (Реш. 96). Всички потребители на организацията виждат и свалят проформата и фактурата.", "Payment never holds the dispatch back — the object goes on schedule (Реш. 96). Every user of the organisation sees and downloads the proforma and the invoice.")}</span>
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>{L(`Плащането не спира изпращането — обектът тръгва по графика (Реш. 96).${d7Line ? " Окончателният доклад се отваря за вас, след като плащането е отбелязано (или PTS го отвори по друго основание) — D7." : ""} Всички потребители на организацията виждат и свалят проформата и фактурата.`, `Payment never holds the dispatch back — the object goes on schedule (Реш. 96).${d7Line ? " The final report opens for you once the payment is marked (or PTS opens it on another ground) — D7." : ""} Every user of the organisation sees and downloads the proforma and the invoice.`)}</span>
               </div>
             ))}
 

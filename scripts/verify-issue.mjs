@@ -6,7 +6,10 @@
 // act refused without the transfer check; with it — R1, with 2.0.3 and the software record. The report
 // reaches A at the act; L only once its payment is marked (403 before, with its words) — and L is told;
 // B by hand, its reason never in the journal. A correction R2 (2.0.4) with its reason, scope and code:
-// the laboratory then gets R2.
+// the laboratory then gets R2. 7.5: the laboratory's own report card in each state — awaiting, R1
+// with its version, «not opened yet», the file behind «Отвори» and «Изтегли», its first opening on
+// Sofia's day; L sent nothing — N/R said instead of scores; after R2 the correction said, R1 listed as
+// replaced with no link.
 import { chromium } from "playwright";
 
 const BASE = process.env.BASE ?? "http://localhost:3000";
@@ -126,14 +129,27 @@ try {
   const beforeText = await before.text();
   await go("/lab");
   t("the laboratory, unpaid: the report refused (403, «once your payment is marked») — its page says so too", before.status() === 403 && /payment is marked/.test(beforeText) && /плащането|payment/.test(await textOf(page.locator("[data-report-awaiting]").first())), `${before.status()} ${beforeText}`);
+  const pidL = await page.locator(`[data-lab-card="${S}"] [data-open-participation]`).getAttribute("data-open-participation");
+  await go(`/lab/p/${pidL}`);
+  t("7.5 — its participation's page: «Окончателен доклад» awaiting the payment, nothing to open", (await page.locator('[data-lab-report="awaiting"] [data-report-awaiting]').count()) === 1 && (await page.locator("[data-lab-report-open]").count()) === 0);
   await go("/dev/persona?role=manager");
   await markPaid(S, codeL);
   await go(`/schemes/${S}#report-issue`);
   t("L marked paid after the act: the report reaches it — received R1, and it was told (a notice raised)", (await page.locator(`[data-recipient="${codeL}"][data-recipient-access="paid"] [data-recipient-received="R1"]`).count()) === 1 && (await page.locator(`[data-recipient="${codeL}"] [data-recipient-told="R1"]`).count()) === 1);
   await go("/dev/persona?role=lab");
+  await go(`/lab/p/${pidL}`);
+  t("7.5 — reached: the card shows R1, not opened yet", (await page.locator('[data-lab-report="reached"] [data-lab-report-current="R1"]').count()) === 1 && (await page.locator('[data-lab-report-opened="0"]').count()) === 1);
   const after = await page.request.get(`${BASE}/lab/doc/${S}/report`);
   await go("/lab");
   t("…the laboratory now reads exactly 2.0's file — listed as R1 with 2.0.3", after.status() === 200 && Buffer.from(await after.body()).equals(BG1) && /R1.*2\.0\.3/.test(await page.locator("body").innerText()));
+  await go(`/lab/p/${pidL}`);
+  const openHref = await page.locator("[data-lab-report-open]").getAttribute("href");
+  const dlHref = await page.locator("[data-lab-report-download]").getAttribute("href");
+  const viaOpen = await page.request.get(BASE + openHref), viaDl = await page.request.get(BASE + dlHref);
+  t("7.5 — the card: R1 · PTS_Analysis 2.0.3, issued; «Отвори» and «Изтегли» serve exactly 2.0's file (the download as an attachment)", /PTS_Analysis 2\.0\.3/.test(await textOf(page.locator('[data-lab-report="reached"] [data-lab-report-current="R1"]'))) && Buffer.from(await viaOpen.body()).equals(BG1) && Buffer.from(await viaDl.body()).equals(BG1) && /attachment/.test(viaDl.headers()["content-disposition"] ?? ""));
+  await go(`/lab/p/${pidL}`);
+  const sofiaDay = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Sofia", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date()).replace(/\//g, ".");
+  t("…its first opening shown, on Sofia's day; L sent no results — N/R at the lock: «no scores for you», never a scores line (Реш. 135)", (await page.locator('[data-lab-report-opened="1"]').count()) === 1 && (await textOf(page.locator('[data-lab-report-opened="1"]'))).includes(sofiaDay) && (await page.locator("[data-lab-report-nr]").count()) === 1 && (await page.locator("[data-lab-report-scores]").count()) === 0 && (await page.locator("[data-lab-report-correction], [data-lab-report-earlier]").count()) === 0);
 
   // ── B: opened by hand, with a reason — never in the journal ──
   await go("/dev/persona?role=manager");
@@ -172,6 +188,8 @@ try {
   t("who received which: every reached one received R2; L (outside R2's scope) told R1 only", (await page.locator(`[data-recipient="${codeB}"] [data-recipient-received="R1,R2"]`).count()) === 1 && (await page.locator(`[data-recipient="${codeL}"] [data-recipient-received="R1,R2"]`).count()) === 1 && (await page.locator(`[data-recipient="${codeL}"] [data-recipient-told="R1"]`).count()) === 1);
   await go("/dev/persona?role=lab");
   t("the laboratory now gets R2 — the corrected file", Buffer.from(await (await page.request.get(`${BASE}/lab/doc/${S}/report`)).body()).equals(BG2));
+  await go(`/lab/p/${pidL}`);
+  t("7.5 — after the correction: R2 · 2.0.4, «Поправка R2 — заменя R1» in fixed words (never PTS's scope); R1 listed as replaced, with no link", (await page.locator('[data-lab-report-current="R2"]').count()) === 1 && /2\.0\.4/.test(await textOf(page.locator('[data-lab-report-current="R2"]'))) && /Поправка R2 на окончателния доклад — заменя R1/.test(await textOf(page.locator("[data-lab-report-correction]"))) && !/kg\/m³/.test(await textOf(page.locator("[data-lab-report-card]"))) && /R1/.test(await textOf(page.locator("[data-lab-report-earlier]"))) && (await page.locator("[data-lab-report-earlier] a").count()) === 0);
   await go("/dev/persona?role=manager");
   await go(`/schemes/${S}/editions?doc=report`);
   t("«Редакции» keeps both editions — the participants hold R2; the report is no longer offered for issuing there", (await page.locator('[data-edition^="report:"]').count()) >= 2 && (await page.locator('[data-edition^="report:"] [data-held]').count()) === 1 && (await page.locator('[data-issue-edition] select option[value="report"]').count()) === 0);

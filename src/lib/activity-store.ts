@@ -162,6 +162,8 @@ export interface ActivityFilter {
   limit?: number;
   /** throw when the journal cannot be read — never an empty answer that reads as «nothing» (7.4) */
   strict?: boolean;
+  /** oldest first (the first opening of a file, 7.5) — newest first otherwise */
+  ascending?: boolean;
 }
 
 export async function listActivity(filter: ActivityFilter = {}): Promise<ActivityEvent[]> {
@@ -175,10 +177,11 @@ export async function listActivity(filter: ActivityFilter = {}): Promise<Activit
         && (!filter.actorRole || e.actorRole === filter.actorRole)
         && (!filter.subjects || (!!e.subject && filter.subjects.includes(e.subject)))
         && (!filter.targetCodes || (!!e.targetCode && filter.targetCodes.includes(e.targetCode))))
+      .sort((a, b) => (filter.ascending ? 1 : -1) * a.at.localeCompare(b.at))
       .slice(0, limit);
   }
   try {
-    let q = db.from("activity_log").select("*").order("at", { ascending: false }).limit(limit);
+    let q = db.from("activity_log").select("*").order("at", { ascending: !!filter.ascending }).limit(limit);
     if (filter.schemeId) q = q.eq("scheme_id", filter.schemeId);
     if (filter.action) q = q.eq("action", filter.action);
     if (filter.actor) q = q.eq("actor_email", filter.actor);
