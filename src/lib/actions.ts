@@ -48,7 +48,7 @@ import { listVisibleParticipations, isStarted } from "./visibility";
 import { applyStamp, chainNewestMs, isStampSource, rebuildChain, returnProblem, sofiaDay, sofiaTime, sofiaWallToIso, stampProblem, stampSourceLabel, type StampProblem, type StampWhat } from "./chain";
 import { ONLINE_APPLICATIONS_OPEN } from "./online-applications";
 import { freezeNow, issueEdition, latestEdition, getEdition, sameAs, servable, reissueReason, amendmentStampFor, GATE_DOCS, type DocEdition, type Frozen } from "./editions";
-import { stillByEmail } from "./gate-texts";
+import { gateB, stillByEmail } from "./gate-texts";
 import { hasEditions, editionLabel } from "./editions-model";
 import { addApplication, setApplicationStatus } from "./applications";
 import { getDoc, hasDocContent, isRestrictedDoc, markCodedList, usableForDoc, isListDoc, pairsNamesWithCodes, showsIdentities, ORDER_DOC } from "./documents";
@@ -1455,6 +1455,8 @@ export async function labUploadDocAction(formData: FormData): Promise<void> {
   const st = scheme!.status;
   const lockedNow = (x: string) => x === "not_held" || x === "closed" || (slot === "results" && (x === "processing" || x === "report"));
   if (lockedNow(st)) redirect(`${back}?e=locked`);
+  // from Gate B the results are submitted online — the record replaces the Results Sheet (6.8, П10)
+  if (slot === "results" && gateB()) redirect(`${back}?e=locked`);
   if (!inFinalRound(scheme!, mine!)) redirect(`${back}?e=locked`);
 
   const file = formData.get("file");

@@ -1,5 +1,5 @@
 import type { Scheme, Lang } from "../types";
-import { gateB, OLD, NEW_P17_ITEM } from "../gate-texts";
+import { gateB, OLD, NEW_P17_ITEM, P16, OLD_RESULTS } from "../gate-texts";
 import { instructionContacts, writtenInstructionsNote } from "./instruction-common";
 import { esc, pick, wrapDoc, docHeader, sec, footer } from "../doc-shell";
 import { usesM1, m1Sections, m1Fields } from "../m1-render";
@@ -143,10 +143,7 @@ export function renderInstructionC(s: Scheme, lang: Lang): string {
 
   // 10 — Deadline for results (from the schedule)
   const s10 = `<ul>
-    ${li(
-      `All results by e-mail no later than ${deadline}, using the Results Sheet (F 7.2.1-7). Late results may not be included in the final report.`,
-      `Всички резултати по имейл не по-късно от ${deadline}, чрез Листа с резултати (F 7.2.1-7). Закъснелите резултати може да не бъдат включени в окончателния доклад.`
-    )}
+    ${/* П16 from Gate B (6.8, D16): in the portal by the deadline, the errors confirmed; after it only through PTS */ gateB() ? li(P16.en(deadline), P16.bg(deadline)) : li(OLD_RESULTS.P16.en(deadline), OLD_RESULTS.P16.bg(deadline))}
     ${gateB() /* П17 from Gate B (5.11, D16): the arrival and the protocol online, the declaration by a tick */ ? li(NEW_P17_ITEM.en, NEW_P17_ITEM.bg) : li(OLD.P17.en, OLD.P17.bg)}
   </ul>`;
 

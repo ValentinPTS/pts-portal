@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { gateB } from "@/lib/gate-texts";
 import { isProvisional } from "@/lib/coding-model";
 import { inFinalRound } from "@/lib/announcement-model";
 import { writtenInstructions } from "@/lib/docs/instruction-common";
@@ -138,7 +139,9 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
           const up = it.scheme.labUploads?.[it.p.code]?.[slot];
           const sst = it.scheme.status;
           const open = !it.view!.finished && canLabUploadNow(it.p.status) && sst !== "not_held" && sst !== "closed"
-            && !(slot === "results" && (sst === "processing" || sst === "report"));
+            && !(slot === "results" && (sst === "processing" || sst === "report"))
+            // from Gate B the results are submitted online — the record replaces the sheet (6.8, П10)
+            && !(slot === "results" && gateB());
           if (!open && !up) return null;
           return (
             <div key={slot} data-upload-slot={slot} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>

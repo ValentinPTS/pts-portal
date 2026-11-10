@@ -122,6 +122,9 @@ try {
   const row0 = page.locator("[data-result-row]").first();
   await row0.locator(`[data-field="d_${K}_0"]`).fill("5,12");
   await row0.locator(`[data-field="d_${K}_1"]`).fill("5,5");
+  // typed until the controlled field holds it — a fill before hydration is not seen (under load)
+  await type(row0.locator(`[data-field="mean_${K}"]`), "5,2");
+  await type(row0.locator(`[data-field="d_${K}_0"]`), "5,12");
   t("the lab submits (determinations 5,12 and 5,5; the mean 5,2)", await submit() && await waitFor(async () => (await attr(page.locator("[data-receipt]"), "data-receipt-version")) === "1", 40));
 
   // ── PTS's review ──

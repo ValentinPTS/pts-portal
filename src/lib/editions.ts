@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "crypto";
 import { usesM1, isM1Doc, m1Problems } from "./m1-render";
 import { shareOf } from "./commercial-model";
 import { windowDays } from "./deadlines-model";
-import { gateB, stillByEmail } from "./gate-texts";
+import { gateB, stillByEmail, GATE_TEXTS_VERSION } from "./gate-texts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Scheme, Lang, UploadedDoc } from "./types";
 import { getDb, noMemoryFallback } from "./supabase";
@@ -175,7 +175,8 @@ export function fingerprint(scheme: Scheme, docKey: string): string {
     // Gate B's sentences П4, П5, П7 (5.8, D16) change the invitation — the testing one, the
     // calibration one and M1's — and П12, П17 (5.11) the instruction: passing Gate B makes each
     // a new edition. Off, nothing is added: the editions issued before keep their fingerprint
-    ...(GATE_DOCS.has(docKey) && gateB() ? { gate: "B" } : {}),
+    // the Gate B texts' own version — a later set of П-sentences (5.8, 5.11, 6.8) is a new edition too (6.8 review)
+    ...(GATE_DOCS.has(docKey) && gateB() ? { gate: "B", gateTexts: GATE_TEXTS_VERSION } : {}),
     // what an M1 document prints from fields kept out of the documents' content — the
     // share of a second participation, the days at a participant (3.10 review)
     ...(usesM1(scheme) ? { m1: { share: shareOf(scheme.commercial), window: windowDays(scheme) } } : {}),

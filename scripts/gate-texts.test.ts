@@ -57,7 +57,7 @@ t("…off: the Instruction's fingerprint as before (no edition issued earlier is
 const savedT = off.t, savedEn = off.tEn;
 t("a saved Instruction, before Gate B: printed as it is", refreshGateSentences(savedT, {}) === savedT);
 const swapped = refreshGateSentences(savedT, { PTS_GATE_B: "on" }), swappedEn = refreshGateSentences(savedEn, { PTS_GATE_B: "on" });
-t("…after Gate B: the e-mail sentence word for word → П12, both languages; nothing else changed", !swapped.includes(OLD.P12.bg) && swapped.includes(NEW_P12_ITEM.bg) && !swappedEn.includes(OLD.P12.en) && swappedEn.includes(NEW_P12_ITEM.en) && swapped.replace(NEW_P12_ITEM.bg, OLD.P12.bg) === savedT);
+t("…after Gate B: its e-mail sentences word for word → П12, П10, П11 (6.8), both languages — exactly what the template prints after Gate B, nothing else changed", !swapped.includes(OLD.P12.bg) && swapped.includes(NEW_P12_ITEM.bg) && !swappedEn.includes(OLD.P12.en) && swappedEn.includes(NEW_P12_ITEM.en) && swapped === on.t && swappedEn === on.tEn);
 t("…the same for the calibration Instruction (П17) and the invitations (П4, П5, П7)", refreshGateSentences(`<li>${OLD.P17.bg}</li><li>${OLD.P4.en}</li><li>${OLD.P5.bg}</li><li>${OLD.P7.en}</li>`, { PTS_GATE_B: "on" }) === `<li>${NEW_P17_ITEM.bg}</li><li>${P4.en}</li><li>${P5.bg}</li><li>${P7.en}</li>`);
 // through the real print path (docPrintHtml) — what an edition freezes
 process.env.PTS_GATE_B = "on";
@@ -81,7 +81,7 @@ const chainFn = actSrc.slice(actSrc.indexOf("async function submitChainReceipt")
 t("the calibration protocol: the participation's own (ownGoingOn); while the device travels; not before it arrived; re-checked in the lock; PTS told", /if \(scheme\.type === "C"\) await submitChainReceipt\(/.test(actSrc) && /if \(!chainOpen\(scheme\.status\)\)/.test(chainFn) && /sofiaDay\(target!\.receivedAt\)/.test(chainFn) && /chainReceiptTarget\(s\.chain\?\.stops, part\.code, deliveryOf\(s, pid\)\.receipts\)\?\.id !== target!\.id/.test(chainFn) && /notifyReceiptProtocol\(/.test(chainFn));
 t("issue: refused «by-email» after Gate B for a rendered invitation or Instruction still sending by e-mail", /GATE_DOCS\.has\(docKey\) && \(stillByEmail\(frozen\.bg \?\? ""\) \|\| stillByEmail\(frozen\.en \?\? ""\)\)\) return \{ ok: false, error: "by-email" \}/.test(readFileSync(new URL("../src/lib/editions.ts", import.meta.url), "utf8")));
 const labPage = readFileSync(new URL("../src/app/lab/p/[id]/page.tsx", import.meta.url), "utf8");
-t("the participation's page: from Gate B no «send the protocol by e-mail» beside the online form (review)", /!\(slot === "protocol" && gateB\(\)\)/.test(labPage));
+t("the participation's page: from Gate B no «send the protocol by e-mail» beside the online form (review) — nor the Results Sheet (6.8)", /!\(\(slot === "protocol" \|\| slot === "results"\) && gateB\(\)\)/.test(labPage));
 
 // ── M1: its texts are read when the module loads — the deployment's setting, fixed until a deploy ──
 const probe = `import { M1_INSTRUCTION, M1_INVITATION } from "./src/lib/m1-texts.ts"; import { P17_M1, P7 } from "./src/lib/gate-texts.ts"; import { m1Text } from "./src/lib/m1-render.ts";

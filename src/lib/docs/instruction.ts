@@ -1,5 +1,5 @@
 import type { Scheme, Lang } from "../types";
-import { gateB, OLD, NEW_P12_ITEM } from "../gate-texts";
+import { gateB, OLD, NEW_P12_ITEM, P10, P11, OLD_RESULTS } from "../gate-texts";
 import { instructionContacts, writtenInstructionsNote } from "./instruction-common";
 import { pick, wrapDoc, docHeader, sec, footer } from "../doc-shell";
 
@@ -151,16 +151,14 @@ export function renderInstruction(s: Scheme, lang: Lang): string {
       "Докладвайте в Листа с резултати (F 7.2.1-7): за всяка характеристика — единичните резултати, крайната средна стойност и разширената неопределеност U (k=2, P≈95%), изразени и закръглени съгласно т. 6."
     )}
     ${li(
-      "If U is not reported for a result, no ζ-score is calculated for it. Send the completed Results Sheet by e-mail within the deadline.",
-      "Ако U не е докладвана за даден резултат, за него не се изчислява ζ-оценка. Изпратете попълнения Лист с резултати по имейл в срока."
+      // П10 from Gate B (6.8, D16): the results submitted in the portal, the record there
+      `If U is not reported for a result, no ζ-score is calculated for it. ${gateB() ? P10.en : OLD_RESULTS.P10.en}`,
+      `Ако U не е докладвана за даден резултат, за него не се изчислява ζ-оценка. ${gateB() ? P10.bg : OLD_RESULTS.P10.bg}`
     )}
   </ul>`;
 
   const s10 = `<ul>
-    ${li(
-      `All results by e-mail no later than ${deadline}, using the Results Sheet (F 7.2.1-7). Late results are normally not included in the final report.`,
-      `Всички резултати по имейл не по-късно от ${deadline}, чрез Листа с резултати (F 7.2.1-7). Закъснелите резултати обикновено не се включват в окончателния доклад.`
-    )}
+    ${/* П11 from Gate B (6.8, D16): in the portal by the deadline; after it only through PTS */ gateB() ? li(P11.en(deadline), P11.bg(deadline)) : li(OLD_RESULTS.P11.en(deadline), OLD_RESULTS.P11.bg(deadline))}
     ${gateB() /* П12 from Gate B (5.11, D16): the protocol online, the declaration by a tick */ ? li(NEW_P12_ITEM.en, NEW_P12_ITEM.bg) : li(OLD.P12.en, OLD.P12.bg)}
   </ul>`;
 

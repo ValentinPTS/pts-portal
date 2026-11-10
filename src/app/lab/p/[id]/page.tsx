@@ -98,7 +98,8 @@ export default async function ParticipationPage({ params, searchParams }: { para
   // an upload slot of a laboratory's account (the receipt protocol, the results sheet) —
   // the same rule the upload action keeps; a user of the entity sends them by e-mail until
   // the online protocol (5.6) and the results form (phase 6)
-  const slotOpen = (slot: LabUploadSlot) => viewer.kind === "lab" && !v.finished && canLabUploadNow(p.status) && s.status !== "not_held" && s.status !== "closed" && !(slot === "results" && (s.status === "processing" || s.status === "report"));
+  // from Gate B the results are submitted online — the record replaces the Results Sheet (6.8, П10)
+  const slotOpen = (slot: LabUploadSlot) => viewer.kind === "lab" && !v.finished && canLabUploadNow(p.status) && s.status !== "not_held" && s.status !== "closed" && !(slot === "results" && (s.status === "processing" || s.status === "report")) && !(slot === "results" && gateB());
   const uploadBox = (slot: LabUploadSlot, when: boolean) => {
     const up = s.labUploads?.[p.code]?.[slot];
     if (!when && !up) return null;
@@ -115,7 +116,7 @@ export default async function ParticipationPage({ params, searchParams }: { para
             <input type="file" name="file" required accept="application/pdf,image/png,image/jpeg" style={{ fontSize: 12, maxWidth: 220 }} />
             <button type="submit" className="btn btn-sm" style={{ fontSize: 12 }}>↑ {up ? L("Замени файла", "Replace file") : T(LAB_UPLOAD_SLOTS[slot])}</button>
           </form>
-        ) : when && viewer.kind === "entity" && !v.finished && !(slot === "protocol" && gateB()) ? (
+        ) : when && viewer.kind === "entity" && !v.finished && !((slot === "protocol" || slot === "results") && gateB()) ? (
           // from Gate B the protocol is filed online on this page, never by e-mail (П12, П17 — 5.11)
           <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{slot === "protocol" ? L("Изпратете подписания протокол за получаване (Ф 7.3.4-1) на PTS по e-mail.", "Send the signed receipt protocol (Ф 7.3.4-1) to PTS by e-mail.") : L("Изпратете попълнения Лист за резултати на PTS по e-mail.", "Send the completed Results sheet to PTS by e-mail.")}</span>
         ) : null}
@@ -265,7 +266,11 @@ export default async function ParticipationPage({ params, searchParams }: { para
                 <span style={{ color: "var(--muted)", flex: 1, minWidth: 220 }}>{s.type === "C" ? L("Попълнете резултатите от калибрирането онлайн: общата информация и за всяка точка референтната и измерената стойност. Черновата се пази, както е написана.", "Fill in the calibration results online: the general info and, for each point, the reference and the measured value. The draft is kept as typed.") : L("Попълнете резултатите онлайн: определянията, средната стойност, U и k. Черновата се пази, както е написана.", "Fill in the results online: the determinations, the mean, U and k. The draft is kept as typed.")}</span>
                 <Link href={`${self}/results`} className="btn btn-primary btn-sm" data-open-results>{L("Към формуляра", "Open the form")}</Link>
               </div>
-            )) : null}
+            )) : ["processing", "report", "closed"].includes(s.status) ? (
+              // 6.8: after the form has closed — the submitted versions and their records (the record
+              // replaces the Results Sheet), what is processed, N/R: on the results page (review)
+              <p data-results-records-link style={{ margin: "0 0 4px", fontSize: 13 }}><Link href={`${self}/results`}>{L("Подадените версии и записите им (за печат) →", "The submitted versions and their records (printable) →")}</Link></p>
+            ) : null}
 
             {s.type === "C" && chain ? (
               <DeviceChainCard schemeId={s.id} lang={lang} state={chain.state} position={chain.position?.position} total={chain.position?.total} wait={chain.wait} started={chain.started} closed={chain.closed} incoming={chain.incoming} next={chain.next} handOnBy={chain.handOnBy} />

@@ -1,5 +1,5 @@
 // M1 — the provider's texts for the calibration documents (31.10.2026), as data (plan part 3.10).
-import { gateB, P7, P17_M1 } from "./gate-texts";
+import { gateB, P7, P17_M1, P16_M1 } from "./gate-texts";
 
 export type M1Kind = "constant" | "fields" | "specific";
 export interface M1Point {
@@ -596,7 +596,8 @@ export const M1_INSTRUCTION: M1Point[] = [
     titleEn: "Deadline for submission of results",
     kind: "constant",
     bg: [
-      "Всички резултати от измерванията се представят по електронна поща не по-късно от срока, посочен в т. 10 на **Плана за изпитване за пригодност (Ф 7.2.1-1)**, чрез предоставения **„Лист с резултати“ (Ф 7.2.1-7)**.",
+      // П16 from Gate B (6.8, D16): the results in the portal, the record replacing the sheet
+      gateB() ? P16_M1.bg : "Всички резултати от измерванията се представят по електронна поща не по-късно от срока, посочен в т. 10 на **Плана за изпитване за пригодност (Ф 7.2.1-1)**, чрез предоставения **„Лист с резултати“ (Ф 7.2.1-7)**.",
       "Ако участникът не представи резултати в определения срок, неговите резултати няма да бъдат включени в статистическата обработка и лабораторията няма да бъде включена в Окончателния доклад.",
       // П17 from Gate B (5.11, D16): the arrival confirmed and the declaration signed in the portal —
       // read when the module loads, as П7 above (the deployment's setting, fixed until a deploy)
@@ -608,7 +609,7 @@ export const M1_INSTRUCTION: M1Point[] = [
       "**Лист за обратна връзка (Ф 8.6-2)** се предоставя под формата на електронна връзка към онлайн анкета в срок до 7 работни дни след изпращане на Окончателния доклад. Формулярът за обратна връзка се попълва в срок до 1 месец от получаването му.",
     ],
     en: [
-      "All measurement results are submitted by e-mail no later than the deadline stated in item 10 of the **Plan for proficiency testing (F 7.2.1-1)**, using the provided **“Results Sheet” (F 7.2.1-7)**.",
+      gateB() ? P16_M1.en : "All measurement results are submitted by e-mail no later than the deadline stated in item 10 of the **Plan for proficiency testing (F 7.2.1-1)**, using the provided **“Results Sheet” (F 7.2.1-7)**.",
       "If the participant does not submit results by the specified deadline, its results will not be included in the statistical processing and the laboratory will not be included in the Final Report.",
       ...(gateB() ? [P17_M1.en] : [
         "Together with the results, the participant submits:",

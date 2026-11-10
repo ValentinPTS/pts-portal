@@ -60,6 +60,8 @@ export const ROUTES = [
   { file: "schemes/[id]/participants/page.tsx", names: "scheme", paths: (c) => [`/schemes/${c.S}/participants`] },
   // …and with the reveal asked for: the case file shows names only on request (0.1)
   { file: "schemes/[id]/participants/[code]/page.tsx", names: "scheme", paths: (c) => [`/schemes/${c.S}/participants/${encodeURIComponent(c.code)}`, `/schemes/${c.S}/participants/${encodeURIComponent(c.code)}?reveal=1`] },
+  // a submitted version's record (6.8): the typed laboratory and person only to names.view
+  { file: "schemes/[id]/participants/[code]/v/[n]/page.tsx", names: "scheme", paths: (c) => [`/schemes/${c.S}/participants/${encodeURIComponent(c.code)}/v/1`] },
   { file: "schemes/[id]/applications/page.tsx", names: "scheme", paths: (c) => [`/schemes/${c.S}/applications`] },
   { file: "schemes/[id]/results/page.tsx", names: "scheme", paths: (c) => [`/schemes/${c.S}/results`] },
   { file: "schemes/[id]/traceability/page.tsx", names: "scheme", paths: (c) => [`/schemes/${c.S}/traceability`] },
@@ -103,6 +105,7 @@ export const ROUTES = [
   { file: "lab/p/[id]/page.tsx", names: "own", paths: (c) => [...(c.pid ? [`/lab/p/${c.pid}`] : []), "/lab/p/00000000-0000-4000-8000-000000000000"] },
   // the results form (6.1): the participation's own, its draft as typed — never another's
   { file: "lab/p/[id]/results/page.tsx", names: "own", paths: (c) => [...(c.pid ? [`/lab/p/${c.pid}/results`] : []), "/lab/p/00000000-0000-4000-8000-000000000000/results"] },
+  { file: "lab/p/[id]/results/v/[n]/page.tsx", names: "own", paths: (c) => [...(c.pid ? [`/lab/p/${c.pid}/results/v/1`] : []), "/lab/p/00000000-0000-4000-8000-000000000000/results/v/1"] },
   { file: "lab/login/page.tsx", names: "never", paths: () => ["/lab/login"] },
   { file: "lab/doc/[scheme]/[doc]/route.ts", names: "own", paths: (c) => ["invitation", "report", "certificate", "results"].flatMap((d) => [`/lab/doc/${c.S}/${d}`, `/lab/doc/${c.OTHER}/${d}`]) },
   { file: "lab/labdoc/[scheme]/[slot]/route.ts", names: "own", paths: (c) => [`/lab/labdoc/${c.S}/proforma`, `/lab/labdoc/${c.OTHER}/proforma`] },

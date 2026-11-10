@@ -102,6 +102,7 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
         {[...versions].reverse().map((x) => (
           <li key={x.id} data-submitted-version={x.version}>
             {L("версия", "version")} {x.version} · {fmtMoment(x.submittedAt)} · {x.submittedBy.startsWith("entityuser:") ? L("потребител на организацията", "a user of the organisation") : L("акаунтът на лабораторията", "the laboratory's account")} · {L("разписка", "receipt")} <span style={{ fontFamily: "monospace" }}>{x.id.slice(0, 8)}</span>{x.configVersion ? ` · ${L("конфигурация", "configuration")} v.${x.configVersion}` : ""}{(x.data as { unlock?: unknown } | null)?.unlock ? ` · ${L("след срока, отключено от PTS", "after the deadline, unlocked by PTS")}` : ""}
+            {" · "}<Link href={`/lab/p/${encodeURIComponent(v.participantId)}/results/v/${x.version}`} data-record-link={x.version}>{L("запис (за печат) →", "record (printable) →")}</Link>
           </li>
         ))}
       </ul>

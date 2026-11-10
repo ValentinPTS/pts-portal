@@ -15,6 +15,10 @@
 // in the portal (5.6), the device's arrival confirmed there (the chain), the declaration signed
 // there by a tick (5.9). «Нов текст на Етап 6» (PTS's answers 7б) — prepared here (part 5.11).
 
+/** The П-sentences' set — raised whenever they change (5.8, 5.11, 6.8): a gated document printed
+ *  with a newer set is a new edition (editions' fingerprint — 6.8 review). */
+export const GATE_TEXTS_VERSION = "6.8";
+
 /** Gate B passed on this deployment? Off until PTS says so. */
 export const gateB = (env: Record<string, string | undefined> = process.env): boolean => env.PTS_GATE_B === "on";
 
@@ -48,6 +52,41 @@ export const P17_M1 = {
   en: "When the device arrives, the participant confirms its receipt in the portal, on the participation's page («The device has arrived»), and fills in the **Protocol for PT item receipt (F 7.3.4-1)** there — no later than the next working day; there, the participant also signs the **Confidentiality declaration (F 4.2-2)** by a tick before the calibration activities begin. Neither is sent by e-mail.",
 };
 
+// П10, П11 (the testing Instruction) and П16 (the calibration Instruction) — part 6.8: the results
+// are submitted in the portal; the record there replaces the Results Sheet (F 7.2.1-7); after the
+// deadline only through PTS's unlock (Реш. 111), never after processing has started (Реш. 21).
+// «Нов текст на Етап 7» (PTS's answers 7б) — prepared here, PTS to approve the words.
+export const P10 = {
+  bg: "Резултатите се въвеждат и подават в портала, на страницата на участието («Резултати»); подаването издава разписка, а подадената версия е записът на резултатите. По имейл не се изпраща лист.",
+  en: "The results are entered and submitted in the portal, on the participation's page («Results»); submitting issues a receipt, and the submitted version is the record of the results. No sheet is sent by e-mail.",
+};
+export const P11 = {
+  bg: (deadline: string) => `Всички резултати се подават в портала, на страницата на участието, не по-късно от ${deadline}; записът в портала заменя Листа с резултати (F 7.2.1-7). След срока формулярът се затваря — закъснял резултат се приема само ако PTS отключи формуляра, и никога след началото на обработката.`,
+  en: (deadline: string) => `All results are submitted in the portal, on the participation's page, no later than ${deadline}; the record in the portal replaces the Results Sheet (F 7.2.1-7). After the deadline the form closes — a late result comes in only if PTS unlocks the form, and never after processing has started.`,
+};
+export const P16 = {
+  bg: (deadline: string) => `Всички резултати се подават в портала, на страницата на участието, не по-късно от ${deadline}; формулярът изчислява грешките, които потвърждавате при подаването, а записът в портала заменя Листа с резултати (F 7.2.1-7). След срока формулярът се затваря — закъснял резултат се приема само ако PTS отключи формуляра, и никога след началото на обработката.`,
+  en: (deadline: string) => `All results are submitted in the portal, on the participation's page, no later than ${deadline}; the form computes the errors, which you confirm on submitting, and the record in the portal replaces the Results Sheet (F 7.2.1-7). After the deadline the form closes — a late result comes in only if PTS unlocks the form, and never after processing has started.`,
+};
+/** П16 in M1's own style — the calibration Instruction built from M1 (every calibration scheme since
+ *  3.10), its point 10: the results in the portal, the record replacing the sheet (6.8 review). */
+export const P16_M1 = {
+  bg: "Всички резултати от измерванията се подават в портала, на страницата на участието, не по-късно от срока, посочен в т. 10 на **Плана за изпитване за пригодност (Ф 7.2.1-1)**; формулярът изчислява грешките, които участникът потвърждава при подаването, а записът в портала заменя **„Лист с резултати“ (Ф 7.2.1-7)**. След срока формулярът се затваря — закъснял резултат се приема само ако РТ провайдърът отключи формуляра, и никога след началото на обработката.",
+  en: "All measurement results are submitted in the portal, on the participation's page, no later than the deadline stated in item 10 of the **Plan for proficiency testing (F 7.2.1-1)**; the form computes the errors, which the participant confirms on submitting, and the record in the portal replaces the **“Results Sheet” (F 7.2.1-7)**. After the deadline the form closes — a late result comes in only if the PT provider unlocks the form, and never after processing has started.",
+};
+/** What П10, П11, П16 replace, as the Instructions print them today — word for word (6.8). */
+export const OLD_RESULTS = {
+  P10: { bg: "Изпратете попълнения Лист с резултати по имейл в срока.", en: "Send the completed Results Sheet by e-mail within the deadline." },
+  P11: {
+    bg: (deadline: string) => `Всички резултати по имейл не по-късно от ${deadline}, чрез Листа с резултати (F 7.2.1-7). Закъснелите резултати обикновено не се включват в окончателния доклад.`,
+    en: (deadline: string) => `All results by e-mail no later than ${deadline}, using the Results Sheet (F 7.2.1-7). Late results are normally not included in the final report.`,
+  },
+  P16: {
+    bg: (deadline: string) => `Всички резултати по имейл не по-късно от ${deadline}, чрез Листа с резултати (F 7.2.1-7). Закъснелите резултати може да не бъдат включени в окончателния доклад.`,
+    en: (deadline: string) => `All results by e-mail no later than ${deadline}, using the Results Sheet (F 7.2.1-7). Late results may not be included in the final report.`,
+  },
+};
+
 // ── what each П-sentence replaces, as the templates print it (5.11 review) ──
 // The templates print these very constants before Gate B, so a document built from a template
 // and saved holds them word for word: after Gate B its print swaps them for the new sentences
@@ -66,7 +105,16 @@ export const OLD = {
 export const NEW_P12_ITEM = { en: `${P12.en} ${FEEDBACK_T.en}`, bg: `${P12.bg} ${FEEDBACK_T.bg}` };
 export const NEW_P17_ITEM = { en: `${P17.en} ${FEEDBACK_C.en}`, bg: `${P17.bg} ${FEEDBACK_C.bg}` };
 
-const SWAPS: [{ bg: string; en: string }, { bg: string; en: string }][] = [[OLD.P4, P4], [OLD.P5, P5], [OLD.P7, P7], [OLD.P12, NEW_P12_ITEM], [OLD.P17, NEW_P17_ITEM]];
+const SWAPS: [{ bg: string; en: string }, { bg: string; en: string }][] = [[OLD.P4, P4], [OLD.P5, P5], [OLD.P7, P7], [OLD.P12, NEW_P12_ITEM], [OLD.P17, NEW_P17_ITEM], [OLD_RESULTS.P10, P10]];
+// П11 and П16 carry the deadline as printed: swapped by their fixed words around it, the deadline kept (6.8)
+type ByDeadline = { bg: (d: string) => string; en: (d: string) => string };
+const DEADLINE_SWAPS: [ByDeadline, ByDeadline][] = [[OLD_RESULTS.P11, P11], [OLD_RESULTS.P16, P16]];
+const MARK = "\u0000";
+const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const swapByDeadline = (html: string, was: (d: string) => string, now: (d: string) => string): string => {
+  const [pre, post] = was(MARK).split(MARK);
+  return html.replace(new RegExp(`${esc(pre)}([^<\u0000]{1,120}?)${esc(post)}`, "g"), (_m, d: string) => now(d));
+};
 
 /** A saved invitation or Instruction printed after Gate B: its e-mail sentences, word for word as
  *  the template printed them, become the portal's. Before Gate B, untouched. */
@@ -74,6 +122,7 @@ export function refreshGateSentences(html: string, env: Record<string, string | 
   if (!html || !gateB(env)) return html;
   let out = html;
   for (const [was, now] of SWAPS) for (const lang of ["bg", "en"] as const) out = out.split(was[lang]).join(now[lang]);
+  for (const [was, now] of DEADLINE_SWAPS) for (const lang of ["bg", "en"] as const) out = swapByDeadline(out, was[lang], now[lang]);
   return out;
 }
 
@@ -88,10 +137,18 @@ const BY_EMAIL = [
   "Първоначално се издава проформа фактура, която се изпраща на посочената електронна поща", "pro forma invoice is issued first and sent to the e-mail address",
   "на платилите участници, която изпраща на посочената електронна поща", "participants who have paid and is sent to the e-mail address",
   "изпраща се на РТ провайдъра непосредствено след получаване", "sent to the PT provider immediately after receipt",
+  // the results (П10, П11, П16 — 6.8), and M1's own П16 (its point 10 — a saved M1 body is rendered,
+  // never swapped word for word: refused at issue until rebuilt, as its П17 — 6.8 review)
+  "Изпратете попълнения Лист с резултати по имейл", "Send the completed Results Sheet by e-mail",
+  "Всички резултати по имейл не по-късно от", "All results by e-mail no later than",
+  "се представят по електронна поща не по-късно", "submitted by e-mail no later than",
 ];
 
 /** Each swap leaves nothing to swap again — the new sentence never holds the old (5.11 review). */
-export const swapsAreOneWay = (): boolean => SWAPS.every(([was, now]) => (["bg", "en"] as const).every((l) => !now[l].includes(was[l])));
+export const swapsAreOneWay = (): boolean => SWAPS.every(([was, now]) => (["bg", "en"] as const).every((l) => !now[l].includes(was[l])))
+  && DEADLINE_SWAPS.every(([was, now]) => (["bg", "en"] as const).every((l) => { const [pre, post] = was[l](MARK).split(MARK); return !now[l]("31.03.2027").includes(pre) && !now[l]("31.03.2027").includes(post); }))
+  // …and no new results sentence holds a tell-tale of the e-mail path (else stillByEmail would refuse it)
+  && ![P10.bg, P10.en, P11.bg("d"), P11.en("d"), P16.bg("d"), P16.en("d"), P16_M1.bg, P16_M1.en].some((t) => BY_EMAIL.some((x) => t.includes(x)));
 /** After Gate B: does this document still send the invoices, the protocol or the declaration by
  *  e-mail? Then it is not issued until its text is brought up to date (5.11 review). */
 export function stillByEmail(html: string, env: Record<string, string | undefined> = process.env): boolean {
