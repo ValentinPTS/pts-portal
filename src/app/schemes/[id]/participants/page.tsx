@@ -27,6 +27,7 @@ import StandingForms from "@/components/StandingForms";
 import { inRound, objectsNeeded, selectionsOf, STANDING_LABEL, REFUSAL_CATEGORIES, MAX_PER_CHARACTERISTIC, type Selections } from "@/lib/application-model";
 import { currentFinalList, finalSelectionsOf } from "@/lib/announcement-model";
 import { isProvisional } from "@/lib/coding-model";
+import { fmtMoment } from "@/lib/scheme-dates";
 import { needsCarrierChoice } from "@/lib/participation-state-model";
 
 const INVITE = invitePreview();
@@ -107,6 +108,13 @@ export default async function ParticipantsPage({
   if (reveal && participants.length) await logActivity("names.viewed", { schemeId: id, subject: "page:participants", summary: "Laboratory names shown with their codes — participants list" });
   const hidden = <span style={{ color: "var(--muted)", fontStyle: "italic" }}>{tr("part.hidden")}</span>;
 
+  // the same laboratory's name twice in the round (a PDF and an online application) — a hint (9.2 review)
+  const nameKey = (n: string) => n.toLowerCase().replace(/[\s"'„“”«».,-]+/g, " ").trim();
+  const twins = new Map<string, number>();
+  if (reveal) for (const x of inRoundParts.filter((q) => q.labName)) twins.set(nameKey(x.labName), (twins.get(nameKey(x.labName)) ?? 0) + 1);
+  // the warning from the participation's copy (4.5) — the laboratory's accreditation as frozen — where
+  // there is one; else the earlier laboratory account (9.2 review: an online application has no account)
+  const accWarnFor = (p: { id: string; labId?: string }) => { const sn = snapshots.get(p.id); return sn ? reveal && !!lists.accreditationRequired && accreditationWarning(lists, sn.laboratory.accreditationNo) : accWarn(p.labId); };
   return (
     <div>
       <Link href={`/schemes/${id}`} className="text-sm" style={{ color: "var(--muted)" }}>
@@ -167,7 +175,7 @@ export default async function ParticipantsPage({
               <tr><td colSpan={8} className="p-3" style={{ color: "var(--muted)" }}>{tr("part.noneYet")}</td></tr>
             )}
             {participants.map((p) => (
-              <ParticipantRows key={p.id} p={p} schemeId={id} reveal={reveal} hidden={hidden} tr={tr} accWarn={accWarn(p.labId)} L={L}
+              <ParticipantRows key={p.id} p={p} schemeId={id} reveal={reveal} hidden={hidden} tr={tr} accWarn={accWarnFor(p)} L={L} twin={reveal && inRound(p) && (twins.get(nameKey(p.labName)) ?? 0) > 1}
                 snapshot={snapshots.get(p.id)} versions={versions.get(p.id) ?? 0} contactName={contactName} lang={lang === "bg" ? "bg" : "en"}
                 canFreeze={canFreeze && !snapshotsFailed} canManage={canFreeze} schemeType={s.type}
                 objects={onList(p) ? objectsNeeded(selNow(p), s.type) : 0} listed={finalList ? onList(p) : undefined}
@@ -242,7 +250,10 @@ export default async function ParticipantsPage({
 // participation-copy row (4.x) and a collapsed edit row (native <details>, no client
 // JS) holding the full edit form — courier, sample code and the F 7.2.1-6
 // characteristics live here so 30 labs can be filled in quickly.
-function ParticipantRows({ p, schemeId, reveal, hidden, tr, invoiced, paid, parameters, deadline, accWarn, L, snapshot, versions, contactName, canFreeze, lang, canManage, schemeType, objects, listed }: {
+function ParticipantRows({ p, schemeId, reveal, hidden, tr, invoiced, paid, parameters, deadline, accWarn, L, snapshot, versions, contactName, canFreeze, lang, canManage, schemeType, objects, listed, twin }: {
+  /** another participation in the round under the same laboratory's name — a PDF application and an
+   *  online one for one laboratory, while both paths are open (9.2 review, Реш. 146): a hint, never a block */
+  twin?: boolean;
   /** the objects it needs now (5.1; after the final list, for the characteristics that run) */
   objects: number;
   /** on the final list? — undefined before the second announcement (5.2) */
@@ -278,6 +289,9 @@ function ParticipantRows({ p, schemeId, reveal, hidden, tr, invoiced, paid, para
         </td>
         <td className="p-2">{reveal ? p.labName : hidden}
           {isProvisional(p.code) && !out && <span data-no-code className="text-xs" style={{ marginLeft: 6, color: "var(--muted)" }}>· {L("без код до кодирането", "no code until the coding act")}</span>}
+          {twin && <span data-possible-twin className="text-xs" style={{ marginLeft: 6, color: "#7a2e0e" }} title={L("Друго участие в кръга със същото име на лаборатория — заявка в PDF и от портала?", "Another participation in the round with the same laboratory name — a PDF application and an online one?")}>· {L("същото име — повторение?", "same name — twice?")}</span>}
+          {/* 9.2: the laboratory's own application in its portal — and when */}
+          {p.source === "portal" && <span data-source-portal className="text-xs" style={{ marginLeft: 6, color: "var(--green-dark)" }} title={p.createdAt ?? ""}>· {L("от портала", "from the portal")}{p.createdAt ? `, ${fmtMoment(p.createdAt)}` : ""}</span>}
           {out && p.standing && <span data-standing-state={p.standing.state} className="text-xs" style={{ marginLeft: 6, fontWeight: 700, color: "#8f2f2f" }}>● {L(STANDING_LABEL[p.standing.state].bg, STANDING_LABEL[p.standing.state].en)}</span>}
           {!out && schemeType === "T" && <span data-objects={objects} className="text-xs" style={{ marginLeft: 6, color: "var(--muted)" }}>· {L("обекти", "objects")}: {objects}</span>}
           {!out && listed !== undefined && <span data-final={listed ? "1" : "0"} className="text-xs" style={{ marginLeft: 6, fontWeight: 700, color: listed ? "var(--green-dark)" : "#8a5a00" }}>· {listed ? L("в окончателния списък", "on the final list") : L("не е в окончателния списък — не продължава", "not on the final list — goes no further")}</span>}

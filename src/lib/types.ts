@@ -94,6 +94,9 @@ export interface CodedParticipant {
   // when the participation was entered (the row's created_at) — read only; the order of entry
   // the billing export lists them in (5.8; Реш. 98: a second participation is billed at its share)
   createdAt?: string;
+  /** where the application came from (9.2, migration 0050): entered by PTS (from the PDF), or the
+   *  laboratory's own in its portal — who applied is the frozen copy's contact (4.5), never here */
+  source?: "pts" | "portal";
   status: ParticipantStatus;
 }
 

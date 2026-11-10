@@ -15,6 +15,8 @@ import { INVITE_SUBJECT, inviteText, invitePreview, PROFILE_CONFIRMED_SUBJECT, P
   PROFILE_CREATED_KEY, PROFILE_CREATED_SUBJECT, profileCreatedText, USER_JOINED_KEY, USER_JOINED_SUBJECT, userJoinedText,
   ADMIN_CHANGED_KEY, ADMIN_CHANGED_SUBJECT, adminChangedText, officialNoticePreviews } from "./fixed-texts";
 import { JOIN_LETTER_BUCKET, keepMemLetter } from "./join-letters";
+import { applyOpenProblem, readLabApply, labAccreditationWarning, earlierProblem, APPLY_PROBLEM_TEXT, OWN_COURIER } from "./lab-apply-model";
+import { applyOnlineWithIdentity } from "./identity-store";
 import { readRegistration, registrationProblemText, inputOf, viesOf, adminJoinProblem, ptsJoinProblem, appointPlan, APPOINT_PROBLEM_TEXT, isEu, OFFICIAL_NOTICE_KINDS_91 } from "./registration-model";
 import { sendToLab, recordPending, settle, getSentMessage, type Approval } from "./sent-messages";
 import { saveReminderTemplate, approveReminderTemplate, getReminderTemplate, REMINDER_KINDS, type ReminderKind } from "./reminder-templates";
@@ -6049,6 +6051,99 @@ export async function appointEntityAdminAction(userId: string, demote: boolean, 
   revalidatePath("/organizations");
   if (failed.length) return { error: `${promoted ? "Новият администратор е назначен и организацията е уведомена, но" : ""} ${failed.length} от досегашните администратори не станаха потребители — натиснете «Назначи» отново. · ${promoted ? "The new administrator is appointed and the organisation told, but" : ""} ${failed.length} of the administrators before were not made users — press «Appoint» again.`.trim() };
   return { ok: true, notice: sent ? "sent" : "not-sent" };
+}
+
+// ── The online application by the laboratory (plan part 9.2; Реш. 12, 108, 123, 147) ─────────
+// In its own portal a user of an APPROVED organisation applies for a scheme open for applications: one
+// of the entity's active laboratories, the participations per characteristic (5.1's reader), the
+// delivery. Submitting makes the laboratory a participant (Реш. 123) — as PTS enters one (5.1) — with the
+// copy of the entity's and the laboratory's data taken at once (4.5), the submitting user its contact;
+// «from the portal» and when on record. One application per laboratory per scheme.
+
+/** One online application at a time per laboratory and scheme in THIS process — memory only; with a
+ *  database the one transaction holds it (identity_apply_online, 0050). */
+const applyQueue = new Map<string, Promise<unknown>>();
+
+export async function labApplyAction(formData: FormData): Promise<{ ok: true; code?: string; warning: boolean } | { error: string }> {
+  const ps = await requireParticipant(); // a participant's user, active, its entity not inactive
+  const { user, entity } = ps;
+  const actor = participantActor(user.id);
+  const say = (k: keyof typeof APPLY_PROBLEM_TEXT) => ({ error: `${APPLY_PROBLEM_TEXT[k].bg}. · ${APPLY_PROBLEM_TEXT[k].en}.` });
+  const FAILED = { error: "Заявката не се записа — опитайте пак. · The application was not saved — try again." };
+  // an approved organisation only (Реш. 12) — checked by PTS
+  if (entity.state !== "active") return say("entity");
+  const schemeId = String(formData.get("schemeId") ?? "");
+  const scheme = schemeId ? await getScheme(schemeId) : null;
+  // never a draft — the same refusal as one that does not exist (Реш. 147)
+  if (!scheme || !isStarted(scheme)) return say("not-open");
+  // its deadline as an instant — a day, or a day and an hour — on the round's own clock (9.2 review)
+  const open = applyOpenProblem(scheme, schemeNowMs(scheme));
+  if (open) return say(open);
+  const labs = (await openLaboratories({ actor, purpose: "lab.own" }, { entityId: entity.id })).filter((l) => l.state === "active");
+  const r = readLabApply(Object.fromEntries(formData.entries()), { characteristicCount: scheme.parameters.length, laboratoryIds: labs.map((l) => l.id), signature: paramsSignature(scheme.parameters) });
+  if (!r.ok) return say(r.problem);
+  const lab = labs.find((l) => l.id === r.value.laboratoryId)!;
+  const sel = r.value.selections;
+  const input = {
+    schemeId: scheme.id, labName: lab.name, contact: user.name, email: user.email, phone: user.phone, country: entity.country,
+    deliveryAddress: lab.deliveryAddress, participations: sel ? participationSets(sel) : r.value.participations,
+    courier: r.value.ownCourier ? OWN_COURIER : undefined, source: "portal" as const,
+    ...(sel ? { selections: sel, characteristics: characteristicsOf(sel) } : {}),
+  };
+  // the laboratory's earlier participations in the scheme: one in the round — «already»; refused or
+  // withdrawn — through PTS; only an annulled one leaves the way open (9.2 review)
+  const earlier = async () => {
+    const mine = (await participationsOf(ps)).filter((p) => p.schemeId === scheme.id && p.laboratoryId === lab.id);
+    if (!mine.length) return null;
+    const rows = await listParticipants(scheme.id);
+    return earlierProblem(mine.map((m) => rows.find((x) => x.id === m.participantId) ?? { standing: null }));
+  };
+  const db = getDb();
+  type Made = Awaited<ReturnType<typeof addParticipant>>;
+  let p: Made | "full" | "already" | "refused" | null;
+  if (db) {
+    const before = await earlier();
+    if (before) return say(before);
+    // the participant and its copy in ONE transaction, one at a time per laboratory and scheme (0050)
+    p = await addParticipant(input, actor, (row, identity) => applyOnlineWithIdentity(row, identity, lab.id, user.id, actor))
+      .catch((e) => (e instanceof NoLabNumberError ? "full" as const : /applied for the scheme already/.test(String((e as Error)?.message ?? "")) ? "already" as const : (console.warn("[lab-apply]", (e as Error)?.message ?? e), null)));
+  } else {
+    // memory: the same steps one at a time in this process; a copy that cannot be taken annuls the
+    // participation at once — said and journalled only when it is
+    const key = `${scheme.id}|${lab.id}`;
+    const prev = applyQueue.get(key) ?? Promise.resolve();
+    const run = prev.then(async (): Promise<Made | "full" | "already" | "refused" | null> => {
+      const before = await earlier();
+      if (before) return before;
+      const made = await addParticipant(input, actor).catch((e) => (e instanceof NoLabNumberError ? "full" as const : null));
+      if (!made || made === "full") return made;
+      try { await freezeParticipation(made.id, lab.id, user.id, actor); return made; }
+      catch (e) {
+        console.warn("[lab-apply] the copy was not taken:", (e as Error)?.message ?? e);
+        const annulled = await updateParticipant(made.id, { standing: { state: "annulled", at: new Date().toISOString(), by: `entityuser:${user.id}`, source: "the portal: the participation's copy could not be taken" } }, actor).then(() => true, () => false);
+        if (annulled) await logAs({ kind: "lab", userId: user.authUserId ?? "dev-persona" }, "participant.annulled", { schemeId: scheme.id, targetCode: made.code, after: { state: "annulled" }, summary: `Online application ${made.code} annulled at once — its copy could not be taken (9.2)` });
+        return null;
+      }
+    });
+    applyQueue.set(key, run.catch(() => {}));
+    p = await run;
+  }
+  if (p === "full") return { error: "Свободните номера в схемата свършиха — пишете на PTS. · The scheme's free numbers are used up — write to PTS." };
+  if (p === "already" || p === "refused") return say(p);
+  if (!p) return FAILED;
+  const whoId = user.authUserId ?? "dev-persona";
+  await logAs({ kind: "lab", userId: whoId }, "participant.applied_online", { schemeId: scheme.id, targetCode: p.code, after: { by: `entityuser:${user.id}`, participations: p.participations, ownCourier: r.value.ownCourier }, summary: `${isProvisional(p.code) ? `Online application ${p.code} (no code until the coding act)` : `Participant ${p.code} applied online`} — from the laboratory's portal (9.2)${p.drawnFrom ? ` (laboratory number drawn at random from ${p.drawnFrom} free — D17)` : ""}` });
+  // a code assigned now only at admission (D17); else at the coding act (5.3) — as PTS's entry (5.1)
+  if (!isProvisional(p.code)) {
+    await addCaseEvent({ schemeId: scheme.id, code: p.code, kind: "code_assigned", at: await roundDay(scheme.id), source: "auto" });
+    await advanceStatusForEvent(scheme.id, p.code, "code_assigned");
+  }
+  // PTS is told — the scheme's number only (§4.2) — and taken to «Участници», where it is
+  await notifyApplicationReceived(scheme.id, scheme.number, "participants");
+  revalidatePath(`/schemes/${scheme.id}/participants`);
+  revalidatePath("/lab/overview");
+  // a provisional reference is never shown to the laboratory (5.3) — nor how many applied before it
+  return { ok: true, ...(isProvisional(p.code) ? {} : { code: p.code }), warning: labAccreditationWarning(scheme.lists, lab.accreditationNo) };
 }
 
 // ── A frozen copy per participation (plan part 4.5; J12) ─────────────────────────

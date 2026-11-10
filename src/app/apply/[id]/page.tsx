@@ -35,7 +35,10 @@ export default async function ApplyToScheme({
         <p className="mt-6 mx-auto" style={{ color: "#f0c98a", maxWidth: 620 }}>{tr("apply.closedBody")}</p>
         <div className="mt-6 flex gap-3 justify-center flex-wrap">
           {planLink}
-          <a href={PDF_APPLICATION_URL} target="_blank" rel="noopener" className="btn btn-primary inline-flex">{tr("apply.pdfLink")}</a>
+          {/* 9.2: the laboratory applies in its portal — or with the PDF, until Реш. 146 */}
+          <a href="/lab/login" className="btn btn-primary inline-flex" data-apply-portal>{tr("apply.portalLink")}</a>
+          <a href="/register" className="btn inline-flex">{tr("apply.registerLink")}</a>
+          <a href={PDF_APPLICATION_URL} target="_blank" rel="noopener" className="btn inline-flex">{tr("apply.pdfLink")}</a>
           <Link href="/apply" className="btn inline-flex">{tr("apply.toOpen")}</Link>
         </div>
       </div>

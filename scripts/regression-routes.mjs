@@ -111,6 +111,8 @@ export const ROUTES = [
   // a participant's user's review of its own entity's data (4.4)
   { file: "lab/confirm/page.tsx", names: "own", paths: () => ["/lab/confirm"] },
   { file: "lab/joins/page.tsx", names: "own", paths: () => ["/lab/joins"] },
+  { file: "lab/apply/page.tsx", names: "own", paths: () => ["/lab/apply"] },
+  { file: "lab/apply/[id]/page.tsx", names: "own", paths: (c) => [`/lab/apply/${c.S}`, `/lab/apply/${c.OTHER}`] },
   // its two-step sign-in, where PTS requires it (4.4 review)
   { file: "lab/two-factor/page.tsx", names: "own", paths: () => ["/lab/two-factor"] },
   // its home: the laboratory switcher, its participations and notices (4.6)

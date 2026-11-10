@@ -26,7 +26,12 @@ export default async function ApplyHome() {
       {!ONLINE_APPLICATIONS_OPEN && (
         <div className="mt-6 mx-auto text-center" style={{ maxWidth: 620, color: "#f0c98a" }}>
           <p>{tr("apply.closedBody")}</p>
-          <a href={PDF_APPLICATION_URL} target="_blank" rel="noopener" className="btn btn-primary mt-3 inline-flex">{tr("apply.pdfLink")}</a>
+          {/* 9.2: the laboratory applies in its portal — or with the PDF, until Реш. 146 */}
+          <div className="mt-3 flex gap-3 justify-center flex-wrap" data-apply-paths>
+            <a href="/lab/login" className="btn btn-primary inline-flex">{tr("apply.portalLink")}</a>
+            <a href="/register" className="btn inline-flex">{tr("apply.registerLink")}</a>
+            <a href={PDF_APPLICATION_URL} target="_blank" rel="noopener" className="btn inline-flex">{tr("apply.pdfLink")}</a>
+          </div>
         </div>
       )}
 

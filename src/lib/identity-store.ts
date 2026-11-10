@@ -159,6 +159,17 @@ export async function addWithIdentity(row: Record<string, unknown> & { id: strin
   if (error) throw new Error(`The participant could not be saved: ${error.message}`, { cause: error });
 }
 
+/** The laboratory's own application (9.2): the participant added and its copy taken (4.5) in ONE
+ *  transaction of the database, one at a time per laboratory and scheme — refused when the laboratory has
+ *  a participation in the scheme that is not annulled. Database only (memory: the caller's own steps). */
+export async function applyOnlineWithIdentity(row: Record<string, unknown> & { id: string; scheme_id: string }, identity: ParticipantIdentity, laboratoryId: string, contactUserId: string, actor: string): Promise<void> {
+  check({ actor, purpose: "write" });
+  const db = getDb();
+  if (!db) throw new Error("The application could not be saved: no database");
+  const { error } = await db.rpc("identity_apply_online", { p_actor: actor.trim(), p_row: row, p_fields: toFields(identity), p_laboratory: laboratoryId, p_contact: contactUserId });
+  if (error) throw new Error(`The participant could not be saved: ${error.message}`, { cause: error });
+}
+
 /** Every opening of a round's identities, for its export (1.10). */
 export async function listOpenings(schemeId: string, participantIds: string[]): Promise<Opening[]> {
   const db = getDb();

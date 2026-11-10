@@ -44,6 +44,7 @@ function toRow(p: CodedParticipant) {
     courier: p.courier ?? null, sample_code: p.sampleCode ?? null,
     characteristics: p.characteristics ?? null,
     selections: p.selections ?? null, standing: p.standing ?? null,
+    source: p.source ?? "pts",
   };
 }
 type Row = ReturnType<typeof toRow>;
@@ -56,6 +57,8 @@ function fromRow(r: Row & { created_at?: string | null }): CodedParticipant {
     characteristics: Array.isArray(r.characteristics) ? (r.characteristics as number[]) : undefined,
     selections: r.selections && typeof r.selections === "object" ? (r.selections as Record<string, number>) : undefined,
     standing: r.standing && typeof r.standing === "object" ? (r.standing as CodedParticipant["standing"]) : undefined,
+    // a row read without it (identity_update_participant returns none) says nothing — never «pts» (review)
+    source: r.source === "portal" ? "portal" : r.source === "pts" ? "pts" : undefined,
   };
 }
 
@@ -105,7 +108,7 @@ export async function listParticipants(schemeId: string): Promise<CodedParticipa
   const db = getDb();
   if (!db) return mem.filter((p) => p.schemeId === schemeId);
   try {
-    const { data, error } = await db.from("participants").select("id,scheme_id,code,participations,status,courier,sample_code,characteristics,selections,standing,created_at").eq("scheme_id", schemeId).order("code");
+    const { data, error } = await db.from("participants").select("id,scheme_id,code,participations,status,courier,sample_code,characteristics,selections,standing,source,created_at").eq("scheme_id", schemeId).order("code");
     if (error) throw error;
     return (data ?? []).map((r) => fromRow(r as Row));
   } catch (e) {
@@ -152,7 +155,7 @@ export async function listParticipationsForLab(labId: string, who: Opener): Prom
   const keep = (rows: CodedParticipant[]) => rows.filter((p) => ids.has(p.id)).map((p) => ({ ...p, ...ids.get(p.id)! }));
   if (!db) return keep(mem);
   try {
-    const { data, error } = await db.from("participants").select("id,scheme_id,code,participations,status,courier,sample_code,characteristics,selections,standing").in("id", [...ids.keys()]).order("scheme_id");
+    const { data, error } = await db.from("participants").select("id,scheme_id,code,participations,status,courier,sample_code,characteristics,selections,standing,source").in("id", [...ids.keys()]).order("scheme_id");
     if (error) throw error;
     return keep((data ?? []).map((r) => fromRow(r as Row)));
   } catch (e) {
@@ -175,7 +178,11 @@ export async function addParticipant(input: {
   sampleCode?: string;
   characteristics?: number[];
   selections?: Record<string, number>;
-}, actor: string): Promise<Participant & { drawnFrom?: number }> {
+  /** the laboratory's own application in its portal (9.2) — else entered by PTS */
+  source?: "pts" | "portal";
+}, actor: string, write: (row: ReturnType<typeof toRow>, identity: ParticipantIdentity) => Promise<void> = (row, identity) => addWithIdentity(row, identity, actor)): Promise<Participant & { drawnFrom?: number }> {
+  // `write` — how the row and its identity reach the store: by default together (2.3); the
+  // laboratory's own application (9.2) writes them with its copy, in one transaction
   const identity: ParticipantIdentity = {
     labName: input.labName,
     contact: input.contact ?? "",
@@ -204,12 +211,13 @@ export async function addParticipant(input: {
       sampleCode: input.sampleCode || undefined,
       characteristics: input.characteristics?.length ? input.characteristics : undefined,
       selections: input.selections && Object.keys(input.selections).length ? input.selections : undefined,
+      source: input.source === "portal" ? "portal" : "pts",
     };
     // the memory store keeps the moment of entry as the database's created_at does (5.8)
     const enteredAt = new Date().toISOString();
     if (!db) {
       if (mem.some((x) => x.schemeId === coded.schemeId && x.code === coded.code)) { if (attempt < 3) continue; throw new Error("the participant's code is taken"); }
-      await addWithIdentity(toRow(coded), identity, actor); // refused first (no actor), nothing kept
+      await write(toRow(coded), identity); // refused first (no actor), nothing kept
       mem.push({ ...coded, createdAt: enteredAt });
       return { ...coded, ...identity, drawnFrom: drawn.drawnFrom };
     }
@@ -219,7 +227,7 @@ export async function addParticipant(input: {
     // identity are written together by the database, or neither (2.3). The caller
     // shows the failure; nothing is half-done.
     try {
-      await addWithIdentity(toRow(coded), identity, actor);
+      await write(toRow(coded), identity);
     } catch (e) {
       if (isDuplicateCode(e) && attempt < 3) continue;
       console.warn("[participants] insert failed:", (e as Error).message);

@@ -196,8 +196,9 @@ export const PARTICIPANT_FIELDS = {
   labName: "identity", contact: "identity", email: "identity", phone: "identity", country: "identity",
   // the participations follow from the coded counts (5.1) and sit in the coded table
   participations: "coded",
-  // when it was entered (5.8) — a moment, no one's name
+  // when it was entered (5.8) — a moment, no one's name; from where (9.2) — PTS or the portal
   createdAt: "coded",
+  source: "coded",
   deliveryAddress: "identity", courier: "identity", labId: "identity",
 } satisfies Record<keyof Participant, Part | "split">;
 

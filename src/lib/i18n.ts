@@ -587,6 +587,7 @@ const DICT: Record<string, Entry> = {
   "act.doc.reopened": { bg: "Документ отново в процес", en: "Document back in progress" },
   "act.participant.updated": { bg: "Обновен участник", en: "Participant updated" },
   "act.lab.uploaded": { bg: "Качен файл от лаборатория", en: "Laboratory file upload" },
+  "act.participant.applied_online": { bg: "Заявка за участие от портала", en: "Application from the portal" },
   "act.registration.submitted": { bg: "Получена регистрация", en: "Registration received" },
   "act.registration.approved": { bg: "Одобрена регистрация — профилът е създаден", en: "Registration approved — the profile made" },
   "act.registration.rejected": { bg: "Отказана регистрация", en: "Registration refused" },
@@ -706,7 +707,9 @@ const DICT: Record<string, Entry> = {
   "apply.notAccepting": { bg: "Тази схема не приема заявки в момента.", en: "This scheme is not accepting applications right now." },
   "apply.toOpen": { bg: "← Към отворените схеми", en: "← Open schemes" },
   // online applications closed in the transition (part 0.4) — texts for PTS's approval
-  "apply.closedBody": { bg: "Заявките за участие засега се подават с формуляра за заявка (PDF) от сайта на PTS. Подаването през портала ще бъде включено по-късно.", en: "For now, applications are made with the PDF application form from the PTS website. Applying through the portal will be switched on later." },
+  "apply.closedBody": { bg: "Заявка за участие се подава в портала за участници — след регистрация на организацията и проверката ѝ от PTS — или с формуляра за заявка (PDF) от сайта на PTS.", en: "An application is made in the participant portal — after the organisation registers and PTS checks it — or with the PDF application form from the PTS website." },
+  "apply.portalLink": { bg: "Вход за участници", en: "Participant sign-in" },
+  "apply.registerLink": { bg: "Регистрация на организация", en: "Register an organisation" },
   "apply.pdfLink": { bg: "Към формулярите на ptsbg.eu ↗", en: "To the forms on ptsbg.eu ↗" },
   "apply.detailsCta": { bg: "Подробности →", en: "Details →" },
   "apply.thanksTitle": { bg: "Благодарим Ви!", en: "Thank you!" },

@@ -42,15 +42,16 @@ const refEn = (code: string) => (isProvisional(code) ? "" : ` (code ${code})`);
 // declared in NotifyKind and get wired up with their own step.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** A laboratory submitted a заявка for a scheme. The provider looks up who. */
-export async function notifyApplicationReceived(schemeId: string, schemeNumber: string): Promise<void> {
+/** A laboratory submitted a заявка for a scheme. The provider looks up who — the earlier wizard's in
+ *  «Заявки», the laboratory's own in its portal (9.2) in «Участници», where it already is a participant. */
+export async function notifyApplicationReceived(schemeId: string, schemeNumber: string, where: "applications" | "participants" = "applications"): Promise<void> {
   await notify({
     kind: "application.received",
     audience: "provider",
     schemeId,
     bg: `Нова заявка за участие в схема ${schemeNumber}.`,
     en: `New application to take part in scheme ${schemeNumber}.`,
-    href: `/schemes/${schemeId}/applications`,
+    href: `/schemes/${schemeId}/${where}`,
   });
 }
 
