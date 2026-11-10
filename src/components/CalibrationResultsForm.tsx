@@ -1,7 +1,9 @@
 "use client";
 
-import { computeError, showError, calField, genField, type GeneralField } from "@/lib/results-model";
+import { useState } from "react";
+import { computeError, showError, calField, genField, readCalDraft, checkCalibration, type GeneralField, type CheckProblem, type CalRow } from "@/lib/results-model";
 import { useDraftSaver, saveStatus, type Values } from "./useDraftSaver";
+import CheckReport, { CHECK_REPORT_ID } from "./CheckReport";
 
 // The results form — calibration, per M2 (plan part 6.2; Zadanie §11; D1). GENERAL INFO, then
 // a row per calibration point × direction: the reference value (the participant's reference
@@ -27,20 +29,40 @@ const GENERAL: { f: GeneralField; bg: string; en: string; wide?: boolean; type?:
   { f: "signedBy", bg: "Име и фамилия", en: "Name and surname" },
 ];
 
-export default function CalibrationResultsForm({ schemeId, participantId, lang, rows, unit, quantity, code, initial, editable, savedAt, rev }: {
+export default function CalibrationResultsForm({ schemeId, participantId, lang, rows, unit, quantity, code, initial, editable, savedAt, rev, windows }: {
   schemeId: string; participantId: string; lang: "bg" | "en"; rows: CalFormRow[]; unit: string; quantity: string;
   /** the laboratory's code — filled by PTS (M2), shown, never typed; absent while provisional */
   code?: string;
   initial: Values; editable: boolean; savedAt?: string; rev: number;
+  /** the lab's windows with the device — from each arrival to its window's end, an extension
+   *  included; a chain visiting it twice gives two (6.3) */
+  windows?: { from?: string; to?: string }[];
 }) {
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
-  const { values, change, save, state, bad } = useDraftSaver({ schemeId, participantId, initial, rev, savedAt });
+  const { values, change, save, state, bad: notNum } = useDraftSaver({ schemeId, participantId, initial, rev, savedAt });
   const status = saveStatus(state, L);
+  // 6.3: the checks before submission, on request — completeness and format only
+  // once run, the report follows the form as it is typed (the checks are pure — review)
+  const [checking, setChecking] = useState(false);
+  const asRows: CalRow[] = rows.map((r) => ({ key: r.key, nominal: r.nominal }));
+  const checked: CheckProblem[] | null = checking ? checkCalibration(readCalDraft((n) => values[n], asRows), asRows, windows ?? []) : null;
+  const runCheck = () => setChecking(true);
+  const flagged = new Set((checked ?? []).filter((p) => p.level !== "notice").map((p) => `${p.key}|${p.field}`));
+  const bad = new Set([...notNum, ...flagged]);
+  // the report names a general field in full — «до» alone says nothing (review)
+  const REPORT_LABEL: Partial<Record<GeneralField, { bg: string; en: string }>> = { dateFrom: { bg: "Измервания — от", en: "Measurements — from" }, dateTo: { bg: "Измервания — до", en: "Measurements — to" }, tempMin: { bg: "Температура — min", en: "Temperature — min" }, tempMax: { bg: "Температура — max", en: "Temperature — max" } };
+  const COL: Record<string, { bg: string; en: string }> = { ref: { bg: "референтна стойност", en: "reference value" }, meas: { bg: "измерена стойност", en: "measured value" }, U: { bg: "U", en: "U" }, cmc: { bg: "CMC", en: "CMC" }, na: { bg: "точки", en: "points" } };
+  const labelOf = (p: CheckProblem) => {
+    if (p.key === "general") { const g = REPORT_LABEL[p.field as GeneralField] ?? GENERAL.find((x) => x.f === p.field); return `${L("Обща информация", "General info")} — ${g ? L(g.bg, g.en) : p.field}`; }
+    if (p.key === "points") return L("Резултати", "Results");
+    const r = rows.find((x) => x.key === p.key);
+    return `${L("Точка", "Point")} ${r?.nominal ?? p.key}${r?.direction ? ` · ${r.direction}` : ""} — ${COL[p.field] ? L(COL[p.field].bg, COL[p.field].en) : p.field}`;
+  };
   const cell = { border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px", fontSize: 13, fontFamily: "inherit", fontVariantNumeric: "tabular-nums" as const, width: "100%", minWidth: 70, background: editable ? "#fff" : "#f4f3ef" };
   const text = (name: string, badKey: string, extra: { type?: string; maxLength?: number; label?: string } = {}) => (
     <input name={name} value={values[name] ?? ""} onChange={(e) => change(name, e.target.value)} readOnly={!editable} aria-label={extra.label}
       type={extra.type ?? "text"} inputMode="text" autoComplete="off" spellCheck={false} maxLength={extra.maxLength ?? 40}
-      aria-invalid={bad.has(badKey) || undefined} aria-describedby={bad.has(badKey) ? "results-not-numbers" : undefined} data-field={name}
+      aria-invalid={bad.has(badKey) || undefined} aria-describedby={flagged.has(badKey) ? CHECK_REPORT_ID : notNum.has(badKey) ? "results-not-numbers" : undefined} data-field={name}
       style={{ ...cell, borderColor: bad.has(badKey) ? "#b7791f" : "var(--line)" }} />
   );
 
@@ -110,13 +132,15 @@ export default function CalibrationResultsForm({ schemeId, participantId, lang, 
         </p>
       </section>
 
-      {bad.size > 0 && (
-        <p id="results-not-numbers" role="status" data-not-numbers={bad.size} style={{ margin: 0, fontSize: 12.5, color: "#7a5416" }}>
+      <CheckReport problems={checked} lang={lang} labelOf={labelOf} />
+      {notNum.size > 0 && (
+        <p id="results-not-numbers" role="status" data-not-numbers={notNum.size} style={{ margin: 0, fontSize: 12.5, color: "#7a5416" }}>
           {L("Отбелязаните полета още не са числа (една десетична запетая или точка). Черновата ги пази, както са написани.", "The marked fields are not numbers yet (one decimal comma or point). The draft keeps them as typed.")}
         </p>
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         {editable && <button type="submit" className="btn btn-primary btn-sm" data-save-draft disabled={state.kind === "saving" || state.kind === "stale"}>{L("Запази черновата", "Save the draft")}</button>}
+        <button type="button" className="btn btn-sm" data-run-check onClick={runCheck}>{L("Провери", "Check")}</button>
         <span role="status" data-draft-state={state.kind} style={{ fontSize: 12.5, color: state.kind === "error" || state.kind === "stale" ? "#8f2f2f" : "var(--muted)" }}>{status}</span>
       </div>
     </form>

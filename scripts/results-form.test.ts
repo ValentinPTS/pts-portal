@@ -37,7 +37,7 @@ eq("after the second announcement: the characteristics that RUN only (5.2)", fr.
 // the draft, exactly as typed
 const typed: Record<string, string> = { [fieldName("d", "ch-1", 0)]: " 12,4 ", [fieldName("d", "ch-1", 1)]: "12.6", [fieldName("mean", "ch-1")]: "12,", [fieldName("U", "ch-1")]: "0,3", [fieldName("k", "ch-1")]: "2", [fieldName("mean", "ch-2")]: "abc", [fieldName("d", "ch-2", 5)]: "ignored", "mean_ch-9": "not a row" };
 const d = readDraft((n) => typed[n], rows);
-eq("the draft keeps what was typed — trimmed, a half-typed «12,» kept, never corrected", d.rows["ch-1"], { d: ["12,4", "12.6"], mean: "12,", U: "0,3", k: "2" });
+eq("the draft keeps what was typed — trimmed, a half-typed «12,» kept, never corrected (not declared N/R)", d.rows["ch-1"], { d: ["12,4", "12.6"], mean: "12,", U: "0,3", k: "2", nr: false });
 t("…only the rows' fields — never another's, never a field beyond its determinations", !("ch-9" in d.rows) && d.rows["ch-2"].d.length === 3 && !d.rows["ch-2"].d.includes("ignored"));
 t("…k prefilled with 2 where never typed (К22)", d.rows["#2"].k === DEFAULT_K && d.rows["ch-2"].k === DEFAULT_K);
 t("…a field kept to 40 characters, control characters out", readDraft((n) => (n === fieldName("mean", "ch-1") ? "1\u00072".repeat(30) : undefined), rows).rows["ch-1"].mean.length === 40);

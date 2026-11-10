@@ -57,37 +57,46 @@ export function resultRows(scheme: { status: string; lifecycle?: unknown; parame
 }
 
 /** A row as typed: the determinations, the mean, U, k — strings, exactly as typed. */
-export interface DraftRow { d: string[]; mean: string; U: string; k: string }
-export interface ResultDraft { v: 1; rows: Record<string, DraftRow> }
+export interface DraftRow { d: string[]; mean: string; U: string; k: string; /** declared not reported (N/R) for this characteristic — Реш. 19, 20 */ nr?: boolean }
+/** The test period — when the participant tested (6.3: inside the scheme's dates). */
+export interface TestPeriod { from: string; to: string }
+export interface ResultDraft { v: 1; rows: Record<string, DraftRow>; period?: TestPeriod }
 
 // a string only — anything else posted is nothing (a crafted object never reaches String(): 6.1 review)
 const typed = (v: unknown) => (typeof v === "string" ? v : "").replace(/[\u0000-\u001F\u007F]/g, "").trim().slice(0, FIELD_MAX);
 
 /** The fields a form names: `d_<key>_<j>`, `mean_<key>`, `U_<key>`, `k_<key>` — only the rows'. */
-export const fieldName = (kind: "d" | "mean" | "U" | "k", key: string, j?: number) => (kind === "d" ? `d_${key}_${j}` : `${kind}_${key}`);
+export const fieldName = (kind: "d" | "mean" | "U" | "k" | "nr", key: string, j?: number) => (kind === "d" ? `d_${key}_${j}` : `${kind}_${key}`);
 
 /** The draft as typed, from the form — only the fields the rows have; k prefilled with 2 when never typed. */
 export function readDraft(get: (name: string) => unknown, rows: readonly ResultRow[]): ResultDraft {
   const out: Record<string, DraftRow> = {};
   for (const r of rows) {
     const kRaw = get(fieldName("k", r.key));
+    const nr = get(fieldName("nr", r.key));
     out[r.key] = {
       d: Array.from({ length: r.determinations }, (_, j) => typed(get(fieldName("d", r.key, j)))),
       mean: typed(get(fieldName("mean", r.key))),
       U: typed(get(fieldName("U", r.key))),
       k: kRaw === undefined || kRaw === null ? DEFAULT_K : typed(kRaw),
+      nr: nr === "on" || nr === true || nr === "1",
     };
   }
-  return { v: 1, rows: out };
+  const day = (v: unknown) => typed(v).slice(0, 10);
+  return { v: 1, rows: out, period: { from: day(get("p_from")), to: day(get("p_to")) } };
 }
 
 /** A stored draft read back safely — whatever its shape, only the rows the form has now. */
 export function draftFor(stored: unknown, rows: readonly ResultRow[]): ResultDraft {
   const src = (stored && typeof stored === "object" && (stored as ResultDraft).rows && typeof (stored as ResultDraft).rows === "object") ? (stored as ResultDraft).rows : {};
+  const period = stored && typeof stored === "object" && (stored as ResultDraft).period && typeof (stored as ResultDraft).period === "object" ? (stored as ResultDraft).period! : { from: "", to: "" };
   return readDraft((name) => {
-    const m = /^(d|mean|U|k)_(.+?)(?:_(\d))?$/.exec(name);
+    if (name === "p_from") return period.from;
+    if (name === "p_to") return period.to;
+    const m = /^(d|mean|U|k|nr)_(.+?)(?:_(\d))?$/.exec(name);
     if (!m) return undefined;
     const row = (src as Record<string, Partial<DraftRow>>)[m[2]];
+    if (m[1] === "nr") return row?.nr ? "on" : "";
     if (!row) return m[1] === "k" ? undefined : "";
     if (m[1] === "d") return Array.isArray(row.d) ? row.d[Number(m[3])] ?? "" : "";
     return (row as Record<string, unknown>)[m[1]];
@@ -102,7 +111,7 @@ export function notNumbers(draft: ResultDraft, rows: readonly ResultRow[]): { ke
   const out: { key: string; field: string }[] = [];
   for (const r of rows) {
     const x = draft.rows[r.key];
-    if (!x) continue;
+    if (!x || x.nr) continue;
     x.d.forEach((v, j) => { if (v && readValue(v) === null) out.push({ key: r.key, field: `d${j + 1}` }); });
     for (const f of ["mean", "U", "k"] as const) if (x[f] && readValue(x[f]) === null) out.push({ key: r.key, field: f });
   }
@@ -224,4 +233,129 @@ export function orphansOf(stored: unknown, keys: readonly string[]): Record<stri
   const bag = (src.points && typeof src.points === "object" ? src.points : src.rows && typeof src.rows === "object" ? src.rows : {}) as Record<string, unknown>;
   const keep = new Set(keys);
   return Object.fromEntries(Object.entries(bag).filter(([k, v]) => !keep.has(k) && v && typeof v === "object").slice(0, 200));
+}
+
+// ── the checks before submission (plan part 6.3; Zadanie §7, §12; rule 12; Реш. 88) ─────────
+// COMPLETENESS AND FORMAT ONLY: the fields required, numbers that are numbers, the physical
+// limits the design sets (2.0's physical_min / physical_max — plausibility, said neutrally), U
+// not zero, k given with U, the dates inside the scheme's, at least one point in scope. Never a
+// word about whether a value is high, low or unusual; never a mean computed for the lab.
+
+export type CheckWhy = "required" | "number" | "guard" | "positive" | "k" | "date" | "order" | "range" | "period" | "window" | "none-in-scope" | "none-reported" | "nr-value" | "no-u";
+/** A problem blocks the submission (6.4); a notice is said and the lab goes on — a value it does
+ *  not report is N/R for that value (Реш. 19, 20), never a reason it cannot submit (6.3 review). */
+export interface CheckProblem { key: string; field: string; why: CheckWhy; level?: "notice"; limits?: { min?: number; max?: number; from?: string; to?: string } }
+
+export const CHECK_TEXT: Record<CheckWhy, { bg: string; en: string }> = {
+  required: { bg: "не е попълнено", en: "not filled in" },
+  number: { bg: "не е число (една десетична запетая или точка)", en: "not a number (one decimal comma or point)" },
+  guard: { bg: "извън физически възможните граници, зададени в плана", en: "outside the physically possible limits set in the plan" },
+  positive: { bg: "разширената неопределеност трябва да е положително число", en: "the expanded uncertainty must be a positive number" },
+  k: { bg: "коефициентът на покритие трябва да е положително число", en: "the coverage factor must be a positive number" },
+  date: { bg: "не е дата", en: "not a date" },
+  order: { bg: "началото е след края", en: "the start is after the end" },
+  range: { bg: "минимумът е над максимума", en: "the minimum is above the maximum" },
+  period: { bg: "извън датите на схемата", en: "outside the scheme's dates" },
+  window: { bg: "извън срока, в който уредът е при вас", en: "outside the window in which the device is with you" },
+  "none-in-scope": { bg: "поне една точка трябва да е в обхвата ви (не N/A)", en: "at least one point must be within your scope (not N/A)" },
+  "none-reported": { bg: "поне една характеристика трябва да е докладвана", en: "at least one characteristic must be reported" },
+  "nr-value": { bg: "не е докладвано — за тази стойност участието ще е N/R", en: "not reported — the participation is N/R for this value" },
+  "no-u": { bg: "без U тази точка не се оценява с Eₙ", en: "without U this point is not evaluated by Eₙ" },
+};
+
+const isDay = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`)) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
+const num = (s: string) => { const v = readValue(s); return typeof v === "number" ? v : null; };
+/** A date range inside ANY of these windows — a laboratory a chain visits twice has two (review). */
+const insideAny = (from: string, to: string, windows: readonly { from?: string; to?: string }[]) => !windows.length || windows.some((w) => (!w.from || from >= w.from) && (!w.to || to <= w.to));
+
+/** Testing: a characteristic is reported or declared not reported (N/R, Реш. 19, 20) — at least one
+ *  reported. A reported one: its mean, U where the design requires it, k wherever U is given (К22) —
+ *  each a number; a single determination not given is a NOTICE (N/R for that value), never a block;
+ *  the mean and the determinations inside the plan's physical limits (neutrally); U and k positive;
+ *  the test period a real date range (one day: «до» may stay empty) inside the scheme's dates — from
+ *  the participation's first shipment (else the planned dispatch) to the results deadline in force. */
+export function checkTesting(draft: ResultDraft, rows: readonly ResultRow[], limits: { from?: string; to?: string } = {}): CheckProblem[] {
+  const out: CheckProblem[] = [];
+  let reported = 0;
+  for (const r of rows) {
+    const x = draft.rows[r.key] ?? { d: [], mean: "", U: "", k: "" };
+    if (x.nr) continue;
+    reported++;
+    const guard = (field: string, v: string) => {
+      const n = num(v);
+      if (n === null) return;
+      if ((r.guardMin !== undefined && n < r.guardMin) || (r.guardMax !== undefined && n > r.guardMax)) out.push({ key: r.key, field, why: "guard", limits: { min: r.guardMin, max: r.guardMax } });
+    };
+    for (let j = 0; j < r.determinations; j++) {
+      const v = x.d[j] ?? "";
+      if (!v) out.push({ key: r.key, field: `d${j + 1}`, why: "nr-value", level: "notice" });
+      else if (num(v) === null) out.push({ key: r.key, field: `d${j + 1}`, why: "number" });
+      else guard(`d${j + 1}`, v);
+    }
+    if (!x.mean) out.push({ key: r.key, field: "mean", why: "required" });
+    else if (num(x.mean) === null) out.push({ key: r.key, field: "mean", why: "number" });
+    else guard("mean", x.mean);
+    if (!x.U) { if (r.uRequired) out.push({ key: r.key, field: "U", why: "required" }); }
+    else if (num(x.U) === null) out.push({ key: r.key, field: "U", why: "number" });
+    else if (num(x.U)! <= 0) out.push({ key: r.key, field: "U", why: "positive" });
+    // k with U (К22): required wherever U is given; a positive number
+    if (!x.k) { if (x.U || r.uRequired) out.push({ key: r.key, field: "k", why: "required" }); }
+    else if (num(x.k) === null) out.push({ key: r.key, field: "k", why: "number" });
+    else if (num(x.k)! <= 0) out.push({ key: r.key, field: "k", why: "k" });
+  }
+  if (rows.length && reported === 0) out.push({ key: "rows", field: "nr", why: "none-reported" });
+  const p = draft.period ?? { from: "", to: "" };
+  const to = p.to || p.from; // one day: «до» may stay empty (the Results Sheet's «дата/период»)
+  if (!p.from) out.push({ key: "period", field: "from", why: "required" });
+  else if (!isDay(p.from)) out.push({ key: "period", field: "from", why: "date" });
+  if (p.to && !isDay(p.to)) out.push({ key: "period", field: "to", why: "date" });
+  if (p.from && isDay(p.from) && isDay(to)) {
+    if (p.from > to) out.push({ key: "period", field: "to", why: "order" });
+    else {
+      if (limits.from && p.from < limits.from) out.push({ key: "period", field: "from", why: "period", limits: { from: limits.from, to: limits.to } });
+      if (limits.to && to > limits.to) out.push({ key: "period", field: "to", why: "period", limits: { from: limits.from, to: limits.to } });
+    }
+  }
+  return out;
+}
+
+/** Does the submission stand? Only the blocking problems count — notices are said, never block. */
+export const blocking = (problems: readonly CheckProblem[]) => problems.filter((p) => p.level !== "notice");
+
+const GENERAL_REQUIRED: readonly GeneralField[] = ["manufacturer", "model", "serial", "dateFrom", "dateTo", "tempMin", "tempMax", "method", "signedOn", "signedBy"];
+
+/** Calibration (M2): the general info whole (the lab's name and the other conditions optional), the
+ *  temperatures numbers in order, the measurement dates in order and inside the lab's window (from
+ *  the device's arrival to its window's end, an extension included); every point in scope with its
+ *  reference value, measured value and U, numbers, U not 0, CMC a number when given; at least one
+ *  point in scope. */
+export function checkCalibration(draft: CalDraft, rows: readonly CalRow[], windows: readonly { from?: string; to?: string }[] = []): CheckProblem[] {
+  const out: CheckProblem[] = [];
+  const g = draft.general;
+  for (const f of GENERAL_REQUIRED) if (!g[f]) out.push({ key: "general", field: f, why: "required" });
+  for (const f of ["tempMin", "tempMax"] as const) if (g[f] && num(g[f]) === null) out.push({ key: "general", field: f, why: "number" });
+  if (num(g.tempMin) !== null && num(g.tempMax) !== null && num(g.tempMin)! > num(g.tempMax)!) out.push({ key: "general", field: "tempMax", why: "range" });
+  for (const f of ["dateFrom", "dateTo", "signedOn"] as const) if (g[f] && !isDay(g[f])) out.push({ key: "general", field: f, why: "date" });
+  if (isDay(g.dateFrom) && isDay(g.dateTo)) {
+    if (g.dateFrom > g.dateTo) out.push({ key: "general", field: "dateTo", why: "order" });
+    // inside the lab's window with the device — any of them, a chain visiting it twice (review)
+    else if (!insideAny(g.dateFrom, g.dateTo, windows)) out.push({ key: "general", field: "dateFrom", why: "window", limits: windows.length === 1 ? { from: windows[0].from, to: windows[0].to } : undefined });
+  }
+  let inScope = 0;
+  for (const r of rows) {
+    const p = draft.points[r.key];
+    if (!p || p.na) continue;
+    inScope++;
+    for (const f of ["ref", "meas"] as const) {
+      if (!p[f]) out.push({ key: r.key, field: f, why: "required" });
+      else if (num(p[f]) === null) out.push({ key: r.key, field: f, why: "number" });
+    }
+    // a point without U is not evaluated by Eₙ (docs/results-c) — said, never a block (review)
+    if (!p.U) out.push({ key: r.key, field: "U", why: "no-u", level: "notice" });
+    else if (num(p.U) === null) out.push({ key: r.key, field: "U", why: "number" });
+    else if (num(p.U)! <= 0) out.push({ key: r.key, field: "U", why: "positive" });
+    if (p.cmc && num(p.cmc) === null) out.push({ key: r.key, field: "cmc", why: "number" });
+  }
+  if (rows.length && inScope === 0) out.push({ key: "points", field: "na", why: "none-in-scope" });
+  return out;
 }

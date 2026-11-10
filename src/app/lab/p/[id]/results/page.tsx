@@ -11,6 +11,8 @@ import ParticipantNav from "@/components/ParticipantNav";
 import LanguageToggle from "@/components/LanguageToggle";
 import ResultsForm from "@/components/ResultsForm";
 import CalibrationResultsForm from "@/components/CalibrationResultsForm";
+import { resultsDeadline, chainWindow } from "@/lib/deadlines-model";
+import { holidaySet } from "@/lib/holidays";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +48,19 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
   const cReady = s.type === "C" && calRowsReady(s.calibration);
   const cEditable = s.type === "C" && (s.status === "open" || s.status === "running") && !v.finished && canLabUploadNow(p.status) && !readFailed && cReady;
   const reminder = lang === "bg" ? s.staticReminder?.bg : s.staticReminder?.en;
+  // 6.3: the dates the checks hold the lab's dates against — testing: from the dispatch to the results
+  // deadline in force (its extension included); calibration: the lab's window with the device
+  const deadline = resultsDeadline(s, p.code).at;
+  // the start: the participation's own first shipment (5.6) — else the planned dispatch, a working
+  // date that gates nothing (review)
+  const shipped = (s.deliveries?.[v.participantId]?.shipments ?? []).map((x) => x.day).filter(Boolean).sort()[0];
+  const period = { from: shipped ?? s.dates?.dispatch?.slice(0, 10), to: deadline ? deadline.slice(0, 10) : undefined };
+  // calibration: each of the lab's windows with the device (a chain may visit it twice). The holiday
+  // calendar not read: no upper limit rather than an empty calendar's early one (review)
+  const myStops = s.type === "C" ? (s.chain?.stops ?? []).filter((x) => x.kind === "lab" && x.code === p.code && !!x.receivedAt) : [];
+  let off: Set<string> | null = null;
+  if (myStops.length) { try { off = await holidaySet(); } catch { off = null; } }
+  const calWindows = myStops.map((st) => { const w = off ? chainWindow(s, st, off) : null; return w ? { from: w.received, to: w.due.slice(0, 10) } : { from: st.receivedAt ? new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Sofia", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(st.receivedAt)) : undefined }; });
   // what the draft keeps for points or characteristics no longer in the scheme — shown, never dropped (6.2 review)
   const orphans = Object.entries(orphansOf(stored?.data, s.type === "C" ? cRows.map((r) => r.key) : rows.map((r) => r.key)));
   const orphanText = (v: unknown) => Object.entries((v ?? {}) as Record<string, unknown>).filter(([, x]) => (typeof x === "string" && x) || (Array.isArray(x) && x.some(Boolean)) || x === true).map(([k, x]) => `${k}: ${Array.isArray(x) ? x.filter(Boolean).join(" / ") : x === true ? "N/A" : x}`).join(" · ");
@@ -65,7 +80,11 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
     initial[fieldName("mean", r.key)] = x.mean;
     initial[fieldName("U", r.key)] = x.U;
     initial[fieldName("k", r.key)] = x.k;
+    initial[`nr_${r.key}`] = x.nr ? "on" : "";
   }
+  // the test period (6.3), as typed
+  initial.p_from = draft.period?.from ?? "";
+  initial.p_to = draft.period?.to ?? "";
   const idsReady = rowsHaveIds(rows);
   const editable = s.type === "T" && s.status === "running" && !v.finished && canLabUploadNow(p.status) && !readFailed && idsReady;
 
@@ -100,7 +119,7 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
                 : !cEditable ? <p role="note" data-results-closed style={{ margin: 0, fontSize: 13, color: "#7a5416" }}>{L("Формулярът не приема промени: схемата не е в ход или участието е приключило.", "The form takes no changes: the scheme is not running, or the participation is finished.")}</p> : null}
               <CalibrationResultsForm schemeId={s.id} participantId={v.participantId} lang={lang} editable={cEditable} savedAt={stored?.updatedAt} rev={stored?.rev ?? 0}
                 unit={s.calibration?.unit ?? ""} quantity={lang === "bg" ? s.calibration?.quantityBg ?? "" : s.calibration?.quantityEn ?? ""} code={isProvisional(p.code) ? undefined : p.code}
-                rows={cRows.map((r) => ({ key: r.key, nominal: r.nominal, direction: r.direction ? (lang === "bg" ? r.direction.bg : r.direction.en) : undefined }))}
+                rows={cRows.map((r) => ({ key: r.key, nominal: r.nominal, direction: r.direction ? (lang === "bg" ? r.direction.bg : r.direction.en) : undefined }))} windows={calWindows}
                 initial={cInitial} />
               {orphanBox}
               <p style={{ margin: 0, fontSize: 12.5, color: "var(--muted)" }}>{L("Това е чернова — вижда я само участието. Подаването (с потвърждение на грешките и разписка) идва в следващата част.", "This is a draft — only the participation sees it. Submission (with the errors confirmed and a receipt) comes in the next part.")}</p>
@@ -118,7 +137,7 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
               : !idsReady ? <p role="note" data-results-ids style={{ margin: 0, fontSize: 13, color: "#7a5416" }}>{L("Характеристиките на схемата още нямат постоянни идентификатори — PTS трябва да запише схемата веднъж. Дотогава формулярът не приема данни.", "The scheme's characteristics have no lasting ids yet — PTS needs to save the scheme once. Until then the form takes no data.")}</p>
               : !editable ? <p role="note" data-results-closed style={{ margin: 0, fontSize: 13, color: "#7a5416" }}>{L("Формулярът не приема промени: схемата не е в ход или участието е приключило.", "The form takes no changes: the scheme is not running, or the participation is finished.")}</p> : null}
             <ResultsForm schemeId={s.id} participantId={v.participantId} lang={lang} editable={editable} savedAt={stored?.updatedAt} rev={stored?.rev ?? 0}
-              rows={rows.map((r) => ({ key: r.key, name: lang === "bg" ? r.name.bg : r.name.en, method: lang === "bg" ? r.method.bg : r.method.en, unit: r.unit, determinations: r.determinations, uRequired: r.uRequired }))}
+              rows={rows.map((r) => ({ key: r.key, name: lang === "bg" ? r.name.bg : r.name.en, method: lang === "bg" ? r.method.bg : r.method.en, unit: r.unit, determinations: r.determinations, uRequired: r.uRequired, guardMin: r.guardMin, guardMax: r.guardMax }))} period={period}
               initial={initial} />
             {orphanBox}
             <p style={{ margin: 0, fontSize: 12.5, color: "var(--muted)" }}>{L("Това е чернова — вижда я само участието. Подаването (с потвърждение и разписка) идва в следващата част; дотогава резултатите се изпращат, както казва Инструкцията.", "This is a draft — only the participation sees it. Submission (with a confirmation and a receipt) comes in the next part; until then, results are sent as the Instruction says.")}</p>

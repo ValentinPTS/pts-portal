@@ -110,6 +110,27 @@ try {
   await page.locator("[data-save-draft]").click();
   t("«Запази черновата» saves at once; the field a number now — no longer named", await waitFor(async () => (await attr(page.locator("[data-draft-state]"), "data-draft-state")) === "saved" && (await page.locator("[data-not-numbers]").count()) === 0, 30));
 
+  // ── 6.3: «Провери» — completeness and format only, said neutrally ──
+  await page.locator("[data-run-check]").click();
+  const report = page.locator("[data-check-report]");
+  t("«Провери»: what is not filled in is listed — the test period, the empty rows — never a word about a value", Number(await attr(report, "data-check-report")) > 0 && (await page.locator('[data-check-problem="period|from"][data-check-why="required"]').count()) === 1 && !/висок|нисък|необичайн|high|low|unusual/i.test(await report.innerText()));
+  await page.locator('[data-field="p_from"]').fill("2026-11-02");
+  await page.locator('[data-field="p_to"]').fill("2026-11-01");
+  await page.locator("[data-run-check]").click();
+  t("…the period: once given, «not filled in» goes; out of order — said", (await page.locator('[data-check-problem="period|from"][data-check-why="required"]').count()) === 0 && (await page.locator('[data-check-problem="period|to"][data-check-why="order"]').count()) === 1);
+  await page.locator('[data-field="p_to"]').fill("2026-11-03");
+  // a characteristic declared not reported (N/R, Реш. 19, 20): nothing asked of it — the report follows as typed
+  const lastRow = page.locator("[data-result-row]").last(), lastKey = await lastRow.getAttribute("data-result-row");
+  const asked = async () => (await page.locator(`[data-check-problem="${lastKey}|mean"]`).count()) > 0;
+  const before = await asked();
+  await lastRow.locator(`[data-field="nr_${lastKey}"]`).check();
+  t("…a characteristic declared N/R: the report stops asking its mean — at once, as typed", before && await waitFor(async () => !(await asked()), 10));
+  await lastRow.locator(`[data-field="nr_${lastKey}"]`).uncheck();
+  await page.locator("[data-save-draft]").click();
+  await waitFor(async () => (await attr(page.locator("[data-draft-state]"), "data-draft-state")) === "saved", 30);
+  await go(`/lab/p/${pidA}/results`);
+  t("…the test period kept in the draft, as typed", (await page.locator('[data-field="p_from"]').inputValue()) === "2026-11-02" && (await page.locator('[data-field="p_to"]').inputValue()) === "2026-11-03");
+
   // ── two tabs on one draft: the older never writes over the newer (review) ──
   const tab2 = await context.newPage();
   await tab2.goto(`${BASE}/lab/p/${pidA}/results`, { waitUntil: "domcontentloaded", timeout: 90000 });
@@ -170,6 +191,10 @@ try {
   await go(`${hrefC}/results`);
   const back0 = page.locator(`[data-cal-row="${k0}"]`);
   t("…after a reload: as typed — the readings, the laboratory's name, N/A; the error computed again, a comma in Bulgarian", (await back0.locator(`[data-field="meas_${k0}"]`).inputValue()) === "20,03" && (await page.locator('[data-field="g_labName"]').inputValue()) === `Калибровъчна лаб. ${stamp}` && (await back0.locator("[data-error]").getAttribute("data-error")) === "0.03" && /0[,.]03/.test(await back0.locator("[data-error]").innerText()) && (await page.locator("[data-cal-row]").nth(1).getAttribute("data-na")) === "1");
+  // 6.3 on the calibration form: the general info's required fields listed
+  await go(`${hrefC}/results`);
+  await page.locator("[data-run-check]").click();
+  t("«Провери» on the calibration form: the general info's required fields — the lab's name not among them", (await page.locator('[data-check-problem="general|manufacturer"][data-check-why="required"]').count()) === 1 && (await page.locator('[data-check-problem="general|labName"]').count()) === 0);
   // the participation's page asks a calibration laboratory to fill it in once its device has arrived (review)
   await go(hrefC);
   t("…the participation's page: no «fill in the results» call before the device has arrived here", (await page.locator("[data-open-results]").count()) === 0);
