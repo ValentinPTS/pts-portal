@@ -629,6 +629,10 @@ export interface Scheme {
   period?: string;
   /** who supplies what for this scheme — External_providers (3.13); the plan's point 3 */
   externalProviders?: ExternalProvider[];
+  /** the applications closed by PTS's hand (9.3, Реш. 120) — who and when; absent — open by its date */
+  applicationsClosed?: { at: string; by: string };
+  /** admitted from the waiting list after the final list (9.3, Реш. 120, 127) — each on record */
+  waitlistAdmitted?: { participantId: string; at: string; by: string; listAt?: string }[];
   status: SchemeStatus;
   titleEn: string;
   titleBg: string;

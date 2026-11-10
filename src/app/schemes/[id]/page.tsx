@@ -55,6 +55,7 @@ import { activeUnlock, submissionOpen } from "@/lib/submission-model";
 import { needsAmendment } from "@/lib/amendments-model";
 import { chainWindow, deadlineState, windowDays, resultsDeadline } from "@/lib/deadlines-model";
 import { holidaySet } from "@/lib/holidays";
+import { waitingBeforeList } from "@/lib/waitlist-model";
 import { fmtSchemeDate } from "@/lib/scheme-dates";
 import { schemeNowMs, sofiaToday } from "@/lib/clock";
 import { ACTS, BACK_TO, STAGES, STATE_LABEL, actProblem, stageViews, tickProblem, untickProblem, tickerLabel, currentSecondAnnouncement, TICK_PROBLEM_TEXT, ACT_PROBLEM_TEXT, type ActKey } from "@/lib/lifecycle-model";
@@ -385,6 +386,8 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
 
   const menuRow: React.CSSProperties = { display: "flex", alignItems: "center", gap: 9, padding: "9px 11px", borderRadius: 8, fontSize: 13, fontWeight: 500, color: "var(--ink)", textDecoration: "none" };
 
+  // the waiting list before the final list (9.3 review) — the counts for the second announcement leave it out
+  const waitingPre = new Set(waitingBeforeList(inRoundNow, s.commercial?.maxParticipants));
   return (
     <ExplorerShell
       active={{ type, folderId: s.folderId, schemeId: id }}
@@ -481,12 +484,15 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
         <p className="text-sm mt-2" data-review-link><Link href={`/schemes/${id}/review`} style={{ fontWeight: 700 }}>{L("Преглед след срока — трите проверки и индивидуалните забележки →", "Review after the deadline — the three checks and the individual notes →")}</Link></p>
       )}
       {/* the second announcement (5.2): which characteristics run, and so the final list */}
+      {canAct && s.status === "running" && !announced2 && waitingPre.size > 0 && (
+        <p className="text-xs" data-counts-without-waiting style={{ color: "#7a5a12", margin: "0 0 6px" }}>{L(`Броят по характеристика е без изчакващите (${waitingPre.size}) — над максималния брой, по реда на подаване (9.3).`, `The counts per characteristic leave out the waiting ones (${waitingPre.size}) — beyond the maximum, in the order of submission (9.3).`)}</p>
+      )}
       {canAct && s.status === "running" && !announced2 && (
         <SecondAnnouncementForm lang={lg} schemeId={id} min={MIN_PER_CHARACTERISTIC} inRound={inRoundNow.length}
           parts={inRoundNow.map((p) => characteristicsOf(selectionsOf(p, s.parameters.length)))}
           deadline={s.dates?.applicationsDue ? fmtSchemeDate(s.dates.applicationsDue) : undefined}
           deadlinePassed={!s.dates?.applicationsDue || s.dates.applicationsDue.slice(0, 10) < sofiaToday(schemeNowMs(s))}
-          characteristics={s.parameters.map((x, i) => ({ i, label: characteristicLabel(x, lg), count: countsPerCharacteristic(inRoundNow, s.parameters.length)[i] ?? 0 }))} />
+          characteristics={s.parameters.map((x, i) => ({ i, label: characteristicLabel(x, lg), count: countsPerCharacteristic(inRoundNow.filter((p) => !waitingPre.has(p.id)), s.parameters.length)[i] ?? 0 }))} />
       )}
       {finalList && (
         <div data-final-list data-final-count={finalList.participants?.length ?? inRoundNow.length} className="card" style={{ padding: "10px 16px", margin: "0 0 14px", background: "#fff", fontSize: 13 }}>

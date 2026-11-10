@@ -15,6 +15,7 @@ import { INVITE_SUBJECT, inviteText, invitePreview, PROFILE_CONFIRMED_SUBJECT, P
   PROFILE_CREATED_KEY, PROFILE_CREATED_SUBJECT, profileCreatedText, USER_JOINED_KEY, USER_JOINED_SUBJECT, userJoinedText,
   ADMIN_CHANGED_KEY, ADMIN_CHANGED_SUBJECT, adminChangedText, officialNoticePreviews } from "./fixed-texts";
 import { JOIN_LETTER_BUCKET, keepMemLetter } from "./join-letters";
+import { waitingAtAnnouncement, admissionCheck, admissionsNow, ADMIT_PROBLEM_TEXT } from "./waitlist-model";
 import { applyOpenProblem, readLabApply, labAccreditationWarning, earlierProblem, APPLY_PROBLEM_TEXT, OWN_COURIER } from "./lab-apply-model";
 import { applyOnlineWithIdentity } from "./identity-store";
 import { readRegistration, registrationProblemText, inputOf, viesOf, adminJoinProblem, ptsJoinProblem, appointPlan, APPOINT_PROBLEM_TEXT, isEu, OFFICIAL_NOTICE_KINDS_91 } from "./registration-model";
@@ -137,7 +138,7 @@ import { addStaff, updateStaff, getStaffByEmail, getStaff, staffEmailInUse } fro
 import { requirePeopleManager, getRoleContext, canManagePeople } from "./roles";
 import { requireCap, requireCapAnywhere, requireOneOf, mayNow, mayViewDoc, getViewer, schemesFor, mayAnywhereNow } from "./access";
 import { isAmendedDoc, needsAmendment, checkAmendment, nextAmendmentNo, amendmentLine, amendmentNote, AMENDMENT_PROBLEM_TEXT, type Amendment, type AmendmentInput } from "./amendments-model";
-import { ACTS, ACT_PROBLEM_TEXT, TICK_PROBLEM_TEXT, STATE_LABEL, MIN_NOTE, actProblem, actTarget, isActKey, stageDef, tickProblem, untickProblem, type ActKey, type ActProblem, type LifecycleAct, type StageTick } from "./lifecycle-model";
+import { ACTS, ACT_PROBLEM_TEXT, TICK_PROBLEM_TEXT, STATE_LABEL, MIN_NOTE, currentSecondAnnouncement, actProblem, actTarget, isActKey, stageDef, tickProblem, untickProblem, type ActKey, type ActProblem, type LifecycleAct, type StageTick } from "./lifecycle-model";
 import { sanitizeDocHtml } from "./sanitize-html";
 import { SCHEME_DOC_BUCKET, SCHEME_DOC_EXT, MAX_SCHEME_DOC_BYTES, ensureSchemeDocsBucket } from "./scheme-uploads";
 import { isDocKey } from "./doc-stages";
@@ -1329,7 +1330,7 @@ export async function submitApplicationAction(formData: FormData) {
   const scheme = await getScheme(schemeId);
   // basic server-side validation (the client validates too). Only an OPEN scheme
   // takes applications — a draft or a running one never did (part 0.3/0.4).
-  if (!scheme || scheme.status !== "open" || !get("labName") || !get("email")) redirect(schemeId ? `/apply/${schemeId}` : "/apply");
+  if (!scheme || scheme.status !== "open" || scheme.applicationsClosed || !get("labName") || !get("email")) redirect(schemeId ? `/apply/${schemeId}` : "/apply");
 
   // The sel_i answers are POSITIONAL against the standards list the wizard
   // rendered. If the owner restructured the standards while this form was open,
@@ -4637,7 +4638,10 @@ export async function secondAnnouncementAction(schemeId: string, input: { runs?:
   } catch {
     return { error: NOT_REACHED };
   }
-  const listed: FinalList = n ? finalListOf(parts, runs, n) : { runs: [], dropped: [], participants: parts.map((p) => p.id) };
+  // the waiting list (9.3, Реш. 120): beyond the maximum, by the order entered — among those with a
+  // characteristic that runs only (9.3 review); off the list, kept with it
+  const waiting = waitingAtAnnouncement(parts, runs, n, scheme.commercial?.maxParticipants);
+  const listed: FinalList = n ? finalListOf(parts, runs, n, waiting) : { runs: [], dropped: [], participants: parts.filter((p) => !waiting.includes(p.id)).map((p) => p.id), ...(waiting.length ? { waitlist: waiting } : {}) };
   if (!listed.participants.length) return { error: ANNOUNCE_REFUSAL["final-list"] };
   // the characteristics by their stable ids too (3.6) — the places are what the counts use
   const idOf = (i: number) => scheme.parameters[i]?.id;
@@ -4663,13 +4667,13 @@ export async function secondAnnouncementAction(schemeId: string, input: { runs?:
   const label = (i: number) => ({ bg: characteristicLabel(scheme.parameters[i], "bg"), en: characteristicLabel(scheme.parameters[i], "en") });
   await logActivity("scheme.state", {
     schemeId, subject: `scheme:${schemeId}`, before: { status: scheme.status }, after: { status: scheme.status },
-    summary: `${ACTS.announce2.en}: ${final.participants.length} of ${parts.length} participation(s) on the final list${n ? ` — running: ${final.runs.map((i) => label(i).en).join("; ")}${final.dropped.length ? `; dropped: ${final.dropped.map((i) => label(i).en).join("; ")}` : ""}` : ""}${note ? ` — ${note}` : ""}`,
+    summary: `${ACTS.announce2.en}: ${final.participants.length} of ${parts.length} participation(s) on the final list${waiting.length ? `, ${waiting.length} on the waiting list` : ""}${n ? ` — running: ${final.runs.map((i) => label(i).en).join("; ")}${final.dropped.length ? `; dropped: ${final.dropped.map((i) => label(i).en).join("; ")}` : ""}` : ""}${note ? ` — ${note}` : ""}`,
   });
   // one notice per participation, by its code — from what IT applied for (Реш. 65)
   const onList = new Set(final.participants);
   for (const p of parts) {
     const own = n ? splitFor(p, final.runs, n) : { runs: [], dropped: [] };
-    await notifyFinalList(labOf.get(p.code), schemeId, scheme.number, p.code, onList.has(p.id), own.runs.map(label), own.dropped.map(label));
+    await notifyFinalList(labOf.get(p.code), schemeId, scheme.number, p.code, onList.has(p.id), own.runs.map(label), own.dropped.map(label), waiting.includes(p.id));
   }
   // an application entered while the list was being made is off it and was told nothing:
   // said to PTS, and on record (5.2 review) — a step back makes a list with it
@@ -4678,6 +4682,67 @@ export async function secondAnnouncementAction(schemeId: string, input: { runs?:
   revalidatePath(`/schemes/${schemeId}`, "layout");
   revalidatePath("/lab", "layout");
   return late.length ? { ok: true, late: late.length } : { ok: true };
+}
+
+// ── The waiting list (plan part 9.3; Реш. 120, 127) ───────────────────────────────
+// PTS closes the applications by hand («Запълнена» never does — Реш. 120), and opens them again; after
+// the final list and the receipt protocols, admits the FIRST on the waiting list when a reserve object is
+// free and the minimum days before the results deadline hold (Реш. 127). Each on record.
+
+export async function setApplicationsClosedAction(schemeId: string, closed: boolean): Promise<{ ok: true } | { error: string }> {
+  await requireCap("participants.manage", schemeId); // in THIS scheme (2.4)
+  const scheme = await getScheme(String(schemeId));
+  if (!scheme) return { error: "Scheme not found." };
+  const by = (await getRoleContext()).email ?? "build";
+  const at = new Date().toISOString();
+  let changed = false;
+  await updateSchemeWith(scheme.id, (cur) => {
+    if (!!cur.applicationsClosed === !!closed) return {};
+    changed = true;
+    return { applicationsClosed: closed ? { at, by } : undefined };
+  });
+  if (changed) await logActivity("scheme.applications", { schemeId: scheme.id, subject: `scheme:${scheme.id}`, after: { closed: !!closed }, summary: closed ? "Applications closed by hand (Реш. 120)" : "Applications opened again" });
+  revalidatePath(`/schemes/${scheme.id}/participants`);
+  revalidatePath("/lab/apply");
+  return { ok: true };
+}
+
+export async function admitFromWaitlistAction(schemeId: string, participantId: string): Promise<{ ok: true } | { error: string }> {
+  await requireCap("participants.manage", schemeId);
+  const scheme = await getScheme(String(schemeId));
+  if (!scheme) return { error: "Scheme not found." };
+  const by = (await getRoleContext()).email ?? "build";
+  const say = (k: keyof typeof ADMIT_PROBLEM_TEXT) => ({ error: `${ADMIT_PROBLEM_TEXT[k].bg}. · ${ADMIT_PROBLEM_TEXT[k].en}.` });
+  const off = await holidaySet();
+  const id = String(participantId);
+  const check = async (s: typeof scheme) => {
+    // the participations read again with the scheme each time — never a list from before the lock
+    const [parts, events] = await Promise.all([listParticipants(s.id), listCaseEventsForScheme(s.id)]);
+    return admissionCheck(s, parts, id, sofiaToday(schemeNowMs(s)), off, events).problem;
+  };
+  let first: Awaited<ReturnType<typeof check>>;
+  try { first = await check(scheme); } catch { return { error: NOT_REACHED }; }
+  if (first) return say(first);
+  const at = new Date().toISOString();
+  const listAt = currentSecondAnnouncement(scheme)?.at;
+  if (!listAt) return say("no-list");
+  // re-checked inside the scheme's lock — of two at once, only the first stands
+  let refused: Awaited<ReturnType<typeof check>> = null;
+  let parts: Awaited<ReturnType<typeof listParticipants>> = [];
+  let events: Awaited<ReturnType<typeof listCaseEventsForScheme>> = [];
+  try { [parts, events] = await Promise.all([listParticipants(scheme.id), listCaseEventsForScheme(scheme.id)]); } catch { return { error: NOT_REACHED }; }
+  await updateSchemeWith(scheme.id, (cur) => {
+    refused = admissionCheck(cur, parts, id, sofiaToday(schemeNowMs(cur)), off, events).problem;
+    if (refused) return {};
+    return { waitlistAdmitted: [...(cur.waitlistAdmitted ?? []), { participantId: id, at, by, listAt }] };
+  });
+  if (refused) return say(refused);
+  const p = parts.find((x) => x.id === id);
+  await logActivity("participant.admitted", { schemeId: scheme.id, targetCode: p?.code, summary: `Participation ${p?.code ?? ""} admitted from the waiting list — its objects from the reserve at the coding act; the minimum days held (Реш. 120, 127)` });
+  revalidatePath(`/schemes/${scheme.id}/participants`);
+  revalidatePath(`/schemes/${scheme.id}`);
+  revalidatePath("/lab", "layout");
+  return { ok: true };
 }
 
 // ── The coding act (plan part 5.3; Zadanie «Кодиране», stage 9; А2; Реш. 124; D17) ─────
@@ -4727,15 +4792,20 @@ export async function codingAction(schemeId: string): Promise<{ ok: true; coded:
   // the objects (testing): from the drawn batches' objects for participants, never given before
   const list = currentFinalList(scheme)!;
   const n = scheme.parameters.length;
-  let objects: Record<string, string[]> = {};
+  const objects: Record<string, string[]> = {};
   if (scheme.type === "T") {
     const given = objectsGiven(scheme.coding);
-    const pool = (scheme.batches ?? []).flatMap((b) => b.objects.filter((o) => o.role === "participant" && !given.has(o.code)).map((o) => o.code));
-    if (pool.length) {
-      const need = todo.map((p) => objectsNeeded(list.runs ? finalSelectionsOf(p, { runs: list.runs }, n) : selectionsOf(p, n), "T"));
-      const drawn = drawObjects(pool, need, uniformBelow);
+    const needOfP = (p: (typeof todo)[number]) => objectsNeeded(list.runs ? finalSelectionsOf(p, { runs: list.runs }, n) : selectionsOf(p, n), "T");
+    // one admitted from the waiting list (9.3) takes its objects from the RESERVE — the participants'
+    // objects are the list's
+    const admitted = new Set(admissionsNow(scheme).map((a) => a.participantId));
+    for (const [role, group] of [["participant", todo.filter((p) => !admitted.has(p.id))], ["reserve", todo.filter((p) => admitted.has(p.id))]] as const) {
+      if (!group.length) continue;
+      const pool = (scheme.batches ?? []).flatMap((b) => b.objects.filter((o) => o.role === role && !given.has(o.code)).map((o) => o.code));
+      if (!pool.length && role === "participant") continue;
+      const drawn = drawObjects(pool, group.map(needOfP), uniformBelow);
       if (!drawn) return { error: CODING_REFUSAL.objects };
-      objects = Object.fromEntries(targets.map((x, i) => [map[x.ref], drawn[i]]));
+      group.forEach((p, i) => { objects[map[p.code]] = drawn[i]; });
     }
   }
   // who to tell — before anything is recorded (2.3)

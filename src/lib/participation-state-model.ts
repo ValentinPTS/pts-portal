@@ -130,7 +130,8 @@ export function participationState(f: StateFacts): PState {
   if (f.standing) return f.standing;
   if (f.excluded) return "excluded";
   if (f.notHeld) return "not-held";
-  if (f.finalList && !f.onList) return "not-final";
+  // off the final list — but on its waiting list (9.3): waiting, not ended
+  if (f.finalList && !f.onList) return f.waitlisted ? "waitlisted" : "not-final";
   // the report issued: scored with its results — or N/R, in the report by its code, when it
   // RECEIVED an object and sent no result (Реш. 19). One that never received an object is
   // not N/R (design §3: «не бива да се показва като N/R»); how the report shows it is not
@@ -161,12 +162,14 @@ export interface StateInput {
    *  has shipments: the object sent — and received only with the LATEST shipment's protocol
    *  (or received otherwise), so a replacement on its way is «изпратено» again */
   delivery?: { dispatched: boolean; received: boolean } | null;
+  /** on the scheme's waiting list (9.3, lib/waitlist-model waitingOf) */
+  waiting?: boolean;
 }
 
 /** What the record says of one participation. A step counts when its case event is
  *  recorded OR the status reached it (the event wins — a recorded step shows even if the
  *  status write failed); for a calibration scheme also when the chain says so. */
-export function stateFacts({ scheme, part, events, country, delivery }: StateInput): StateFacts {
+export function stateFacts({ scheme, part, events, country, delivery, waiting }: StateInput): StateFacts {
   const has = (k: CaseEventKind) => events.some((e) => e.kind === k);
   const chain: SchemeChain | undefined = scheme.type === "C" ? scheme.chain : undefined;
   const cs = chain ? labState(chain, part.code) : "not-in-chain";
@@ -184,6 +187,7 @@ export function stateFacts({ scheme, part, events, country, delivery }: StateInp
     coded: !isProvisional(part.code),
     carrierPending: needsCarrierChoice(country) && !part.courier?.trim(),
     dispatched, received, submitted,
+    ...(waiting ? { waitlisted: true } : {}),
   };
 }
 

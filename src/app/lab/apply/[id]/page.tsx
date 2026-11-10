@@ -5,6 +5,7 @@ import { getScheme } from "@/lib/store";
 import { listParticipants } from "@/lib/participants";
 import { getServerT } from "@/lib/i18n-server";
 import { applyOpenProblem, labAccreditationWarning, earlierProblem, APPLY_PROBLEM_TEXT } from "@/lib/lab-apply-model";
+import { schemeFull } from "@/lib/waitlist-model";
 import { isStarted } from "@/lib/visibility";
 import { characteristicLabel } from "@/lib/characteristics-model";
 import { schemeNowMs } from "@/lib/clock";
@@ -44,11 +45,14 @@ export default async function LabApplySchemePage({ params }: { params: Promise<{
   // the laboratories that have applied — one in the round («already»), or refused or withdrawn (through
   // PTS); an annulled one may apply again
   const mine = (await participationsOf(ps)).filter((p) => p.schemeId === scheme.id);
-  const rows = mine.length ? await listParticipants(scheme.id) : [];
+  const rows = await listParticipants(scheme.id);
+  // «Запълнена» (9.3) — a yes or a no; never the maximum (3.7)
+  const full = schemeFull(scheme, rows);
   const earlierOf = (labId: string) => earlierProblem(mine.filter((m) => m.laboratoryId === labId).map((m) => rows.find((x) => x.id === m.participantId) ?? { standing: null }));
   return shell(
     <>
       <h1 className="section-title" style={{ fontSize: 24, margin: "10px 0 4px" }}>{scheme.number} · {L(scheme.titleBg || scheme.titleEn, scheme.titleEn || scheme.titleBg)}</h1>
+      {full && <div role="note" data-apply-full className="card" style={{ padding: 12, marginBottom: 12, background: "#fdf6e3", color: "#7a5a12" }}>{L("Схемата е запълнена — заявката ви влиза в списъка на изчакващите, по реда на подаване (Реш. 120). Ако се освободи място навреме, PTS ще ви уведоми.", "The scheme is full — your application goes on the waiting list, in the order of submission (Decision 120). Should a place become free in time, PTS will tell you.")}</div>}
       <p className="text-sm" style={{ color: "var(--muted)", marginBottom: 14 }}>
         {scheme.dates?.applicationsDue ? L(`Краен срок за заявки: ${fmtSchemeDate(scheme.dates.applicationsDue)}. `, `Applications due: ${fmtSchemeDate(scheme.dates.applicationsDue)}. `) : ""}
         {L("С подаването лабораторията става участник; PTS може да откаже заявката с причина (Реш. 14). Промяна след подаването — чрез PTS.", "On submitting, the laboratory becomes a participant; PTS may refuse the application with a reason (Decision 14). A change after submitting — through PTS.")}

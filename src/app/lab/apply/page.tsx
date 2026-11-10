@@ -5,6 +5,8 @@ import { isStarted } from "@/lib/visibility";
 import { isProvisional } from "@/lib/coding-model";
 import { getServerT } from "@/lib/i18n-server";
 import { applyOpenProblem } from "@/lib/lab-apply-model";
+import { schemeFull } from "@/lib/waitlist-model";
+import { listParticipants } from "@/lib/participants";
 import { schemeNowMs } from "@/lib/clock";
 import { fmtSchemeDate } from "@/lib/scheme-dates";
 import ParticipantNav from "@/components/ParticipantNav";
@@ -23,6 +25,8 @@ export default async function LabApplyPage({ searchParams }: { searchParams: Pro
   const open = (await listOpenSchemes()).filter((s) => !applyOpenProblem(s, schemeNowMs(s)))
     .sort((a, b) => (a.dates?.applicationsDue ?? "9999").localeCompare(b.dates?.applicationsDue ?? "9999") || a.number.localeCompare(b.number));
   const approved = entity.state === "active";
+  // «Запълнена» (9.3, Реш. 120): a label — an application goes on the waiting list; never the maximum (3.7)
+  const full = new Set((await Promise.all(open.map(async (s) => (schemeFull(s, await listParticipants(s.id)) ? [s.id] : []) as string[]))).flat());
   const doneScheme = sp.done ? await getScheme(sp.done) : null;
   const done = doneScheme && isStarted(doneScheme) ? doneScheme : null;
   // a provisional reference is never shown to the laboratory (5.3)
@@ -49,7 +53,7 @@ export default async function LabApplyPage({ searchParams }: { searchParams: Pro
             {open.map((s) => (
               <section key={s.id} className="card" data-apply-scheme={s.id} style={{ padding: 14, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                 <div style={{ flex: "1 1 320px" }}>
-                  <div><b>{s.number}</b> · {L(s.titleBg || s.titleEn, s.titleEn || s.titleBg)}</div>
+                  <div><b>{s.number}</b> · {L(s.titleBg || s.titleEn, s.titleEn || s.titleBg)}{full.has(s.id) && <span data-apply-full className="text-xs" style={{ marginLeft: 8, fontWeight: 700, color: "#7a5a12" }}>{L("Запълнена — заявката влиза в списъка на изчакващите", "Full — an application goes on the waiting list")}</span>}</div>
                   <div className="text-sm" style={{ color: "var(--muted)" }}>
                     {s.dates?.applicationsDue ? L(`Краен срок за заявки: ${fmtSchemeDate(s.dates.applicationsDue)}`, `Applications due: ${fmtSchemeDate(s.dates.applicationsDue)}`) : L("Без краен срок за заявки", "No deadline for applications")}
                     {" · "}{s.type === "C" ? L("калибриране", "calibration") : L("изпитване", "testing")}

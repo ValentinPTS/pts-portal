@@ -347,9 +347,19 @@ export async function notifySchemeAnnounced(labId: string | undefined, schemeId:
 /** The second announcement (part 5.2; Реш. 65): INDIVIDUAL — made from what this
  *  participation applied for: its characteristics that run, those that drop; or, none
  *  running, that it goes no further and nothing is invoiced. */
-export async function notifyFinalList(labId: string | undefined, schemeId: string, schemeNumber: string, code: string, on: boolean, runs: { bg: string; en: string }[], dropped: { bg: string; en: string }[]): Promise<void> {
+export async function notifyFinalList(labId: string | undefined, schemeId: string, schemeNumber: string, code: string, on: boolean, runs: { bg: string; en: string }[], dropped: { bg: string; en: string }[], waiting = false): Promise<void> {
   if (!(await anyoneToTell(labId, schemeId, code))) return; // nobody to tell — the owner tells them directly
   const list = (xs: { bg: string; en: string }[], k: "bg" | "en") => xs.map((x) => x[k]).join("; ");
+  // on the waiting list (9.3, Реш. 120): told so — never its place, never the maximum (3.7)
+  if (waiting) {
+    await notify({
+      kind: "scheme.final_list", audience: "lab", labId, schemeId, code,
+      bg: `Схема ${schemeNumber} — второ обявяване: схемата е запълнена и участието ви${refBg(code)} е в списъка на изчакващите. Ако се освободи място навреме, ще ви уведомим.`,
+      en: `Scheme ${schemeNumber} — second announcement: the scheme is full and your participation${refEn(code)} is on the waiting list. Should a place become free in time, we will tell you.`,
+      href: "/lab",
+    });
+    return;
+  }
   await notify({
     kind: "scheme.final_list",
     audience: "lab",

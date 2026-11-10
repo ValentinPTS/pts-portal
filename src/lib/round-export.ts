@@ -184,6 +184,9 @@ export const SCHEME_FIELDS = {
   // a replay round (8.2): the original number, the counts, what was said — coded; where its source
   // file is kept is storage's
   replay: "split",
+  // the applications closed by hand, the admissions from the waiting list (9.3) — who (PTS's
+  // person) and when, participation ids — coded
+  applicationsClosed: "coded", waitlistAdmitted: "coded",
 } satisfies Record<keyof Scheme, SchemePart>;
 
 export const PARTICIPANT_FIELDS = {

@@ -21,12 +21,14 @@ import type { SchemeLists } from "./scheme-lists-model";
 /** The courier text an own-courier participation carries (F 7.2.1-4 «Вид на куриера») — 9.4 reads it. */
 export const OWN_COURIER = "Собствен куриер";
 
-export type OpenProblem = "not-open" | "deadline" | "final-list";
+export type OpenProblem = "not-open" | "closed" | "deadline" | "final-list";
 /** Is the scheme open for applications at this instant (the round's own clock — 1.3)? Its deadline a day
  *  (to its very end, Sofia) or a day and an hour (9.2 review: never compared as text). (A final list
  *  exists only once the scheme runs; its check is kept for a scheme stepped back.) */
-export function applyOpenProblem(s: Pick<Scheme, "status" | "dates" | "lifecycle">, nowMs: number): OpenProblem | null {
+export function applyOpenProblem(s: Pick<Scheme, "status" | "dates" | "lifecycle" | "applicationsClosed">, nowMs: number): OpenProblem | null {
   if (s.status !== "open") return "not-open";
+  // closed by PTS's hand (9.3, Реш. 120) — «Запълнена» never closes it
+  if (s.applicationsClosed) return "closed";
   const due = s.dates?.applicationsDue;
   const dueMs = due ? deadlineMs(due) : null;
   if (due && (dueMs === null || nowMs > dueMs)) return "deadline";
@@ -83,6 +85,7 @@ export const APPLY_PROBLEM_TEXT: Record<ApplyProblem, { bg: string; en: string }
   delivery: { bg: "доставката е от PTS или със собствен куриер", en: "the delivery is by PTS or by your own courier" },
   changed: { bg: "характеристиките на схемата се промениха, докато формулярът беше отворен — отворете го отново", en: "the scheme's characteristics changed while the form was open — open it again" },
   "not-open": { bg: "схемата не приема заявки", en: "the scheme does not take applications" },
+  closed: { bg: "PTS затвори заявяването за схемата", en: "PTS has closed the applications for the scheme" },
   deadline: { bg: "срокът за заявки е изтекъл", en: "the deadline for applications has passed" },
   "final-list": { bg: "окончателният списък на участниците е обявен — заявки вече не се приемат", en: "the final list of participants is announced — no more applications" },
 };

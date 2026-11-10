@@ -25,6 +25,7 @@ import { docsFor, type ReachingRelease } from "./release-model";
 import { ackRequiredFor, ackOf, kindOf, type AckKind, type Acknowledgement } from "./ack-model";
 import { inFinalRound } from "./announcement-model";
 import { deliveryOf, deliveryProgress, receivedOtherwise, otherReceipts } from "./delivery-model";
+import { waitingOf } from "./waitlist-model";
 import { schemeNowMs } from "./clock";
 import {
   stateFacts, participationState, nextDeadline, actionsFor, paymentOf, finished, STATE_STAGE,
@@ -107,6 +108,8 @@ export async function participationViews(rows: readonly OwnRow[], viewer: { user
     const coded = await listParticipants(scheme.id);
     const nowMs = schemeNowMs(scheme); // the round's clock (1.3)
     const parts = mine.flatMap((r) => { const part = coded.find((p) => p.id === r.participantId); return part ? [{ r, part }] : []; });
+    // the scheme's waiting list (9.3) — the participation's state says it; never its place
+    const waiting = new Set(waitingOf(scheme, coded));
     // what reaches each — only while it goes on in the round: refused, annulled, withdrawn
     // or off the final list, it is given nothing more, as the document route decides (5.4)
     const reaching = new Map(parts.map(({ part }) => [part.id, inFinalRound(scheme, part) ? docsFor(scheme, { participantIds: [part.id], userId: viewer.userId }) : []] as const));
@@ -125,7 +128,7 @@ export async function participationViews(rows: readonly OwnRow[], viewer: { user
       // a testing scheme's delivery record speaks for the object once it has a shipment (5.6)
       const d = deliveryOf(scheme, part.id);
       const otherwise = receivedOtherwise(d, otherReceipts(scheme, part.code, events));
-      const state = participationState(stateFacts({ scheme, part, events, country: r.country, delivery: scheme.type === "C" ? null : deliveryProgress(d, otherwise) }));
+      const state = participationState(stateFacts({ scheme, part, events, country: r.country, delivery: scheme.type === "C" ? null : deliveryProgress(d, otherwise), waiting: waiting.has(part.id) }));
       // its own window while it holds the instrument (3.4)
       const stop = scheme.type === "C" ? scheme.chain?.stops?.find((s) => s.kind === "lab" && s.code === part.code && !!s.receivedAt && !s.sentAt) : undefined;
       const w = stop ? chainWindow(scheme, stop, off) : null;

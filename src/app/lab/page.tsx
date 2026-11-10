@@ -279,8 +279,11 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
               <span>{it.scheme.number}</span>
               {/* before the coding act (5.3) an application has no code — never its provisional reference */}
               {isProvisional(it.p.code)
-                ? (inFinalRound(it.scheme, it.p)
-                  ? <span className="chip" data-code-to-come style={{ background: "var(--muted)" }}>{lang === "bg" ? "Кодът предстои — тегли се след затваряне на заявяването" : "Your code is to come — drawn after applications close"}</span>
+                ? (inFinalRound(it.scheme, it.p) || it.view?.state === "waitlisted"
+                  ? it.view?.state === "waitlisted"
+                    // on the waiting list (9.3) — waiting, not ended; never its place
+                    ? <span className="chip" data-waiting style={{ background: "#7a5a12" }}>{lang === "bg" ? "В списъка на изчакващите" : "On the waiting list"}</span>
+                    : <span className="chip" data-code-to-come style={{ background: "var(--muted)" }}>{lang === "bg" ? "Кодът предстои — тегли се след затваряне на заявяването" : "Your code is to come — drawn after applications close"}</span>
                   : <span className="chip" data-not-going-on style={{ background: "var(--muted)" }}>{lang === "bg" ? "Участието не продължава" : "The participation goes no further"}</span>)
                 : <span className="chip" style={{ background: "var(--green-dark)" }}>{tr("lab.yourCode")} · {it.p.code}</span>}
             </div>

@@ -28,6 +28,9 @@ export interface FinalList {
   /** the same characteristics by their stable ids (3.6) — for the record and the export */
   runIds?: string[];
   droppedIds?: string[];
+  /** the waiting list kept with it (9.3): who was beyond the maximum then, in order — admitted later
+   *  from it, after the receipt protocols (Реш. 120, 127) */
+  waitlist?: string[];
 }
 
 type Part = { id: string; selections?: Selections; characteristics?: number[]; standing?: Standing | null };
@@ -58,11 +61,12 @@ export function splitFor(p: Part, runs: readonly number[], characteristicCount: 
 }
 
 /** The final list under the runs: every participation in the round with a
- *  characteristic that runs. */
-export function finalListOf(parts: readonly Part[], runs: readonly number[], characteristicCount: number): FinalList {
+ *  characteristic that runs — but the waiting list (9.3), kept with it in its order. */
+export function finalListOf(parts: readonly Part[], runs: readonly number[], characteristicCount: number, waiting: readonly string[] = []): FinalList {
   const r = [...new Set(runs)].filter((i) => Number.isInteger(i) && i >= 0 && i < characteristicCount).sort((a, b) => a - b);
   const dropped = Array.from({ length: characteristicCount }, (_, i) => i).filter((i) => !r.includes(i));
-  return { runs: r, dropped, participants: parts.filter((p) => inRound(p) && splitFor(p, r, characteristicCount).runs.length > 0).map((p) => p.id) };
+  const wait = new Set(waiting);
+  return { runs: r, dropped, participants: parts.filter((p) => inRound(p) && !wait.has(p.id) && splitFor(p, r, characteristicCount).runs.length > 0).map((p) => p.id), ...(waiting.length ? { waitlist: [...waiting] } : {}) };
 }
 
 /** Its selections under the final list — the characteristics that run only. */
@@ -75,17 +79,22 @@ export function finalSelectionsOf(p: Part, final: Pick<FinalList, "runs">, chara
  *  announcement, and once the scheme is stepped back to open (or not held): a step
  *  back undoes it, a new first and second announcement make the next. One made before
  *  5.2 kept no list: every participation in the round. */
-export function currentFinalList(s: { status: string; lifecycle?: Lifecycle }): { participants: string[] | null; runs: number[] | null } | undefined {
+export function currentFinalList(s: { status: string; lifecycle?: Lifecycle; waitlistAdmitted?: { participantId: string; listAt?: string }[] }): { participants: string[] | null; runs: number[] | null; waitlist?: string[] } | undefined {
   if (!["running", "processing", "report", "closed"].includes(s.status)) return undefined;
   const a = currentSecondAnnouncement(s);
   if (!a) return undefined;
-  return a.final ? { participants: a.final.participants, runs: a.final.runs } : { participants: null, runs: null };
+  if (!a.final) return { participants: null, runs: null };
+  // admitted from the waiting list after it (9.3) — on the list from then on; only one the list kept as
+  // waiting, and admitted under THIS list (a step back undoes the others — 9.3 review)
+  const kept = new Set(a.final.waitlist ?? []);
+  const admitted = (s.waitlistAdmitted ?? []).filter((x) => x.listAt === a.at).map((x) => x.participantId).filter((id) => kept.has(id) && !a.final!.participants.includes(id));
+  return { participants: [...a.final.participants, ...admitted], runs: a.final.runs, ...(a.final.waitlist ? { waitlist: a.final.waitlist } : {}) };
 }
 
 /** Does the participation go on in the round — in it, and on the final list once there
  *  is one? (5.2 review: one off the list is told it goes no further — no reminders, no
  *  results, not counted.) */
-export function inFinalRound(s: { status: string; lifecycle?: Lifecycle }, p: { id: string; standing?: Standing | null }): boolean {
+export function inFinalRound(s: { status: string; lifecycle?: Lifecycle; waitlistAdmitted?: { participantId: string; listAt?: string }[] }, p: { id: string; standing?: Standing | null }): boolean {
   if (!inRound(p)) return false;
   const list = currentFinalList(s);
   return !list?.participants || list.participants.includes(p.id);

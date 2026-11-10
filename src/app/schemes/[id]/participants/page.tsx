@@ -17,7 +17,6 @@ import SchemeFullNotice from "@/components/SchemeFullNotice";
 import PendingSubmit from "@/components/PendingSubmit";
 import { accreditationWarning, listsOf } from "@/lib/scheme-lists-model";
 import { listLabs } from "@/lib/labs";
-import { schemeNowMs } from "@/lib/clock";
 import { openParticipationSnapshots, inForce, type ParticipationSnapshot } from "@/lib/participation-snapshots";
 import { openEntityUsers } from "@/lib/entity-users";
 import { actorNow } from "@/lib/identities";
@@ -28,6 +27,12 @@ import { inRound, objectsNeeded, selectionsOf, STANDING_LABEL, REFUSAL_CATEGORIE
 import { currentFinalList, finalSelectionsOf } from "@/lib/announcement-model";
 import { isProvisional } from "@/lib/coding-model";
 import { fmtMoment } from "@/lib/scheme-dates";
+import WaitlistPanel from "@/components/WaitlistPanel";
+import { listCaseEventsForScheme } from "@/lib/case-events";
+import { admissionCheck, ADMIT_PROBLEM_TEXT } from "@/lib/waitlist-model";
+import { holidaySet } from "@/lib/holidays";
+import { schemeNowMs, sofiaToday } from "@/lib/clock";
+
 import { needsCarrierChoice } from "@/lib/participation-state-model";
 
 const INVITE = invitePreview();
@@ -108,6 +113,17 @@ export default async function ParticipantsPage({
   if (reveal && participants.length) await logActivity("names.viewed", { schemeId: id, subject: "page:participants", summary: "Laboratory names shown with their codes — participants list" });
   const hidden = <span style={{ color: "var(--muted)", fontStyle: "italic" }}>{tr("part.hidden")}</span>;
 
+  // the waiting list (9.3): in order; who manages the participants switches the applications and admits
+  // one reading with the act (lib/waitlist-model admissionCheck): the first in line, the reserve, the
+  // receipt protocols, the minimum days
+  const schemeEvents = await listCaseEventsForScheme(id).catch(() => []);
+  const adm = admissionCheck(s, participants, undefined, sofiaToday(schemeNowMs(s)), await holidaySet(), schemeEvents);
+  const waiting = adm.waiting;
+  const firstCheck = waiting.length ? admissionCheck(s, participants, waiting[0], sofiaToday(schemeNowMs(s)), await holidaySet(), schemeEvents) : null;
+  const waitPos = new Map(waiting.map((wid, i) => [wid, i + 1]));
+  const canManageList = await mayNow("participants.manage", id);
+  const awaitingReceipt = adm.awaitingReceipt;
+  const firstProblem = firstCheck?.problem ?? null;
   // the same laboratory's name twice in the round (a PDF and an online application) — a hint (9.2 review)
   const nameKey = (n: string) => n.toLowerCase().replace(/[\s"'„“”«».,-]+/g, " ").trim();
   const twins = new Map<string, number>();
@@ -127,6 +143,10 @@ export default async function ParticipantsPage({
         </span>
       </h1>
       <SchemeFullNotice commercial={s.commercial} taken={taken} lang={lang === "bg" ? "bg" : "en"} />
+      {/* 9.3: the applications' switch and the waiting list (Реш. 120, 127) */}
+      <WaitlistPanel lang={lang === "bg" ? "bg" : "en"} schemeId={id} canManage={canManageList} closed={s.applicationsClosed ?? null} finalMade={!!finalList}
+        waiting={waiting.map((wid) => { const q = participants.find((x) => x.id === wid)!; return { id: wid, label: reveal ? `${q.code} · ${q.labName}` : q.code, at: q.createdAt ?? "" }; })}
+        reserves={firstCheck?.reserves ?? adm.reserves} awaitingReceipt={awaitingReceipt} firstProblem={firstProblem ? ADMIT_PROBLEM_TEXT[firstProblem] : null} testing={s.type === "T"} />
       {s.type === "T" && inRoundParts.length > 0 && (
         <p className="text-sm" data-objects-total={objectsTotal} style={{ color: "var(--muted)" }}>
           {L(`Обекти за участниците: ${objectsTotal} (по заявките — по един за всяко участие; без резервните)`, `Objects for the participants: ${objectsTotal} (from the applications — one per participation; reserves not included)`)}
@@ -175,7 +195,7 @@ export default async function ParticipantsPage({
               <tr><td colSpan={8} className="p-3" style={{ color: "var(--muted)" }}>{tr("part.noneYet")}</td></tr>
             )}
             {participants.map((p) => (
-              <ParticipantRows key={p.id} p={p} schemeId={id} reveal={reveal} hidden={hidden} tr={tr} accWarn={accWarnFor(p)} L={L} twin={reveal && inRound(p) && (twins.get(nameKey(p.labName)) ?? 0) > 1}
+              <ParticipantRows key={p.id} p={p} schemeId={id} reveal={reveal} hidden={hidden} tr={tr} accWarn={accWarnFor(p)} L={L} twin={reveal && inRound(p) && (twins.get(nameKey(p.labName)) ?? 0) > 1} waitPos={waitPos.get(p.id)}
                 snapshot={snapshots.get(p.id)} versions={versions.get(p.id) ?? 0} contactName={contactName} lang={lang === "bg" ? "bg" : "en"}
                 canFreeze={canFreeze && !snapshotsFailed} canManage={canFreeze} schemeType={s.type}
                 objects={onList(p) ? objectsNeeded(selNow(p), s.type) : 0} listed={finalList ? onList(p) : undefined}
@@ -250,7 +270,9 @@ export default async function ParticipantsPage({
 // participation-copy row (4.x) and a collapsed edit row (native <details>, no client
 // JS) holding the full edit form — courier, sample code and the F 7.2.1-6
 // characteristics live here so 30 labs can be filled in quickly.
-function ParticipantRows({ p, schemeId, reveal, hidden, tr, invoiced, paid, parameters, deadline, accWarn, L, snapshot, versions, contactName, canFreeze, lang, canManage, schemeType, objects, listed, twin }: {
+function ParticipantRows({ p, schemeId, reveal, hidden, tr, invoiced, paid, parameters, deadline, accWarn, L, snapshot, versions, contactName, canFreeze, lang, canManage, schemeType, objects, listed, twin, waitPos }: {
+  /** its place on the waiting list (9.3) */
+  waitPos?: number;
   /** another participation in the round under the same laboratory's name — a PDF application and an
    *  online one for one laboratory, while both paths are open (9.2 review, Реш. 146): a hint, never a block */
   twin?: boolean;
@@ -289,12 +311,13 @@ function ParticipantRows({ p, schemeId, reveal, hidden, tr, invoiced, paid, para
         </td>
         <td className="p-2">{reveal ? p.labName : hidden}
           {isProvisional(p.code) && !out && <span data-no-code className="text-xs" style={{ marginLeft: 6, color: "var(--muted)" }}>· {L("без код до кодирането", "no code until the coding act")}</span>}
+          {waitPos !== undefined && <span data-waitlisted={waitPos} className="text-xs" style={{ marginLeft: 6, color: "#7a5a12", fontWeight: 700 }}>· {L(`изчакващ №${waitPos}`, `waiting #${waitPos}`)}</span>}
           {twin && <span data-possible-twin className="text-xs" style={{ marginLeft: 6, color: "#7a2e0e" }} title={L("Друго участие в кръга със същото име на лаборатория — заявка в PDF и от портала?", "Another participation in the round with the same laboratory name — a PDF application and an online one?")}>· {L("същото име — повторение?", "same name — twice?")}</span>}
           {/* 9.2: the laboratory's own application in its portal — and when */}
           {p.source === "portal" && <span data-source-portal className="text-xs" style={{ marginLeft: 6, color: "var(--green-dark)" }} title={p.createdAt ?? ""}>· {L("от портала", "from the portal")}{p.createdAt ? `, ${fmtMoment(p.createdAt)}` : ""}</span>}
           {out && p.standing && <span data-standing-state={p.standing.state} className="text-xs" style={{ marginLeft: 6, fontWeight: 700, color: "#8f2f2f" }}>● {L(STANDING_LABEL[p.standing.state].bg, STANDING_LABEL[p.standing.state].en)}</span>}
           {!out && schemeType === "T" && <span data-objects={objects} className="text-xs" style={{ marginLeft: 6, color: "var(--muted)" }}>· {L("обекти", "objects")}: {objects}</span>}
-          {!out && listed !== undefined && <span data-final={listed ? "1" : "0"} className="text-xs" style={{ marginLeft: 6, fontWeight: 700, color: listed ? "var(--green-dark)" : "#8a5a00" }}>· {listed ? L("в окончателния списък", "on the final list") : L("не е в окончателния списък — не продължава", "not on the final list — goes no further")}</span>}
+          {!out && listed !== undefined && <span data-final={listed ? "1" : "0"} className="text-xs" style={{ marginLeft: 6, fontWeight: 700, color: listed ? "var(--green-dark)" : "#8a5a00" }}>· {listed ? L("в окончателния списък", "on the final list") : waitPos !== undefined ? L("в списъка на изчакващите", "on the waiting list") : L("не е в окончателния списък — не продължава", "not on the final list — goes no further")}</span>}
           {reveal && snapshot && (
             <span data-frozen={snapshot.takenAt} className="text-xs" title={L("Копие на данните на юридическото лице и лабораторията към участието — не се сменя (J12)", "A copy of the legal entity's and the laboratory's data for this participation — never changed (J12)")}
               style={{ marginLeft: 6, background: "var(--green-soft)", border: "1px solid var(--line)", borderRadius: 6, padding: "0 5px", color: "var(--green-dark)" }}>

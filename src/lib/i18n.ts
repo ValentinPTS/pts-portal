@@ -588,6 +588,8 @@ const DICT: Record<string, Entry> = {
   "act.participant.updated": { bg: "Обновен участник", en: "Participant updated" },
   "act.lab.uploaded": { bg: "Качен файл от лаборатория", en: "Laboratory file upload" },
   "act.participant.applied_online": { bg: "Заявка за участие от портала", en: "Application from the portal" },
+  "act.participant.admitted": { bg: "Допуснат от списъка на изчакващите", en: "Admitted from the waiting list" },
+  "act.scheme.applications": { bg: "Заявяването затворено / отворено ръчно", en: "Applications closed / opened by hand" },
   "act.registration.submitted": { bg: "Получена регистрация", en: "Registration received" },
   "act.registration.approved": { bg: "Одобрена регистрация — профилът е създаден", en: "Registration approved — the profile made" },
   "act.registration.rejected": { bg: "Отказана регистрация", en: "Registration refused" },
