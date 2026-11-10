@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { labReport } from "@/lib/report-issue-model";
+import { labReport, isIlc } from "@/lib/report-issue-model";
 import { gateB } from "@/lib/gate-texts";
 import { isProvisional } from "@/lib/coding-model";
 import { inFinalRound } from "@/lib/announcement-model";
@@ -182,7 +182,10 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
   const resultBlock = (it: Item, awaiting: string) => (
     <div style={{ background: "#f7faf8", borderRadius: 10, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
       <span style={{ fontSize: 13, color: "var(--muted)" }}>
-        {it.reported ? (it.officialReport ? tr("lab.resultInReport") : it.reportAwaiting ? <span data-report-awaiting>{tr("lab.reportAwaitsPayment")}</span> : tr("lab.reportComing")) : awaiting}
+        {it.reported ? (isIlc(it.scheme)
+          // 7.9: an ILC's report is its comparison report
+          ? (it.officialReport ? (lang === "bg" ? "Резултатът ви е в доклада от междулабораторното сравнение по-долу." : "Your result is in the ILC comparison report below.") : it.reportAwaiting ? <span data-report-awaiting>{lang === "bg" ? "Докладът от междулабораторното сравнение е издаден — ще се отвори за вас, след като PTS отбележи плащането (или го отвори по друго основание)." : "The ILC comparison report is issued — it opens for you once PTS marks your payment (or opens it on another ground)."}</span> : (lang === "bg" ? "Обработката приключи. Докладът от междулабораторното сравнение ще е тук, когато PTS го издаде." : "Processing is complete. The ILC comparison report will be here once PTS issues it."))
+          : (it.officialReport ? tr("lab.resultInReport") : it.reportAwaiting ? <span data-report-awaiting>{tr("lab.reportAwaitsPayment")}</span> : tr("lab.reportComing"))) : awaiting}
       </span>
     </div>
   );
@@ -228,7 +231,7 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
         const own = r.level === "participation" ? (lang === "bg" ? " — само за вашето участие" : " — for your participation alone") : "";
         return { key: r.key, label: docLabel(r.key) + (ed ? ` (${lang === "bg" ? "ред." : "ed."} № ${ed.no})` : "") + amLine + own, at: r.at.slice(0, 10), href: `/lab/doc/${it.scheme.id}/${r.key}?lang=${lang}&p=${encodeURIComponent(it.p.id)}` };
       }),
-      ...(it.reported && it.officialReport ? [{ key: "report", label: `${tr("lab.finalReport")}${it.reportLabel ? ` ${it.reportLabel}` : ""}`, at: "", href: `/lab/doc/${it.scheme.id}/report?lang=${lang}&p=${encodeURIComponent(it.p.id)}` }] : []),
+      ...(it.reported && it.officialReport ? [{ key: "report", label: `${isIlc(it.scheme) ? (lang === "bg" ? "↓ Доклад от междулабораторното сравнение" : "↓ ILC comparison report") : tr("lab.finalReport")}${it.reportLabel ? ` ${it.reportLabel}` : ""}`, at: "", href: `/lab/doc/${it.scheme.id}/report?lang=${lang}&p=${encodeURIComponent(it.p.id)}` }] : []),
       ...(it.hasCert ? [{ key: "certificate", label: tr("lab.certificate"), at: "", href: `/lab/doc/${it.scheme.id}/certificate?lang=${lang}&p=${encodeURIComponent(it.p.id)}` }] : []),
       // addressed to this laboratory alone, so it comes from its own route
       // ?p= names the participation: a lab that applied twice to one scheme has an

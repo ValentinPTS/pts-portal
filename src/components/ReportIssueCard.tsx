@@ -10,7 +10,7 @@ import { getDoc } from "@/lib/documents";
 // correction with its reason and scope), the 2.0 version beside each, who received which, a hand
 // opening (D7), a correction, and the scheme's software record (Zadanie §6).
 
-export default function ReportIssueCard({ schemeId, lang, status, ready, issues, rows, canAct, correctable, answer, codesNotReached, showReasons, uxpt, certs }: {
+export default function ReportIssueCard({ schemeId, lang, status, ready, issues, rows, canAct, correctable, answer, codesNotReached, showReasons, uxpt, certs, ilc }: {
   schemeId: string; lang: "bg" | "en"; status: string;
   /** before the act: the three conditions, each true or the reason it is not */
   ready: { approved: boolean; report: { version: string } | null; problem: IssueProblem | null };
@@ -27,6 +27,8 @@ export default function ReportIssueCard({ schemeId, lang, status, ready, issues,
   uxpt: { reportSha: string | null; inForce: UxptCheck | null; canRecord: boolean; type: string; version: string; notes: Record<string, string> };
   /** 7.7: the certificates waiting for a person */
   certs?: { ready: number; unchecked: number; released: number } | null;
+  /** 7.9: an ILC — its report is the comparison report; one uploaded by hand needs no check nor u(x_pt) */
+  ilc?: { hand: boolean; afterApproval: boolean } | null;
 }) {
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const okAnswer = answer === "ok" || answer === "opened" || answer === "corrected" || answer === "uxpt";
@@ -36,13 +38,18 @@ export default function ReportIssueCard({ schemeId, lang, status, ready, issues,
   const last = issues.at(-1);
   return (
     <section id="report-issue" className="card p-4 mt-4" data-report-issue={issues.length}>
-      <h2 className="font-bold" style={{ color: "var(--green-dark)", fontSize: 15, margin: 0 }}>{L("Издаване на доклада", "Issuing the report")}</h2>
+      <h2 className="font-bold" style={{ color: "var(--green-dark)", fontSize: 15, margin: 0 }}>{ilc ? L("Издаване на доклада от междулабораторното сравнение", "Issuing the ILC comparison report") : L("Издаване на доклада", "Issuing the report")}</h2>
       {status === "processing" && (
-        <ul className="text-sm" data-issue-ready={ready.approved && !ready.problem && uxpt.inForce ? "yes" : "no"} style={{ margin: "6px 0 0", paddingLeft: 0, listStyle: "none", display: "grid", gap: 3 }}>
+        <ul className="text-sm" data-issue-ready={ilc?.hand ? (ready.approved && !ilc.afterApproval ? "yes" : "no") : ready.approved && !ready.problem && uxpt.inForce ? "yes" : "no"} style={{ margin: "6px 0 0", paddingLeft: 0, listStyle: "none", display: "grid", gap: 3 }}>
           <li data-ready-approved={ready.approved ? "1" : "0"}>{mark(ready.approved)} {L("Обработено, прегледано и одобрено (етапи 14–16, Реш. 140)", "Processed, reviewed and approved (stages 14–16, Реш. 140)")}</li>
+          {ilc?.hand ? (<>
+            <li data-ready-report="hand">{mark(!ilc.afterApproval)} {L("Докладът от междулабораторното сравнение — качен на ръка (ILC: не от 2.0 — без проверка на преноса и без u(x_pt), 7.9)", "The ILC comparison report — uploaded by hand (an ILC: not from 2.0 — no transfer check, no u(x_pt), 7.9)")}</li>
+            {ilc.afterApproval && <li data-ready-check="after-approval">{mark(false)} {L(ISSUE_PROBLEM_TEXT["after-approval"].bg, ISSUE_PROBLEM_TEXT["after-approval"].en)}</li>}
+          </>) : (<>
           <li data-ready-report={ready.report ? "1" : "0"}>{mark(!!ready.report)} {ready.report ? L(`Докладът в сила е от PTS_Analysis ${ready.report.version}`, `The report in force is from PTS_Analysis ${ready.report.version}`) : L("Докладът в сила не е от PTS_Analysis 2.0", "The report in force is not from PTS_Analysis 2.0")}</li>
           <li data-ready-check={ready.problem ? ready.problem : "same"}>{mark(!ready.problem)} {ready.problem ? L(ISSUE_PROBLEM_TEXT[ready.problem].bg, ISSUE_PROBLEM_TEXT[ready.problem].en) : L("Проверката на преноса в сила: «същите кодове и характеристики»", "The transfer check in force: «the same codes and characteristics»")}</li>
           <li data-ready-uxpt={uxpt.inForce ? uxpt.inForce.answer : "none"}>{mark(!!uxpt.inForce)} {uxpt.inForce ? `${L(UXPT_ANSWER_TEXT[uxpt.inForce.answer].bg, UXPT_ANSWER_TEXT[uxpt.inForce.answer].en)}${uxpt.inForce.note ? ` — ${uxpt.inForce.note}` : ""}` : L(ISSUE_PROBLEM_TEXT["no-uxpt"].bg, ISSUE_PROBLEM_TEXT["no-uxpt"].en)}</li>
+          </>)}
           <li style={{ color: "var(--muted)" }}>{L("Актът «Издай окончателния доклад» е в «Етапи» по-горе. Докладът достига участията, отбелязани като платени (D7); останалите — когато плащането се отбележи, или когато PTS го отвори с основание.", "The act «Issue the final report» is under «Stages» above. The report reaches the participations marked paid (D7); the others when the payment is marked, or when PTS opens it with a reason.")}</li>
         </ul>
       )}
@@ -50,7 +57,7 @@ export default function ReportIssueCard({ schemeId, lang, status, ready, issues,
         <ol className="text-sm" style={{ margin: "6px 0 0", paddingLeft: 18 }} data-issue-list>
           {issues.map((i) => (
             <li key={i.id} data-issue={rLabel(i.r)}>
-              <b>{rLabel(i.r)}</b> · {L("ред.", "ed.")} № {i.editionNo} · {fmtMoment(i.at)} · {i.by} · <span data-issue-version>PTS_Analysis {i.analysisVersion}</span>
+              <b>{rLabel(i.r)}</b> · {L("ред.", "ed.")} № {i.editionNo} · {fmtMoment(i.at)} · {i.by} · <span data-issue-version>{i.source === "uploaded" ? L("качен на ръка — без версия на модул (ILC)", "uploaded by hand — no module version (ILC)") : `PTS_Analysis ${i.analysisVersion}`}</span>
               {i.uxpt && <div data-issue-uxpt={i.uxpt.answer} style={{ color: "var(--muted)" }}>{L(UXPT_ANSWER_TEXT[i.uxpt.answer].bg, UXPT_ANSWER_TEXT[i.uxpt.answer].en)}{uxpt.notes[i.uxpt.id] ? ` — ${uxpt.notes[i.uxpt.id]}` : ""}</div>}
               {i.kind === "correction" && <div style={{ color: "#7a5416" }}>{L("Поправка", "Correction")} — {i.reason}. {L("Поправено", "Corrected")}: {i.scope}{i.codes.length ? ` · ${L("засяга", "concerns")} ${i.codes.join(", ")}` : ` · ${L("засяга всички", "concerns all")}`}</div>}
               <details style={{ marginTop: 2 }} data-software-record>
@@ -59,7 +66,9 @@ export default function ReportIssueCard({ schemeId, lang, status, ready, issues,
                   <li>{L("Издания на портала в сила през кръга", "Portal releases in force during the round")}: {i.software.releases.length ? i.software.releases.map((r) => `${r.title}${r.ref ? ` (${r.ref.slice(0, 7)})` : ""} — ${fmtMoment(r.deployedAt)}`).join("; ") : L("няма записани в регистъра на промените", "none recorded in the change register")}</li>
                   <li>{L("Версия на конфигурацията (характеристиките)", "Configuration version (the characteristics)")}: {i.software.configVersion ?? "—"}</li>
                   <li>{L("Редакции на шаблоните", "Template editions")}: {i.software.templates.length ? i.software.templates.map((x) => `${(lang === "bg" ? getDoc(x.docKey)?.nameBg : getDoc(x.docKey)?.nameEn) ?? x.docKey} № ${x.no} (${x.issuedOn})`).join("; ") : "—"} · {L("текстове за Gate B", "Gate B texts")} {i.software.gateTexts}</li>
-                  <li>PTS_Analysis: {i.software.analysisVersions.join(", ")}</li>
+                  {i.software.reportSource === "uploaded"
+                    ? <li data-software-report="uploaded">{L("Докладът: качен на ръка — без версия на модул (ILC)", "The report: uploaded by hand — no module version (ILC)")}{i.software.analysisVersions.length ? ` · ${L("други внасяния от PTS_Analysis", "other PTS_Analysis imports")}: ${i.software.analysisVersions.join(", ")}` : ""}</li>
+                    : <li>PTS_Analysis: {i.software.analysisVersions.join(", ")}</li>}
                 </ul>
               </details>
             </li>
@@ -115,13 +124,13 @@ export default function ReportIssueCard({ schemeId, lang, status, ready, issues,
         correctable && !correctable.problem ? (
           <form action={issueReportCorrectionAction} className="mt-3" data-correction-form style={{ display: "grid", gap: 6, maxWidth: 640 }}>
             <input type="hidden" name="schemeId" value={schemeId} />
-            <b className="text-sm">{L(`Издай поправка ${rLabel(last.r + 1)} — докладът в сила от PTS_Analysis ${correctable.version}`, `Issue correction ${rLabel(last.r + 1)} — the report in force from PTS_Analysis ${correctable.version}`)}</b>
+            <b className="text-sm">{correctable.version ? L(`Издай поправка ${rLabel(last.r + 1)} — докладът в сила от PTS_Analysis ${correctable.version}`, `Issue correction ${rLabel(last.r + 1)} — the report in force from PTS_Analysis ${correctable.version}`) : L(`Издай поправка ${rLabel(last.r + 1)} — докладът в сила, качен на ръка (ILC)`, `Issue correction ${rLabel(last.r + 1)} — the report in force, uploaded by hand (ILC)`)}</b>
             <input name="reason" required maxLength={1000} placeholder={L("Причина за поправката", "The reason for the correction")} aria-label={L("Причина", "Reason")} style={input} />
             <input name="scope" required maxLength={1000} placeholder={L("Какво е поправено", "What is corrected")} aria-label={L("Какво е поправено", "What is corrected")} style={input} />
             <input name="codes" maxLength={4000} placeholder={L("Засегнати кодове (празно — всички)", "Codes concerned (empty — all)")} aria-label={L("Засегнати кодове", "Codes concerned")} style={input} />
             <div><button type="submit" className="btn btn-sm" data-correction-submit>{L("Издай поправката", "Issue the correction")}</button></div>
           </form>
-        ) : <p className="text-sm" style={{ color: "var(--muted)", margin: "8px 0 0" }} data-correction-waiting={correctable?.problem ?? "none"}>{correctable?.problem && correctable.problem !== "same-file" && correctable.problem !== "not-issued" ? `${L("Поправка (R2…): ", "A correction (R2…): ")}${L(ISSUE_PROBLEM_TEXT[correctable.problem].bg, ISSUE_PROBLEM_TEXT[correctable.problem].en)}` : L("Поправка (R2…): внесете поправения доклад от 2.0 и проверете преноса — тогава формата е тук.", "A correction (R2…): import the corrected report from 2.0 and check the transfer — the form is here then.")}</p>
+        ) : <p className="text-sm" style={{ color: "var(--muted)", margin: "8px 0 0" }} data-correction-waiting={correctable?.problem ?? "none"}>{correctable?.problem && correctable.problem !== "same-file" && correctable.problem !== "not-issued" ? `${L("Поправка (R2…): ", "A correction (R2…): ")}${L(ISSUE_PROBLEM_TEXT[correctable.problem].bg, ISSUE_PROBLEM_TEXT[correctable.problem].en)}` : ilc ? L("Поправка (R2…): качете поправения доклад — от 2.0 (с проверка на преноса) или на ръка — тогава формата е тук.", "A correction (R2…): upload the corrected report — from 2.0 (with its transfer check) or by hand — the form is here then.") : L("Поправка (R2…): внесете поправения доклад от 2.0 и проверете преноса — тогава формата е тук.", "A correction (R2…): import the corrected report from 2.0 and check the transfer — the form is here then.")}</p>
       )}
     </section>
   );

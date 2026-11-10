@@ -1,4 +1,5 @@
 import type { Scheme, Lang, DocOptions } from "../types";
+import { isIlc } from "../report-issue-model";
 import { marksHtml } from "../accreditation-mark";
 import { esc, pick, wrapDoc, footer } from "../doc-shell";
 import { looksLikeSimNumber } from "../environment";
@@ -52,12 +53,12 @@ export const EXTRA_CSS = `
 
 // 7.7: the content as typed from the approved report and checked by a second person (D2, condition 3)
 // — never a value the portal computed (Реш. 135)
-export function contentHtml(lang: Lang, content: { conclusion: string; results: string; period: string; methods: string } | undefined, fromR?: number): string {
+export function contentHtml(lang: Lang, content: { conclusion: string; results: string; period: string; methods: string } | undefined, fromR?: number, ilc = false): string {
   if (!content) return "";
   const L = (en: string, bg: string) => esc(pick(lang, en, bg));
   const row = (label: string, v: string) => `<div><b>${label}</b> ${esc(v)}</div>`;
   // the R it came from — a correction after the release leaves no doubt which report it rests on (review)
-  const from = fromR ? `<div class="certfrom">${L(`According to the final report R${fromR}`, `По окончателния доклад R${fromR}`)}</div>` : "";
+  const from = fromR ? `<div class="certfrom">${ilc ? L(`According to the ILC comparison report R${fromR}`, `По доклада от междулабораторното сравнение R${fromR}`) : L(`According to the final report R${fromR}`, `По окончателния доклад R${fromR}`)}</div>` : "";
   return `<div class="certcontent">${row(L("Result:", "Резултат:"), content.conclusion)}${row(L("Scores:", "Оценки:"), content.results)}${row(L("Period:", "Период:"), content.period)}${row(L("Methods:", "Методи:"), content.methods)}${from}</div>`;
 }
 
@@ -72,6 +73,8 @@ export function previewMark(lang: Lang, preview: "unreleased" | "stale" | undefi
 
 export function renderCertificate(s: Scheme, lang: Lang, opts?: DocOptions): string {
   const L = (en: string, bg: string) => esc(pick(lang, en, bg));
+  // 7.9: an interlaboratory comparison is not a PT — its certificate never says it is
+  const ilc = isIlc(s);
 
   // the scope: what this participation reported (7.7); a template — the scheme's characteristics
   const chars = opts?.participant?.scope
@@ -100,13 +103,13 @@ export function renderCertificate(s: Scheme, lang: Lang, opts?: DocOptions): str
     <div class="labname">${labName}</div>
     <div class="labcode">${L("Laboratory code:", "Лабораторен код:")} ${labCode}</div>
 
-    <div class="lead">${L("participated in the proficiency testing scheme", "участва в схемата за изпитване за пригодност")}</div>
+    <div class="lead">${ilc ? L("participated in the interlaboratory comparison", "участва в междулабораторното сравнение") : L("participated in the proficiency testing scheme", "участва в схемата за изпитване за пригодност")}</div>
     <div class="schemeno">№ ${esc(s.number)}</div>
     <div class="schemename">${L(s.titleEn, s.titleBg)}</div>
     <div class="iso">${L("conducted in accordance with", "проведена в съответствие с")} ${esc(s.standard)}</div>
 
     <div class="chars"><b>${L("Characteristics:", "Характеристики:")}</b> <span>${chars}</span></div>
-    ${contentHtml(lang, opts?.participant?.content, opts?.participant?.fromR)}
+    ${contentHtml(lang, opts?.participant?.content, opts?.participant?.fromR, ilc)}
 
     ${marksHtml(s, lang)}
 
@@ -117,7 +120,7 @@ export function renderCertificate(s: Scheme, lang: Lang, opts?: DocOptions): str
       <div class="c"><div style="margin-bottom:26px">&nbsp;</div><div class="ln"></div><small>${esc(mgr.name)} — ${L(mgr.roleEn, mgr.roleBg)}</small></div>
     </div>
     <div class="certno">${L("Certificate No.", "Сертификат №")} ${certNo}</div>
-    <div class="issued">${L("Issued by PT Provider PTS Bulgaria at Proficiency Testing Solutions Bulgaria Ltd", "Издаден от организатора на изпитване за пригодност PTS Bulgaria към „ПТС България“ ООД")}</div>
+    <div class="issued">${ilc ? L("Issued by PTS Bulgaria at Proficiency Testing Solutions Bulgaria Ltd — an interlaboratory comparison, outside the accreditation", "Издаден от PTS Bulgaria към „ПТС България“ ООД — междулабораторно сравнение, извън обхвата на акредитацията") : L("Issued by PT Provider PTS Bulgaria at Proficiency Testing Solutions Bulgaria Ltd", "Издаден от организатора на изпитване за пригодност PTS Bulgaria към „ПТС България“ ООД")}</div>
     <div class="reg">${looksLikeSimNumber(s.number)
       // a simulation round's «certificate» is never in the register (Реш. 130, 1.2)
       ? L("SIMULATION — not a certificate, not in the Register", "СИМУЛАЦИЯ — не е сертификат и не е в Регистъра")

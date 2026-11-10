@@ -18,7 +18,7 @@ import { resolveSkinAsync } from "@/skins";
 import type { DocOptions } from "@/lib/types";
 import { labCertificate } from "@/lib/cert-number";
 import { docImgSrc } from "@/lib/image-hosts";
-import { issueInForce, reaches, rLabel } from "@/lib/report-issue-model";
+import { issueInForce, reaches, rLabel, reportWords } from "@/lib/report-issue-model";
 import { legacyIssued } from "@/lib/cert-model";
 
 // Lab-scoped document view. A laboratory can fetch ONLY:
@@ -96,10 +96,10 @@ async function serve(req: NextRequest, ctx: { params: Promise<{ scheme: string; 
     // participation it reaches: marked paid, or opened by hand (D7)
     const inForce = issueInForce(scheme.reportIssues);
     if (inForce) {
-      if (!reaches(scheme.reportAccess, mine.code)) return { res: new Response("The final report is issued — it opens for you once your payment is marked.", { status: 403 }) };
+      if (!reaches(scheme.reportAccess, mine.code)) return { res: new Response(`${reportWords(scheme).the.en} is issued — it opens for you once your payment is marked.`, { status: 403 }) };
       const ed = await getEdition(inForce.editionId).catch(() => null);
-      if (!ed || ed.schemeId !== scheme.id || ed.docKey !== "report") return { res: new Response("The final report cannot be opened right now. Try again in a moment.", { status: 503 }) };
-      return { res: await editionResponse(ed, "bg", download), log: opened(ed, `the final report ${rLabel(inForce.r)}`) };
+      if (!ed || ed.schemeId !== scheme.id || ed.docKey !== "report") return { res: new Response(`${reportWords(scheme).the.en} cannot be opened right now. Try again in a moment.`, { status: 503 }) };
+      return { res: await editionResponse(ed, "bg", download), log: opened(ed, `${reportWords(scheme).the.en.toLowerCase()} ${rLabel(inForce.r)}`) };
     }
     if (!scheme.uploads?.report) return { res: new Response("Not available yet", { status: 403 }) };
     const ed = await reportEdition(scheme).catch((e) => {

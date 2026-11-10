@@ -1,4 +1,5 @@
 import type { Scheme, Lang, DocOptions } from "../types";
+import { isIlc } from "../report-issue-model";
 import { marksHtml } from "../accreditation-mark";
 import { esc, pick, wrapDoc, footer } from "../doc-shell";
 import { looksLikeSimNumber } from "../environment";
@@ -56,6 +57,8 @@ export const EXTRA_CSS = `
 
 export function renderCertificateC(s: Scheme, lang: Lang, opts?: DocOptions): string {
   const L = (en: string, bg: string) => esc(pick(lang, en, bg));
+  // 7.9: an interlaboratory comparison is not a PT — its certificate never says it is
+  const ilc = isIlc(s);
 
   const c = s.calibration;
   const mgr = s.team[0];
@@ -99,11 +102,11 @@ export function renderCertificateC(s: Scheme, lang: Lang, opts?: DocOptions): st
     <div class="labname">${labName}</div>
     <div class="labcode">${L("Laboratory code:", "Лабораторен код:")} ${labCode}</div>
 
-    <div class="lead">${L("participated in proficiency testing No.", "участва в изпитване за пригодност №")} ${esc(s.number)} — ${L(s.titleEn, s.titleBg)}</div>
+    <div class="lead">${ilc ? L("participated in interlaboratory comparison No.", "участва в междулабораторно сравнение №") : L("participated in proficiency testing No.", "участва в изпитване за пригодност №")} ${esc(s.number)} — ${L(s.titleEn, s.titleBg)}</div>
     <div class="iso">${L("conducted in accordance with", "проведено в съответствие с")} ${esc(s.standard)}</div>
 
     <div class="chars"><b>${L("Quantities:", "Величини:")}</b> <span>${scope}</span></div>
-    ${contentHtml(lang, opts?.participant?.content, opts?.participant?.fromR)}
+    ${contentHtml(lang, opts?.participant?.content, opts?.participant?.fromR, ilc)}
 
     ${marksHtml(s, lang)}
 
@@ -114,7 +117,7 @@ export function renderCertificateC(s: Scheme, lang: Lang, opts?: DocOptions): st
       <div class="c"><div style="margin-bottom:26px">&nbsp;</div><div class="ln"></div><small>${esc(mgr.name)} — ${L(mgr.roleEn, mgr.roleBg)}</small></div>
     </div>
     <div class="certno">${L("Certificate No.", "Сертификат №")} ${certNo}</div>
-    <div class="issued">${L("Issued by PT Provider PTS Bulgaria at Proficiency Testing Solutions Bulgaria Ltd", "Издаден от организатора на изпитване за пригодност PTS Bulgaria към „ПТС България“ ООД")}</div>
+    <div class="issued">${ilc ? L("Issued by PTS Bulgaria at Proficiency Testing Solutions Bulgaria Ltd — an interlaboratory comparison, outside the accreditation", "Издаден от PTS Bulgaria към „ПТС България“ ООД — междулабораторно сравнение, извън обхвата на акредитацията") : L("Issued by PT Provider PTS Bulgaria at Proficiency Testing Solutions Bulgaria Ltd", "Издаден от организатора на изпитване за пригодност PTS Bulgaria към „ПТС България“ ООД")}</div>
     <div class="reg">${looksLikeSimNumber(s.number)
       // a simulation round's «certificate» is never in the register (Реш. 130, 1.2)
       ? L("SIMULATION — not a certificate, not in the Register", "СИМУЛАЦИЯ — не е сертификат и не е в Регистъра")

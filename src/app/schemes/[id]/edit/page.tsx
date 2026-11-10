@@ -156,7 +156,7 @@ export default async function EditSchemePage({
       {mkl && (
         <div className="card p-3 mt-3 text-sm" data-markers-locked style={{ background: "#fbeeee", border: "1px solid #e3c8c8", color: "#8f2f2f" }}>
           <b>{L("Видът, дейността и статутът на акредитация не са сменени.", "The kind, the activity and the accreditation status were not changed.")}</b>{" "}
-          {L("Схемата има издадени сертификати и те носят този статут — знака за акредитация или изречението за NA. Другите промени са запазени.", "The scheme has issued certificates and they carry this status — the accreditation mark or the NA sentence. Your other changes are saved.")}
+          {L("Схемата има издадени сертификати и те носят този статут — знака за акредитация или изречението за NA — или е в обработка и по-нататък: изпитване за пригодност и междулабораторно сравнение се издават по различни правила (7.9), видът не се сменя. Другите промени са запазени.", "The scheme has issued certificates and they carry this status — the accreditation mark or the NA sentence — or it is in processing or later: a PT and an ILC are issued by different rules (7.9), so the kind is not changed. Your other changes are saved.")}
         </div>
       )}
 

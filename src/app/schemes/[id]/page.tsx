@@ -47,7 +47,7 @@ import ProcessingRecordCard from "@/components/ProcessingRecordCard";
 import ReportIssueCard from "@/components/ReportIssueCard";
 import { uxptInForce, type UxptCheck } from "@/lib/uxpt-model";
 import { certState } from "@/lib/cert-model";
-import { transferProblem, correctionProblem, recipients, reaches, type IssueProblem, type RecipientRow } from "@/lib/report-issue-model";
+import { transferProblem, correctionProblem, recipients, reaches, isIlc, handReport, handAfterApproval, type IssueProblem, type RecipientRow } from "@/lib/report-issue-model";
 import { activeUnlock, submissionOpen } from "@/lib/submission-model";
 import { needsAmendment } from "@/lib/amendments-model";
 import { chainWindow, deadlineState, windowDays, resultsDeadline } from "@/lib/deadlines-model";
@@ -163,7 +163,7 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
     };
   }
   // 7.4: issuing the report — what the act needs, the R editions, who received which (D7)
-  let issueView: { ready: { approved: boolean; report: { version: string } | null; problem: IssueProblem | null }; rows: RecipientRow[] | null; correctable: { version: string; problem: IssueProblem | null } | null; showReasons: boolean; certs: { ready: number; unchecked: number; released: number } | null; uxpt: { reportSha: string | null; inForce: UxptCheck | null; canRecord: boolean; type: string; version: string; notes: Record<string, string> } } | null = null;
+  let issueView: { ready: { approved: boolean; report: { version: string } | null; problem: IssueProblem | null }; rows: RecipientRow[] | null; correctable: { version: string; problem: IssueProblem | null } | null; showReasons: boolean; certs: { ready: number; unchecked: number; released: number } | null; ilc: { hand: boolean; afterApproval: boolean } | null; uxpt: { reportSha: string | null; inForce: UxptCheck | null; canRecord: boolean; type: string; version: string; notes: Record<string, string> } } | null = null;
   if (recordView) {
     const issues = s.reportIssues ?? [];
     const inForceReport = reportInForce({ report: s.uploads?.report, active: s.docActive?.report ?? null, imports: s.analysisImports });
@@ -186,8 +186,15 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
     issueView = {
       ready: { approved: !!s.lifecycle?.stages?.["16"], report: inForceReport ? { version } : null, problem: transferProblem(recordView.transfer, !!inForceReport) },
       rows,
-      // 7.6: a correction needs its own u(x_pt) confirmation, from the corrected report
-      correctable: s.status === "report" && issues.length ? { version, problem: correctionProblem(issues, recordView.transfer, !!inForceReport) ?? (uxptInForce(s.uxptChecks, inForceReport?.sha, inForceReport?.importId) ? null : "no-uxpt") } : null,
+      // 7.6: a correction needs its own u(x_pt) confirmation, from the corrected report; 7.9: an ILC's report
+      // uploaded by hand needs neither — only another file (uploaded after the R in force)
+      correctable: s.status === "report" && issues.length
+        ? handReport(s)
+          // by the file's hash (as the server decides), else its upload time (an upload before 7.9)
+          ? { version: "", problem: (s.uploads?.report?.sha256 ? s.uploads.report.sha256 !== issues.at(-1)!.reportSha : Date.parse(s.uploads?.report?.uploadedAt ?? "") > Date.parse(issues.at(-1)!.at)) ? null : "same-file" }
+          : { version, problem: correctionProblem(issues, recordView.transfer, !!inForceReport) ?? (uxptInForce(s.uxptChecks, inForceReport?.sha, inForceReport?.importId) ? null : "no-uxpt") }
+        : null,
+      ilc: isIlc(s) ? { hand: handReport(s), afterApproval: handReport(s) && handAfterApproval(s) } : null,
       showReasons: await mayNow("names.view", id),
       // the confirmation: in processing; once issued — only for a corrected file (another than the R in force's — review)
       // 7.7: the certificates that wait for a person — ready to release, or for a check (review)
@@ -228,7 +235,10 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
     not_held: ["Схемата не се състои: всички участници се уведомяват и нищо не се фактурира. Продължаваме?", "The scheme is not held: every participant is told and nothing is invoiced. Go ahead?"],
     announce2: ["Второ обявяване: окончателният списък на участниците. Продължаваме?", "Second announcement: the final list of participants. Go ahead?"],
     process: ["Обработката започва — подаването се заключва за всички, включително отключените след срока. Продължаваме?", "Processing starts — the submission is locked for everyone, those unlocked after the deadline included. Go ahead?"],
-    report: ["Окончателният доклад става достъпен за всички участници и те се уведомяват. Продължаваме?", "The final report becomes available to every participant, and they are told. Go ahead?"],
+    // D7: the report reaches those marked paid (or opened by hand); 7.9: an ILC's is its comparison report
+    report: isIlc(s)
+      ? ["Докладът от междулабораторното сравнение се издава — достига участниците, отбелязани като платени (останалите при плащане или отваряне), и те се уведомяват. Продължаваме?", "The ILC comparison report is issued — it reaches the participants marked paid (the others on payment or opening), and they are told. Go ahead?"]
+      : ["Окончателният доклад се издава — достига участниците, отбелязани като платени (останалите при плащане или отваряне), и те се уведомяват. Продължаваме?", "The final report is issued — it reaches the participants marked paid (the others on payment or opening), and they are told. Go ahead?"],
     close: ["Записите по схемата се приключват. Продължаваме?", "The scheme's records are closed. Go ahead?"],
     back: ["Схемата се връща към предишното състояние. Основанието се записва. Продължаваме?", "The scheme steps back to its previous state. The reason is recorded. Go ahead?"],
   };
@@ -321,7 +331,8 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
     else if (hasUpload) active = "uploaded";
     return {
       key,
-      name: lang === "bg" ? def.nameBg : def.nameEn,
+      // 7.9: an ILC's report is its comparison report
+      name: key === "report" && isIlc(s) ? (lang === "bg" ? "Доклад от междулабораторното сравнение" : "ILC comparison report") : lang === "bg" ? def.nameBg : def.nameEn,
       form: formLabel(def.formNumber),
       isForm,
       isList,
@@ -447,7 +458,7 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
       {/* 7.3: the processing record and the transfer check */}
       {recordView && issueView && (
         <ReportIssueCard schemeId={id} lang={lg === "bg" ? "bg" : "en"} status={s.status} ready={issueView.ready} issues={s.reportIssues ?? []} rows={issueView.rows}
-          canAct={canAct} correctable={issueView.correctable} answer={sp.ri} codesNotReached={(issueView.rows ?? []).filter((r) => !r.access).map((r) => r.code)} showReasons={issueView.showReasons} uxpt={issueView.uxpt} certs={issueView.certs} />
+          canAct={canAct} correctable={issueView.correctable} answer={sp.ri} codesNotReached={(issueView.rows ?? []).filter((r) => !r.access).map((r) => r.code)} showReasons={issueView.showReasons} uxpt={issueView.uxpt} certs={issueView.certs} ilc={issueView.ilc} />
       )}
       {recordView && (
         <ProcessingRecordCard schemeId={id} lang={lg === "bg" ? "bg" : "en"} record={recordView.record} ticksFromJournal={recordView.ticksFromJournal}

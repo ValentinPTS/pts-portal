@@ -259,14 +259,15 @@ export async function notifySchemeNotHeld(labId: string | undefined, schemeId: s
 }
 
 /** The final report was issued (part 3.2): every participant may read it now. */
-export async function notifyReportPublished(labId: string | undefined, schemeId: string, schemeNumber: string, code: string, label = ""): Promise<void> {
+export async function notifyReportPublished(labId: string | undefined, schemeId: string, schemeNumber: string, code: string, label = "", ilc = false): Promise<void> {
   if (!(await anyoneToTell(labId, schemeId, code))) return; // nobody to tell — the owner shares it directly
+  // an ILC's report is its comparison report, never «the final report» of a PT (7.9)
   await notify({
     kind: "report.issued",
     audience: "lab",
     labId, schemeId, code,
-    bg: `Окончателният доклад${label ? ` (${label})` : ""} за схема ${schemeNumber} е издаден.`,
-    en: `The final report${label ? ` (${label})` : ""} for scheme ${schemeNumber} has been issued.`,
+    bg: `${ilc ? "Докладът от междулабораторното сравнение" : "Окончателният доклад"}${label ? ` (${label})` : ""} за схема ${schemeNumber} е издаден.`,
+    en: `${ilc ? "The ILC comparison report" : "The final report"}${label ? ` (${label})` : ""} for scheme ${schemeNumber} has been issued.`,
     href: "/lab",
   });
 }
@@ -274,14 +275,14 @@ export async function notifyReportPublished(labId: string | undefined, schemeId:
 /** A correction of the issued report (7.4; ISO/IEC 17043 §7.4.3): R2… — to each participation the
  *  report reaches and the correction concerns. By its code; fixed words — never PTS's typed scope,
  *  which may speak of another participation (review). */
-export async function notifyReportCorrected(labId: string | undefined, schemeId: string, schemeNumber: string, code: string, label: string): Promise<void> {
+export async function notifyReportCorrected(labId: string | undefined, schemeId: string, schemeNumber: string, code: string, label: string, ilc = false): Promise<void> {
   if (!(await anyoneToTell(labId, schemeId, code))) return; // nobody to tell — the owner shares it directly
   await notify({
     kind: "report.issued",
     audience: "lab",
     labId, schemeId, code,
-    bg: `Издадена е поправка ${label} на окончателния доклад за схема ${schemeNumber}. Поправеният доклад е в портала.`,
-    en: `Correction ${label} of the final report for scheme ${schemeNumber} has been issued. The corrected report is in the portal.`,
+    bg: `Издадена е поправка ${label} ${ilc ? "на доклада от междулабораторното сравнение" : "на окончателния доклад"} за схема ${schemeNumber}. Поправеният доклад е в портала.`,
+    en: `Correction ${label} of ${ilc ? "the ILC comparison report" : "the final report"} for scheme ${schemeNumber} has been issued. The corrected report is in the portal.`,
     href: "/lab",
   });
 }

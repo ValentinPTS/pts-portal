@@ -572,6 +572,7 @@ const DICT: Record<string, Entry> = {
   "act.folder.renamed": { bg: "Преименувана папка", en: "Folder renamed" },
   "act.folder.deleted": { bg: "Изтрита папка", en: "Folder deleted" },
   "act.doc.uploaded": { bg: "Качен файл", en: "File uploaded" },
+  "act.doc.source": { bg: "Сменена версия в сила на документ", en: "Document's version in force switched" },
   "act.doc.upload_removed": { bg: "Премахнат качен файл", en: "Uploaded file removed" },
   "act.doc.sent": { bg: "Изпратен на участниците", en: "Sent to the participants" },
   "act.doc.unsent": { bg: "Спряно споделяне", en: "Withdrawn from the participants" },

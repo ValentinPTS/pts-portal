@@ -89,8 +89,8 @@ import { versionInForce } from "./round-export-submissions";
 import { correctableFields, activeCorrections, readCorrection, type ResultCorrection } from "./corrections-model";
 import { readNote, noteInForce, type ReviewNote } from "./review-model";
 import { IMPORT_KINDS, checkImport, servedName, type ImportKind, type ImportedFile, type AnalysisImport } from "./analysis-import-model";
-import { readCheck, schemeTransferState, reportInForce, type TransferCheck } from "./transfer-check-model";
-import { transferProblem, correctionProblem, readCorrection as readReportCorrection, readHandOpen, accessAtIssue, reaches, inScope, issueInForce, issueReason, rLabel, softwareRecord, ISSUE_PROBLEM_TEXT, type IssueProblem, type ReportIssue, type ReportAccess } from "./report-issue-model";
+import { readCheck, schemeTransferState, reportInForce, lastCorrectionAt, type TransferCheck } from "./transfer-check-model";
+import { isIlc, handReport, handProblem, transferProblem, correctionProblem, readCorrection as readReportCorrection, readHandOpen, accessAtIssue, reaches, inScope, issueInForce, issueReason, rLabel, softwareRecord, ISSUE_PROBLEM_TEXT, type IssueProblem, type ReportIssue, type ReportAccess } from "./report-issue-model";
 import { GATE_TEXTS_VERSION } from "./gate-texts";
 import { readUxpt, uxptInForce, type UxptCheck } from "./uxpt-model";
 import { activeUnlock, submissionOpen, readConfirmations, submissionPayload, readUnlock, SUBMIT_PROBLEM_TEXT, type ResultUnlock } from "./submission-model";
@@ -534,10 +534,13 @@ export async function uploadSchemeDocAction(formData: FormData): Promise<{ ok?: 
     path = `data:${file.type};base64,${Buffer.from(bytes).toString("base64")}`;
   }
 
-  const upload: UploadedDoc = { path, name, mime: file.type, size: file.size, uploadedAt: new Date().toISOString(), uploadedBy: actor };
+  const upload: UploadedDoc = { path, name, mime: file.type, size: file.size, uploadedAt: new Date().toISOString(), uploadedBy: actor, ...(docKey === "report" ? { sha256: sha256(bytes) } : {}) };
   // in the lock, from the fresh scheme: what this replaces is recorded, never lost
   let replaced: UploadedDoc | undefined;
+  let underApproval = false;
   await updateSchemeWith(schemeId, (s) => {
+    // 7.9 review (7.2's rule): no report slips in under a review or an approval — withdraw them first
+    if (reportUnderApproval(s, docKey)) { underApproval = true; return {}; }
     replaced = s.uploads?.[docKey];
     return {
       uploads: { ...(s.uploads ?? {}), [docKey]: upload },
@@ -545,6 +548,7 @@ export async function uploadSchemeDocAction(formData: FormData): Promise<{ ok?: 
       ...supersede(s, `upload:${docKey}`, s.uploads?.[docKey], "replaced", actor),
     };
   });
+  if (underApproval) return { error: REPORT_UNDER_APPROVAL };
   // before → after in the journal (part 1.9): a replacement says what it replaced
   await logActivity("doc.uploaded", {
     schemeId, subject: `upload:${docKey}`,
@@ -1146,8 +1150,8 @@ export async function setParticipantPaidAction(
   });
   if (reached) {
     const r = reached as ReportIssue;
-    await logActivity("report.access", { schemeId, targetCode: code, subject: `edition:${r.editionId}`, summary: `The final report (${rLabel(r.r)}) reaches ${code} — its payment marked (D7)`, after: { via: "paid", r: r.r } });
-    await notifyReportPublished(labId, schemeId, scheme.number, code, rLabel(r.r));
+    await logActivity("report.access", { schemeId, targetCode: code, subject: `edition:${r.editionId}`, summary: `${isIlc(scheme) ? "The ILC comparison report" : "The final report"} (${rLabel(r.r)}) reaches ${code} — its payment marked (D7)`, after: { via: "paid", r: r.r } });
+    await notifyReportPublished(labId, schemeId, scheme.number, code, rLabel(r.r), isIlc(scheme));
     revalidatePath("/lab", "layout"); // its pages now list the report
   }
   revalidatePath(`/schemes/${schemeId}`, "layout");
@@ -1204,11 +1208,23 @@ export async function setDocSourceAction(schemeId: string, docKey: string, sourc
   if (!isDocKey(docKey)) return { error: "Unknown document." };
   const scheme = await getScheme(schemeId);
   if (!scheme) return { error: "Scheme not found." };
-  const docActive = { ...(scheme.docActive ?? {}), [docKey]: source };
-  await updateScheme(schemeId, { docActive });
+  // 7.9 review: the report's version in force is not switched under a review or an approval, nor once issued
+  let refused: string | null = null;
+  await updateSchemeWith(schemeId, (cur) => {
+    if (reportUnderApproval(cur, docKey)) { refused = REPORT_UNDER_APPROVAL; return {}; }
+    if (docKey === "report" && cur.reportIssues?.length) { refused = `${ISSUE_PROBLEM_TEXT.kept.bg} · ${ISSUE_PROBLEM_TEXT.kept.en}`; return {}; }
+    return { docActive: { ...(cur.docActive ?? {}), [docKey]: source } };
+  });
+  if (refused) return { error: refused };
+  if (docKey === "report") await logActivity("doc.source", { schemeId, subject: `upload:${docKey}`, summary: `The report's version in force switched to the ${source} one`, after: { source } });
   revalidatePath(`/schemes/${schemeId}`, "layout");
   return { ok: true };
 }
+/** 7.2's rule for the report, whatever its source (7.9 review): in processing, once the review (15)
+ *  or the approval (16) is ticked, the report is not replaced — withdraw them first. */
+const reportUnderApproval = (s: Pick<Scheme, "status" | "lifecycle">, docKey: string) =>
+  docKey === "report" && s.status === "processing" && (!!s.lifecycle?.stages?.["15"] || !!s.lifecycle?.stages?.["16"]);
+const REPORT_UNDER_APPROVAL = "Обработката е прегледана или одобрена (етапи 15, 16) — докладът не се сменя под тях; първо оттеглете отметките (Реш. 140). · The processing is reviewed or approved (stages 15, 16) — the report is not replaced under them; withdraw the ticks first (Реш. 140).";
 
 // Save the Word-like editor's HTML for a document (both languages). The body is
 // user-authored rich HTML, so it is SANITIZED here (the server trust boundary) —
@@ -3400,11 +3416,19 @@ export async function updateSchemeAction(formData: FormData) {
     if (paramsRestructured && currentFinalList(current)) { listFinalLate = true; return {}; }
     // official PTS number — shown on every document + drives the year grouping.
     // Falls back to the existing number if the field was cleared.
-    const number = numberRefused || (spellingChange && hasCerts(current)) ? current.number : newNumber;
+    let number = numberRefused || (spellingChange && hasCerts(current)) ? current.number : newNumber;
     // its markers, kept as fields (Реш. 102): what the number states, the rest as chosen
     const m = markersFor(number, current.type, chosenMarkers);
     const kept = { kind: current.kind, activity: current.activity, accredited: current.accredited };
     let markers = m.ok ? { kind: m.kind, activity: m.activity, accredited: m.accredited } : kept;
+    // 7.9 review: from processing on, a PT stays a PT and an ILC an ILC — the issue act's rules differ
+    // by kind (an ILC's report may be uploaded by hand); neither the number nor the select changes it
+    const kindLocked = ["processing", "report", "closed"].includes(current.status) || !!current.reportIssues?.length;
+    if (kindLocked && schemeMarkers({ number, type: current.type, ...markers }).kind !== schemeMarkers({ number: current.number, type: current.type, ...kept }).kind) {
+      markersLockedRefused = true;
+      number = current.number;
+      markers = kept;
+    }
     // issued certificates carry the status — the accreditation mark or the NA sentence —
     // so once there are any it stays, as the number does (3.9 review)
     if (hasCerts(current)) {
@@ -4344,7 +4368,16 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
   let issueCorr: { at: string }[] = [];
   let issueNow: ReturnType<typeof schemeTransferState> | null = null;
   let issueUx: UxptCheck | null = null;
-  if (act === "report") {
+  // 7.9: an ILC's report uploaded by hand — no export to 2.0 to compare, no u(x_pt) to confirm; but it
+  // must be the file that was approved (uploaded before stage 16)
+  const ilcHand = act === "report" && handReport(scheme);
+  if (ilcHand) {
+    try { issueCorr = await listCorrections(schemeId); } catch { return { error: NOT_REACHED }; }
+    // the report and its approval of THIS processing; no correction after it; not 2.0's own file (review)
+    const hp = handProblem(scheme, lastCorrectionAt(issueCorr));
+    if (hp) return { error: ISSUE_REFUSAL[hp] };
+  }
+  if (act === "report" && !ilcHand) {
     try { issueCorr = await listCorrections(schemeId); } catch { return { error: NOT_REACHED }; }
     issueNow = schemeTransferState(scheme, issueCorr);
     const p = transferProblem(issueNow, !!reportInForce({ report: scheme.uploads?.report, active: scheme.docActive?.report ?? null, imports: scheme.analysisImports }));
@@ -4425,10 +4458,12 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
       return { error: EDITION_REFUSAL.failed };
     }
     if (!frozen) return { error: ACT_REFUSAL["no-report"] };
-    if (frozen.source !== "uploaded" || sha256(frozen.bytes) !== issueNow!.reportSha) return { error: ISSUE_REFUSAL.stale };
+    if (frozen.source !== "uploaded" || (!ilcHand && sha256(frozen.bytes) !== issueNow!.reportSha)) return { error: ISSUE_REFUSAL.stale };
+    const handSha = ilcHand ? sha256(frozen.bytes) : "";
+    if (ilcHand) { const hp = handProblem(scheme, lastCorrectionAt(issueCorr), handSha); if (hp) return { error: ISSUE_REFUSAL[hp] }; }
     const nextR = (scheme.reportIssues?.length ?? 0) + 1;
-    const version = scheme.uploads?.report?.analysisVersion ?? "";
-    const reasonNow = issueReason(nextR, version, "issue", note, "");
+    const version = ilcHand ? "" : scheme.uploads?.report?.analysisVersion ?? "";
+    const reasonNow = issueReason(nextR, version, "issue", note, "", isIlc(scheme));
     let edition: DocEdition;
     // an earlier edition only when it is this file AND says this R in these words — never one issued in
     // «Редакции» without the R or the version, never a failed attempt's other words (review)
@@ -4443,7 +4478,9 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
       changes, roundStart: scheme.lifecycle?.acts?.find((a) => a.act === "open")?.at ?? null, at: new Date().toISOString(),
       configVersions: scheme.characteristicVersions, editions, gateTexts: gateB() ? GATE_TEXTS_VERSION : "—", reportVersion: version, imports: scheme.analysisImports,
     });
-    r1 = { edition, issue: { id: randomUUID(), r: nextR, kind: "issue", editionId: edition.id, editionNo: edition.no, reason: note, scope: "", codes: [], analysisVersion: version, importId: issueNow!.importId!, reportSha: issueNow!.reportSha!, transferCheckId: issueNow!.check!.id, uxpt: { id: issueUx!.id, answer: issueUx!.answer }, software } };
+    r1 = ilcHand
+      ? { edition, issue: { id: randomUUID(), r: nextR, kind: "issue", editionId: edition.id, editionNo: edition.no, reason: note, scope: "", codes: [], analysisVersion: "", importId: "", reportSha: handSha, transferCheckId: "", source: "uploaded", ilc: true, software: { ...software, reportSource: "uploaded" } } }
+      : { edition, issue: { id: randomUUID(), r: nextR, kind: "issue", editionId: edition.id, editionNo: edition.no, reason: note, scope: "", codes: [], analysisVersion: version, importId: issueNow!.importId!, reportSha: issueNow!.reportSha!, transferCheckId: issueNow!.check!.id, uxpt: { id: issueUx!.id, answer: issueUx!.answer }, source: "2.0", ilc: isIlc(scheme), software: { ...software, reportSource: "2.0" } } };
   }
 
   // the corrections read again just before the lock — one recorded meanwhile takes the check out of force (review)
@@ -4462,10 +4499,17 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
     if (refused) return {};
     // 7.4: the report and its check as they were read — else nothing is issued
     let issueWrite: Partial<Scheme> = {};
-    if (act === "report" && r1) {
+    if (act === "report" && r1 && r1.issue.source === "uploaded") {
+      // the same hand-uploaded file, still before the approval (7.9)
+      if (!handReport(cur) || cur.uploads?.report?.path !== scheme.uploads?.report?.path) { issueRefused = "stale"; return {}; }
+      const hp = handProblem(cur, lastCorrectionAt(issueCorr), r1.issue.reportSha);
+      if (hp) { issueRefused = hp; return {}; }
+    } else if (act === "report" && r1) {
       const again = schemeTransferState(cur, issueCorr);
       const p = transferProblem(again);
       if (p || again.reportSha !== r1.issue.reportSha || again.check?.id !== r1.issue.transferCheckId || uxptInForce(cur.uxptChecks, again.reportSha, again.importId)?.id !== r1.issue.uxpt?.id) { issueRefused = p ?? "stale"; return {}; }
+    }
+    if (act === "report" && r1) {
       // the final list's participations (5.2) — one dropped at the second announcement gets nothing more
       const access = accessAtIssue(cur.paidAt, parts.filter((x) => inFinalRound(cur, x)).map((x) => x.code), cur.reportAccess, at, by, r1.issue.r);
       const all: Record<string, ReportAccess> = { ...(cur.reportAccess ?? {}), ...access };
@@ -4518,15 +4562,15 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
   if (act === "report" && r1) {
     await logActivity("report.issued", {
       schemeId, subject: `edition:${r1.edition.id}`,
-      summary: `Final report ${rLabel(r1.issue.r)} issued — PTS_Analysis ${r1.issue.analysisVersion}; edition № ${r1.edition.no}; the transfer check relied on: ${r1.issue.transferCheckId}; u(x_pt): ${r1.issue.uxpt?.answer} (${r1.issue.uxpt?.id}); it reaches ${parts.filter((p) => reachedNow.has(p.code)).length} of ${parts.filter((p) => inFinalRound(scheme, p)).length} participations now (marked paid — D7)`,
-      after: { r: r1.issue.r, edition: r1.edition.no, version: r1.issue.analysisVersion, check: r1.issue.transferCheckId, uxpt: r1.issue.uxpt, reached: parts.filter((p) => reachedNow.has(p.code)).map((p) => p.code) },
+      summary: `${isIlc(scheme) ? "ILC comparison report" : "Final report"} ${rLabel(r1.issue.r)} issued — ${r1.issue.source === "uploaded" ? "uploaded by hand (an ILC — no module version, no transfer check, no u(x_pt) confirmation)" : `PTS_Analysis ${r1.issue.analysisVersion}; the transfer check relied on: ${r1.issue.transferCheckId}; u(x_pt): ${r1.issue.uxpt?.answer} (${r1.issue.uxpt?.id})`}; edition № ${r1.edition.no}; it reaches ${parts.filter((p) => reachedNow.has(p.code)).length} of ${parts.filter((p) => inFinalRound(scheme, p)).length} participations now (marked paid — D7)`,
+      after: { r: r1.issue.r, edition: r1.edition.no, source: r1.issue.source, sha: r1.issue.reportSha, ilc: r1.issue.ilc, version: r1.issue.analysisVersion, check: r1.issue.transferCheckId, uxpt: r1.issue.uxpt, reached: parts.filter((p) => reachedNow.has(p.code)).map((p) => p.code) },
     });
   }
   // one notice per participation, by its code (never a name) — the report only to those it reaches (D7)
   for (const p of parts) {
     if (act === "announce") await notifySchemeAnnounced(labOf.get(p.code), schemeId, scheme.number, p.code);
     if (act === "not_held") await notifySchemeNotHeld(labOf.get(p.code), schemeId, scheme.number, p.code);
-    if (act === "report" && reachedNow.has(p.code)) await notifyReportPublished(labOf.get(p.code), schemeId, scheme.number, p.code, r1 ? rLabel(r1.issue.r) : "");
+    if (act === "report" && reachedNow.has(p.code)) await notifyReportPublished(labOf.get(p.code), schemeId, scheme.number, p.code, r1 ? rLabel(r1.issue.r) : "", isIlc(scheme));
   }
   revalidatePath(`/schemes/${schemeId}`, "layout");
   revalidatePath("/lab", "layout");
@@ -6833,8 +6877,8 @@ export async function openReportByHandAction(formData: FormData): Promise<void> 
   } catch { outcome = "gone"; }
   if (outcome !== "recorded") redirect(back(outcome === "moved" ? "ri=state" : outcome === "already" ? "ri=already" : "ri=failed"));
   const inForce = r as ReportIssue | null;
-  await logActivity("report.access", { schemeId, targetCode: code, subject: inForce ? `edition:${inForce.editionId}` : `scheme:${schemeId}`, summary: `The final report${inForce ? ` (${rLabel(inForce.r)})` : ""} opened for ${code} by hand — with its reason (D7)`, after: { via: "hand", r: inForce?.r } });
-  await notifyReportPublished(labId, schemeId, scheme!.number, code, inForce ? rLabel(inForce.r) : "");
+  await logActivity("report.access", { schemeId, targetCode: code, subject: inForce ? `edition:${inForce.editionId}` : `scheme:${schemeId}`, summary: `${isIlc(scheme!) ? "The ILC comparison report" : "The final report"}${inForce ? ` (${rLabel(inForce.r)})` : ""} opened for ${code} by hand — with its reason (D7)`, after: { via: "hand", r: inForce?.r } });
+  await notifyReportPublished(labId, schemeId, scheme!.number, code, inForce ? rLabel(inForce.r) : "", isIlc(scheme!));
   revalidatePath(`/schemes/${schemeId}`, "layout");
   revalidatePath("/lab", "layout");
   redirect(back("ri=opened"));
@@ -6859,23 +6903,32 @@ export async function issueReportCorrectionAction(formData: FormData): Promise<v
   if (!read.ok) redirect(back(`ri=${read.problem}`));
   const { reason, scope, codes } = read as Extract<typeof read, { ok: true }>;
   const now = schemeTransferState(s, corr);
-  const problem = correctionProblem(s.reportIssues, now, !!reportInForce({ report: s.uploads?.report, active: s.docActive?.report ?? null, imports: s.analysisImports }));
-  if (problem) redirect(back(`ri=${problem}`));
-  // 7.6: its own u(x_pt) confirmation, from the corrected report
-  const ux = uxptInForce(s.uxptChecks, now.reportSha, now.importId);
-  if (!ux) redirect(back("ri=no-uxpt"));
+  // 7.9: an ILC's corrected report may be uploaded by hand — no transfer check, no u(x_pt); another file
+  const hand = handReport(s);
+  let ux: UxptCheck | null = null;
+  if (!hand) {
+    const problem = correctionProblem(s.reportIssues, now, !!reportInForce({ report: s.uploads?.report, active: s.docActive?.report ?? null, imports: s.analysisImports }));
+    if (problem) redirect(back(`ri=${problem}`));
+    // 7.6: its own u(x_pt) confirmation, from the corrected report
+    ux = uxptInForce(s.uxptChecks, now.reportSha, now.importId);
+    if (!ux) redirect(back("ri=no-uxpt"));
+  }
   let frozen: Frozen | null = null, latest: DocEdition | null = null;
   let changes: Awaited<ReturnType<typeof listReleases>> = [], editions: DocEdition[] = [];
   try { [frozen, latest, changes, editions] = await Promise.all([freezeNow(s, "report"), latestEdition(schemeId, "report"), listReleases(), listEditions(schemeId)]); } catch { redirect(back("ri=failed")); }
-  if (!frozen || frozen.source !== "uploaded" || sha256(frozen.bytes) !== now.reportSha) redirect(back("ri=stale"));
+  if (!frozen || frozen.source !== "uploaded" || (!hand && sha256(frozen.bytes) !== now.reportSha)) redirect(back("ri=stale"));
+  const fileSha = sha256((frozen as Extract<Frozen, { source: "uploaded" }>).bytes);
+  if (hand && fileSha === issueInForce(s.reportIssues)!.reportSha) redirect(back("ri=same-file"));
+  // 2.0's own file goes the import path — the check and u(x_pt) — never «by hand» (review)
+  if (hand && (s.analysisImports ?? []).some((i) => i.files.some((f) => f.sha256 === fileSha))) redirect(back("ri=is-2.0"));
   const n = s.reportIssues!.length, nextR = n + 1;
-  const version = s.uploads?.report?.analysisVersion ?? "";
+  const version = hand ? "" : s.uploads?.report?.analysisVersion ?? "";
   const by = await actorNow();
   // who to tell — those the report reaches, in the correction's scope — before anything is recorded (2.3)
   const toTell = parts.filter((p) => reaches(s.reportAccess, p.code) && inScope({ kind: "correction", codes }, p.code));
   let labOf = new Map<string, string | undefined>();
   if (toTell.length) { try { labOf = await labIdsFor(schemeId, toTell, by); } catch { redirect(back("ri=failed")); } }
-  const reasonNow = issueReason(nextR, version, "correction", reason, scope);
+  const reasonNow = issueReason(nextR, version, "correction", reason, scope, isIlc(s));
   let edition: DocEdition;
   // an earlier edition only when it is this file and says this correction in these words (review)
   if (latest && sameAs(frozen!, latest) && latest.id !== issueInForce(s.reportIssues)!.editionId && latest.reason === reasonNow && (await servable(latest))) edition = latest;
@@ -6890,15 +6943,21 @@ export async function issueReportCorrectionAction(formData: FormData): Promise<v
   const at = new Date().toISOString();
   const issue: ReportIssue = {
     id: randomUUID(), r: nextR, kind: "correction", editionId: edition.id, editionNo: edition.no, at, by, day: sofiaToday(schemeNowMs(s)),
-    reason, scope, codes, analysisVersion: version, importId: now.importId!, reportSha: now.reportSha!, transferCheckId: now.check!.id, uxpt: { id: ux!.id, answer: ux!.answer },
+    reason, scope, codes, analysisVersion: version,
+    ...(hand ? { importId: "", reportSha: fileSha, transferCheckId: "", source: "uploaded" as const } : { importId: now.importId!, reportSha: now.reportSha!, transferCheckId: now.check!.id, uxpt: { id: ux!.id, answer: ux!.answer }, source: "2.0" as const }),
+    ilc: isIlc(s),
     software: softwareRecord({ changes, roundStart: s.lifecycle?.acts?.find((a) => a.act === "open")?.at ?? null, at, configVersions: s.characteristicVersions, editions, gateTexts: gateB() ? GATE_TEXTS_VERSION : "—", reportVersion: version, imports: s.analysisImports }),
   };
   let outcome = "gone" as "recorded" | "moved" | "stale" | "gone";
   try {
     await updateSchemeWith(schemeId, (cur) => {
       if (cur.status !== "report" || (cur.reportIssues?.length ?? 0) !== n) { outcome = cur.status !== "report" ? "moved" : "stale"; return {}; }
-      const again = schemeTransferState(cur, corr);
-      if (correctionProblem(cur.reportIssues, again) || again.reportSha !== issue.reportSha || again.check?.id !== issue.transferCheckId || uxptInForce(cur.uxptChecks, again.reportSha, again.importId)?.id !== ux!.id) { outcome = "stale"; return {}; }
+      if (hand) {
+        if (!handReport(cur) || cur.uploads?.report?.path !== s.uploads?.report?.path) { outcome = "stale"; return {}; }
+      } else {
+        const again = schemeTransferState(cur, corr);
+        if (correctionProblem(cur.reportIssues, again) || again.reportSha !== issue.reportSha || again.check?.id !== issue.transferCheckId || uxptInForce(cur.uxptChecks, again.reportSha, again.importId)?.id !== ux!.id) { outcome = "stale"; return {}; }
+      }
       outcome = "recorded";
       return { reportIssues: [...(cur.reportIssues ?? []), issue] };
     });
@@ -6906,10 +6965,10 @@ export async function issueReportCorrectionAction(formData: FormData): Promise<v
   if (outcome !== "recorded") redirect(back(outcome === "moved" ? "ri=state" : outcome === "stale" ? "ri=stale" : "ri=failed"));
   await logActivity("report.corrected", {
     schemeId, subject: `edition:${edition.id}`,
-    summary: `Correction ${rLabel(nextR)} of the final report issued — PTS_Analysis ${version}; edition № ${edition.no}; the transfer check relied on: ${issue.transferCheckId}; u(x_pt): ${issue.uxpt?.answer} (${issue.uxpt?.id}); concerns ${codes.length ? codes.join(", ") : "all"}`,
-    after: { r: nextR, edition: edition.no, version, check: issue.transferCheckId, uxpt: issue.uxpt, codes, told: toTell.map((p) => p.code) },
+    summary: `Correction ${rLabel(nextR)} of ${isIlc(s) ? "the ILC comparison report" : "the final report"} issued — ${hand ? "uploaded by hand (an ILC — no module version)" : `PTS_Analysis ${version}; the transfer check relied on: ${issue.transferCheckId}; u(x_pt): ${issue.uxpt?.answer} (${issue.uxpt?.id})`}; edition № ${edition.no}; concerns ${codes.length ? codes.join(", ") : "all"}`,
+    after: { r: nextR, edition: edition.no, source: issue.source, sha: issue.reportSha, ilc: issue.ilc, version, check: issue.transferCheckId, uxpt: issue.uxpt, codes, told: toTell.map((p) => p.code) },
   });
-  for (const p of toTell) await notifyReportCorrected(labOf.get(p.code), schemeId, s.number, p.code, rLabel(nextR));
+  for (const p of toTell) await notifyReportCorrected(labOf.get(p.code), schemeId, s.number, p.code, rLabel(nextR), isIlc(s));
   revalidatePath(`/schemes/${schemeId}`, "layout");
   revalidatePath("/lab", "layout");
   redirect(back("ri=corrected"));

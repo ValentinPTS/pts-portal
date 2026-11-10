@@ -7,6 +7,8 @@
 
 import type { CheckState, TransferCheck } from "./transfer-check-model";
 import type { UxptAnswer } from "./uxpt-model";
+import { schemeMarkers } from "./scheme-number";
+import { lockInForce, type SubmissionLock } from "./submission-lock-model";
 
 export interface SoftwareRecord {
   /** releases from the change register (1.11): the one in force when the round began, every one since */
@@ -19,6 +21,8 @@ export interface SoftwareRecord {
   gateTexts: string;
   /** the module's versions: the report's first, then every other import's */
   analysisVersions: string[];
+  /** 7.9: the report issued — 2.0's, or uploaded by hand (an ILC: no module version) */
+  reportSource?: "2.0" | "uploaded";
 }
 
 export interface ReportIssue {
@@ -35,8 +39,14 @@ export interface ReportIssue {
   /** a correction: the codes it concerns — empty: all */
   codes: string[];
   analysisVersion: string; importId: string; reportSha: string; transferCheckId: string;
-  /** the u(x_pt) ≤ 0.3·σ_pt confirmation relied on (7.6) — absent on an R issued before 7.6 */
+  /** the u(x_pt) ≤ 0.3·σ_pt confirmation relied on (7.6) — absent on an R issued before 7.6, and on an
+   *  ILC's report uploaded by hand (7.9) */
   uxpt?: { id: string; answer: UxptAnswer };
+  /** where the report came from (7.9): 2.0's import; or, for an ILC only, a file uploaded by hand —
+   *  then no module version, no transfer check, no u(x_pt) confirmation */
+  source?: "2.0" | "uploaded";
+  /** the scheme's kind when it was issued — an ILC's comparison report (7.9 review) */
+  ilc?: boolean;
   software: SoftwareRecord;
 }
 
@@ -44,18 +54,65 @@ export interface ReportIssue {
 export interface ReportAccess { at: string; by: string; via: "paid" | "hand"; reason?: string; /** the R in force when it reached the participation — set in the lock (7.5 review) */ r?: number }
 
 export const rLabel = (r: number): string => `R${r}`;
+
+// ── 7.9: the ILC's report ─────────────────────────────────────────────────────
+/** An interlaboratory comparison (ISO/IEC 17025 §7.7.2 b) — outside the accreditation; not a PT. Read
+ *  through the scheme's markers: a scheme stored before 3.1 with an old ILC number («PTS 25/08-NA-1», А8)
+ *  is one too (review). */
+export const isIlc = (s: { kind?: string | null; number?: string; type?: string }): boolean =>
+  s.kind === "ILC" || (!s.kind && !!s.number && schemeMarkers({ number: s.number, type: s.type as never, kind: undefined }).kind === "ILC");
+/** What the report is called — a PT's final report, an ILC's comparison report (never mixed). */
+export function reportWords(s: { kind?: string | null }) {
+  return isIlc(s)
+    ? { the: { bg: "Докладът от междулабораторното сравнение", en: "The ILC comparison report" }, name: { bg: "Доклад от междулабораторното сравнение", en: "ILC comparison report" }, of: { bg: "на доклада от междулабораторното сравнение", en: "of the ILC comparison report" } }
+    : { the: { bg: "Окончателният доклад", en: "The final report" }, name: { bg: "Окончателен доклад", en: "Final report" }, of: { bg: "на окончателния доклад", en: "of the final report" } };
+}
+/** An ILC's report uploaded by hand is issued as it is — not 2.0's: the report in force is the
+ *  uploaded file (not the built one), no import behind it. A PT's never (7.4). */
+export const handReport = (s: { kind?: string | null; number?: string; type?: string; uploads?: { report?: { importId?: string } }; docActive?: Record<string, string> }): boolean =>
+  isIlc(s) && !!s.uploads?.report && !s.uploads.report.importId && s.docActive?.report !== "built";
+/** Uploaded after the approval (stage 16)? — then it is not the report that was approved (7.2's rule).
+ *  A file with no upload time is not trusted (review). */
+export const handAfterApproval = (s: { uploads?: { report?: { uploadedAt?: string } }; lifecycle?: { stages?: Record<string, { at: string } | undefined> } }): boolean => {
+  const up = Date.parse(s.uploads?.report?.uploadedAt ?? ""), ok = Date.parse(s.lifecycle?.stages?.["16"]?.at ?? "");
+  if (Number.isNaN(up)) return true;
+  return !Number.isNaN(ok) && up > ok;
+};
+/** Whether an ILC's hand-uploaded report may be issued (7.9 review): the report and its approval of
+ *  THIS processing — uploaded and approved after the lock in force (a reopening and a new lock make an
+ *  earlier approval another round's), no 6.5 correction after the upload, uploaded before the approval
+ *  (16), and not one of 2.0's own files (those go the import path — the check and u(x_pt)). */
+export function handProblem(s: {
+  submissionLocks?: readonly SubmissionLock[]; uploads?: { report?: { uploadedAt?: string; sha256?: string } };
+  lifecycle?: { stages?: Record<string, { at: string } | undefined> };
+  analysisImports?: readonly { files: readonly { sha256: string }[] }[];
+}, lastCorrectionAt: string | null, fileSha?: string): IssueProblem | null {
+  const lock = lockInForce(s.submissionLocks as SubmissionLock[] | undefined);
+  if (!lock) return "hand-relocked";
+  const lockAt = Date.parse(lock.at), up = Date.parse(s.uploads?.report?.uploadedAt ?? ""), ok = Date.parse(s.lifecycle?.stages?.["16"]?.at ?? "");
+  if (Number.isNaN(up) || up <= lockAt || (!Number.isNaN(ok) && ok <= lockAt)) return "hand-relocked";
+  if (lastCorrectionAt && up <= Date.parse(lastCorrectionAt)) return "hand-corrected";
+  if (handAfterApproval(s)) return "after-approval";
+  const sha = fileSha ?? s.uploads?.report?.sha256;
+  if (sha && (s.analysisImports ?? []).some((i) => i.files.some((f) => f.sha256 === sha))) return "is-2.0";
+  return null;
+}
 export const issueInForce = (issues: readonly ReportIssue[] | undefined): ReportIssue | null => issues?.at(-1) ?? null;
 
 export const MIN_WORDS = 5;
 const clean = (v: unknown, max = 1000) => (typeof v === "string" ? v : "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim().slice(0, max);
 const chars = (s: string) => [...s].length;
 
-export type IssueProblem = "not-2.0" | "no-export" | "no-check" | "check-differs" | "check-old" | "not-issued" | "same-file" | "reason" | "scope" | "too-long" | "codes" | "state" | "failed" | "unread" | "stale" | "code" | "already" | "kept" | "no-uxpt" | "uxpt-answer" | "uxpt-note";
+export type IssueProblem = "not-2.0" | "no-export" | "no-check" | "check-differs" | "check-old" | "not-issued" | "same-file" | "reason" | "scope" | "too-long" | "codes" | "state" | "failed" | "unread" | "stale" | "code" | "already" | "kept" | "no-uxpt" | "uxpt-answer" | "uxpt-note" | "after-approval" | "hand-relocked" | "hand-corrected" | "is-2.0";
 export const ISSUE_PROBLEM_TEXT: Record<IssueProblem, { bg: string; en: string }> = {
   "not-2.0": { bg: "Докладът в сила не е от PTS_Analysis 2.0 (качен е на ръка или е избран вграденият) — издава се само докладът на 2.0, с версията му (Реш. 68). Внесете го (7.2).", en: "The report in force is not from PTS_Analysis 2.0 (uploaded by hand, or the built one chosen) — only 2.0's report is issued, with its version (Реш. 68). Import it (7.2)." },
   "no-export": { bg: "Няма изнасяне към 2.0 след заключването — изнесете, внесете доклада на 2.0 и запишете проверката на преноса.", en: "There is no export to 2.0 after the lock — export, import 2.0's report and record the transfer check." },
   "too-long": { bg: "Причината и какво е поправено — до 400 знака всяко (те влизат в записа на редакцията).", en: "The reason and what is corrected — 400 characters each at most (they go into the edition's record)." },
   unread: { bg: "Не можа да се прочете — презаредете.", en: "Could not be read — reload." },
+  "hand-relocked": { bg: "Докладът (или одобрението му) е отпреди заключването в сила — качете доклада на тази обработка и я одобрете (етапи 14–16).", en: "The report (or its approval) predates the lock in force — upload this processing's report and approve it (stages 14–16)." },
+  "hand-corrected": { bg: "След качването на доклада е записана корекция (6.5) — качете доклада отново, по стойностите в сила.", en: "A correction (6.5) was recorded after the report was uploaded — upload the report again, on the values in force." },
+  "is-2.0": { bg: "Това е файл от внасяне от PTS_Analysis 2.0 — издава се по пътя на 2.0 (проверка на преноса и u(x_pt)), с версията си.", en: "This is a file from a PTS_Analysis 2.0 import — it is issued by 2.0's path (the transfer check and u(x_pt)), with its version." },
+  "after-approval": { bg: "Докладът е качен след одобрението (етап 16) — не е одобреният. Оттеглете одобрението и одобрете отново.", en: "The report was uploaded after the approval (stage 16) — it is not the one approved. Withdraw the approval and approve again." },
   "no-uxpt": { bg: "Няма потвърждение за u(x_pt) ≤ 0,3·σ_pt за този доклад — запишете го по доклада на 2.0 (7.6).", en: "There is no u(x_pt) ≤ 0.3·σ_pt confirmation for this report — record it from 2.0's report (7.6)." },
   "uxpt-answer": { bg: "Изберете какво показва докладът на 2.0 за u(x_pt).", en: "Choose what 2.0's report shows for u(x_pt)." },
   "uxpt-note": { bg: "Когато не е изпълнено за всички или не се прилага — напишете за кои характеристики или защо (поне 5 знака).", en: "When not met for all, or not applicable — write which characteristics, or why (5 characters at least)." },
@@ -194,11 +251,14 @@ export function softwareRecord(input: {
   return { releases, configVersion: cv, templates, gateTexts: input.gateTexts, analysisVersions };
 }
 
-/** The edition's reason for an R — identified as such; a correction as amended (§7.4.3). */
-export function issueReason(r: number, version: string, kind: "issue" | "correction", reason: string, scope: string): string {
+/** The edition's reason for an R — identified as such; a correction as amended (§7.4.3). An ILC's
+ *  report is named as one (7.9); one uploaded by hand says so, with no module version. */
+export function issueReason(r: number, version: string, kind: "issue" | "correction", reason: string, scope: string, ilc = false): string {
+  const words = reportWords({ kind: ilc ? "ILC" : "PTS" });
+  const v = version ? `PTS_Analysis ${version}` : "качен на ръка — без версия на модул";
   return kind === "issue"
-    ? `Окончателният доклад ${rLabel(r)} — издаден с акта «Издай окончателния доклад» (част 7.4); PTS_Analysis ${version}.`
-    : `Поправка ${rLabel(r)} на окончателния доклад (част 7.4; ISO/IEC 17043 §7.4.3) — ${reason}. Поправено: ${scope}. PTS_Analysis ${version}.`;
+    ? `${words.the.bg} ${rLabel(r)} — издаден с акта ${ilc ? "за издаване (част 7.4, 7.9)" : "«Издай окончателния доклад» (част 7.4)"}; ${v}.`
+    : `Поправка ${rLabel(r)} ${words.of.bg} (${ilc ? "част 7.4, 7.9" : "част 7.4; ISO/IEC 17043 §7.4.3"}) — ${reason}. Поправено: ${scope}. ${v}.`;
 }
 
 /** What a participation's own pages say of the report: not yet; issued and reaching it (R in force,
@@ -208,6 +268,6 @@ export function labReport(s: { status: string; uploads?: { report?: unknown }; r
   if (s.status !== "report" && s.status !== "closed") return { state: "none", label: "" };
   const r = issueInForce(s.reportIssues);
   // a participation that left the round never awaits it — nothing can open it for it (7.5 review)
-  if (r) return reaches(s.reportAccess, code) ? { state: "issued", label: `${rLabel(r.r)} · PTS_Analysis ${r.analysisVersion}` } : { state: inFinal ? "awaiting" : "none", label: "" };
+  if (r) return reaches(s.reportAccess, code) ? { state: "issued", label: r.analysisVersion ? `${rLabel(r.r)} · PTS_Analysis ${r.analysisVersion}` : rLabel(r.r) } : { state: inFinal ? "awaiting" : "none", label: "" };
   return s.uploads?.report ? { state: "issued", label: "" } : { state: "none", label: "" };
 }

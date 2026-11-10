@@ -436,6 +436,8 @@ export interface UploadedDoc {
   /** the report from PTS_Analysis 2.0 (7.2): the module's version it was produced by (Реш. 68) and the import */
   analysisVersion?: string;
   importId?: string;
+  /** the report's file, by its hash (7.9: an ILC's report uploaded by hand is compared by it) */
+  sha256?: string;
 }
 
 export interface TeamMember {
