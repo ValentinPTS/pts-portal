@@ -6,6 +6,7 @@
 // the template editions, the 2.0 versions.
 
 import type { CheckState, TransferCheck } from "./transfer-check-model";
+import type { UxptAnswer } from "./uxpt-model";
 
 export interface SoftwareRecord {
   /** releases from the change register (1.11): the one in force when the round began, every one since */
@@ -34,6 +35,8 @@ export interface ReportIssue {
   /** a correction: the codes it concerns — empty: all */
   codes: string[];
   analysisVersion: string; importId: string; reportSha: string; transferCheckId: string;
+  /** the u(x_pt) ≤ 0.3·σ_pt confirmation relied on (7.6) — absent on an R issued before 7.6 */
+  uxpt?: { id: string; answer: UxptAnswer };
   software: SoftwareRecord;
 }
 
@@ -47,12 +50,15 @@ export const MIN_WORDS = 5;
 const clean = (v: unknown, max = 1000) => (typeof v === "string" ? v : "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim().slice(0, max);
 const chars = (s: string) => [...s].length;
 
-export type IssueProblem = "not-2.0" | "no-export" | "no-check" | "check-differs" | "check-old" | "not-issued" | "same-file" | "reason" | "scope" | "too-long" | "codes" | "state" | "failed" | "unread" | "stale" | "code" | "already" | "kept";
+export type IssueProblem = "not-2.0" | "no-export" | "no-check" | "check-differs" | "check-old" | "not-issued" | "same-file" | "reason" | "scope" | "too-long" | "codes" | "state" | "failed" | "unread" | "stale" | "code" | "already" | "kept" | "no-uxpt" | "uxpt-answer" | "uxpt-note";
 export const ISSUE_PROBLEM_TEXT: Record<IssueProblem, { bg: string; en: string }> = {
   "not-2.0": { bg: "Докладът в сила не е от PTS_Analysis 2.0 (качен е на ръка или е избран вграденият) — издава се само докладът на 2.0, с версията му (Реш. 68). Внесете го (7.2).", en: "The report in force is not from PTS_Analysis 2.0 (uploaded by hand, or the built one chosen) — only 2.0's report is issued, with its version (Реш. 68). Import it (7.2)." },
   "no-export": { bg: "Няма изнасяне към 2.0 след заключването — изнесете, внесете доклада на 2.0 и запишете проверката на преноса.", en: "There is no export to 2.0 after the lock — export, import 2.0's report and record the transfer check." },
   "too-long": { bg: "Причината и какво е поправено — до 400 знака всяко (те влизат в записа на редакцията).", en: "The reason and what is corrected — 400 characters each at most (they go into the edition's record)." },
   unread: { bg: "Не можа да се прочете — презаредете.", en: "Could not be read — reload." },
+  "no-uxpt": { bg: "Няма потвърждение за u(x_pt) ≤ 0,3·σ_pt за този доклад — запишете го по доклада на 2.0 (7.6).", en: "There is no u(x_pt) ≤ 0.3·σ_pt confirmation for this report — record it from 2.0's report (7.6)." },
+  "uxpt-answer": { bg: "Изберете какво показва докладът на 2.0 за u(x_pt).", en: "Choose what 2.0's report shows for u(x_pt)." },
+  "uxpt-note": { bg: "Когато не е изпълнено за всички или не се прилага — напишете за кои характеристики или защо (поне 5 знака).", en: "When not met for all, or not applicable — write which characteristics, or why (5 characters at least)." },
   kept: { bg: "Файлът на издадения доклад остава — поправка се внася от 2.0 и се издава като R2…", en: "The issued report's file stays — a correction is imported from 2.0 and issued as R2…" },
   "no-check": { bg: "Няма проверка на преноса за това изнасяне и този доклад — запишете я в «Запис на обработката» (7.3).", en: "There is no transfer check for this export and this report — record it under «The processing record» (7.3)." },
   "check-differs": { bg: "Проверката на преноса в сила казва, че докладът на 2.0 НЕ изброява същите кодове и характеристики — докладът не се издава.", en: "The transfer check in force says 2.0's report does NOT list the same codes and characteristics — the report is not issued." },

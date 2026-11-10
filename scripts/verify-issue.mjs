@@ -44,6 +44,14 @@ const checkSame = async (S) => {
   await page.locator("[data-transfer-form] [data-transfer-submit]").click();
   return waitFor(async () => /tc=ok/.test(page.url()), 30);
 };
+const confirmUxpt = async (S, answer = "met", note = "") => {
+  await go(`/schemes/${S}#report-issue`);
+  const f = page.locator("[data-uxpt-form]");
+  await f.locator(`input[name="answer"][value="${answer}"]`).check();
+  if (note) await f.locator('input[name="note"]').fill(note);
+  await f.locator("[data-uxpt-submit]").click();
+  return waitFor(async () => /[?&]ri=uxpt(?:-[a-z]+)?(?:[&#]|$)/.test(page.url()), 30);
+};
 const markPaid = async (S, code) => {
   await go(`/schemes/${S}/participants/${encodeURIComponent(code)}`);
   const box = page.locator("label", { hasText: /Платена|Paid/ }).locator('input[type="checkbox"]');
@@ -107,7 +115,17 @@ try {
   t("«Издай окончателния доклад» refused without the transfer check — said", await waitFor(async () => /проверка на преноса|transfer check/i.test(await textOf(page.locator("[data-lifecycle-error]")))) && (await state()) !== "Докладът е издаден");
   t("the transfer check «the same» recorded", await checkSame(S));
   await go(`/schemes/${S}#report-issue`);
-  t("…now ready", (await page.locator('[data-issue-ready="yes"]').count()) === 1);
+  t("7.6 — still not ready: no u(x_pt) ≤ 0,3·σ_pt confirmation for this report", (await page.locator('[data-ready-uxpt="none"]').count()) === 1 && (await page.locator('[data-issue-ready="no"]').count()) === 1);
+  await go(`/schemes/${S}#stages`);
+  answers.push(true, "");
+  await page.locator('[data-act="report"]').click();
+  t("…the act refused without it — said", await waitFor(async () => /u\(x_pt\)/.test(await textOf(page.locator("[data-lifecycle-error]")))) && (await state()) !== "Докладът е издаден");
+  await confirmUxpt(S, "exceeded", "");
+  t("…«not for all» without which characteristics — refused, said", /ri=uxpt-note/.test(page.url()) && /за кои характеристики|which characteristics/.test(await textOf(page.locator("[data-issue-answer]"))));
+  t("…a testing scheme is never offered «not applicable» (review)", (await page.locator('[data-uxpt-form] input[name="answer"][value="na"]').count()) === 0 && (await page.locator('[data-uxpt-form] input[name="answer"]').count()) === 2);
+  t("…«met for every characteristic» recorded", await confirmUxpt(S, "met") && /[?&]ri=uxpt(?:[&#]|$)/.test(page.url()));
+  await go(`/schemes/${S}#report-issue`);
+  t("…now ready", (await page.locator('[data-issue-ready="yes"]').count()) === 1 && (await page.locator('[data-ready-uxpt="met"]').count()) === 1);
   await go(`/schemes/${S}#stages`);
   answers.push(true, "");
   await page.locator('[data-act="report"]').click();
@@ -116,6 +134,7 @@ try {
   // ── R1 ──
   await go(`/schemes/${S}#report-issue`);
   const sw = (await page.locator('[data-issue="R1"] [data-software-record]').textContent()) ?? "";
+  t("7.6 — R1 records the confirmation it relied on; no confirmation form for R1's own file once issued (review)", (await page.locator('[data-issue="R1"] [data-issue-uxpt="met"]').count()) === 1 && (await page.locator("[data-uxpt-form]").count()) === 0);
   t("R1 on the card — with PTS_Analysis 2.0.3 and the scheme's software record (releases, configuration, templates, 2.0)", (await page.locator('[data-issue="R1"]').count()) === 1 && /2\.0\.3/.test(await textOf(page.locator('[data-issue="R1"] [data-issue-version]'))) && /PTS_Analysis: 2\.0\.3/.test(sw) && /Издания на портала|Portal releases/.test(sw) && /Версия на конфигурацията|Configuration version/.test(sw) && /Редакции на шаблоните|Template editions/.test(sw), sw);
   const allCodes = await page.locator("[data-recipient]").evaluateAll((els) => els.map((e) => e.getAttribute("data-recipient")));
   const codeL = allCodes.find((c) => c !== codeA && c !== codeB);
@@ -172,6 +191,9 @@ try {
   t("…no correction before its transfer check", (await page.locator("[data-correction-form]").count()) === 0 && (await page.locator('[data-correction-waiting="no-check"]').count()) === 1);
   await checkSame(S);
   await go(`/schemes/${S}#report-issue`);
+  t("7.6 — …nor before its own u(x_pt) confirmation — the waiting line says so; the corrected file and «no confirmation yet» shown", (await page.locator("[data-correction-form]").count()) === 0 && (await page.locator('[data-correction-waiting="no-uxpt"]').count()) === 1 && /u\(x_pt\)/.test(await textOf(page.locator('[data-correction-waiting="no-uxpt"]'))) && /2\.0\.4/.test(await textOf(page.locator("[data-uxpt-corrected]"))) && (await page.locator("[data-uxpt-form]").count()) === 1);
+  await confirmUxpt(S, "exceeded", "Характеристика плътност — u(x_pt) > 0,3·σ_pt");
+  await go(`/schemes/${S}#report-issue`);
   const cf = page.locator("[data-correction-form]");
   await cf.locator('input[name="reason"]').fill("а");
   await cf.locator('input[name="scope"]').fill("Таблица 3");
@@ -185,6 +207,7 @@ try {
   const corrected = await waitFor(async () => /ri=corrected/.test(page.url()) && (await page.locator('[data-issue="R2"]').count()) === 1);
   const r2 = await textOf(page.locator('[data-issue="R2"]'));
   t("R2 issued — with its reason, what changed, the code it concerns, 2.0.4", corrected && /Грешна единица/.test(r2) && /kg\/m³ вместо g\/cm³/.test(r2) && r2.includes(codeB) && /2\.0\.4/.test(await textOf(page.locator('[data-issue="R2"] [data-issue-version]'))), r2);
+  t("7.6 — R2 records its own confirmation: «not for all», with its words on PTS's card", (await page.locator('[data-issue="R2"] [data-issue-uxpt="exceeded"]').count()) === 1 && /Характеристика плътност/.test(await textOf(page.locator('[data-issue="R2"] [data-issue-uxpt]'))));
   t("who received which: every reached one received R2; L (outside R2's scope) told R1 only", (await page.locator(`[data-recipient="${codeB}"] [data-recipient-received="R1,R2"]`).count()) === 1 && (await page.locator(`[data-recipient="${codeL}"] [data-recipient-received="R1,R2"]`).count()) === 1 && (await page.locator(`[data-recipient="${codeL}"] [data-recipient-told="R1"]`).count()) === 1);
   await go("/dev/persona?role=lab");
   t("the laboratory now gets R2 — the corrected file", Buffer.from(await (await page.request.get(`${BASE}/lab/doc/${S}/report`)).body()).equals(BG2));

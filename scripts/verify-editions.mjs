@@ -55,6 +55,12 @@ const importReport = async (version, buf) => {
   await f.locator("[data-import-submit]").click();
   return waitFor(async () => /imp=ok/.test(page.url()), 30);
 };
+const confirmUxpt = async () => {
+  await go(`/schemes/${S}#report-issue`);
+  await page.locator('[data-uxpt-form] input[name="answer"][value="met"]').check();
+  await page.locator("[data-uxpt-form] [data-uxpt-submit]").click();
+  return waitFor(async () => /[?&]ri=uxpt(?:[&#]|$)/.test(page.url()), 30);
+};
 const checkSame = async () => {
   await go(`/schemes/${S}#processing-record`);
   await page.locator('[data-transfer-form] input[value="yes"]').check();
@@ -71,6 +77,7 @@ const toReport = async (report) => {
       await page.request.get(`${BASE}/schemes/${S}/export/analysis`);
       await importReport("2.0.3", report);
       await checkSame();
+      await confirmUxpt(); // 7.6
       continue;
     }
     await go(`/schemes/${S}#stages`);
@@ -224,6 +231,7 @@ try {
   t("…«Редакции»: edition 1 with the participants, changed since", (await page.locator('[data-edition="report:1"] [data-held]').count()) === 1 && (await page.locator('[data-edition-doc="report"] [data-changed-since="1"]').count()) === 1);
   t("…«Редакции» no longer offers the issued report — a correction R2 issues it", (await form.locator('select option[value="report"]').count()) === 0 && (await page.locator('[data-edition="report:2"]').count()) === 0);
   await checkSame();
+  await confirmUxpt(); // 7.6: the corrected report's own
   await go(`/schemes/${S}#report-issue`);
   await page.locator('[data-correction-form] input[name="reason"]').fill("Поправена грешка в таблица 3");
   await page.locator('[data-correction-form] input[name="scope"]').fill("Таблица 3 — единицата");

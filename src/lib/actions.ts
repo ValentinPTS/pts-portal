@@ -90,6 +90,7 @@ import { IMPORT_KINDS, checkImport, servedName, type ImportKind, type ImportedFi
 import { readCheck, schemeTransferState, reportInForce, type TransferCheck } from "./transfer-check-model";
 import { transferProblem, correctionProblem, readCorrection as readReportCorrection, readHandOpen, accessAtIssue, reaches, inScope, issueInForce, issueReason, rLabel, softwareRecord, ISSUE_PROBLEM_TEXT, type IssueProblem, type ReportIssue, type ReportAccess } from "./report-issue-model";
 import { GATE_TEXTS_VERSION } from "./gate-texts";
+import { readUxpt, uxptInForce, type UxptCheck } from "./uxpt-model";
 import { activeUnlock, submissionOpen, readConfirmations, submissionPayload, readUnlock, SUBMIT_PROBLEM_TEXT, type ResultUnlock } from "./submission-model";
 import { testPeriodLimits, calibrationWindows } from "./results-limits";
 import { drawCodes, drawObjects, toCode, codingProblem, objectsGiven, unfinished, sampleCodeOf, isProvisional, CODING_PROBLEM_TEXT, type CodingProblem, type CodingRecord } from "./coding-model";
@@ -4197,11 +4198,15 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
   // 7.4: the report issued is 2.0's file, its transfer check in force «the same» (7.2, 7.3; Реш. 68)
   let issueCorr: { at: string }[] = [];
   let issueNow: ReturnType<typeof schemeTransferState> | null = null;
+  let issueUx: UxptCheck | null = null;
   if (act === "report") {
     try { issueCorr = await listCorrections(schemeId); } catch { return { error: NOT_REACHED }; }
     issueNow = schemeTransferState(scheme, issueCorr);
     const p = transferProblem(issueNow, !!reportInForce({ report: scheme.uploads?.report, active: scheme.docActive?.report ?? null, imports: scheme.analysisImports }));
     if (p) return { error: ISSUE_REFUSAL[p] };
+    // 7.6: the scheme manager's confirmation from this report that u(x_pt) ≤ 0.3·σ_pt (К16)
+    issueUx = uxptInForce(scheme.uxptChecks, issueNow.reportSha, issueNow.importId);
+    if (!issueUx) return { error: ISSUE_REFUSAL["no-uxpt"] };
   }
   const by = await actorNow();
 
@@ -4293,7 +4298,7 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
       changes, roundStart: scheme.lifecycle?.acts?.find((a) => a.act === "open")?.at ?? null, at: new Date().toISOString(),
       configVersions: scheme.characteristicVersions, editions, gateTexts: gateB() ? GATE_TEXTS_VERSION : "—", reportVersion: version, imports: scheme.analysisImports,
     });
-    r1 = { edition, issue: { id: randomUUID(), r: nextR, kind: "issue", editionId: edition.id, editionNo: edition.no, reason: note, scope: "", codes: [], analysisVersion: version, importId: issueNow!.importId!, reportSha: issueNow!.reportSha!, transferCheckId: issueNow!.check!.id, software } };
+    r1 = { edition, issue: { id: randomUUID(), r: nextR, kind: "issue", editionId: edition.id, editionNo: edition.no, reason: note, scope: "", codes: [], analysisVersion: version, importId: issueNow!.importId!, reportSha: issueNow!.reportSha!, transferCheckId: issueNow!.check!.id, uxpt: { id: issueUx!.id, answer: issueUx!.answer }, software } };
   }
 
   // the corrections read again just before the lock — one recorded meanwhile takes the check out of force (review)
@@ -4315,7 +4320,7 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
     if (act === "report" && r1) {
       const again = schemeTransferState(cur, issueCorr);
       const p = transferProblem(again);
-      if (p || again.reportSha !== r1.issue.reportSha || again.check?.id !== r1.issue.transferCheckId) { issueRefused = p ?? "stale"; return {}; }
+      if (p || again.reportSha !== r1.issue.reportSha || again.check?.id !== r1.issue.transferCheckId || uxptInForce(cur.uxptChecks, again.reportSha, again.importId)?.id !== r1.issue.uxpt?.id) { issueRefused = p ?? "stale"; return {}; }
       // the final list's participations (5.2) — one dropped at the second announcement gets nothing more
       const access = accessAtIssue(cur.paidAt, parts.filter((x) => inFinalRound(cur, x)).map((x) => x.code), cur.reportAccess, at, by, r1.issue.r);
       const all: Record<string, ReportAccess> = { ...(cur.reportAccess ?? {}), ...access };
@@ -4368,8 +4373,8 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
   if (act === "report" && r1) {
     await logActivity("report.issued", {
       schemeId, subject: `edition:${r1.edition.id}`,
-      summary: `Final report ${rLabel(r1.issue.r)} issued — PTS_Analysis ${r1.issue.analysisVersion}; edition № ${r1.edition.no}; the transfer check relied on: ${r1.issue.transferCheckId}; it reaches ${parts.filter((p) => reachedNow.has(p.code)).length} of ${parts.filter((p) => inFinalRound(scheme, p)).length} participations now (marked paid — D7)`,
-      after: { r: r1.issue.r, edition: r1.edition.no, version: r1.issue.analysisVersion, check: r1.issue.transferCheckId, reached: parts.filter((p) => reachedNow.has(p.code)).map((p) => p.code) },
+      summary: `Final report ${rLabel(r1.issue.r)} issued — PTS_Analysis ${r1.issue.analysisVersion}; edition № ${r1.edition.no}; the transfer check relied on: ${r1.issue.transferCheckId}; u(x_pt): ${r1.issue.uxpt?.answer} (${r1.issue.uxpt?.id}); it reaches ${parts.filter((p) => reachedNow.has(p.code)).length} of ${parts.filter((p) => inFinalRound(scheme, p)).length} participations now (marked paid — D7)`,
+      after: { r: r1.issue.r, edition: r1.edition.no, version: r1.issue.analysisVersion, check: r1.issue.transferCheckId, uxpt: r1.issue.uxpt, reached: parts.filter((p) => reachedNow.has(p.code)).map((p) => p.code) },
     });
   }
   // one notice per participation, by its code (never a name) — the report only to those it reaches (D7)
@@ -6588,11 +6593,63 @@ export async function recordTransferCheckAction(formData: FormData): Promise<voi
   const logged = await logActivity("results.transfer_checked", { schemeId, subject: `transfer-check:${entry.id}`, summary: `Transfer check — 2.0's report ${value.same ? "lists the same codes and characteristics as" : "does NOT list the same codes and characteristics as"} the export`, after: { same: value.same, exportId, importId, reportSha } });
   if (!logged) {
     // a check with no journal line is not one the issue act may rely on — taken back (review)
-    try { await updateSchemeWith(schemeId, (cur) => ({ transferChecks: (cur.transferChecks ?? []).filter((x) => x.id !== entry.id) })); } catch (e) { console.error("[transfer check] an unjournalled check could not be taken back:", (e as Error)?.message ?? e); }
+    try {
+      await updateSchemeWith(schemeId, (cur) => {
+        if ((cur.reportIssues ?? []).some((i) => i.transferCheckId === entry.id)) { console.error(`[transfer check] ${entry.id} has no journal line but an R relies on it — kept`); return {}; }
+        return { transferChecks: (cur.transferChecks ?? []).filter((x) => x.id !== entry.id) };
+      });
+    } catch (e) { console.error("[transfer check] an unjournalled check could not be taken back:", (e as Error)?.message ?? e); }
     redirect(back("tc=failed"));
   }
   revalidatePath(`/schemes/${schemeId}`, "layout");
   redirect(back("tc=ok"));
+}
+
+// ── The u(x_pt) ≤ 0.3·σ_pt confirmation (part 7.6; К16; D3) ──────────────────────────────────────
+// While 2.0 returns documents only, the scheme manager reads 2.0's report in force and records what it
+// shows: met for every characteristic; not for all — the report carries the sentence (which, in words);
+// or not applicable (the reason). Bound to that report by its hash; journalled without the words.
+export async function recordUxptAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? "");
+  await requireCap("scheme.edit", schemeId); // the scheme manager (PLAN 7.6)
+  const back = (q: string) => `/schemes/${encodeURIComponent(schemeId)}?${q}#report-issue`;
+  const twoOf = (sc: Scheme) => reportInForce({ report: sc.uploads?.report, active: sc.docActive?.report ?? null, imports: sc.analysisImports });
+  // in processing; once issued — only for a corrected file, never again for the R in force's own (review)
+  const open = (sc: Scheme) => sc.status === "processing" || (sc.status === "report" && !!sc.reportIssues?.length && twoOf(sc)?.sha !== sc.reportIssues.at(-1)!.reportSha);
+  const scheme = await getScheme(schemeId);
+  if (!scheme || !open(scheme)) redirect(back("ri=state"));
+  const two = twoOf(scheme!);
+  if (!two) redirect(back("ri=not-2.0"));
+  const reportSha = String(formData.get("reportSha") ?? "");
+  if (two!.sha !== reportSha) redirect(back("ri=stale"));
+  const read = readUxpt({ answer: formData.get("answer"), note: formData.get("note") }, scheme!.type);
+  if (!read.ok) redirect(back(`ri=${read.problem}`));
+  const value = read as Extract<typeof read, { ok: true }>;
+  const entry: UxptCheck = { id: randomUUID(), at: new Date().toISOString(), by: (await getRoleContext()).email ?? "", importId: two!.importId, reportSha, answer: value.answer, note: value.note };
+  let outcome = "gone" as "recorded" | "moved" | "stale" | "gone";
+  try {
+    await updateSchemeWith(schemeId, (cur) => {
+      if (!open(cur)) { outcome = "moved"; return {}; }
+      if (twoOf(cur)?.sha !== reportSha) { outcome = "stale"; return {}; }
+      outcome = "recorded";
+      return { uxptChecks: [...(cur.uxptChecks ?? []), entry] };
+    });
+  } catch { outcome = "gone"; }
+  if (outcome !== "recorded") redirect(back(outcome === "moved" ? "ri=state" : outcome === "stale" ? "ri=stale" : "ri=failed"));
+  const logged = await logActivity("report.uxpt_confirmed", { schemeId, subject: `uxpt-check:${entry.id}`, summary: `u(x_pt) ≤ 0.3·σ_pt from 2.0's report: ${value.answer === "met" ? "met for every characteristic" : value.answer === "exceeded" ? "NOT for all — the report carries the sentence" : "not applicable"}`, after: { answer: value.answer, reportSha } });
+  if (!logged) {
+    // a confirmation with no journal line is not one the issue act may rely on — taken back, unless an
+    // R already relies on it (then it stays, said loudly: an R never points at nothing — review)
+    try {
+      await updateSchemeWith(schemeId, (cur) => {
+        if ((cur.reportIssues ?? []).some((i) => i.uxpt?.id === entry.id)) { console.error(`[uxpt] confirmation ${entry.id} has no journal line but an R relies on it — kept`); return {}; }
+        return { uxptChecks: (cur.uxptChecks ?? []).filter((x) => x.id !== entry.id) };
+      });
+    } catch (e) { console.error("[uxpt] an unjournalled confirmation could not be taken back:", (e as Error)?.message ?? e); }
+    redirect(back("ri=failed"));
+  }
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  redirect(back("ri=uxpt"));
 }
 
 // ── The report reaches a participation by hand (part 7.4; D7) ─────────────────────────────────
@@ -6659,6 +6716,9 @@ export async function issueReportCorrectionAction(formData: FormData): Promise<v
   const now = schemeTransferState(s, corr);
   const problem = correctionProblem(s.reportIssues, now, !!reportInForce({ report: s.uploads?.report, active: s.docActive?.report ?? null, imports: s.analysisImports }));
   if (problem) redirect(back(`ri=${problem}`));
+  // 7.6: its own u(x_pt) confirmation, from the corrected report
+  const ux = uxptInForce(s.uxptChecks, now.reportSha, now.importId);
+  if (!ux) redirect(back("ri=no-uxpt"));
   let frozen: Frozen | null = null, latest: DocEdition | null = null;
   let changes: Awaited<ReturnType<typeof listReleases>> = [], editions: DocEdition[] = [];
   try { [frozen, latest, changes, editions] = await Promise.all([freezeNow(s, "report"), latestEdition(schemeId, "report"), listReleases(), listEditions(schemeId)]); } catch { redirect(back("ri=failed")); }
@@ -6685,7 +6745,7 @@ export async function issueReportCorrectionAction(formData: FormData): Promise<v
   const at = new Date().toISOString();
   const issue: ReportIssue = {
     id: randomUUID(), r: nextR, kind: "correction", editionId: edition.id, editionNo: edition.no, at, by, day: sofiaToday(schemeNowMs(s)),
-    reason, scope, codes, analysisVersion: version, importId: now.importId!, reportSha: now.reportSha!, transferCheckId: now.check!.id,
+    reason, scope, codes, analysisVersion: version, importId: now.importId!, reportSha: now.reportSha!, transferCheckId: now.check!.id, uxpt: { id: ux!.id, answer: ux!.answer },
     software: softwareRecord({ changes, roundStart: s.lifecycle?.acts?.find((a) => a.act === "open")?.at ?? null, at, configVersions: s.characteristicVersions, editions, gateTexts: gateB() ? GATE_TEXTS_VERSION : "—", reportVersion: version, imports: s.analysisImports }),
   };
   let outcome = "gone" as "recorded" | "moved" | "stale" | "gone";
@@ -6693,7 +6753,7 @@ export async function issueReportCorrectionAction(formData: FormData): Promise<v
     await updateSchemeWith(schemeId, (cur) => {
       if (cur.status !== "report" || (cur.reportIssues?.length ?? 0) !== n) { outcome = cur.status !== "report" ? "moved" : "stale"; return {}; }
       const again = schemeTransferState(cur, corr);
-      if (correctionProblem(cur.reportIssues, again) || again.reportSha !== issue.reportSha || again.check?.id !== issue.transferCheckId) { outcome = "stale"; return {}; }
+      if (correctionProblem(cur.reportIssues, again) || again.reportSha !== issue.reportSha || again.check?.id !== issue.transferCheckId || uxptInForce(cur.uxptChecks, again.reportSha, again.importId)?.id !== ux!.id) { outcome = "stale"; return {}; }
       outcome = "recorded";
       return { reportIssues: [...(cur.reportIssues ?? []), issue] };
     });
@@ -6701,8 +6761,8 @@ export async function issueReportCorrectionAction(formData: FormData): Promise<v
   if (outcome !== "recorded") redirect(back(outcome === "moved" ? "ri=state" : outcome === "stale" ? "ri=stale" : "ri=failed"));
   await logActivity("report.corrected", {
     schemeId, subject: `edition:${edition.id}`,
-    summary: `Correction ${rLabel(nextR)} of the final report issued — PTS_Analysis ${version}; edition № ${edition.no}; the transfer check relied on: ${issue.transferCheckId}; concerns ${codes.length ? codes.join(", ") : "all"}`,
-    after: { r: nextR, edition: edition.no, version, check: issue.transferCheckId, codes, told: toTell.map((p) => p.code) },
+    summary: `Correction ${rLabel(nextR)} of the final report issued — PTS_Analysis ${version}; edition № ${edition.no}; the transfer check relied on: ${issue.transferCheckId}; u(x_pt): ${issue.uxpt?.answer} (${issue.uxpt?.id}); concerns ${codes.length ? codes.join(", ") : "all"}`,
+    after: { r: nextR, edition: edition.no, version, check: issue.transferCheckId, uxpt: issue.uxpt, codes, told: toTell.map((p) => p.code) },
   });
   for (const p of toTell) await notifyReportCorrected(labOf.get(p.code), schemeId, s.number, p.code, rLabel(nextR));
   revalidatePath(`/schemes/${schemeId}`, "layout");

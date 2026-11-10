@@ -1,4 +1,5 @@
-import { openReportByHandAction, issueReportCorrectionAction } from "@/lib/actions";
+import { openReportByHandAction, issueReportCorrectionAction, recordUxptAction } from "@/lib/actions";
+import { UXPT_ANSWER_TEXT, answersFor, type UxptCheck } from "@/lib/uxpt-model";
 import { ISSUE_PROBLEM_TEXT, rLabel, type IssueProblem, type RecipientRow, type ReportIssue } from "@/lib/report-issue-model";
 import { fmtMoment } from "@/lib/scheme-dates";
 import { getDoc } from "@/lib/documents";
@@ -9,7 +10,7 @@ import { getDoc } from "@/lib/documents";
 // correction with its reason and scope), the 2.0 version beside each, who received which, a hand
 // opening (D7), a correction, and the scheme's software record (Zadanie §6).
 
-export default function ReportIssueCard({ schemeId, lang, status, ready, issues, rows, canAct, correctable, answer, codesNotReached, showReasons }: {
+export default function ReportIssueCard({ schemeId, lang, status, ready, issues, rows, canAct, correctable, answer, codesNotReached, showReasons, uxpt }: {
   schemeId: string; lang: "bg" | "en"; status: string;
   /** before the act: the three conditions, each true or the reason it is not */
   ready: { approved: boolean; report: { version: string } | null; problem: IssueProblem | null };
@@ -22,9 +23,12 @@ export default function ReportIssueCard({ schemeId, lang, status, ready, issues,
   codesNotReached: readonly string[];
   /** a hand opening's reason may name the institution — shown only to who may see names (review) */
   showReasons: boolean;
+  /** 7.6: the u(x_pt) ≤ 0.3·σ_pt confirmation for the report in force; whether it may be recorded now */
+  uxpt: { reportSha: string | null; inForce: UxptCheck | null; canRecord: boolean; type: string; version: string; notes: Record<string, string> };
 }) {
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
-  const said = answer && answer !== "ok" && answer !== "opened" && answer !== "corrected" ? (ISSUE_PROBLEM_TEXT as Record<string, { bg: string; en: string }>)[answer] : null;
+  const okAnswer = answer === "ok" || answer === "opened" || answer === "corrected" || answer === "uxpt";
+  const said = answer && !okAnswer ? (ISSUE_PROBLEM_TEXT as Record<string, { bg: string; en: string }>)[answer] : null;
   const input = { border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px", fontSize: 13 } as const;
   const mark = (ok: boolean) => <b style={{ color: ok ? "var(--green-dark)" : "#8f2f2f" }}>{ok ? "✓" : "✗"}</b>;
   const last = issues.at(-1);
@@ -32,10 +36,11 @@ export default function ReportIssueCard({ schemeId, lang, status, ready, issues,
     <section id="report-issue" className="card p-4 mt-4" data-report-issue={issues.length}>
       <h2 className="font-bold" style={{ color: "var(--green-dark)", fontSize: 15, margin: 0 }}>{L("Издаване на доклада", "Issuing the report")}</h2>
       {status === "processing" && (
-        <ul className="text-sm" data-issue-ready={ready.approved && !ready.problem ? "yes" : "no"} style={{ margin: "6px 0 0", paddingLeft: 0, listStyle: "none", display: "grid", gap: 3 }}>
+        <ul className="text-sm" data-issue-ready={ready.approved && !ready.problem && uxpt.inForce ? "yes" : "no"} style={{ margin: "6px 0 0", paddingLeft: 0, listStyle: "none", display: "grid", gap: 3 }}>
           <li data-ready-approved={ready.approved ? "1" : "0"}>{mark(ready.approved)} {L("Обработено, прегледано и одобрено (етапи 14–16, Реш. 140)", "Processed, reviewed and approved (stages 14–16, Реш. 140)")}</li>
           <li data-ready-report={ready.report ? "1" : "0"}>{mark(!!ready.report)} {ready.report ? L(`Докладът в сила е от PTS_Analysis ${ready.report.version}`, `The report in force is from PTS_Analysis ${ready.report.version}`) : L("Докладът в сила не е от PTS_Analysis 2.0", "The report in force is not from PTS_Analysis 2.0")}</li>
           <li data-ready-check={ready.problem ? ready.problem : "same"}>{mark(!ready.problem)} {ready.problem ? L(ISSUE_PROBLEM_TEXT[ready.problem].bg, ISSUE_PROBLEM_TEXT[ready.problem].en) : L("Проверката на преноса в сила: «същите кодове и характеристики»", "The transfer check in force: «the same codes and characteristics»")}</li>
+          <li data-ready-uxpt={uxpt.inForce ? uxpt.inForce.answer : "none"}>{mark(!!uxpt.inForce)} {uxpt.inForce ? `${L(UXPT_ANSWER_TEXT[uxpt.inForce.answer].bg, UXPT_ANSWER_TEXT[uxpt.inForce.answer].en)}${uxpt.inForce.note ? ` — ${uxpt.inForce.note}` : ""}` : L(ISSUE_PROBLEM_TEXT["no-uxpt"].bg, ISSUE_PROBLEM_TEXT["no-uxpt"].en)}</li>
           <li style={{ color: "var(--muted)" }}>{L("Актът «Издай окончателния доклад» е в «Етапи» по-горе. Докладът достига участията, отбелязани като платени (D7); останалите — когато плащането се отбележи, или когато PTS го отвори с основание.", "The act «Issue the final report» is under «Stages» above. The report reaches the participations marked paid (D7); the others when the payment is marked, or when PTS opens it with a reason.")}</li>
         </ul>
       )}
@@ -44,6 +49,7 @@ export default function ReportIssueCard({ schemeId, lang, status, ready, issues,
           {issues.map((i) => (
             <li key={i.id} data-issue={rLabel(i.r)}>
               <b>{rLabel(i.r)}</b> · {L("ред.", "ed.")} № {i.editionNo} · {fmtMoment(i.at)} · {i.by} · <span data-issue-version>PTS_Analysis {i.analysisVersion}</span>
+              {i.uxpt && <div data-issue-uxpt={i.uxpt.answer} style={{ color: "var(--muted)" }}>{L(UXPT_ANSWER_TEXT[i.uxpt.answer].bg, UXPT_ANSWER_TEXT[i.uxpt.answer].en)}{uxpt.notes[i.uxpt.id] ? ` — ${uxpt.notes[i.uxpt.id]}` : ""}</div>}
               {i.kind === "correction" && <div style={{ color: "#7a5416" }}>{L("Поправка", "Correction")} — {i.reason}. {L("Поправено", "Corrected")}: {i.scope}{i.codes.length ? ` · ${L("засяга", "concerns")} ${i.codes.join(", ")}` : ` · ${L("засяга всички", "concerns all")}`}</div>}
               <details style={{ marginTop: 2 }} data-software-record>
                 <summary>{L("Софтуерен запис на схемата", "The scheme's software record")}</summary>
@@ -58,7 +64,20 @@ export default function ReportIssueCard({ schemeId, lang, status, ready, issues,
           ))}
         </ol>
       )}
-      {answer && <p role={answer === "ok" || answer === "opened" || answer === "corrected" ? "status" : "alert"} className="text-sm mt-2" data-issue-answer={answer} style={{ color: answer === "ok" || answer === "opened" || answer === "corrected" ? "var(--green-dark)" : "#8f2f2f" }}>{answer === "opened" ? L("Докладът е отворен за участието — уведомено е.", "The report is opened for the participation — it is told.") : answer === "corrected" ? L("Поправката е издадена — засегнатите участия са уведомени.", "The correction is issued — the participations concerned are told.") : said ? L(said.bg, said.en) : L("Не е записано.", "Not recorded.")}</p>}
+      {answer && <p role={okAnswer ? "status" : "alert"} className="text-sm mt-2" data-issue-answer={answer} style={{ color: okAnswer ? "var(--green-dark)" : "#8f2f2f" }}>{answer === "uxpt" ? L("Потвърждението за u(x_pt) е записано.", "The u(x_pt) confirmation is recorded.") : answer === "opened" ? L("Докладът е отворен за участието — уведомено е.", "The report is opened for the participation — it is told.") : answer === "corrected" ? L("Поправката е издадена — засегнатите участия са уведомени.", "The correction is issued — the participations concerned are told.") : said ? L(said.bg, said.en) : L("Не е записано.", "Not recorded.")}</p>}
+      {status === "report" && uxpt.canRecord && uxpt.reportSha && (
+        <p className="text-sm" data-uxpt-corrected style={{ margin: "10px 0 0" }}>{L(`Поправеният доклад в сила — PTS_Analysis ${uxpt.version}: `, `The corrected report in force — PTS_Analysis ${uxpt.version}: `)}{uxpt.inForce ? `${L(UXPT_ANSWER_TEXT[uxpt.inForce.answer].bg, UXPT_ANSWER_TEXT[uxpt.inForce.answer].en)}${uxpt.inForce.note ? ` — ${uxpt.inForce.note}` : ""}` : L("няма потвърждение за u(x_pt) още.", "no u(x_pt) confirmation yet.")}</p>
+      )}
+      {canAct && uxpt.canRecord && uxpt.reportSha && (
+        <form action={recordUxptAction} className="mt-3" data-uxpt-form style={{ display: "grid", gap: 6, maxWidth: 640 }}>
+          <input type="hidden" name="schemeId" value={schemeId} />
+          <input type="hidden" name="reportSha" value={uxpt.reportSha} />
+          <b className="text-sm">{L(`u(x_pt) ≤ 0,3·σ_pt — какво показва докладът на 2.0 в сила (PTS_Analysis ${uxpt.version}; К16)`, `u(x_pt) ≤ 0.3·σ_pt — what 2.0's report in force shows (PTS_Analysis ${uxpt.version}; К16)`)}</b>
+          {answersFor(uxpt.type).map((a) => <label key={a} className="text-sm" style={{ display: "flex", gap: 6 }}><input type="radio" name="answer" value={a} required />{L(UXPT_ANSWER_TEXT[a].bg, UXPT_ANSWER_TEXT[a].en)}</label>)}
+          <input name="note" maxLength={1000} placeholder={uxpt.type === "C" ? L("Защо не се прилага (задължително)", "Why it is not applicable (required)") : L("За кои характеристики не е изпълнено (задължително при «не за всички»)", "Which characteristics it is not met for (required for «not for all»)")} aria-label={L("Бележка", "Note")} style={input} />
+          <div><button type="submit" className="btn btn-sm" data-uxpt-submit>{L("Запиши потвърждението", "Record the confirmation")}</button> <span className="text-sm" style={{ color: "var(--muted)" }}>{L("Порталът не сравнява числа — 2.0 връща само документи (D3).", "The portal compares no numbers — 2.0 returns documents only (D3).")}</span></div>
+        </form>
+      )}
       {issues.length > 0 && rows && (
         <div className="mt-2" style={{ overflowX: "auto" }}>
           <h3 className="font-bold" style={{ fontSize: 14, margin: "8px 0 4px" }}>{L("Кой коя редакция получи", "Who received which edition")}</h3>
@@ -97,7 +116,7 @@ export default function ReportIssueCard({ schemeId, lang, status, ready, issues,
             <input name="codes" maxLength={4000} placeholder={L("Засегнати кодове (празно — всички)", "Codes concerned (empty — all)")} aria-label={L("Засегнати кодове", "Codes concerned")} style={input} />
             <div><button type="submit" className="btn btn-sm" data-correction-submit>{L("Издай поправката", "Issue the correction")}</button></div>
           </form>
-        ) : <p className="text-sm" style={{ color: "var(--muted)", margin: "8px 0 0" }} data-correction-waiting={correctable?.problem ?? "none"}>{L("Поправка (R2…): внесете поправения доклад от 2.0 и проверете преноса — тогава формата е тук.", "A correction (R2…): import the corrected report from 2.0 and check the transfer — the form is here then.")}</p>
+        ) : <p className="text-sm" style={{ color: "var(--muted)", margin: "8px 0 0" }} data-correction-waiting={correctable?.problem ?? "none"}>{correctable?.problem && correctable.problem !== "same-file" && correctable.problem !== "not-issued" ? `${L("Поправка (R2…): ", "A correction (R2…): ")}${L(ISSUE_PROBLEM_TEXT[correctable.problem].bg, ISSUE_PROBLEM_TEXT[correctable.problem].en)}` : L("Поправка (R2…): внесете поправения доклад от 2.0 и проверете преноса — тогава формата е тук.", "A correction (R2…): import the corrected report from 2.0 and check the transfer — the form is here then.")}</p>
       )}
     </section>
   );

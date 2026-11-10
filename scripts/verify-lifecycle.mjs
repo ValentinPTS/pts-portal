@@ -143,6 +143,11 @@ try {
   await page.locator('[data-transfer-form] input[value="yes"]').check();
   await page.locator("[data-transfer-form] [data-transfer-submit]").click();
   t("2.0's report imported and its transfer check «the same» recorded", await waitFor(async () => /tc=ok/.test(page.url()), 30));
+  // 7.6: the scheme manager's u(x_pt) ≤ 0,3·σ_pt confirmation from that report
+  await go(`/schemes/${S}#report-issue`);
+  await page.locator('[data-uxpt-form] input[name="answer"][value="met"]').check();
+  await page.locator("[data-uxpt-form] [data-uxpt-submit]").click();
+  t("…and the u(x_pt) confirmation", await waitFor(async () => /[?&]ri=uxpt(?:[&#]|$)/.test(page.url()), 30));
   await tick(S, 14);
   await tick(S, 15);
   await tick(S, 16);

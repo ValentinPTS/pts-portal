@@ -633,6 +633,7 @@ const DICT: Record<string, Entry> = {
   "act.report.issued": { bg: "Окончателният доклад е издаден (R1)", en: "Final report issued (R1)" },
   "act.report.corrected": { bg: "Издадена поправка на доклада (R2…)", en: "Report correction issued (R2…)" },
   "act.report.access": { bg: "Докладът е достъпен за участие", en: "Report opened for a participation" },
+  "act.report.uxpt_confirmed": { bg: "Проверка u(x_pt) ≤ 0,3·σ_pt — записана", en: "u(x_pt) ≤ 0.3·σ_pt check — recorded" },
   "act.scheme.reference_values": { bg: "Референтни стойности по точки", en: "Reference values per point" },
   "act.scheme.delivery_min_days": { bg: "Минимален брой работни дни (заместващ обект)", en: "Minimum working days (replacement object)" },
   "act.message.sent": { bg: "Изпратен имейл до лаборатория", en: "E-mail to a laboratory sent" },

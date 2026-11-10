@@ -759,6 +759,9 @@ export interface Scheme {
   /** How the issued report reached each participation (7.4; D7): its payment marked, or opened by
    *  hand with a reason — code → record. Once reached, it stays. */
   reportAccess?: Record<string, import("./report-issue-model").ReportAccess>;
+  /** The scheme manager's confirmations that 2.0's report shows u(x_pt) ≤ 0.3·σ_pt (7.6; К16) —
+   *  each bound to the report it was read from (its hash). Appended. */
+  uxptChecks?: import("./uxpt-model").UxptCheck[];
   // A calibration scheme's reference values per point (part 5.7, lib/reference-values-model)
   // — x_ref before and after, u_calibration, u_other, k, for 2.0's «Calibration» sheet (D3);
   // each save a version, appended. JSONB, no migration.

@@ -158,7 +158,7 @@ export const SCHEME_FIELDS = {
   // storage path and who brought it in identity/ (a file is often named after a laboratory, §4.2)
   analysisImports: "split",
   // what was sent to 2.0, and the transfer checks (7.3) — codes and PTS's own words, by PTS's people
-  analysisExports: "coded", transferChecks: "coded", reportIssues: "coded", reportAccess: "split",
+  analysisExports: "coded", transferChecks: "coded", reportIssues: "coded", reportAccess: "split", uxptChecks: "coded",
   // a release to one user names that user (an entity user's id is the same in every round):
   // its user kept only in identity/ (5.4 review)
   releases: "split", skin: "coded", name: "coded", folderId: "coded",

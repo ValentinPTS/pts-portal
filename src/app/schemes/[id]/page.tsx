@@ -45,6 +45,7 @@ import { analysisGaps } from "@/lib/analysis-export";
 import AnalysisImportPanel from "@/components/AnalysisImportPanel";
 import ProcessingRecordCard from "@/components/ProcessingRecordCard";
 import ReportIssueCard from "@/components/ReportIssueCard";
+import { uxptInForce, type UxptCheck } from "@/lib/uxpt-model";
 import { transferProblem, correctionProblem, recipients, type IssueProblem, type RecipientRow } from "@/lib/report-issue-model";
 import { activeUnlock, submissionOpen } from "@/lib/submission-model";
 import { needsAmendment } from "@/lib/amendments-model";
@@ -161,7 +162,7 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
     };
   }
   // 7.4: issuing the report — what the act needs, the R editions, who received which (D7)
-  let issueView: { ready: { approved: boolean; report: { version: string } | null; problem: IssueProblem | null }; rows: RecipientRow[] | null; correctable: { version: string; problem: IssueProblem | null } | null; showReasons: boolean } | null = null;
+  let issueView: { ready: { approved: boolean; report: { version: string } | null; problem: IssueProblem | null }; rows: RecipientRow[] | null; correctable: { version: string; problem: IssueProblem | null } | null; showReasons: boolean; uxpt: { reportSha: string | null; inForce: UxptCheck | null; canRecord: boolean; type: string; version: string; notes: Record<string, string> } } | null = null;
   if (recordView) {
     const issues = s.reportIssues ?? [];
     const inForceReport = reportInForce({ report: s.uploads?.report, active: s.docActive?.report ?? null, imports: s.analysisImports });
@@ -184,8 +185,15 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
     issueView = {
       ready: { approved: !!s.lifecycle?.stages?.["16"], report: inForceReport ? { version } : null, problem: transferProblem(recordView.transfer, !!inForceReport) },
       rows,
-      correctable: s.status === "report" && issues.length ? { version, problem: correctionProblem(issues, recordView.transfer, !!inForceReport) } : null,
+      // 7.6: a correction needs its own u(x_pt) confirmation, from the corrected report
+      correctable: s.status === "report" && issues.length ? { version, problem: correctionProblem(issues, recordView.transfer, !!inForceReport) ?? (uxptInForce(s.uxptChecks, inForceReport?.sha, inForceReport?.importId) ? null : "no-uxpt") } : null,
       showReasons: await mayNow("names.view", id),
+      // the confirmation: in processing; once issued — only for a corrected file (another than the R in force's — review)
+      uxpt: {
+        reportSha: inForceReport?.sha ?? null, inForce: uxptInForce(s.uxptChecks, inForceReport?.sha, inForceReport?.importId),
+        canRecord: s.status === "processing" || (s.status === "report" && issues.length > 0 && !!inForceReport && inForceReport.sha !== issues.at(-1)!.reportSha),
+        type: s.type ?? "T", version, notes: Object.fromEntries((s.uxptChecks ?? []).map((c) => [c.id, c.note])),
+      },
     };
   }
   // 7.1: who may export to 2.0 — and what the file will lack (the codes whose results came by a sheet; the meta)
@@ -431,7 +439,7 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
       {/* 7.3: the processing record and the transfer check */}
       {recordView && issueView && (
         <ReportIssueCard schemeId={id} lang={lg === "bg" ? "bg" : "en"} status={s.status} ready={issueView.ready} issues={s.reportIssues ?? []} rows={issueView.rows}
-          canAct={canAct} correctable={issueView.correctable} answer={sp.ri} codesNotReached={(issueView.rows ?? []).filter((r) => !r.access).map((r) => r.code)} showReasons={issueView.showReasons} />
+          canAct={canAct} correctable={issueView.correctable} answer={sp.ri} codesNotReached={(issueView.rows ?? []).filter((r) => !r.access).map((r) => r.code)} showReasons={issueView.showReasons} uxpt={issueView.uxpt} />
       )}
       {recordView && (
         <ProcessingRecordCard schemeId={id} lang={lg === "bg" ? "bg" : "en"} record={recordView.record} ticksFromJournal={recordView.ticksFromJournal}
