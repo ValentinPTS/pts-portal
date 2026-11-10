@@ -616,6 +616,8 @@ const DICT: Record<string, Entry> = {
   // 6.4 — submission
   "act.results.submitted": { bg: "Подадени резултати (онлайн)", en: "Results submitted (online)" },
   "act.results.unlocked": { bg: "Отключено подаване след срока", en: "Submission unlocked after the deadline" },
+  // 6.5 — reported and used values
+  "act.results.corrected": { bg: "Използвана стойност (корекция на подадената)", en: "Used value (a correction of the submitted one)" },
   "act.scheme.reference_values": { bg: "Референтни стойности по точки", en: "Reference values per point" },
   "act.scheme.delivery_min_days": { bg: "Минимален брой работни дни (заместващ обект)", en: "Minimum working days (replacement object)" },
   "act.message.sent": { bg: "Изпратен имейл до лаборатория", en: "E-mail to a laboratory sent" },

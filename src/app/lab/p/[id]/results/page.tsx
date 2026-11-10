@@ -14,7 +14,8 @@ import CalibrationResultsForm from "@/components/CalibrationResultsForm";
 import { testPeriodLimits, calibrationWindows } from "@/lib/results-limits";
 import { resultsDeadline } from "@/lib/deadlines-model";
 import { activeUnlock, submissionOpen } from "@/lib/submission-model";
-import { listSubmissionsFor } from "@/lib/submissions";
+import { listSubmissionsFor, listCorrectionsFor } from "@/lib/submissions";
+import { usedValues, FIELD_LABEL } from "@/lib/corrections-model";
 import { schemeNowMs, sofiaToday } from "@/lib/clock";
 import { fmtMoment, fmtSchemeDate } from "@/lib/scheme-dates";
 
@@ -64,6 +65,33 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
   let versions: Awaited<ReturnType<typeof listSubmissionsFor>> = [];
   let versionsUnread = false; // a read that failed is said — never «nothing submitted» (6.4 review)
   try { versions = await listSubmissionsFor(v.participantId, s.id); } catch { versions = []; versionsUnread = true; }
+  // 6.5: what PTS uses in the evaluation, next to what was submitted — the laboratory sees both,
+  // with the reason (the version itself is never changed)
+  const latestV = versions.at(-1);
+  let usedNote: React.ReactNode = null;
+  if (latestV) {
+    let corr: Awaited<ReturnType<typeof listCorrectionsFor>> | null = null;
+    try { corr = await listCorrectionsFor(v.participantId, s.id); } catch { corr = null; }
+    const labelOf = (k: string) => s.type === "C"
+      ? (() => { const r = cRows.find((x) => x.key === k); return r ? `${r.nominal}${r.direction ? ` · ${lang === "bg" ? r.direction.bg : r.direction.en}` : ""}` : k; })()
+      : (() => { const r = rows.find((x) => x.key === k); return r ? `${r.index + 1}. ${lang === "bg" ? r.name.bg : r.name.en}` : k; })();
+    // the calibration error as computed (a point) — a comma in Bulgarian, as on the form
+    const shown = (f: string, v: string | null) => (v === null ? "—" : f === "error" && lang === "bg" ? v.replace(".", ",") : v);
+    const changed = corr ? Object.entries(usedValues(latestV.data, corr, latestV.version)).flatMap(([k, fs]) => Object.entries(fs).filter(([, x]) => !!x.correction).map(([f, x]) => ({ k, f, x }))) : [];
+    usedNote = corr === null
+      ? <p role="alert" data-lab-corrections-unread className="card" style={{ margin: 0, padding: "10px 14px", fontSize: 13, color: "#8f2f2f" }}>{L("Не можа да се прочете дали PTS използва коригирани стойности. Презаредете страницата.", "Whether PTS uses corrected values could not be read. Reload the page.")}</p>
+      : changed.length ? (
+        <section className="card" data-lab-corrections={changed.length} style={{ padding: "10px 14px", fontSize: 13 }}>
+          <b>{L(`Използвано при оценяването — версия ${latestV.version}`, `Used in the evaluation — version ${latestV.version}`)}</b>
+          <p style={{ margin: "2px 0 6px", color: "var(--muted)", fontSize: 12.5 }}>{L("Подадената версия се пази непроменена. PTS е записал стойности, които използва вместо подадените:", "The submitted version is kept unchanged. PTS has recorded values it uses instead of the submitted ones:")}</p>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {changed.map(({ k, f, x }) => (
+              <li key={`${k}::${f}`} data-lab-correction={`${k}::${f}`}>{labelOf(k)} · {lang === "bg" ? FIELD_LABEL(f, x.k).bg : FIELD_LABEL(f, x.k).en}: {L("подадено", "submitted")} <b>{shown(f, x.reported)}</b> · {L("използвано", "used")} <b>{shown(f, x.used)}</b> — {L("основание", "reason")}: {x.correction!.reason}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null;
+  }
   const versionList = versionsUnread ? (
     <p role="alert" data-versions-unread className="card" style={{ margin: 0, padding: "10px 14px", fontSize: 13, color: "#8f2f2f" }}>{L("Подадените версии не можаха да се прочетат — не е ясно дали има такива. Презаредете страницата.", "The submitted versions could not be read — it is not known whether there are any. Reload the page.")}</p>
   ) : versions.length ? (
@@ -150,6 +178,7 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
                 initial={cInitial} />
               {orphanBox}
               {versionList}
+              {usedNote}
             </>
           )
         ) : rows.length === 0 ? (
@@ -168,6 +197,7 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
               initial={initial} submitOpen={gate.open} />
             {orphanBox}
             {versionList}
+            {usedNote}
             <p style={{ margin: 0, fontSize: 12.5, color: "var(--muted)" }}>{L("Черновата вижда само участието; PTS вижда подадените версии.", "Only the participation sees the draft; PTS sees the submitted versions.")}</p>
           </>
         )}

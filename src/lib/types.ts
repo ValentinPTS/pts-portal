@@ -319,7 +319,8 @@ export type NotifyKind =
   | "delivery.problem"       // → provider: a participant signalled a problem with its object (part 5.6)
   | "receipt.due"            // → lab: reminder — its receipt protocol is awaited (part 5.6, template)
   | "message"                // → lab: a one-way message a person at PTS wrote (part 5.10; Реш. 116)
-  | "results.unlocked";      // → lab: PTS unlocked its results form after the deadline (part 6.4; Реш. 111)
+  | "results.unlocked"       // → lab: PTS unlocked its results form after the deadline (part 6.4; Реш. 111)
+  | "results.corrected";     // → lab: PTS recorded a used value next to its submitted one (part 6.5)
 
 export interface Notification {
   id: string;

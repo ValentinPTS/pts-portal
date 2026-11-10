@@ -10,7 +10,7 @@ import { openParticipationSnapshots, inForce, openRoundParties } from "./partici
 import { listCaseEventsForScheme } from "./case-events";
 import { listNoticesForScheme } from "./notifications";
 import { pointKeys } from "./reference-values-model";
-import { listSubmissions } from "./submissions";
+import { listSubmissions, listCorrections } from "./submissions";
 import { codedSubmissionData, submissionIdentity } from "./results-model";
 import { listSentForScheme } from "./sent-messages";
 import { listActivityForScheme } from "./activity-store";
@@ -86,6 +86,9 @@ export const ROUND_TABLES: Record<string, string[]> = {
   // the submitted versions of the participations' results (6.1–6.4) — the account that
   // submitted is a person's: identity/ only
   submissions: ["coded/submissions.csv", "identity/submissions_by.csv"],
+  // the coding expert's corrections next to the versions (6.5): reported and used, the reason —
+  // by PTS's people, by code (as the unlocks)
+  result_corrections: ["coded/result_corrections.csv"],
 };
 
 /** Each database table that is NOT round data, and why. */
@@ -309,10 +312,10 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
   const s = await getSchemeIncludingArchived(schemeId);
   if (!s) return null;
   // every read throws on a database error: the export is whole, or it is not made
-  const [coded, events, notices, messages, journal, revisions, submitted] = await Promise.all([
+  const [coded, events, notices, messages, journal, revisions, submitted, corrected] = await Promise.all([
     listParticipants(schemeId), listCaseEventsForScheme(schemeId),
     listNoticesForScheme(schemeId), listSentForScheme(schemeId), listActivityForScheme(schemeId), listRevisionsForScheme(schemeId),
-    listSubmissions(schemeId),
+    listSubmissions(schemeId), listCorrections(schemeId),
   ]);
   // who is behind each code — to scrub it from coded/ (the coded part too) and to
   // export it in identity/: an opening of the identity store, on record (2.3)
@@ -377,6 +380,8 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
   // the submitted versions of the results (6.1–6.4) — by code; the data as submitted; the account
   // that submitted is a person's: identity/submissions_by.csv
   addCoded("coded/submissions.csv", submitted.map((x) => ({ code: codeById.get(x.participantId) ?? "—", version: x.version, submittedAt: x.submittedAt, roundAt: x.roundAt ?? "", configVersion: x.configVersion ?? "", data: JSON.stringify(codedSubmissionData(x.data)) })), ["code", "version", "submittedAt", "roundAt", "configVersion", "data"]);
+  // the corrections (6.5) — the reported value and the used one, the reason, by whom: by code
+  addCoded("coded/result_corrections.csv", corrected.map((c) => ({ code: codeById.get(c.participantId) ?? "—", version: c.version, key: c.key, field: c.field, reported: c.reported, used: c.used ?? "", withdrawn: c.used === null ? "yes" : "", reason: c.reason, at: c.at, by: c.by })), ["code", "version", "key", "field", "reported", "used", "withdrawn", "reason", "at", "by"]);
   // old stamps carry a lab's e-mail and file name: redacted as for staff (N4)
   addCoded("coded/case_events.csv", events.map((e: CaseEvent) => { const r = redactCaseEventForStaff(e); return { ...r, recordedBy: r.recordedBy.startsWith("lab:") ? "laboratory" : r.recordedBy, schemeId: undefined }; }),
     ["id", "code", "kind", "at", "ref", "note", "recordedBy", "recordedAt", "source", "docKey", "voidedAt", "voidedBy", "voidReason"]);

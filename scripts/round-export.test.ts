@@ -157,6 +157,8 @@ const TYPED_LAB = "Типирана Лабораторийка ТАЙНА", TYPE
 // …and as 6.4 stores it: the draft NESTED in the payload, the subcontracted part in the lab's words (6.4 review)
 const TYPED_LAB2 = "Вложена Лабораторийка ТАЙНА", TYPED_PERSON2 = "Гошо Вложенов", SUB_PART = "Подизпълнител Сестринска Лаборатория ТАЙНА";
 (globalThis as unknown as { __ptsSubmissionsMem?: unknown[] }).__ptsSubmissionsMem?.push({ id: "sub-y", participantId: p.id, schemeId: S, version: 2, submittedAt: "2026-11-07T10:00:00Z", submittedBy: `entityuser:${CU5}`, data: { v: 1, kind: "C", draft: { v: 1, kind: "C", general: { labName: TYPED_LAB2, signedBy: TYPED_PERSON2, manufacturer: "Fluke" }, points: {} }, values: {}, notices: [], confirmations: { truthful: true, subcontracted: true, subcontractedPart: SUB_PART, errorsConfirmed: true } } });
+// …and a correction next to it (6.5): reported and used, the reason, by whom
+(globalThis as unknown as { __ptsCorrectionsMem?: unknown[] }).__ptsCorrectionsMem?.push({ id: "cor-x", participantId: p.id, schemeId: S, version: 2, key: "pt-x", field: "error", reported: "0.03", used: "0,030", reason: "грешка-при-въвеждане-КОРЕКЦИЯ", at: "2026-11-08T10:00:00Z", by: "coder@ptsbg.eu" });
 const all = (await buildRoundExport(S, "all"))!;
 const zAll = unzip(all.zip);
 t("the export is made", !!all && zAll.size === all.files.length && zAll.has("README.md"), String(all?.files.length));
@@ -176,6 +178,7 @@ t("…and nothing of what they leave out reaches ANY coded file: the carrier, th
 const identityScheme5 = zAll.get("identity/scheme-identity.json")?.toString("utf8") ?? "";
 const subsCsv = zAll.get("coded/submissions.csv")?.toString("utf8") ?? "", subsBy = zAll.get("identity/submissions_by.csv")?.toString("utf8") ?? "";
 t("submissions (6.2): the coded part — by code, the data without the typed laboratory and person, even inside its method (scrubbed)", subsCsv.includes(p.code) && subsCsv.includes("Tecsis") && !coded.some(([, b]) => b.toString("utf8").includes(TYPED_LAB) || b.toString("utf8").includes(TYPED_PERSON)));
+t("the corrections (6.5): by code — the version, the field, reported and used, the reason, by whom", (zAll.get("coded/result_corrections.csv")?.toString("utf8") ?? "").includes(`${p.code},2,pt-x,error,0.03,"0,030",,грешка-при-въвеждане-КОРЕКЦИЯ`));
 t("…the identity part names them, with who submitted", subsBy.includes(TYPED_LAB) && subsBy.includes(TYPED_PERSON) && subsBy.includes(CU5));
 t("…the 6.4 payload (the draft nested): the typed laboratory, the person and the subcontracted part in NO coded file — the identity part has them; «subcontracted: yes» stays coded (6.4 review)", subsCsv.includes("Fluke") && subsCsv.includes('""subcontracted"":true') && !coded.some(([, b]) => [TYPED_LAB2, TYPED_PERSON2, SUB_PART].some((x) => b.toString("utf8").includes(x))) && subsBy.includes(TYPED_LAB2) && subsBy.includes(TYPED_PERSON2) && subsBy.includes(SUB_PART));
 t("…the identity part keeps them whole", identityScheme5.includes("ТЕКСТ-НА-СЪОБЩЕНИЕ-ТАЙНА") && identityScheme5.includes("ДУМИ-НА-СИГНАЛ-ТАЙНА") && identityScheme5.includes("КУРИЕР-ТАЙНА"));

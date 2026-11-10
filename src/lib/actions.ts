@@ -74,7 +74,7 @@ import { requireParticipant, participantActor, getParticipantSession, participat
 import { inviteParticipant } from "./participant-invite";
 import { freezeParticipation, participationEntity } from "./participation-snapshots";
 import { readSelections, characteristicsOf, readRefusal, readSource, inRound, REFUSAL_CATEGORIES, STANDING_PROBLEM_TEXT, MAX_PER_CHARACTERISTIC, participationSets, selectionsOf, sameSelections, objectsNeeded, type Standing } from "./application-model";
-import { notifyParticipationRefused, notifyItemsDispatched, notifyReceiptProtocol, notifyDeliveryProblem, notifyMessage, notifyResultsUnlocked } from "./notify-events";
+import { notifyParticipationRefused, notifyItemsDispatched, notifyReceiptProtocol, notifyDeliveryProblem, notifyMessage, notifyResultsUnlocked, notifyResultsCorrected } from "./notify-events";
 import { readDocNumber, invoiceSlotProblem, INVOICE_PROBLEM_TEXT } from "./invoice-model";
 import { readShipment, readReceipt, deliveryOf, openShipment, openProblems, replacementProblem, replacementCalledFor, minDaysOf, readMinDays, chainReceiptTarget, LIMITS as DELIVERY_LIMITS, MAX_OPEN_PROBLEMS, type Shipment, type ShipmentKind, type Deliveries } from "./delivery-model";
 import { finalListOf, splitFor, invoiceProblem, currentFinalList, inFinalRound, finalSelectionsOf, ANNOUNCEMENT_PROBLEM_TEXT, type FinalList } from "./announcement-model";
@@ -82,7 +82,8 @@ import { readTarget, RELEASE_PROBLEM_TEXT, releaseFor, type TargetRelease } from
 import { ackRequiredFor, ackSettable, ackOf, kindOf, readAckForm, type Acknowledgement, type AckProblem } from "./ack-model";
 import { readMessage, messageBody, type SchemeMessage } from "./messages-model";
 import { resultRows, readDraft, notNumbers, rowsHaveIds, calRows, calRowsReady, readCalDraft, notNumbersCal, orphansOf, draftFor, calDraftFor, checkTesting, checkCalibration, blocking, type CheckProblem } from "./results-model";
-import { putDraft, getDraft, addSubmission, listSubmissionsFor } from "./submissions";
+import { putDraft, getDraft, addSubmission, listSubmissionsFor, addCorrection, listCorrectionsFor, correctionExists } from "./submissions";
+import { correctableFields, activeCorrections, readCorrection, type ResultCorrection } from "./corrections-model";
 import { activeUnlock, submissionOpen, readConfirmations, submissionPayload, readUnlock, SUBMIT_PROBLEM_TEXT, type ResultUnlock } from "./submission-model";
 import { testPeriodLimits, calibrationWindows } from "./results-limits";
 import { drawCodes, drawObjects, toCode, codingProblem, objectsGiven, unfinished, sampleCodeOf, isProvisional, CODING_PROBLEM_TEXT, type CodingProblem, type CodingRecord } from "./coding-model";
@@ -6213,4 +6214,54 @@ export async function unlockResultsAction(formData: FormData): Promise<void> {
   await notifyResultsUnlocked(tell!.labId, schemeId, scheme!.number, code, part!.id, value.until);
   revalidatePath(`/schemes/${schemeId}/participants/${code}`);
   redirect(back("unlock=ok"));
+}
+
+// ── Reported and used values (part 6.5; D3; К22; the 2.0 contract's reported_*) ──────────────
+// A correction is a record NEXT TO a submitted version (0043) — the version stays as submitted
+// (0042). The used value is typed by the coding expert: the portal computes nothing (К22: the
+// k ≠ 2 conversion «where it is calculated, not in the field»). On the LATEST version only — an
+// earlier one's corrections stay on record, never carried. Journalled without a value or the
+// reason (the reason, written by a person, may hold one — it is on the record, shown to the lab).
+export async function recordCorrectionAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? "");
+  await requireCap("results.enter", schemeId); // the coding expert's (Реш. 93)
+  const code = String(formData.get("code") ?? "").trim();
+  const back = (q: string) => `/schemes/${encodeURIComponent(schemeId)}/participants/${encodeURIComponent(code)}?${q}#corrections`;
+  // the form's own id — a second press, or the same request twice, is the one already recorded
+  const nonceRaw = String(formData.get("nonce") ?? "");
+  const id = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(nonceRaw) ? nonceRaw.toLowerCase() : randomUUID();
+  let seen = false, readOk = true;
+  try { seen = await correctionExists(id); } catch { readOk = false; }
+  if (!readOk) redirect(back("corr=failed"));
+  if (seen) redirect(back("corr=ok"));
+  const scheme = await getScheme(schemeId);
+  // while the results are with PTS — not once the report is out (that is a corrected report, 7.x)
+  const open = !!scheme && (scheme.status === "running" || scheme.status === "processing" || (scheme.type === "C" && scheme.status === "open"));
+  if (!scheme || !open) redirect(back("corr=state"));
+  const part = (await listParticipants(schemeId)).find((p) => p.code === code);
+  if (!part) redirect(back("corr=state"));
+  let subs: Awaited<ReturnType<typeof listSubmissionsFor>> | null = null, recorded: ResultCorrection[] | null = null;
+  try { subs = await listSubmissionsFor(part!.id, schemeId); recorded = await listCorrectionsFor(part!.id, schemeId); } catch { subs = null; }
+  if (!subs || !recorded) redirect(back("corr=failed"));
+  const latest = subs!.at(-1);
+  const version = Number(formData.get("version"));
+  // the version the form was drawn for must still be the latest — a newer one starts clean
+  if (!latest || latest.version !== version) redirect(back("corr=version"));
+  const read = readCorrection({ target: formData.get("target"), used: formData.get("used"), reason: formData.get("reason") }, correctableFields(latest!.data), activeCorrections(recorded!, version));
+  if (!read.ok) redirect(back(`corr=${read.problem}`));
+  const value = read as Extract<typeof read, { ok: true }>;
+  // who to tell — looked up BEFORE anything is recorded (2.3): not reachable, nothing recorded
+  const tell = await labToTell(schemeId, code);
+  if (!tell) redirect(back("corr=reach"));
+  const by = (await getRoleContext()).email ?? "build";
+  let saved: Awaited<ReturnType<typeof addCorrection>> | null = null;
+  try { saved = await addCorrection({ id, participantId: part!.id, schemeId, version, key: value.key, field: value.field, reported: value.reported, used: value.used, reason: value.reason, by }); } catch { saved = null; }
+  if (saved === null) redirect(back("corr=failed"));
+  if (saved === "not-latest") redirect(back("corr=version")); // a version came in meanwhile (0043's guard)
+  if (saved === "duplicate") redirect(back("corr=ok"));        // the same form, recorded already
+  await logActivity("results.corrected", { schemeId, targetCode: code, subject: `correction:${id}`, summary: `${value.used === null ? "Correction withdrawn" : "Used value recorded"} — ${code}, version ${version}, ${value.key} · ${value.field}`, after: { version, key: value.key, field: value.field, withdrawn: value.used === null } });
+  await notifyResultsCorrected(tell!.labId, schemeId, scheme!.number, code, part!.id, version);
+  revalidatePath(`/schemes/${schemeId}/participants/${code}`);
+  revalidatePath(`/lab/p/${part!.id}/results`);
+  redirect(back("corr=ok"));
 }

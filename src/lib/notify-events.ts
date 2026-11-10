@@ -451,3 +451,18 @@ export async function notifyResultsUnlocked(labId: string | undefined, schemeId:
     href: `/lab/p/${encodeURIComponent(participantId)}/results`,
   });
 }
+
+/** PTS recorded a value used in the evaluation next to one the laboratory submitted, or withdrew
+ *  one (part 6.5) — the version stays as submitted. To the laboratory, without the value: it sees
+ *  both on its results page. Held for a person, as every lab notice. */
+export async function notifyResultsCorrected(labId: string | undefined, schemeId: string, schemeNumber: string, code: string, participantId: string, version: number): Promise<void> {
+  if (!(await anyoneToTell(labId, schemeId, code))) return;
+  await notify({
+    kind: "results.corrected",
+    audience: "lab",
+    labId, schemeId, code,
+    bg: `PTS записа корекция към подадените ви резултати по схема ${schemeNumber} (версия ${version}) — подаденото се пази; вижте страницата с резултатите.`,
+    en: `PTS recorded a correction to your submitted results in scheme ${schemeNumber} (version ${version}) — what you submitted is kept; see the results page.`,
+    href: `/lab/p/${encodeURIComponent(participantId)}/results`,
+  });
+}

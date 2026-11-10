@@ -7,6 +7,7 @@
 // lists them for a scheme.
 
 import { getDb, noMemoryFallback } from "./supabase";
+import type { ResultCorrection } from "./corrections-model";
 
 export interface StoredDraft {
   participantId: string;
@@ -86,12 +87,19 @@ type SubRow = { id: string; participant_id: string; scheme_id: string; version: 
 
 /** Every submitted version of a round, by participation and version — for the round export
  *  (Реш. 136). A database error throws: an export is whole, or it is not made. */
-export async function listSubmissions(schemeId: string): Promise<Submission[]> {
+export async function listSubmissions(schemeId: string, participantId?: string): Promise<Submission[]> {
   const db = getDb();
-  if (!db) return memSubs.filter((x) => x.schemeId === schemeId).map((x) => ({ ...x }));
-  const { data, error } = await db.from("submissions").select("*").eq("scheme_id", schemeId).order("participant_id").order("version");
-  if (error) throw new Error(`[submissions] not read: ${error.message}`, { cause: error });
-  return ((data ?? []) as SubRow[]).map((r) => ({ id: r.id, participantId: r.participant_id, schemeId: r.scheme_id, version: r.version, data: r.data, configVersion: r.config_version ?? undefined, submittedAt: r.submitted_at, roundAt: r.round_at ?? undefined, submittedBy: r.submitted_by }));
+  if (!db) return memSubs.filter((x) => x.schemeId === schemeId && (!participantId || x.participantId === participantId)).map((x) => ({ ...x }));
+  // paged — a read past the database's 1000-row page never drops the rest (6.5 review)
+  const out: Submission[] = [];
+  for (let from = 0; ; from += 1000) {
+    let q = db.from("submissions").select("*").eq("scheme_id", schemeId);
+    if (participantId) q = q.eq("participant_id", participantId);
+    const { data, error } = await q.order("participant_id").order("version").range(from, from + 999);
+    if (error) throw new Error(`[submissions] not read: ${error.message}`, { cause: error });
+    out.push(...((data ?? []) as SubRow[]).map((r) => ({ id: r.id, participantId: r.participant_id, schemeId: r.scheme_id, version: r.version, data: r.data, configVersion: r.config_version ?? undefined, submittedAt: r.submitted_at, roundAt: r.round_at ?? undefined, submittedBy: r.submitted_by })));
+    if ((data ?? []).length < 1000) return out;
+  }
 }
 
 /** Record a submitted version — the next one only (the database's guard, 0042, refuses any other;
@@ -112,6 +120,66 @@ export async function addSubmission(x: Omit<Submission, "submittedAt">): Promise
 
 /** One participation's submitted versions, oldest first. A database error throws. */
 export async function listSubmissionsFor(participantId: string, schemeId: string): Promise<Submission[]> {
-  return (await listSubmissions(schemeId)).filter((s) => s.participantId === participantId).sort((a, b) => a.version - b.version);
+  return (await listSubmissions(schemeId, participantId)).filter((s) => s.participantId === participantId).sort((a, b) => a.version - b.version);
 }
 
+// ── corrections: reported and used values (6.5; migration 0043; append-only) ──
+// A record next to a submitted version — never a change to it. Listed and recorded as the
+// versions are: a database error throws (a correction is recorded whole, or not at all).
+const gc = globalThis as unknown as { __ptsCorrectionsMem?: ResultCorrection[] };
+const memCorr: ResultCorrection[] = gc.__ptsCorrectionsMem ?? (gc.__ptsCorrectionsMem = []);
+type CorrRow = { id: string; participant_id: string; scheme_id: string; version: number; key: string; field: string; reported: string; used: string | null; reason: string; recorded_at: string; recorded_by: string };
+
+/** Every correction of a round — or of one participation — oldest first (the database's order:
+ *  when recorded, then id). Paged: a read past 1000 rows never drops the newest (6.5 review). */
+export async function listCorrections(schemeId: string, participantId?: string): Promise<ResultCorrection[]> {
+  const db = getDb();
+  if (!db) return memCorr.filter((x) => x.schemeId === schemeId && (!participantId || x.participantId === participantId)).map((x) => ({ ...x }));
+  const out: ResultCorrection[] = [];
+  for (let from = 0; ; from += 1000) {
+    let q = db.from("result_corrections").select("*").eq("scheme_id", schemeId);
+    if (participantId) q = q.eq("participant_id", participantId);
+    const { data, error } = await q.order("recorded_at", { ascending: true }).order("id", { ascending: true }).range(from, from + 999);
+    if (error) throw new Error(`[corrections] not read: ${error.message}`, { cause: error });
+    out.push(...((data ?? []) as CorrRow[]).map((r) => ({ id: r.id, participantId: r.participant_id, schemeId: r.scheme_id, version: r.version, key: r.key, field: r.field, reported: r.reported, used: r.used, reason: r.reason, at: r.recorded_at, by: r.recorded_by })));
+    if ((data ?? []).length < 1000) return out;
+  }
+}
+
+/** One participation's corrections, oldest first. */
+export async function listCorrectionsFor(participantId: string, schemeId: string): Promise<ResultCorrection[]> {
+  return (await listCorrections(schemeId, participantId)).filter((c) => c.participantId === participantId);
+}
+
+/** Is a correction with this id on record? — the form's own id: a second press, or the same
+ *  request twice, is the one already recorded, never a second (6.5 review). */
+export async function correctionExists(id: string): Promise<boolean> {
+  const db = getDb();
+  if (!db) return memCorr.some((c) => c.id === id);
+  const { data, error } = await db.from("result_corrections").select("id").eq("id", id).maybeSingle();
+  if (error) throw new Error(`[corrections] not read: ${error.message}`, { cause: error });
+  return !!data;
+}
+
+/** Record a correction (or a withdrawal) — on the participation's LATEST submitted version only
+ *  (the database's guard, 0043, takes the versions' own lock; memory keeps the same rule). Its id
+ *  recorded already: «duplicate». Throws on any other failure — recorded whole, or not at all. */
+export async function addCorrection(x: Omit<ResultCorrection, "at">): Promise<ResultCorrection | "duplicate" | "not-latest"> {
+  const row: ResultCorrection = { ...x, at: new Date().toISOString() };
+  const db = getDb();
+  if (!db) {
+    if (memCorr.some((c) => c.id === x.id)) return "duplicate";
+    const latest = Math.max(0, ...memSubs.filter((s) => s.participantId === x.participantId).map((s) => s.version));
+    if (latest === 0 || x.version !== latest) return "not-latest";
+    memCorr.push(row);
+    return { ...row };
+  }
+  const { data, error } = await db.from("result_corrections").insert({ id: x.id, participant_id: x.participantId, scheme_id: x.schemeId, version: x.version, key: x.key, field: x.field, reported: x.reported, used: x.used, reason: x.reason, recorded_by: x.by }).select("recorded_at");
+  if (error) {
+    const text = `${error.code ?? ""} ${error.message}`;
+    if (/23505|duplicate key/i.test(text)) return "duplicate";
+    if (/not the latest version/i.test(text)) return "not-latest";
+    throw new Error(`[corrections] not recorded: ${error.message}`, { cause: error });
+  }
+  return { ...row, at: ((data ?? [])[0] as { recorded_at?: string } | undefined)?.recorded_at ?? row.at };
+}

@@ -12,7 +12,10 @@ import { logActivity } from "@/lib/activity";
 import LabInvoicePanel from "@/components/LabInvoicePanel";
 import { acksOfParticipation, ackDone, ackMoment } from "@/lib/ack-model";
 import { deliveryOf } from "@/lib/delivery-model";
-import { listSubmissionsFor } from "@/lib/submissions";
+import { listSubmissionsFor, listCorrectionsFor } from "@/lib/submissions";
+import CorrectionsPanel from "@/components/CorrectionsPanel";
+import { resultRows, calRows } from "@/lib/results-model";
+import type { ResultCorrection } from "@/lib/corrections-model";
 import { unlockResultsAction } from "@/lib/actions";
 import MessageComposer from "@/components/MessageComposer";
 import { sendParticipationMessageAction } from "@/lib/actions";
@@ -55,7 +58,7 @@ export default async function CaseFilePage({
   params, searchParams,
 }: {
   params: Promise<{ id: string; code: string }>;
-  searchParams: Promise<{ reveal?: string; kind?: string; from?: string; void?: string; step?: string; msg?: string; unlock?: string }>;
+  searchParams: Promise<{ reveal?: string; kind?: string; from?: string; void?: string; step?: string; msg?: string; unlock?: string; corr?: string }>;
 }) {
   await requireStaff(); // read gate: manager/staff/auditor only
   const { id, code: rawCode } = await params;
@@ -82,6 +85,16 @@ export default async function CaseFilePage({
   // a lab that did submit)
   let submissionsUnread = false;
   if (canSeeResults && coded) { try { submissions = await listSubmissionsFor(coded.id, id); } catch { submissions = []; submissionsUnread = true; } }
+  // 6.5: the corrections next to the versions — what is used in the evaluation
+  let corrections: ResultCorrection[] = [], correctionsUnread = false;
+  if (canSeeResults && coded && submissions.length) { try { corrections = await listCorrectionsFor(coded.id, id); } catch { correctionsUnread = true; } }
+  const keyLabel = new Map<string, string>();
+  if (coded && submissions.length) {
+    try {
+      if (s.type === "C") for (const r of calRows(s.calibration)) keyLabel.set(r.key, `${r.nominal}${r.direction ? ` · ${lang === "bg" ? r.direction.bg : r.direction.en}` : ""}`);
+      else for (const r of resultRows(s, coded)) keyLabel.set(r.key, `${r.index + 1}. ${lang === "bg" ? r.name.bg : r.name.en}`);
+    } catch { /* the keys themselves are shown */ }
+  }
   // 5.10: who works with the participants here writes to them — once the scheme has started
   const canMessage = (await mayNow("participants.manage", id)) && s.status !== "draft";
   const revealed = canReveal && sp.reveal === "1";
@@ -278,6 +291,10 @@ export default async function CaseFilePage({
                   );
                 })}
               </ul>
+            )}
+            {!submissionsUnread && submissions.length > 0 && (
+              <CorrectionsPanel schemeId={id} code={code} lang={lg === "bg" ? "bg" : "en"} version={submissions.at(-1)!.version} data={submissions.at(-1)!.data} corrections={corrections} unread={correctionsUnread}
+                labelOf={(k) => keyLabel.get(k) ?? k} canEnter={canEnterResults} open={s.status === "running" || s.status === "processing" || (s.type === "C" && s.status === "open")} answer={sp.corr} />
             )}
             {unlocks.length > 0 && (
               <ul className="text-sm mt-2" style={{ color: "#7a5416", paddingLeft: 18 }} data-staff-unlocks={unlocks.length}>
