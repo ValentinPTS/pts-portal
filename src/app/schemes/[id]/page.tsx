@@ -39,6 +39,7 @@ import { listSubmissions, submittedParticipantIds } from "@/lib/submissions";
 import { metaGaps, META_GAP_TEXT } from "@/lib/scheme-meta";
 import { lockEntries, lockCounts, isNR, resultsOutsideForm, lockInForce } from "@/lib/submission-lock-model";
 import { analysisGaps } from "@/lib/analysis-export";
+import AnalysisImportPanel from "@/components/AnalysisImportPanel";
 import { activeUnlock, submissionOpen } from "@/lib/submission-model";
 import { needsAmendment } from "@/lib/amendments-model";
 import { chainWindow, deadlineState, windowDays, resultsDeadline } from "@/lib/deadlines-model";
@@ -61,7 +62,7 @@ import { requireStaff, getRoleContext, canManagePeople } from "@/lib/roles";
 // A scheme folder → its 14 documents grouped by workflow stage. Every document can be
 // built in the app OR filled with an uploaded ready-made file (PDF/image) — see
 // SchemeDocuments. The header shows the primary tools; the rest tuck under "Управление".
-export default async function SchemePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ack?: string; msg?: string; n?: string; of?: string }> }) {
+export default async function SchemePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ack?: string; msg?: string; n?: string; of?: string; imp?: string }> }) {
   await requireStaff(); // read gate: one of PTS's people
   const { id } = await params;
   const sp = await searchParams;
@@ -136,6 +137,8 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
   }));
   const canAct = await mayNow("scheme.edit", id);
   const mayReview = (await mayNow("results.read", id)) || (await mayNow("results.enter", id)) || (await mayNow("results.process", id));
+  // 7.2: who may import 2.0's documents — while the scheme is in processing
+  const mayImport = ((await mayNow("results.process", id)) || (await mayNow("scheme.edit", id))) && s.status === "processing";
   // 7.1: who may export to 2.0 — and what the file will lack (the codes whose results came by a sheet; the meta)
   const mayExport = ((await mayNow("results.process", id)) || (await mayNow("results.enter", id))) && (["running", "processing", "report", "closed"].includes(s.status) || (s.type === "C" && s.status === "open"));
   let analysisLink: { preliminary: boolean; outside: string[] | null; gaps: string[]; extra: ReturnType<typeof analysisGaps> } | null = null;
@@ -371,6 +374,10 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
           {analysisLink.extra.sigmaMismatch.length > 0 && <div data-analysis-sigma style={{ color: "#7a5416" }}>{L(`σpt,min се различава между статистическия проект и полето за 2.0 при ${analysisLink.extra.sigmaMismatch.join(", ")} — във файла влиза полето за 2.0.`, `σpt,min differs between the statistical project and the 2.0 field for ${analysisLink.extra.sigmaMismatch.join(", ")} — the file carries the 2.0 field.`)}</div>}
           {analysisLink.extra.homogeneityDropped > 0 && <div data-analysis-homogeneity style={{ color: "#7a5416" }}>{L(`${analysisLink.extra.homogeneityDropped} стойности за хомогенност са на характеристики, които не са във файла — не влизат.`, `${analysisLink.extra.homogeneityDropped} homogeneity values are of characteristics not in the file — left out.`)}</div>}
         </div>
+      )}
+      {/* 7.2: what came back from PTS_Analysis 2.0 — the documents as files, with the module's version */}
+      {(mayImport || ((mayReview || canAct) && (s.analysisImports?.length ?? 0) > 0)) && ["processing", "report", "closed"].includes(s.status) && (
+        <AnalysisImportPanel schemeId={id} lang={lg === "bg" ? "bg" : "en"} imports={s.analysisImports ?? []} canImport={mayImport} answer={sp.imp} />
       )}
       {/* 6.7: PTS's review after the deadline — a staff page, never shown to a laboratory */}
       {mayReview && (["running", "processing", "report", "closed"].includes(s.status) || (s.type === "C" && s.status === "open")) && (

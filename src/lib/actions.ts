@@ -47,7 +47,7 @@ async function labAfter(schemeId: string, code: string, pre: { code?: string; te
 import { listVisibleParticipations, isStarted } from "./visibility";
 import { applyStamp, chainNewestMs, isStampSource, rebuildChain, returnProblem, sofiaDay, sofiaTime, sofiaWallToIso, stampProblem, stampSourceLabel, type StampProblem, type StampWhat } from "./chain";
 import { ONLINE_APPLICATIONS_OPEN } from "./online-applications";
-import { freezeNow, issueEdition, latestEdition, getEdition, sameAs, servable, reissueReason, amendmentStampFor, GATE_DOCS, type DocEdition, type Frozen } from "./editions";
+import { freezeNow, issueEdition, latestEdition, getEdition, sameAs, servable, reissueReason, amendmentStampFor, GATE_DOCS, sha256, type DocEdition, type Frozen } from "./editions";
 import { gateB, stillByEmail } from "./gate-texts";
 import { hasEditions, editionLabel } from "./editions-model";
 import { addApplication, setApplicationStatus } from "./applications";
@@ -86,6 +86,7 @@ import { putDraft, getDraft, addSubmission, listSubmissions, listSubmissionsFor,
 import { lockEntries, lockCounts, lockInForce, isNR, resultsOutsideForm, type SubmissionLock } from "./submission-lock-model";
 import { correctableFields, activeCorrections, readCorrection, type ResultCorrection } from "./corrections-model";
 import { readNote, noteInForce, type ReviewNote } from "./review-model";
+import { IMPORT_KINDS, checkImport, servedName, type ImportKind, type ImportedFile, type AnalysisImport } from "./analysis-import-model";
 import { activeUnlock, submissionOpen, readConfirmations, submissionPayload, readUnlock, SUBMIT_PROBLEM_TEXT, type ResultUnlock } from "./submission-model";
 import { testPeriodLimits, calibrationWindows } from "./results-limits";
 import { drawCodes, drawObjects, toCode, codingProblem, objectsGiven, unfinished, sampleCodeOf, isProvisional, CODING_PROBLEM_TEXT, type CodingProblem, type CodingRecord } from "./coding-model";
@@ -6388,4 +6389,74 @@ export async function recordReviewNoteAction(formData: FormData): Promise<void> 
   await logActivity("results.review_note", { schemeId, targetCode: code, subject: `review-note:${entry.id}`, summary: text ? `Review note written for ${code}` : `Review note withdrawn for ${code}`, after: { withdrawn: !text } });
   revalidatePath(`/schemes/${schemeId}/review`);
   redirect(back("note=ok"));
+}
+
+// ── Import from PTS_Analysis 2.0 (part 7.2; Реш. 68, 135) ────────────────────────────────────
+// The issued documents as FILES — the report in both languages, the charts, the validation report,
+// the round's dossier — stamped with the module's version, never recomputed, never changed. Each
+// import is a record (nothing replaced); the Bulgarian report becomes the scheme's report file
+// for the report act (3.2/7.4), stamped. Journalled by kind and count — never a file name (§4.2).
+export async function importAnalysisAction(formData: FormData): Promise<void> {
+  const schemeId = String(formData.get("schemeId") ?? "");
+  await requireOneOf(["results.process", "scheme.edit"], schemeId); // the statistics expert or the scheme manager
+  const back = (q: string) => `/schemes/${encodeURIComponent(schemeId)}?${q}#analysis-import`;
+  const scheme = await getScheme(schemeId);
+  if (!scheme || scheme.status !== "processing") redirect(back("imp=state"));
+  // once the processing is reviewed or approved (stages 15, 16 — Реш. 140), no new report slips in
+  // under the approval: withdraw it first (7.2 review)
+  const reviewed = (sc: Scheme) => !!sc.lifecycle?.stages?.["15"] || !!sc.lifecycle?.stages?.["16"];
+  if (reviewed(scheme!)) redirect(back("imp=approved"));
+  const offered: { kind: ImportKind; file: File }[] = [];
+  for (const kind of IMPORT_KINDS) for (const f of formData.getAll(kind)) if (f instanceof File && f.size > 0) offered.push({ kind, file: f });
+  const read = await Promise.all(offered.map(async (o) => { const bytes = new Uint8Array(await o.file.arrayBuffer()); return { ...o, bytes, real: magicMatches(bytes, o.file.type) }; }));
+  // adding to an import already made (more charts, the validation report…) needs no BG report again
+  const adding = (scheme!.analysisImports?.length ?? 0) > 0;
+  const check = checkImport(formData.get("version"), read.map((r) => ({ kind: r.kind, mime: r.file.type, size: r.file.size, real: r.real })), { adding });
+  if (!check.ok) redirect(back(`imp=${check.problem}`));
+  const version = (check as Extract<typeof check, { ok: true }>).version;
+  const by = (await getRoleContext()).email ?? "";
+  const id = randomUUID();
+  const files: ImportedFile[] = [];
+  const stored: string[] = []; // what reached storage — removed again if the import is not recorded (review)
+  const db = getDb();
+  const cleanUp = async () => { if (db && stored.length) await db.storage.from(SCHEME_DOC_BUCKET).remove(stored).catch(() => undefined); };
+  let ok = true;
+  try {
+    if (db) await ensureSchemeDocsBucket(db);
+    for (const [n, r] of read.entries()) {
+      const ext = SCHEME_DOC_EXT[r.file.type];
+      let path: string;
+      if (db) {
+        path = `${schemeId}/analysis/${id}/${n + 1}-${r.kind}.${ext}`;
+        const { error } = await db.storage.from(SCHEME_DOC_BUCKET).upload(path, r.bytes, { contentType: r.file.type, upsert: false });
+        if (error) throw error;
+        stored.push(path);
+      } else path = `data:${r.file.type};base64,${Buffer.from(r.bytes).toString("base64")}`; // no Supabase (dev)
+      // the name it came with is kept for the record (identity/ only); it is never served or issued
+      files.push({ kind: r.kind, name: String(r.file.name || `${r.kind}.${ext}`).slice(0, 160), mime: r.file.type, size: r.file.size, sha256: sha256(r.bytes), path });
+    }
+  } catch { ok = false; }
+  if (!ok) { await cleanUp(); redirect(back("imp=failed")); }
+  const entry: AnalysisImport = { id, at: new Date().toISOString(), by, version, files };
+  const bgAt = files.findIndex((f) => f.kind === "report-bg"), bg = bgAt >= 0 ? files[bgAt] : null;
+  // the report file under a neutral name — it reaches every laboratory as the report's download name
+  const report: UploadedDoc | null = bg ? { path: bg.path, name: servedName("report-bg", bgAt + 1, bg.mime, version), mime: bg.mime, size: bg.size, uploadedAt: entry.at, uploadedBy: by, analysisVersion: version, importId: id } : null;
+  let outcome = "gone" as "recorded" | "moved" | "approved" | "gone";
+  try {
+    await updateSchemeWith(schemeId, (cur) => {
+      if (cur.status !== "processing") { outcome = "moved"; return {}; }
+      if (reviewed(cur)) { outcome = "approved"; return {}; }
+      outcome = "recorded";
+      return {
+        analysisImports: [...(cur.analysisImports ?? []), entry],
+        // the report act issues this file — stamped with the module's version (Реш. 68); what it replaces is kept (0.9)
+        ...(report ? { uploads: { ...(cur.uploads ?? {}), report }, docActive: { ...(cur.docActive ?? {}), report: "uploaded" as const }, ...supersede(cur, "upload:report", cur.uploads?.report, "replaced", by) } : {}),
+      };
+    });
+  } catch { outcome = "gone"; }
+  if (outcome !== "recorded") { await cleanUp(); redirect(back(outcome === "moved" ? "imp=state" : outcome === "approved" ? "imp=approved" : "imp=failed")); }
+  const counts = Object.fromEntries(IMPORT_KINDS.map((k) => [k, files.filter((f) => f.kind === k).length]).filter(([, c]) => (c as number) > 0));
+  await logActivity("results.imported_2_0", { schemeId, subject: `analysis-import:${id}`, summary: `Imported from PTS_Analysis ${version}: ${Object.entries(counts).map(([k, c]) => `${k} ×${c}`).join(", ")}${report ? " — the Bulgarian report is the scheme's report file" : " — added to the import in force (the report unchanged)"}`, after: { version, counts, adding: !report } });
+  revalidatePath(`/schemes/${schemeId}`, "layout");
+  redirect(back("imp=ok"));
 }

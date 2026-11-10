@@ -26,7 +26,7 @@ import { hasCohortNames } from "./doc-release";
 import { renderCohortDoc } from "./cohort-doc";
 import { docPrintHtml, docDefaultBody } from "./doc-template";
 import { resolveSkinAsync } from "../skins";
-import { SCHEME_DOC_BUCKET } from "./scheme-uploads";
+import { SCHEME_DOC_BUCKET, uploadedDocBytes } from "./scheme-uploads";
 import { EDITION_BUCKET, listEditions, sha256 } from "./editions";
 import { getDb } from "./supabase";
 import { zip, type ZipEntry } from "./zip";
@@ -154,6 +154,9 @@ export const SCHEME_FIELDS = {
   submissionLocks: "coded",
   // PTS's review notes (6.7) — PTS's words about a code: coded, in scheme.json only (never a table)
   reviewNotes: "coded",
+  // what came back from 2.0 (7.2): the version, each file's kind, size and hash — coded; its name,
+  // storage path and who brought it in identity/ (a file is often named after a laboratory, §4.2)
+  analysisImports: "split",
   // a release to one user names that user (an entity user's id is the same in every round):
   // its user kept only in identity/ (5.4 review)
   releases: "split", skin: "coded", name: "coded", folderId: "coded",
@@ -234,7 +237,7 @@ const namesDoc = (doc: string) => isListDoc(doc) || pairsNamesWithCodes(doc);
 const bodyHasNames = (doc: string, b?: { bg?: string; en?: string }) => namesDoc(doc) || hasCohortNames(b?.bg ?? "") || hasCohortNames(b?.en ?? "");
 
 // a proforma's or an invoice's number is the accounting software's, no name (5.8)
-const fileMeta = (f?: UploadedDoc) => (f ? { mime: f.mime, size: f.size, uploadedAt: f.uploadedAt, ...(f.number ? { number: f.number } : {}) } : undefined);
+const fileMeta = (f?: UploadedDoc) => (f ? { mime: f.mime, size: f.size, uploadedAt: f.uploadedAt, ...(f.number ? { number: f.number } : {}), ...(f.analysisVersion ? { analysisVersion: f.analysisVersion } : {}) } : undefined);
 const mapValues = <T, U>(o: Record<string, T> | undefined, f: (v: T) => U) => (o ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k, f(v)])) : undefined);
 
 /** The scheme as the coded part may hold it (before scrubbing). */
@@ -255,6 +258,7 @@ export function codedScheme(s: Scheme): Record<string, unknown> {
       case "deliveries": out[k] = codedDeliveries(s.deliveries); break;
       case "acknowledgements": out[k] = (s.acknowledgements ?? []).map(({ by: _b, ...a }) => a); break;
       case "messages": out[k] = (s.messages ?? []).map(({ bg: _b, en: _e, ...m }) => m); break;
+      case "analysisImports": out[k] = (s.analysisImports ?? []).map(({ by: _b, files, ...i }) => ({ ...i, files: files.map(({ name: _n, path: _p, ...f }) => f) })); break;
     }
   }
   return out;
@@ -439,7 +443,7 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
       const b = e.file ? await fileBytes(e.file) : null;
       const f = `${base}.${ext(e.file?.mime ?? "")}`;
       if (b) add(f, b); else missing.push(f);
-      eds.push({ ...row, lang: "", file: b ? f : "", sha256: e.sha.file, altered: b && sha256(b) !== e.sha.file ? "yes" : "", missing: b ? "" : "yes" });
+      eds.push({ ...row, lang: "", file: b ? f : "", sha256: e.sha.file, analysisVersion: e.file?.analysisVersion ?? "", altered: b && sha256(b) !== e.sha.file ? "yes" : "", missing: b ? "" : "yes" });
     } else {
       for (const lang of ["bg", "en"] as const) {
         const ref = e[lang];
@@ -461,7 +465,20 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
       }
     }
   }
-  addCoded("coded/editions.csv", eds, ["id", "docKey", "no", "issuedOn", "issuedAt", "issuedBy", "reason", "scope", "source", "withParticipants", "lang", "file", "sha256", "altered", "missing", "withheld"]);
+  addCoded("coded/editions.csv", eds, ["id", "docKey", "no", "issuedOn", "issuedAt", "issuedBy", "reason", "scope", "source", "withParticipants", "lang", "file", "sha256", "analysisVersion", "altered", "missing", "withheld"]);
+
+  // what came back from PTS_Analysis 2.0 (7.2): every file of every import, as it came — by its kind
+  // and place (never the name it came with), with its version and hash; codes only
+  const imports: Record<string, unknown>[] = [];
+  for (const imp of s.analysisImports ?? []) {
+    for (const [i, f] of imp.files.entries()) {
+      const got = await uploadedDocBytes({ path: f.path, name: f.kind, mime: f.mime, size: f.size, uploadedAt: imp.at, uploadedBy: imp.by }).catch(() => null);
+      const name = `coded/files/analysis/${imp.id}/${i + 1}-${f.kind}.${f.mime === "image/png" ? "png" : f.mime === "image/jpeg" ? "jpg" : "pdf"}`;
+      if (got) add(name, got.bytes); else missing.push(name);
+      imports.push({ import: imp.id, version: imp.version, at: imp.at, kind: f.kind, n: i + 1, mime: f.mime, size: f.size, sha256: f.sha256, file: got ? name : "", altered: got && sha256(got.bytes) !== f.sha256 ? "yes" : "", missing: got ? "" : "yes" });
+    }
+  }
+  addCoded("coded/analysis_imports.csv", imports, ["import", "version", "at", "kind", "n", "mime", "size", "sha256", "file", "altered", "missing"]);
 
   // the scheme's own uploaded documents: coded/ unless the document names laboratories
   const uploads: Record<string, unknown>[] = [];
@@ -604,6 +621,7 @@ function readme(s: Scheme, want: "all" | "coded", now: Date, files: string[], mi
 - **Юридическите лица, лабораториите и потребителите** (identity/): \`participation_snapshots.csv\` — копието към всяко участие, както е било тогава; \`entities.csv\` (ключ \`id\`), \`laboratories.csv\`, \`entity_users.csv\` — юридическите лица на участията в кръга с **всичките** им лаборатории и потребители (и неактивните, и тези извън кръга), както са в деня на изнасянето. Копието сочи към тях с \`entityId\`, \`laboratoryId\`, \`contactUserId\`. · **Legal entities, laboratories, users** (identity/): participation_snapshots.csv — each participation's copy as it was then; entities.csv (key id), laboratories.csv, entity_users.csv — the round's participations' legal entities with ALL their laboratories and users (inactive ones and ones outside this round too), as they are on the day of the export; the copy points to them by entityId, laboratoryId, contactUserId.
 - **Метрика** (\`metric\` в results.csv / assigned.csv): при изпитване — номерът на характеристиката в \`scheme.json → parameters\` (от 0); при калибриране — \`посока:точка\`. · **metric**: testing — the index into scheme.json → parameters (from 0); calibration — \`direction:point\`.
 - **Резултатите** · **the results**: \`coded/results_in_force.csv\` — какво се обработва за всеки код: версията, взета при заключването (иначе последната), подадената и използваната стойност (корекциите), N/R, N/A — **оттук кръгът продължава по действащите формуляри**; \`coded/submitted_values.csv\` — всяка стойност от всяка подадена версия, както е въведена и като число. · what is processed for each code — the version the lock took (else the latest), the submitted and the used value (the corrections), N/R, N/A — **the round goes on from here on the current forms**; every value of every submitted version, as typed and as a number. Числата са и с точка (\`reported_number\`, \`used_number\`, \`number\`); използваната U е винаги при k = 2 · the numbers also with a point; the used U is always at k = 2. Резултатите, дошли извън формуляра (лист — \`source\` = outside), са в \`identity/files/lab-uploads/\` · results that came outside the form (a sheet) are in \`identity/files/lab-uploads/\`.
+- **PTS_Analysis 2.0:** \`coded/files/analysis/\` — всеки файл от всяко внасяне, както е дошъл (докладите, графиките, валидирането, досието), с версията на модула и хеша в \`analysis_imports.csv\` · every file of every import from 2.0, as it came, with the module's version and hash in \`analysis_imports.csv\`.
 - \`coded/files/documents/\` — всеки документ като страница за печат (без имена); \`coded/files/editions/\` — всяка редакция на документите, замразена (\`editions.csv\`: номер, дата, причина, обхват, SHA-256, коя е при участниците). · every document as a printable page (no names); every edition of the documents, frozen (editions.csv: number, date, reason, scope, SHA-256, which one the participants hold).
 - Текстовете на запазените версии от редактора са файлове в \`files/revisions/\`; таблицата сочи към тях (това не са редакциите — те са в \`files/editions/\`). · The editor's saved versions are files; the table points to them (not the editions — those are in files/editions/).
 

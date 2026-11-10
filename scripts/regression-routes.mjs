@@ -71,6 +71,8 @@ export const ROUTES = [
   { file: "schemes/[id]/export/route.ts", names: "scheme", paths: (c) => [`/schemes/${c.S}/export`, `/schemes/${c.S}/export?part=coded`] },
   // the export to PTS_Analysis 2.0 (7.1): codes only — never a name, to anyone
   { file: "schemes/[id]/export/analysis/route.ts", names: "never", paths: (c) => [`/schemes/${c.S}/export/analysis`] },
+  // a file back from 2.0 (7.2): the report and the charts — by code only, never a name
+  { file: "schemes/[id]/analysis-import/[importId]/[n]/route.ts", names: "never", paths: (c) => [`/schemes/${c.S}/analysis-import/00000000-0000-4000-8000-000000000000/1`] },
   { file: "schemes/[id]/build/page.tsx", names: "never", paths: (c) => [`/schemes/${c.S}/build`] },
   { file: "schemes/[id]/build/[doc]/page.tsx", names: "scheme", paths: (c) => PAGE_DOCS.map((d) => `/schemes/${c.S}/build/${d}`) },
   { file: "schemes/[id]/build/[doc]/history/page.tsx", names: "scheme", paths: (c) => PAGE_DOCS.map((d) => `/schemes/${c.S}/build/${d}/history`) },

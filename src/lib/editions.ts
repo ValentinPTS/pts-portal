@@ -210,7 +210,9 @@ export async function freezeNow(scheme: Scheme, docKey: string): Promise<Frozen 
  *  the same bytes). A new build that renders it differently is not a new edition. */
 export function sameAs(now: Frozen, ed: DocEdition, amendment?: { bg: string; en: string }): boolean {
   if (now.source !== ed.source) return false;
-  if (now.source === "uploaded") return !!ed.sha.file && sha256(now.bytes) === ed.sha.file;
+  // …and, for 2.0's report, the same module's version: the same bytes under a new version is a new
+  // edition — the version an issued report carries (Реш. 68; 7.2 review)
+  if (now.source === "uploaded") return !!ed.sha.file && sha256(now.bytes) === ed.sha.file && (now.file.analysisVersion ?? "") === (ed.file?.analysisVersion ?? "");
   if (ed.fingerprint && now.fingerprint === ed.fingerprint) return true;
   // the bytes as that edition was stamped — with its amendment's line when it is an
   // amendment's edition (3.3)

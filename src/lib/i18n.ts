@@ -625,6 +625,8 @@ const DICT: Record<string, Entry> = {
   "act.results.review_note": { bg: "Индивидуална забележка от прегледа", en: "Individual note from the review" },
   // 7.1 — the export to PTS_Analysis 2.0
   "act.results.exported_2_0": { bg: "Изнесено към PTS_Analysis 2.0", en: "Exported to PTS_Analysis 2.0" },
+  // 7.2 — import from 2.0
+  "act.results.imported_2_0": { bg: "Внесено от PTS_Analysis 2.0", en: "Imported from PTS_Analysis 2.0" },
   "act.scheme.reference_values": { bg: "Референтни стойности по точки", en: "Reference values per point" },
   "act.scheme.delivery_min_days": { bg: "Минимален брой работни дни (заместващ обект)", en: "Minimum working days (replacement object)" },
   "act.message.sent": { bg: "Изпратен имейл до лаборатория", en: "E-mail to a laboratory sent" },

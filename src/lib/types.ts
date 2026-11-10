@@ -423,6 +423,9 @@ export interface UploadedDoc {
   uploadedBy: string; // actor email
   roundAt?: string; // a laboratory's file: the round's clock when it came (1.3) — what counts against a deadline (3.4)
   number?: string; // a proforma's or an invoice's number, as the accounting software gives it (5.8; Реш. 36)
+  /** the report from PTS_Analysis 2.0 (7.2): the module's version it was produced by (Реш. 68) and the import */
+  analysisVersion?: string;
+  importId?: string;
 }
 
 export interface TeamMember {
@@ -742,6 +745,9 @@ export interface Scheme {
   /** PTS's review after the deadline (6.7): each participation's individual note — appended; the
    *  latest is in force, an empty one withdraws it. Never shown to a laboratory before the report. */
   reviewNotes?: import("./review-model").ReviewNote[];
+  /** What came back from PTS_Analysis 2.0 (7.2): each import — the module's version, the files as
+   *  they came (never recomputed), who and when. Appended; the latest is in force. */
+  analysisImports?: import("./analysis-import-model").AnalysisImport[];
   // A calibration scheme's reference values per point (part 5.7, lib/reference-values-model)
   // — x_ref before and after, u_calibration, u_other, k, for 2.0's «Calibration» sheet (D3);
   // each save a version, appended. JSONB, no migration.
