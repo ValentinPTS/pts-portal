@@ -69,6 +69,8 @@ export const ROUTES = [
   { file: "schemes/[id]/review/page.tsx", names: "never", paths: (c) => [`/schemes/${c.S}/review`] },
   { file: "schemes/[id]/audit-pack/route.ts", names: "scheme", paths: (c) => [`/schemes/${c.S}/audit-pack`, `/schemes/${c.S}/audit-pack?names=1`] },
   { file: "schemes/[id]/export/route.ts", names: "scheme", paths: (c) => [`/schemes/${c.S}/export`, `/schemes/${c.S}/export?part=coded`] },
+  // the export to PTS_Analysis 2.0 (7.1): codes only — never a name, to anyone
+  { file: "schemes/[id]/export/analysis/route.ts", names: "never", paths: (c) => [`/schemes/${c.S}/export/analysis`] },
   { file: "schemes/[id]/build/page.tsx", names: "never", paths: (c) => [`/schemes/${c.S}/build`] },
   { file: "schemes/[id]/build/[doc]/page.tsx", names: "scheme", paths: (c) => PAGE_DOCS.map((d) => `/schemes/${c.S}/build/${d}`) },
   { file: "schemes/[id]/build/[doc]/history/page.tsx", names: "scheme", paths: (c) => PAGE_DOCS.map((d) => `/schemes/${c.S}/build/${d}/history`) },

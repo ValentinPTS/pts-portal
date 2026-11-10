@@ -23,7 +23,7 @@ for (const f of ["next.config.ts", "vercel.json", "package.json"]) if (existsSyn
 const all = files.map((f) => readFileSync(f, "utf8")).join("\n");
 
 // every host named in the code — absolute and protocol-relative («//host»)
-const NOT_A_HOST = new Set(["www.w3.org", "portal.invalid"]); // XML namespaces, a placeholder
+const NOT_A_HOST = new Set(["www.w3.org", "portal.invalid", "schemas.openxmlformats.org", "purl.org"]); // XML namespaces (the XLSX writer, 7.1 — names, never contacted), a placeholder
 const OWN = /(^|\.)(ptsbg\.eu|localhost|example\.(com|org|test|bg))$/;
 const found = new Set([
   ...[...all.matchAll(/https?:\/\/([a-z0-9.-]+\.[a-z]{2,})/gi)].map((m) => m[1].toLowerCase()),

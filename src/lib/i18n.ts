@@ -623,6 +623,8 @@ const DICT: Record<string, Entry> = {
   "act.results.reopened": { bg: "Подаването е отново отворено (обработката върната)", en: "Submission reopened (processing stepped back)" },
   // 6.7 — PTS's review after the deadline
   "act.results.review_note": { bg: "Индивидуална забележка от прегледа", en: "Individual note from the review" },
+  // 7.1 — the export to PTS_Analysis 2.0
+  "act.results.exported_2_0": { bg: "Изнесено към PTS_Analysis 2.0", en: "Exported to PTS_Analysis 2.0" },
   "act.scheme.reference_values": { bg: "Референтни стойности по точки", en: "Reference values per point" },
   "act.scheme.delivery_min_days": { bg: "Минимален брой работни дни (заместващ обект)", en: "Minimum working days (replacement object)" },
   "act.message.sent": { bg: "Изпратен имейл до лаборатория", en: "E-mail to a laboratory sent" },

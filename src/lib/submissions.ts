@@ -118,6 +118,20 @@ export async function addSubmission(x: Omit<Submission, "submittedAt">): Promise
   return { ...row, submittedAt: ((data ?? [])[0] as { submitted_at?: string } | undefined)?.submitted_at ?? row.submittedAt };
 }
 
+/** Which participations of a round have submitted at all — their ids only, never a payload (a light
+ *  read for the scheme's page — 7.1 review). A database error throws. */
+export async function submittedParticipantIds(schemeId: string): Promise<Set<string>> {
+  const db = getDb();
+  if (!db) return new Set(memSubs.filter((x) => x.schemeId === schemeId).map((x) => x.participantId));
+  const out = new Set<string>();
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db.from("submissions").select("participant_id").eq("scheme_id", schemeId).order("participant_id").order("version").range(from, from + 999);
+    if (error) throw new Error(`[submissions] not read: ${error.message}`, { cause: error });
+    for (const r of (data ?? []) as { participant_id: string }[]) out.add(r.participant_id);
+    if ((data ?? []).length < 1000) return out;
+  }
+}
+
 /** One participation's submitted versions, oldest first. A database error throws. */
 export async function listSubmissionsFor(participantId: string, schemeId: string): Promise<Submission[]> {
   return (await listSubmissions(schemeId, participantId)).filter((s) => s.participantId === participantId).sort((a, b) => a.version - b.version);

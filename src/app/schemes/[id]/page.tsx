@@ -35,8 +35,10 @@ import { skinsForTypeAsync } from "@/skins";
 import { TYPE_SLUG, typeLabel, schemeName, statusChip, ACCENT } from "@/lib/folders";
 import { markerLabels, schemeMarkers } from "@/lib/scheme-number";
 import SchemeLifecycle, { type ActButton, type StageRow } from "@/components/SchemeLifecycle";
-import { listSubmissions } from "@/lib/submissions";
-import { lockEntries, lockCounts, isNR, resultsOutsideForm } from "@/lib/submission-lock-model";
+import { listSubmissions, submittedParticipantIds } from "@/lib/submissions";
+import { metaGaps, META_GAP_TEXT } from "@/lib/scheme-meta";
+import { lockEntries, lockCounts, isNR, resultsOutsideForm, lockInForce } from "@/lib/submission-lock-model";
+import { analysisGaps } from "@/lib/analysis-export";
 import { activeUnlock, submissionOpen } from "@/lib/submission-model";
 import { needsAmendment } from "@/lib/amendments-model";
 import { chainWindow, deadlineState, windowDays, resultsDeadline } from "@/lib/deadlines-model";
@@ -134,6 +136,20 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
   }));
   const canAct = await mayNow("scheme.edit", id);
   const mayReview = (await mayNow("results.read", id)) || (await mayNow("results.enter", id)) || (await mayNow("results.process", id));
+  // 7.1: who may export to 2.0 — and what the file will lack (the codes whose results came by a sheet; the meta)
+  const mayExport = ((await mayNow("results.process", id)) || (await mayNow("results.enter", id))) && (["running", "processing", "report", "closed"].includes(s.status) || (s.type === "C" && s.status === "open"));
+  let analysisLink: { preliminary: boolean; outside: string[] | null; gaps: string[]; extra: ReturnType<typeof analysisGaps> } | null = null;
+  if (mayExport) {
+    const lk = lockInForce(s.submissionLocks);
+    let outside: string[] | null;
+    // from the lock's own entries once locked; before it, a light read of who submitted (ids only —
+    // never every payload on every page load: 7.1 review); a read that fails: «could not check»
+    if (lk) outside = lk.entries.filter((e) => e.version === null && e.via).map((e) => e.code);
+    else {
+      try { const ids = await submittedParticipantIds(id); outside = goingOn.filter((p) => !ids.has(p.id) && resultsOutsideForm(s.labUploads, p)).map((p) => p.code); } catch { outside = null; }
+    }
+    analysisLink = { preliminary: !lk, outside, gaps: metaGaps(s), extra: analysisGaps(s, goingOn) };
+  }
   const ACTS_IN: Record<string, ActKey[]> = {
     draft: ["open"], open: ["announce", "not_held", "back"], running: ["announce2", "process", "back"],
     processing: ["report", "back"], report: ["close"], closed: ["back"], not_held: ["back"],
@@ -343,6 +359,19 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
 
       {/* the 19 stages and the scheme's state (3.2) */}
       <SchemeLifecycle schemeId={id} lang={lg} stateLabel={STATE_LABEL[s.status][lg]} stages={stageRows} acts={acts} history={history} />
+      {/* 7.1: the export to PTS_Analysis 2.0 — the template's sheets, codes only */}
+      {mayExport && analysisLink && (
+        <div className="text-sm mt-2" data-analysis-export>
+          <a href={`/schemes/${id}/export/analysis`} style={{ fontWeight: 700 }} data-analysis-export-link>{L("Изнеси към PTS_Analysis 2.0 (XLSX, schema 2.1) →", "Export to PTS_Analysis 2.0 (XLSX, schema 2.1) →")}</a>
+          {analysisLink.preliminary && <span style={{ color: "#7a5416" }}> {L("— предварително: подаването още не е заключено", "— preliminary: the submission is not locked yet")}</span>}
+          {analysisLink.outside === null ? <div data-analysis-outside-unread style={{ color: "#8f2f2f" }}>{L("Не можа да се провери кои резултати са дошли извън формуляра — презаредете.", "Which results came outside the form could not be checked — reload.")}</div>
+            : analysisLink.outside.length > 0 && <div data-analysis-outside style={{ color: "#7a5416" }}>{L(`Резултатите на ${analysisLink.outside.join(", ")} са дошли извън формуляра (лист) — във файла няма редове за тях; попълват се ръчно.`, `The results of ${analysisLink.outside.join(", ")} came outside the form (a sheet) — the file has no rows for them; they are typed in by hand.`)}</div>}
+          {analysisLink.extra.provisional.length > 0 && <div data-analysis-provisional style={{ color: "#8f2f2f" }}>{L(`Не се изнася: ${analysisLink.extra.provisional.join(", ")} са още с временен номер — първо кодирането (5.3).`, `Not exported: ${analysisLink.extra.provisional.join(", ")} still have a provisional reference — the coding act first (5.3).`)}</div>}
+          {analysisLink.gaps.length > 0 && <div data-analysis-gaps style={{ color: "#7a5416" }}>{L("Липсва за 2.0: ", "Missing for 2.0: ")}{analysisLink.gaps.map((g) => META_GAP_TEXT[g]?.[lg] ?? g).join("; ")}</div>}
+          {analysisLink.extra.sigmaMismatch.length > 0 && <div data-analysis-sigma style={{ color: "#7a5416" }}>{L(`σpt,min се различава между статистическия проект и полето за 2.0 при ${analysisLink.extra.sigmaMismatch.join(", ")} — във файла влиза полето за 2.0.`, `σpt,min differs between the statistical project and the 2.0 field for ${analysisLink.extra.sigmaMismatch.join(", ")} — the file carries the 2.0 field.`)}</div>}
+          {analysisLink.extra.homogeneityDropped > 0 && <div data-analysis-homogeneity style={{ color: "#7a5416" }}>{L(`${analysisLink.extra.homogeneityDropped} стойности за хомогенност са на характеристики, които не са във файла — не влизат.`, `${analysisLink.extra.homogeneityDropped} homogeneity values are of characteristics not in the file — left out.`)}</div>}
+        </div>
+      )}
       {/* 6.7: PTS's review after the deadline — a staff page, never shown to a laboratory */}
       {mayReview && (["running", "processing", "report", "closed"].includes(s.status) || (s.type === "C" && s.status === "open")) && (
         <p className="text-sm mt-2" data-review-link><Link href={`/schemes/${id}/review`} style={{ fontWeight: 700 }}>{L("Преглед след срока — трите проверки и индивидуалните забележки →", "Review after the deadline — the three checks and the individual notes →")}</Link></p>
