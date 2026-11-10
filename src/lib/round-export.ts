@@ -9,6 +9,7 @@ import { listOpenings } from "./identity-store";
 import { openParticipationSnapshots, inForce, openRoundParties } from "./participation-snapshots";
 import { listCaseEventsForScheme } from "./case-events";
 import { listNoticesForScheme } from "./notifications";
+import { pointKeys } from "./reference-values-model";
 import { listSentForScheme } from "./sent-messages";
 import { listActivityForScheme } from "./activity-store";
 import { listRevisionsForScheme } from "./doc-revisions";
@@ -358,6 +359,9 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
   // its amendments and extensions, its batches and their values, its characteristics
   // and their versions, the design data for 2.0, the lists, the prices. Codes only.
   for (const [file, rows, cols] of schemeTables(s)) addCoded(file, rows, cols);
+  // …and the round's own records (5.2–5.10, part 5.12) — by the codes as they are now
+  const codeById = new Map(participants.map((p) => [p.id, p.code] as const));
+  for (const [file, rows, cols] of roundTables(s, (pid) => codeById.get(pid) ?? "—")) addCoded(file, rows, cols);
   // old stamps carry a lab's e-mail and file name: redacted as for staff (N4)
   addCoded("coded/case_events.csv", events.map((e: CaseEvent) => { const r = redactCaseEventForStaff(e); return { ...r, recordedBy: r.recordedBy.startsWith("lab:") ? "laboratory" : r.recordedBy, schemeId: undefined }; }),
     ["id", "code", "kind", "at", "ref", "note", "recordedBy", "recordedAt", "source", "docKey", "voidedAt", "voidedBy", "voidReason"]);
@@ -617,5 +621,51 @@ export function schemeTables(s: Scheme): [string, object[], string[]][] {
     ["coded/scheme_lists.csv", [...(lists.shipmentDocs ?? []).map((i) => ({ list: "shipment", ...i })), ...(lists.receiptChecks ?? []).map((i) => ({ list: "receipt", ...i })), ...(lists.accreditationRequired ? [{ list: "accreditationRequired", id: "", bg: "да", en: "yes" }] : [])], ["list", "id", "bg", "en"]],
     // money in euros with its unit — never bare cents (review)
     ["coded/commercial.csv", Object.entries({ ...(s.commercial ?? {}), minParticipants: s.minParticipants }).map(([key, value]) => (["base", "step", "addOnMtCyIe"].includes(key) ? { key, value: (Number(value) / 100).toFixed(2), unit: "EUR" } : key === "sharePct" ? { key, value: String(value), unit: "%" } : { key, value: String(value), unit: "" })), ["key", "value", "unit"]],
+  ];
+}
+
+// ── the round's tables (plan part 5.12) ─────────────────────────────────────
+/** Phase 5's records, one table each — the same data as coded/scheme.json, split the same way,
+ *  laid out to be read: a participation by its CODE as it is now (codes.csv holds id ↔ code),
+ *  never a name, an account, a carrier, a receiver, remarks or a person's words. */
+export function roundTables(s: Scheme, codeOf: (participantId: string) => string): [string, object[], string[]][] {
+  const coding = s.coding ?? [];
+  const deliveries = Object.entries(s.deliveries ?? {});
+  const points = new Map(pointKeys(s.calibration).map((k) => [k.key, k] as const));
+  const billed = [...new Set([...Object.keys(s.labDocs ?? {}).filter((c) => s.labDocs?.[c]?.proforma || s.labDocs?.[c]?.invoice), ...Object.keys(s.paidAt ?? {})])].sort();
+  return [
+    // the coding act (5.3): each act, and each reference → its code and objects
+    ["coded/coding_acts.csv", coding.map((c) => ({ id: c.id, day: c.day, at: c.at, by: c.by, count: Object.keys(c.codes).length })), ["id", "day", "at", "by", "count"]],
+    ["coded/coding_map.csv", coding.flatMap((c) => Object.entries(c.codes).map(([ref, code]) => ({ act: c.id, ref, code, objects: (c.objects?.[code] ?? []).join(" ") }))), ["act", "ref", "code", "objects"]],
+    // releases to one participation or one user (5.4) — the user is a person: identity/ only
+    ["coded/releases.csv", (s.releases ?? []).map((r) => ({ id: r.id, docKey: r.docKey, level: r.level, code: r.level === "participation" && r.participantId ? codeOf(r.participantId) : "", editionNo: r.editionNo, at: r.at, by: r.by, withdrawnAt: r.withdrawnAt ?? "", withdrawnBy: r.withdrawnBy ?? "" })), ["id", "docKey", "level", "code", "editionNo", "at", "by", "withdrawnAt", "withdrawnBy"]],
+    // delivery and receipt (5.6; the calibration device's protocol at its chain stop, 5.11)
+    ["coded/shipments.csv", deliveries.flatMap(([pid, d]) => (d.shipments ?? []).map((x) => ({ code: codeOf(pid), id: x.id, kind: x.kind, day: x.day, at: x.at, by: x.by, waybill: x.waybill ?? "", docs: (x.docs ?? []).join(" "), handoverTime: x.handover?.time ?? "" }))), ["code", "id", "kind", "day", "at", "by", "waybill", "docs", "handoverTime"]],
+    // of: a shipment (shipments.csv) or a calibration chain stop (chain_stops.csv) — by its id (review)
+    ["coded/receipts.csv", deliveries.flatMap(([pid, d]) => (d.receipts ?? []).map((r) => ({ code: codeOf(pid), id: r.id, ofKind: r.shipmentId.startsWith("chain:") ? "chain stop" : "shipment", ofId: r.shipmentId.startsWith("chain:") ? r.shipmentId.slice(6) : r.shipmentId, day: r.day, time: r.time, undamaged: r.undamaged ? "yes" : "no", suitable: r.suitable ? "yes" : "no", failed: Object.entries(r.checks ?? {}).filter(([, v]) => !v).map(([k]) => k).join(" "), at: r.at }))), ["code", "id", "ofKind", "ofId", "day", "time", "undamaged", "suitable", "failed", "at"]],
+    ["coded/delivery_problems.csv", deliveries.flatMap(([pid, d]) => (d.problems ?? []).map((x) => ({ code: codeOf(pid), id: x.id, at: x.at, resolvedAt: x.resolved?.at ?? "" }))), ["code", "id", "at", "resolvedAt"]],
+    // the reference laboratory's values per point (5.7) — every version, as saved
+    ["coded/reference_values.csv", (s.referenceValues?.versions ?? []).flatMap((v, i) => Object.entries(v.rows).map(([key, r]) => ({ version: i + 1, at: v.at, by: v.by, point: key, nominal: points.get(key)?.nominal ?? "", directionBg: points.get(key)?.direction?.bg ?? "", directionEn: points.get(key)?.direction?.en ?? "", xBefore: r.xBefore ?? "", xAfter: r.xAfter ?? "", uCal: r.uCal ?? "", uOther: r.uOther ?? "", k: r.k ?? "", kReason: v.kReason ?? "" }))), ["version", "at", "by", "point", "nominal", "directionBg", "directionEn", "xBefore", "xAfter", "uCal", "uOther", "k", "kReason"]],
+    // the documents' numbers and the payment (5.8) — by code; the legal entity is the billing export's
+    // (identity). When each was UPLOADED — the document's own date is in the document (review)
+    ["coded/billing.csv", billed.map((code) => { const d = s.labDocs?.[code]; return { code, proformaNo: d?.proforma?.number ?? "", proformaUploadedAt: d?.proforma?.uploadedAt ?? "", paidAt: s.paidAt?.[code] ?? "", invoiceNo: d?.invoice?.number ?? "", invoiceUploadedAt: d?.invoice?.uploadedAt ?? "" }; }), ["code", "proformaNo", "proformaUploadedAt", "paidAt", "invoiceNo", "invoiceUploadedAt"]],
+    // the calibration chain (3.x, 5.7): each stop in order — the code, when the device came and went,
+    // who stamped it (the laboratory, or PTS with its source); a PTS note is a person's words: identity/
+    ["coded/chain_stops.csv", (s.chain?.stops ?? []).map((x, i) => ({ order: i + 1, id: x.id, kind: x.kind, code: x.code ?? "", receivedAt: x.receivedAt ?? "", receivedBy: x.received?.by ?? "", receivedSource: x.received?.source ?? "", receivedRecordedBy: x.received?.recordedBy ?? "", sentAt: x.sentAt ?? "", sentBy: x.sent?.by ?? "", sentSource: x.sent?.source ?? "", sentRecordedBy: x.sent?.recordedBy ?? "", windowDue: x.windowDue ?? "" })), ["order", "id", "kind", "code", "receivedAt", "receivedBy", "receivedSource", "receivedRecordedBy", "sentAt", "sentBy", "sentSource", "sentRecordedBy", "windowDue"]],
+    // which documents ask for an acknowledgement (5.9) — kept only while set: the export of the moment holds it (review)
+    ["coded/ack_required.csv", Object.entries(s.ackRequired ?? {}).map(([docKey, v]) => ({ docKey, at: v.at, by: v.by })), ["docKey", "at", "by"]],
+    // the round's settings that are not the scheme's design: the replacement's minimum days (А16,
+    // 5.6), the chain's window and estimate, its dispatch and return
+    ["coded/round_settings.csv", [
+      ...(s.deliveryMinDays !== undefined ? [{ key: "deliveryMinDays", value: String(s.deliveryMinDays) }] : []),
+      ...(s.chain?.windowWorkDays !== undefined ? [{ key: "chainWindowWorkDays", value: String(s.chain.windowWorkDays) }] : []),
+      ...(s.chain?.daysPerLab !== undefined ? [{ key: "chainDaysPerLab", value: String(s.chain.daysPerLab) }] : []),
+      ...(s.chain?.dispatchedAt ? [{ key: "chainDispatchedAt", value: s.chain.dispatchedAt }] : []),
+      ...(s.chain?.returnedAt ? [{ key: "chainReturnedAt", value: s.chain.returnedAt }] : []),
+    ], ["key", "value"]],
+    // the acknowledgements and the declaration's ticks (5.9) — the account is an entity user's: identity/ only
+    ["coded/acknowledgements.csv", (s.acknowledgements ?? []).map((a) => ({ code: codeOf(a.participantId), docKey: a.docKey, kind: a.kind, editionNo: a.editionNo ?? "", sha256: a.sha ?? "", lang: a.lang ?? "", at: a.at })), ["code", "docKey", "kind", "editionNo", "sha256", "lang", "at"]],
+    // the one-way messages PTS sent (5.10) — the text a person wrote: identity/ only
+    ["coded/scheme_messages.csv", (s.messages ?? []).map((m) => ({ id: m.id, at: m.at, by: m.by, to: m.to.kind === "all" ? "all" : codeOf(m.to.participantId), count: m.to.kind === "all" ? m.to.count : 1, missed: m.to.kind === "all" ? (m.to.missed ?? []).map(codeOf).join(" ") : "" })), ["id", "at", "by", "to", "count", "missed"]],
   ];
 }

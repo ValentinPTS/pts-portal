@@ -40,6 +40,10 @@ try {
   t("…the participants' tables of Phase 4 in identity/ (4.5, 4.8)", ["identity/participation_snapshots.csv", "identity/entities.csv", "identity/laboratories.csv", "identity/entity_users.csv"].every((n) => body.includes(Buffer.from(n))) && !cb.includes(Buffer.from("identity/entities.csv")));
   t("…the scheme's tables in coded/ (3.14)", ["coded/lifecycle_acts.csv", "coded/lifecycle_stages.csv", "coded/amendments.csv", "coded/extensions.csv", "coded/batches.csv", "coded/batch_objects.csv", "coded/homogeneity.csv", "coded/characteristics.csv", "coded/characteristic_versions.csv", "coded/scheme_meta.csv", "coded/external_providers.csv", "coded/scheme_lists.csv", "coded/commercial.csv"].every((n) => body.includes(Buffer.from(n))));
   t("…and in the coded part alone too (review)", ["coded/lifecycle_acts.csv", "coded/scheme_meta.csv", "coded/external_providers.csv", "coded/homogeneity.csv"].every((n) => cb.includes(Buffer.from(n))));
+  // the round's own tables (5.12): the coding, releases, deliveries, reference values, billing,
+  // acknowledgements, messages — in the coded part, by codes
+  const ROUND = ["coded/coding_acts.csv", "coded/coding_map.csv", "coded/releases.csv", "coded/shipments.csv", "coded/receipts.csv", "coded/delivery_problems.csv", "coded/reference_values.csv", "coded/billing.csv", "coded/chain_stops.csv", "coded/ack_required.csv", "coded/round_settings.csv", "coded/acknowledgements.csv", "coded/scheme_messages.csv"];
+  t("…the round's tables in coded/ (5.12) — the full export and the coded part alone", ROUND.every((n) => body.includes(Buffer.from(n)) && cb.includes(Buffer.from(n))));
   t("the coded part alone: a ZIP with no identity/", coded.status() === 200 && isZip(cb) && cb.includes(Buffer.from("coded/codes.csv")) && !cb.includes(Buffer.from("identity/")), String(coded.status()));
 
   await go("/activity?action=round.exported");

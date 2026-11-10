@@ -112,11 +112,17 @@ await notify({ kind: "docs.sent", audience: "lab", labId: lab.id, schemeId: S, c
 await addCaseEvent({ schemeId: S, code: p.code, kind: "report_issued", source: "auto", ref: SECRET.cert });
 await addCaseEvent({ schemeId: S, code: p.code, kind: "results_received", source: "auto", ref: SECRET.file, recordedBy: SECRET.email });
 await appendActivity({ action: "certificate.issued", actorEmail: "m@ptsbg.eu", actorRole: "manager", schemeId: S, targetCode: p.code, summary: `Certificate ${SECRET.cert} recorded for ${p.code}` });
+const CU5 = "a6000000-0000-4000-8000-0000000000f5"; // an entity user's account id (5.12): identity only
 await updateSchemeWith(S, (cur) => ({
   chain: { stops: [{ id: "a", kind: "lab", code: p.code, receivedAt: "2026-11-02T09:00:00Z", received: { by: "pts", recordedAt: "2026-11-02T09:00:00Z", source: "phone", note: `обадиха се от ${SECRET.name}` } }] } as never,
   docs: { ...(cur.docs ?? {}), plan: { bg: `<p>Благодарим на ${SECRET.name}.</p>`, en: "<p>Thanks.</p>" } },
   applications: [...(cur.applications ?? []), { id: "app-f", schemeId: S, submittedAt: "2026-11-01T11:00:00Z", labName: "=HYPERLINK(\"http://x\")", accreditationCert: "", manager: "", contactPerson: "", email: "f@lab-export.bg", phone: "", companyName: "@SUM(1)", registeredAddress: "", eik: "", vat: "", mol: "", deliveryAddress: "", postalCode: "", selections: {}, status: "pending" } as never],
   uploads: { ...(cur.uploads ?? {}), instruction: { path: "missing/not-in-storage.pdf", name: "instr.pdf", mime: "application/pdf", size: 5, uploadedAt: "2026-11-01T08:00:00Z", uploadedBy: "m@ptsbg.eu" } },
+  // Phase 5's records (5.12): a receipt with its receiver and remarks, a problem's words, a message's
+  // text, an acknowledgement's account — none of which the coded part may carry
+  deliveries: { [p.id]: { shipments: [{ id: "sh-x", kind: "dispatch", at: "2026-11-03T08:00:00Z", by: "m@ptsbg.eu", day: "2026-11-03", waybill: "WB-77", carrier: "КУРИЕР-ТАЙНА", docs: [] }], receipts: [{ id: "rc-x", shipmentId: "sh-x", at: "2026-11-04T08:00:00Z", by: `entityuser:${CU5}`, day: "2026-11-04", time: "10:00", checks: {}, undamaged: true, suitable: true, remarks: `ЗАБЕЛЕЖКА-ТАЙНА от ${SECRET.name}`, receivedBy: SECRET.name }], problems: [{ id: "pr-x", at: "2026-11-04T09:00:00Z", by: `entityuser:${CU5}`, text: "ДУМИ-НА-СИГНАЛ-ТАЙНА" }] } } as never,
+  acknowledgements: [{ id: "ak-x", participantId: p.id, docKey: "declaration", kind: "declaration", editionId: "e-x", editionNo: 1, sha: "feedface", lang: "bg", at: "2026-11-04T10:00:00Z", by: `entityuser:${CU5}` }] as never,
+  messages: [{ id: "ms-x", nonce: "n-x", at: "2026-11-05T10:00:00Z", by: "m@ptsbg.eu", to: { kind: "participation", participantId: p.id }, bg: "ТЕКСТ-НА-СЪОБЩЕНИЕ-ТАЙНА", en: "MESSAGE-TEXT-SECRET" }] as never,
 }));
 await addRevision({ schemeId: S, docKey: "plan", bg: `<p>${SECRET.name} — ${SECRET.email}</p>`, en: "<p>x</p>", savedBy: "m@ptsbg.eu" });
 await appendActivity({ action: "names.viewed", actorEmail: "m@ptsbg.eu", actorRole: "manager", actorName: "М", schemeId: S, summary: `Laboratory names shown — ${SECRET.email}` });
@@ -156,6 +162,13 @@ t("the coded part: no laboratory name, address, phone, account id, file name or 
 const copyLeaks = coded.filter(([, b]) => Object.values(COPY).some((x) => b.toString("utf8").includes(x))).map(([n]) => n);
 t("…nor anything of a participation's frozen copy — its entity, laboratory, address, МОЛ, official e-mail, contact (4.5 review)", copyLeaks.length === 0, copyLeaks.join());
 t("…but it has the results by code", (zAll.get("coded/results.csv")?.toString("utf8") ?? "").includes(`${p.code},0,10.2,0.2`));
+// the round's tables (5.12) through the real path — the scrubber and the columns included
+const rt = (f: string) => zAll.get(`coded/${f}.csv`)?.toString("utf8") ?? "";
+t("the round's tables (5.12): a row each, by the code — the shipment, the receipt, the problem, the acknowledgement, the message, the chain stop", rt("shipments").includes(`${p.code},sh-x,dispatch`) && rt("receipts").includes(`${p.code},rc-x,shipment,sh-x`) && rt("delivery_problems").includes(`${p.code},pr-x`) && rt("acknowledgements").includes(`${p.code},declaration,declaration,1,feedface`) && rt("scheme_messages").includes(`ms-x`) && rt("scheme_messages").includes(p.code) && rt("chain_stops").includes(`1,a,lab,${p.code}`));
+const roundLeaks = coded.filter(([, b]) => ["КУРИЕР-ТАЙНА", "ЗАБЕЛЕЖКА-ТАЙНА", "ДУМИ-НА-СИГНАЛ-ТАЙНА", "ТЕКСТ-НА-СЪОБЩЕНИЕ-ТАЙНА", "MESSAGE-TEXT-SECRET", CU5].some((x) => b.toString("utf8").includes(x))).map(([n]) => n);
+t("…and nothing of what they leave out reaches ANY coded file: the carrier, the remarks, a problem's words, a message's text, the account", roundLeaks.length === 0, roundLeaks.join());
+const identityScheme5 = zAll.get("identity/scheme-identity.json")?.toString("utf8") ?? "";
+t("…the identity part keeps them whole", identityScheme5.includes("ТЕКСТ-НА-СЪОБЩЕНИЕ-ТАЙНА") && identityScheme5.includes("ДУМИ-НА-СИГНАЛ-ТАЙНА") && identityScheme5.includes("КУРИЕР-ТАЙНА"));
 t("…the code itself", (zAll.get("coded/codes.csv")?.toString("utf8") ?? "").includes(p.code));
 t("…and the message's words, without its address", /Документите са изпратени/.test(zAll.get("coded/messages.csv")?.toString("utf8") ?? ""));
 const id = (f: string) => zAll.get(f)?.toString("utf8") ?? "";
