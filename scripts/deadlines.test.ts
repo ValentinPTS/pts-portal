@@ -145,7 +145,7 @@ t("overdue blocks nothing: no refusal reads a deadline", !/isPast\(|deadlineStat
 // …but the results form: it closes at the deadline in force (Реш. 111, part 6.4) — only through
 // submissionOpen, and only the results' own actions (the draft, the submission, the unlock)
 const gated = [...actions.matchAll(/submissionOpen\(/g)].map((m) => actions.lastIndexOf("export async function", m.index)).map((i) => /export async function (\w+)/.exec(actions.slice(i))?.[1]);
-t("…the results form alone closes at it (Реш. 111): the draft, the submission, the unlock", [...new Set(gated)].sort().join() === "saveResultDraftAction,submitResultsAction,unlockResultsAction", [...new Set(gated)].join());
+t("…the results form alone closes at it (Реш. 111): the draft, the submission, the unlock — and the lock asks a reason while one still runs (6.6)", [...new Set(gated)].sort().join() === "lifecycleActAction,saveResultDraftAction,submitResultsAction,unlockResultsAction", [...new Set(gated)].join());
 
 console.log(`deadlines.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

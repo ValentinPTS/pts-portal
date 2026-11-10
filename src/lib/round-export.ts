@@ -148,6 +148,8 @@ export const SCHEME_FIELDS = {
   messages: "split",
   // the unlocks of a participation's form after the deadline (6.4) — by PTS's people, with the reason
   resultUnlocks: "coded",
+  // «Заключи подаването» (6.6): the version taken per participation, or N/R — by code; and the reopenings
+  submissionLocks: "coded",
   // a release to one user names that user (an entity user's id is the same in every round):
   // its user kept only in identity/ (5.4 review)
   releases: "split", skin: "coded", name: "coded", folderId: "coded",
@@ -690,5 +692,10 @@ export function roundTables(s: Scheme, codeOf: (participantId: string) => string
     ["coded/acknowledgements.csv", (s.acknowledgements ?? []).map((a) => ({ code: codeOf(a.participantId), docKey: a.docKey, kind: a.kind, editionNo: a.editionNo ?? "", sha256: a.sha ?? "", lang: a.lang ?? "", at: a.at })), ["code", "docKey", "kind", "editionNo", "sha256", "lang", "at"]],
     // the one-way messages PTS sent (5.10) — the text a person wrote: identity/ only
     ["coded/scheme_messages.csv", (s.messages ?? []).map((m) => ({ id: m.id, at: m.at, by: m.by, to: m.to.kind === "all" ? "all" : codeOf(m.to.participantId), count: m.to.kind === "all" ? m.to.count : 1, missed: m.to.kind === "all" ? (m.to.missed ?? []).map(codeOf).join(" ") : "" })), ["id", "at", "by", "to", "count", "missed"]],
+    // «Заключи подаването» (6.6; Реш. 21): each lock — per participation, the version taken or N/R —
+    // and each reopening (its note, a person's words, stays with the act in scheme.json); by the code as it is now
+    ["coded/submission_locks.csv", (s.submissionLocks ?? []).flatMap((l) => l.kind === "lock"
+      ? l.entries.map((e) => ({ id: l.id, kind: "lock", at: l.at, roundAt: l.roundAt, by: l.by, code: codeOf(e.participantId), version: e.version ?? "", via: e.via ?? "", nr: e.version === null && !e.via ? "yes" : "" }))
+      : [{ id: l.id, kind: "reopen", at: l.at, roundAt: "", by: l.by, code: "", version: "", via: "", nr: "" }]), ["id", "kind", "at", "roundAt", "by", "code", "version", "via", "nr"]],
   ];
 }

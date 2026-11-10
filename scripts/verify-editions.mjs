@@ -55,7 +55,8 @@ const toReport = async () => {
     await page.locator("[data-lifecycle] [data-stage]").nth(18).waitFor();
     const before = await state();
     if (step.act) {
-      answers.push(true, "");
+      // 6.6: locking while a form is still open for one with nothing in asks a reason
+      answers.push(true, step.act === "process" ? "Заключено за проверката на изданията" : "");
       await page.locator(`[data-act="${step.act}"]`).click();
       await waitFor(async () => (await state()) !== before);
     } else {

@@ -74,7 +74,7 @@ import { requireParticipant, participantActor, getParticipantSession, participat
 import { inviteParticipant } from "./participant-invite";
 import { freezeParticipation, participationEntity } from "./participation-snapshots";
 import { readSelections, characteristicsOf, readRefusal, readSource, inRound, REFUSAL_CATEGORIES, STANDING_PROBLEM_TEXT, MAX_PER_CHARACTERISTIC, participationSets, selectionsOf, sameSelections, objectsNeeded, type Standing } from "./application-model";
-import { notifyParticipationRefused, notifyItemsDispatched, notifyReceiptProtocol, notifyDeliveryProblem, notifyMessage, notifyResultsUnlocked, notifyResultsCorrected } from "./notify-events";
+import { notifyParticipationRefused, notifyItemsDispatched, notifyReceiptProtocol, notifyDeliveryProblem, notifyMessage, notifyResultsUnlocked, notifyResultsCorrected, notifyResultsLockedNR, notifyResultsReopened } from "./notify-events";
 import { readDocNumber, invoiceSlotProblem, INVOICE_PROBLEM_TEXT } from "./invoice-model";
 import { readShipment, readReceipt, deliveryOf, openShipment, openProblems, replacementProblem, replacementCalledFor, minDaysOf, readMinDays, chainReceiptTarget, LIMITS as DELIVERY_LIMITS, MAX_OPEN_PROBLEMS, type Shipment, type ShipmentKind, type Deliveries } from "./delivery-model";
 import { finalListOf, splitFor, invoiceProblem, currentFinalList, inFinalRound, finalSelectionsOf, ANNOUNCEMENT_PROBLEM_TEXT, type FinalList } from "./announcement-model";
@@ -82,7 +82,8 @@ import { readTarget, RELEASE_PROBLEM_TEXT, releaseFor, type TargetRelease } from
 import { ackRequiredFor, ackSettable, ackOf, kindOf, readAckForm, type Acknowledgement, type AckProblem } from "./ack-model";
 import { readMessage, messageBody, type SchemeMessage } from "./messages-model";
 import { resultRows, readDraft, notNumbers, rowsHaveIds, calRows, calRowsReady, readCalDraft, notNumbersCal, orphansOf, draftFor, calDraftFor, checkTesting, checkCalibration, blocking, type CheckProblem } from "./results-model";
-import { putDraft, getDraft, addSubmission, listSubmissionsFor, addCorrection, listCorrectionsFor, correctionExists } from "./submissions";
+import { putDraft, getDraft, addSubmission, listSubmissions, listSubmissionsFor, addCorrection, listCorrectionsFor, correctionExists } from "./submissions";
+import { lockEntries, lockCounts, lockInForce, isNR, resultsOutsideForm, type SubmissionLock } from "./submission-lock-model";
 import { correctableFields, activeCorrections, readCorrection, type ResultCorrection } from "./corrections-model";
 import { activeUnlock, submissionOpen, readConfirmations, submissionPayload, readUnlock, SUBMIT_PROBLEM_TEXT, type ResultUnlock } from "./submission-model";
 import { testPeriodLimits, calibrationWindows } from "./results-limits";
@@ -123,7 +124,7 @@ import { addStaff, updateStaff, getStaffByEmail, getStaff, staffEmailInUse } fro
 import { requirePeopleManager, getRoleContext, canManagePeople } from "./roles";
 import { requireCap, requireCapAnywhere, requireOneOf, mayNow, mayViewDoc, getViewer, schemesFor, mayAnywhereNow } from "./access";
 import { isAmendedDoc, needsAmendment, checkAmendment, nextAmendmentNo, amendmentLine, amendmentNote, AMENDMENT_PROBLEM_TEXT, type Amendment, type AmendmentInput } from "./amendments-model";
-import { ACTS, ACT_PROBLEM_TEXT, TICK_PROBLEM_TEXT, STATE_LABEL, actProblem, actTarget, isActKey, stageDef, tickProblem, untickProblem, type ActKey, type ActProblem, type LifecycleAct, type StageTick } from "./lifecycle-model";
+import { ACTS, ACT_PROBLEM_TEXT, TICK_PROBLEM_TEXT, STATE_LABEL, MIN_NOTE, actProblem, actTarget, isActKey, stageDef, tickProblem, untickProblem, type ActKey, type ActProblem, type LifecycleAct, type StageTick } from "./lifecycle-model";
 import { sanitizeDocHtml } from "./sanitize-html";
 import { SCHEME_DOC_BUCKET, SCHEME_DOC_EXT, MAX_SCHEME_DOC_BYTES, ensureSchemeDocsBucket } from "./scheme-uploads";
 import { isDocKey } from "./doc-stages";
@@ -4138,6 +4139,45 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
   if (first) return { error: ACT_REFUSAL[first] };
   const by = await actorNow();
 
+  // «Заключи подаването» (6.6; Реш. 21): the start of processing is the technical end of the
+  // submission. Read before the act: the final list, those whose results came outside the form
+  // (a sheet — not N/R), and a deadline still running for one with nothing in (the act then needs its
+  // note); who to tell — each that may end N/R — looked up now (2.3). What the lock TAKES is read
+  // AFTER the status has changed (below): a version that lands meanwhile is refused (0044), never lost.
+  let lockParts: Awaited<ReturnType<typeof listParticipants>> = [];
+  let lockOutside = new Set<string>();
+  let lockFirstRead: Awaited<ReturnType<typeof listSubmissions>> = [];
+  let nrLabOf = new Map<string, string | undefined>();
+  let reopenTell: { parts: Awaited<ReturnType<typeof listParticipants>>; labOf: Map<string, string | undefined> } | null = null;
+  if (act === "process") {
+    let stillOpen: string[] = [];
+    try {
+      lockParts = (await listParticipants(schemeId)).filter((p) => inFinalRound(scheme, p));
+      lockOutside = new Set(lockParts.filter((p) => resultsOutsideForm(scheme.labUploads, p)).map((p) => p.id));
+      lockFirstRead = await listSubmissions(schemeId);
+      const nowMs = schemeNowMs(scheme), today = sofiaToday(nowMs);
+      stillOpen = lockEntries(lockParts, lockFirstRead, lockOutside).filter(isNR)
+        .filter((e) => submissionOpen(resultsDeadline(scheme, e.code).at, nowMs, activeUnlock(scheme.resultUnlocks, e.participantId, today)).open).map((e) => e.code);
+      const maybeNr = lockParts.filter((p) => !lockOutside.has(p.id));
+      nrLabOf = maybeNr.length ? await labIdsFor(schemeId, maybeNr, by) : nrLabOf;
+    } catch {
+      return { error: NOT_REACHED };
+    }
+    // a deadline (an extension, an unlock) still running for one with nothing in: N/R now is PTS's
+    // decision, with its reason (6.6 review)
+    if (stillOpen.length && [...note].length < MIN_NOTE) return { error: `Формулярът за резултати още е отворен за ${stillOpen.join(", ")} (срокът не е изтекъл или не е зададен) — заключването преди това се записва с основание (поне ${MIN_NOTE} знака). · The results form is still open for ${stillOpen.join(", ")} (its deadline has not passed, or none is set) — locking before that is recorded with a reason (${MIN_NOTE} characters at least).` };
+  }
+  // «Върни» from a locked processing: those recorded N/R are told the submission is open again
+  if (act === "back" && scheme.status === "processing" && lockInForce(scheme.submissionLocks)) {
+    try {
+      const nrIds = new Set(lockInForce(scheme.submissionLocks)!.entries.filter(isNR).map((e) => e.participantId));
+      const parts = (await listParticipants(schemeId)).filter((p) => nrIds.has(p.id));
+      reopenTell = { parts, labOf: parts.length ? await labIdsFor(schemeId, parts, by) : new Map() };
+    } catch {
+      return { error: NOT_REACHED };
+    }
+  }
+
   // Who to tell, before anything is recorded (2.3): every participant, when the scheme
   // runs (the first announcement, 5.2), when it is not held (О9) and when the report
   // is issued.
@@ -4195,9 +4235,34 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
     const ids = act === "announce" && cur.parameters?.some((p) => !p.id) ? ensureIds(cur.parameters, cur.characteristicSeq) : null;
     // …and a calibration's points theirs (6.2)
     const pts = act === "announce" && cur.calibration?.points?.length && !pointsReady(cur.calibration) ? ensurePointIds(cur.calibration.points, cur.calibration.points, cur.calibration.pointIds, cur.pointSeq) : null;
-    return { status: to, lifecycle: { ...(cur.lifecycle ?? {}), acts: [...(cur.lifecycle?.acts ?? []), entry] }, ...(ids ? { parameters: ids.params, characteristicSeq: ids.seq } : {}), ...(pts && cur.calibration ? { calibration: { ...cur.calibration, pointIds: pts.ids }, pointSeq: pts.seq } : {}) };
+    // 6.6: «Върни» from a LOCKED processing — a reopening (the lock itself is recorded after the
+    // status, below); a processing never locked (before 6.6) has nothing to reopen
+    const lock: SubmissionLock | null = act === "back" && from === "processing" && lockInForce(cur.submissionLocks) ? { id: randomUUID(), kind: "reopen", at, by, note } : null;
+    return { status: to, lifecycle: { ...(cur.lifecycle ?? {}), acts: [...(cur.lifecycle?.acts ?? []), entry] }, ...(ids ? { parameters: ids.params, characteristicSeq: ids.seq } : {}), ...(pts && cur.calibration ? { calibration: { ...cur.calibration, pointIds: pts.ids }, pointSeq: pts.seq } : {}), ...(lock ? { submissionLocks: [...(cur.submissionLocks ?? []), lock] } : {}) };
   });
   if (refused) return { error: ACT_REFUSAL[refused as ActProblem] };
+  if (act === "process") {
+    // the status has changed: from here the database refuses a new version (0044) — what the lock
+    // takes is read NOW, so a version that landed meanwhile is taken, never lost (6.6 review)
+    let versions = lockFirstRead;
+    try { versions = await listSubmissions(schemeId); } catch { /* the read before the act stands */ }
+    const entries = lockEntries(lockParts, versions, lockOutside);
+    const lock: SubmissionLock = { id: randomUUID(), kind: "lock", at, roundAt: schemeNowIso(scheme), by, entries };
+    let stored = false;
+    await updateSchemeWith(schemeId, (cur) => { if (cur.status !== "processing") return {}; stored = true; return { submissionLocks: [...(cur.submissionLocks ?? []), lock] }; });
+    const n = lockCounts(entries), nr = entries.filter(isNR);
+    // the codes N/R and outside the form — never a value; the versions taken by number only
+    if (stored) {
+      await logActivity("results.locked", { schemeId, subject: `scheme:${schemeId}`, summary: `Submission locked at the start of processing — ${n.taken} with a submitted version, ${n.outside} received outside the form, ${n.nr} without (N/R)${n.nr ? `: ${nr.map((e) => e.code).join(", ")}` : ""}`, after: { taken: n.taken, outside: entries.filter((e) => e.via).map((e) => e.code), nr: nr.map((e) => e.code) } });
+      for (const e of nr) await notifyResultsLockedNR(nrLabOf.get(e.code), schemeId, scheme.number, e.code, e.participantId);
+    } else {
+      await logActivity("results.locked", { schemeId, subject: `scheme:${schemeId}`, summary: "Submission lock NOT recorded — the scheme's state changed meanwhile" });
+    }
+  }
+  if (act === "back" && from === "processing" && reopenTell) {
+    await logActivity("results.reopened", { schemeId, subject: `scheme:${schemeId}`, summary: `Submission reopened — processing stepped back${note ? ` — ${note}` : ""}` });
+    for (const p of reopenTell.parts) await notifyResultsReopened(reopenTell.labOf.get(p.code), schemeId, scheme.number, p.code, p.id);
+  }
 
   await logActivity("scheme.state", {
     schemeId, subject: `scheme:${schemeId}`, before: { status: from }, after: { status: to },
@@ -6154,6 +6219,10 @@ export async function submitResultsAction(schemeId: unknown, participantId: unkn
     if (!conf.ok) return { error: conf.problem };
     payload = submissionPayload("C", draft, rows, problems, conf.value, lateBy);
   }
+  // the scheme still takes results — read again now: «Заключи подаването» (6.6) may have come
+  // meanwhile; on a deployment the database refuses such a version anyway (0044)
+  const fresh = await getScheme(sid).catch(() => null);
+  if (!fresh || !(fresh.type === "T" ? fresh.status === "running" : fresh.status === "open" || fresh.status === "running")) return { error: "state" };
   // the next version — recorded whole, or not at all
   let version: number, sub: Awaited<ReturnType<typeof addSubmission>>;
   const roundAt = schemeNowIso(scheme);

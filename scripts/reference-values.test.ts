@@ -60,7 +60,7 @@ t("…journalled: the version and the points that changed — field by field, ne
 const page = src("app/schemes/[id]/reference/page.tsx");
 t("the page: in THIS scheme, for who reads the results or edits the scheme", /await requireOneOf\(\["results\.read", "scheme\.edit", "results\.process"\], id\)/.test(page));
 const scheme = src("app/schemes/[id]/page.tsx");
-t("the scheme's page: the link only to who may open it; «process» warns while the values are not complete for 2.0", /\{type === "C" && canReference && \(/.test(scheme) && /a === "process" && refGap \?/.test(scheme));
+t("the scheme's page: the link only to who may open it; «process» warns while the values are not complete for 2.0", /\{type === "C" && canReference && \(/.test(scheme) && /a === "process" \? \[lockSay, refGap \?/.test(scheme));
 t("…in the §4.2 inventory: it names nobody", /schemes\/\[id\]\/reference\/page\.tsx", names: "never"/.test(readFileSync(new URL("./regression-routes.mjs", import.meta.url), "utf8")));
 t("…kept in the round export with the coded part (the device's numbers)", /referenceValues: "coded"/.test(src("lib/round-export.ts")));
 

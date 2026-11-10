@@ -46,7 +46,7 @@ const tables = roundTables(s, codeOf);
 const by = Object.fromEntries(tables.map(([f, rows, cols]) => [f, { rows: rows as Record<string, unknown>[], cols }]));
 const all = tables.map(([, rows, cols]) => csv(cols, rows)).join("\n");
 
-t("thirteen tables, each a coded/ CSV", tables.length === 13 && tables.every(([f]) => /^coded\/[a-z_]+\.csv$/.test(f)));
+t("fourteen tables (6.6: the submission locks), each a coded/ CSV", tables.length === 14 && tables.every(([f]) => /^coded\/[a-z_]+\.csv$/.test(f)));
 t("every row carries exactly its columns (none left out, none extra but empty)", tables.every(([, rows, cols]) => (rows as Record<string, unknown>[]).every((r) => Object.keys(r).every((k) => cols.includes(k)) && cols.every((c) => c in r))));
 t("NOTHING planted reaches them: no name, account, user, carrier, remark, problem's words, message, reason, note", [NAME, ACCOUNT, USER, CARRIER, REMARK, PROBLEM, MESSAGE, REASON, NOTE].every((x) => !all.includes(x)), [NAME, ACCOUNT, USER, CARRIER, REMARK, PROBLEM, MESSAGE, REASON, NOTE].filter((x) => all.includes(x)).join(", "));
 t("…nor a file's name (an invoice is named after its customer)", !all.includes("ЕкоЛаб"));

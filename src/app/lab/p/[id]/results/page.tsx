@@ -16,6 +16,7 @@ import { resultsDeadline } from "@/lib/deadlines-model";
 import { activeUnlock, submissionOpen } from "@/lib/submission-model";
 import { listSubmissionsFor, listCorrectionsFor } from "@/lib/submissions";
 import { usedValues, FIELD_LABEL } from "@/lib/corrections-model";
+import { lockInForce, lockEntryOf, lockWord } from "@/lib/submission-lock-model";
 import { schemeNowMs, sofiaToday } from "@/lib/clock";
 import { fmtMoment, fmtSchemeDate } from "@/lib/scheme-dates";
 
@@ -109,7 +110,21 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
   // the deadline the form closes at, said — for calibration too: the plan's results deadline (M1 т. 13:
   // «до крайния срок, посочен в т. 10»), not the window with the device (6.4 review)
   const due = resultsDeadline(s, p.code);
-  const closedNote = !gate.late ? (due.at ? <p role="note" data-results-deadline={due.at} style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>{L("Срок за подаване на резултатите", "Results deadline")}: <b>{fmtSchemeDate(due.at)}</b>{due.ext ? L(` (удължен${due.ext.orderNo ? ` със заповед № ${due.ext.orderNo}` : ""})`, ` (extended${due.ext.orderNo ? ` by order No. ${due.ext.orderNo}` : ""})`) : ""}{L(" — след него формулярът се затваря.", " — after it the form closes.")}</p> : null) : (
+  // 6.6 (Реш. 21): the submission locked at the start of processing — nothing comes in after it;
+  // which version is processed, its results received outside the form, or N/R — said to this
+  // participation. A scheme that reached processing before 6.6 has no lock: closed all the same.
+  const afterStart = s.status === "processing" || s.status === "report" || s.status === "closed";
+  const lock = afterStart ? lockInForce(s.submissionLocks) : null;
+  const word = lockWord(lockEntryOf(lock, v.participantId));
+  const lockNote = afterStart ? (
+    <p role="note" data-results-locked={word} style={{ margin: 0, fontSize: 13, color: "#7a5416" }}>
+      {L("Подаването е заключено — започна обработката (Реш. 21). След това резултат не се приема.", "The submission is locked — processing has started (Реш. 21). No result is accepted after it.")}{" "}
+      {word === "nr" ? <b>{L("От вас не са получени резултати — участието е N/R.", "No results were received from you — the participation is N/R.")}</b>
+        : word === "outside" ? L("Резултатите ви са получени извън онлайн формуляра (Лист с резултати) и се обработват.", "Your results were received outside the online form (the Results Sheet) and are processed.")
+        : word ? L(`Обработва се версия ${word}.`, `Version ${word} is processed.`) : null}
+    </p>
+  ) : null;
+  const closedNote = lockNote ? lockNote : !gate.late ? (due.at ? <p role="note" data-results-deadline={due.at} style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>{L("Срок за подаване на резултатите", "Results deadline")}: <b>{fmtSchemeDate(due.at)}</b>{due.ext ? L(` (удължен${due.ext.orderNo ? ` със заповед № ${due.ext.orderNo}` : ""})`, ` (extended${due.ext.orderNo ? ` by order No. ${due.ext.orderNo}` : ""})`) : ""}{L(" — след него формулярът се затваря.", " — after it the form closes.")}</p> : null) : (
     unlock
       ? <p role="note" data-results-unlocked style={{ margin: 0, fontSize: 13, color: "#2e6b3a" }}>{L(`Срокът е изтекъл, но PTS е отключил формуляра до ${unlock.until.split("-").reverse().join(".")} включително.`, `The deadline has passed, but PTS has unlocked the form until ${unlock.until.split("-").reverse().join(".")} inclusive.`)}</p>
       : <p role="note" data-results-deadline-passed style={{ margin: 0, fontSize: 13, color: "#8f2f2f" }}>{L("Срокът за резултати е изтекъл — формулярът е затворен. След срока резултат се приема само чрез PTS (Реш. 111).", "The results deadline has passed — the form is closed. After the deadline a result comes in only through PTS (Реш. 111).")}</p>

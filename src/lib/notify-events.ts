@@ -466,3 +466,32 @@ export async function notifyResultsCorrected(labId: string | undefined, schemeId
     href: `/lab/p/${encodeURIComponent(participantId)}/results`,
   });
 }
+
+/** «Заключи подаването» (part 6.6; Реш. 21, 22, 91): the submission is locked — processing has
+ *  started — and no version came from this participation: it is N/R. Told to it personally (never
+ *  against its code in the report). Held for a person, as every lab notice. */
+export async function notifyResultsLockedNR(labId: string | undefined, schemeId: string, schemeNumber: string, code: string, participantId: string): Promise<void> {
+  if (!(await anyoneToTell(labId, schemeId, code))) return;
+  await notify({
+    kind: "results.locked",
+    audience: "lab",
+    labId, schemeId, code,
+    bg: `Подаването на резултати по схема ${schemeNumber} е заключено — започна обработката. От вас не са получени резултати; участието ви е N/R (не е докладвано).`,
+    en: `The submission of results in scheme ${schemeNumber} is locked — processing has started. No results were received from you; your participation is N/R (not reported).`,
+    href: `/lab/p/${encodeURIComponent(participantId)}/results`,
+  });
+}
+
+/** «Върни» from processing (part 6.6): the submission is open again — to those the lock recorded
+ *  N/R. Held for a person, as every lab notice. */
+export async function notifyResultsReopened(labId: string | undefined, schemeId: string, schemeNumber: string, code: string, participantId: string): Promise<void> {
+  if (!(await anyoneToTell(labId, schemeId, code))) return;
+  await notify({
+    kind: "results.locked",
+    audience: "lab",
+    labId, schemeId, code,
+    bg: `Подаването на резултати по схема ${schemeNumber} е отново отворено — формулярът следва срока за резултати.`,
+    en: `The submission of results in scheme ${schemeNumber} is open again — the form follows the results deadline.`,
+    href: `/lab/p/${encodeURIComponent(participantId)}/results`,
+  });
+}

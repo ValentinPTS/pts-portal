@@ -23,6 +23,7 @@ import { getServerT } from "@/lib/i18n-server";
 import StageBar from "@/components/StageBar";
 import DeviceChainCard from "@/components/DeviceChainCard";
 import ParticipantNav from "@/components/ParticipantNav";
+import { lockInForce, lockEntryOf, lockWord } from "@/lib/submission-lock-model";
 import LanguageToggle from "@/components/LanguageToggle";
 import { deadlineText, docName, docHref, schemeTitle } from "@/components/ParticipationLists";
 
@@ -64,6 +65,7 @@ export default async function ParticipationPage({ params, searchParams }: { para
   const today = sofiaToday(schemeNowMs(s));
   const field = { border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px", fontSize: 13, fontFamily: "inherit" } as const;
   const reported = s.status === "report" || s.status === "closed";
+  const lockNR = (s.status === "processing" || s.status === "report" || s.status === "closed") && lockWord(lockEntryOf(lockInForce(s.submissionLocks), v.participantId)) === "nr";
   const officialReport = reported && !!s.uploads?.report;
   // the certificate is served to a laboratory's account (the document route); a user of the
   // entity gets it with phase 7 — never a row whose link answers «no» (5.5 review)
@@ -380,7 +382,10 @@ export default async function ParticipationPage({ params, searchParams }: { para
 
             {card(L("Резултати", "Results"), (
               <div data-results-box style={{ fontSize: 13 }}>
-                {reported
+                {/* 6.6: the lock recorded this participation N/R — said here too, never «in the report» */}
+                {lockNR
+                  ? <span data-results-box-nr style={{ color: "#7a5416" }}>{L("Подаването е заключено — от вас не са получени резултати; участието е N/R.", "The submission is locked — no results were received from you; the participation is N/R.")}</span>
+                  : reported
                   ? <span>{officialReport ? L("Резултатът ви е в окончателния доклад — в документите вляво.", "Your result is in the final report — among the documents on the left.") : L("Обработката приключи. Окончателният доклад ще е тук, когато PTS го издаде.", "Processing is complete. The final report will be here once PTS issues it.")}</span>
                   : v.state === "submitted" ? <span>{L("Подадени", "Submitted")}{(() => { const e = v.events.find((x) => x.kind === "results_returned"); return e ? ` · ${fmtPhaseDate(e.at)}` : ""; })()}</span>
                   : <span style={{ color: "var(--muted)" }}>{L("Още не са подадени.", "Not submitted yet.")}</span>}

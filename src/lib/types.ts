@@ -320,7 +320,8 @@ export type NotifyKind =
   | "receipt.due"            // → lab: reminder — its receipt protocol is awaited (part 5.6, template)
   | "message"                // → lab: a one-way message a person at PTS wrote (part 5.10; Реш. 116)
   | "results.unlocked"       // → lab: PTS unlocked its results form after the deadline (part 6.4; Реш. 111)
-  | "results.corrected";     // → lab: PTS recorded a used value next to its submitted one (part 6.5)
+  | "results.corrected"      // → lab: PTS recorded a used value next to its submitted one (part 6.5)
+  | "results.locked";        // → lab: the submission is locked (processing started) and none came from it — N/R (part 6.6)
 
 export interface Notification {
   id: string;
@@ -731,6 +732,9 @@ export interface Scheme {
   // unlocks of a participation's results form after the deadline (part 6.4; Реш. 111: after the
   // deadline a result comes in only through PTS) — who, when, why, until; appended
   resultUnlocks?: import("./submission-model").ResultUnlock[];
+  /** «Заключи подаването» (6.6; Реш. 21): each lock (with «Започни обработката») — the version
+   *  taken per participation in the final round, or none (N/R) — and each reopening («Върни»). */
+  submissionLocks?: import("./submission-lock-model").SubmissionLock[];
   // A calibration scheme's reference values per point (part 5.7, lib/reference-values-model)
   // — x_ref before and after, u_calibration, u_other, k, for 2.0's «Calibration» sheet (D3);
   // each save a version, appended. JSONB, no migration.

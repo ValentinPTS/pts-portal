@@ -51,7 +51,8 @@ export const ACTS: Record<ActKey, { from: readonly SchemeStatus[]; to: SchemeSta
   announce: { from: ["open"], to: "running", note: "optional", bg: "Първо обявяване: схемата ще се проведе", en: "First announcement: the scheme will run" },
   not_held: { from: ["open"], to: "not_held", note: "required", bg: "Първо обявяване: схемата не се състои", en: "First announcement: the scheme is not held" },
   announce2: { from: ["running"], to: null, note: "optional", bg: "Второ обявяване: окончателен списък на участниците", en: "Second announcement: the final list of participants" },
-  process: { from: ["running"], to: "processing", note: "optional", bg: "Започни обработката", en: "Start processing" },
+  // 6.6 (Реш. 21): the start of processing IS the technical end of the submission — one act
+  process: { from: ["running"], to: "processing", note: "optional", bg: "Заключи подаването и започни обработката", en: "Lock the submission and start processing" },
   report: { from: ["processing"], to: "report", note: "optional", bg: "Издай окончателния доклад", en: "Issue the final report" },
   close: { from: ["report"], to: "closed", note: "optional", bg: "Приключи записите", en: "Close the records" },
   back: { from: ["open", "running", "processing", "closed", "not_held"], to: null, note: "required", bg: "Върни към предишното състояние", en: "Step back to the previous state" },

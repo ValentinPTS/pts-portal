@@ -14,6 +14,7 @@ import { acksOfParticipation, ackDone, ackMoment } from "@/lib/ack-model";
 import { deliveryOf } from "@/lib/delivery-model";
 import { listSubmissionsFor, listCorrectionsFor } from "@/lib/submissions";
 import CorrectionsPanel from "@/components/CorrectionsPanel";
+import { lockInForce, lockEntryOf, lockWord } from "@/lib/submission-lock-model";
 import { resultRows, calRows } from "@/lib/results-model";
 import type { ResultCorrection } from "@/lib/corrections-model";
 import { unlockResultsAction } from "@/lib/actions";
@@ -301,7 +302,10 @@ export default async function CaseFilePage({
                 {unlocks.map((u) => <li key={u.id}>{L2("Отключено до", "Unlocked until")} {u.until.split("-").reverse().join(".")} — «{u.reason}» ({ackMoment(u.at)})</li>)}
               </ul>
             )}
-            {canEnterResults && (
+            {/* 6.6: the lock in force — the version processed, or N/R (Реш. 21) */}
+            {(() => { const lk = lockInForce(s.submissionLocks); const w = lockWord(lockEntryOf(lk, coded.id)); return lk && w ? <p className="text-sm mt-2" data-staff-lock={w} style={{ color: "#7a5416" }}>{L2("Подаването е заключено при началото на обработката", "The submission was locked at the start of processing")} ({ackMoment(lk.at)}): {w === "nr" ? L2("без подадена версия — N/R", "no version submitted — N/R") : w === "outside" ? L2("резултатите са получени извън формуляра (лист)", "the results were received outside the form (a sheet)") : L2(`обработва се версия ${w}`, `version ${w} is processed`)}.</p> : null; })()}
+            {/* the unlock only while the form takes results (6.4) — not once the submission is locked (6.6) */}
+            {canEnterResults && (s.type === "T" ? s.status === "running" : s.status === "open" || s.status === "running") && (
               <form action={unlockResultsAction} className="mt-3" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }} data-unlock-form>
                 <input type="hidden" name="schemeId" value={id} />
                 <input type="hidden" name="code" value={code} />

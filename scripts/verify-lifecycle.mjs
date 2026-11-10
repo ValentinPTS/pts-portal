@@ -129,8 +129,8 @@ try {
   t("…a posted «closed» from it changes nothing", (await state()) === "В процес");
 
   // ── 3. processing, in Реш. 140's order ──
-  await act(S, "process", "");
-  t("«Започни обработката»: processing", (await state()) === "Обработка");
+  await act(S, "process", "Заключено за проверката на етапите"); // 6.6: a form still open for one with nothing in — a reason
+  t("«Заключи подаването и започни обработката»: processing", (await state()) === "Обработка");
   t("the report act is refused without PTS's file and the approval", (await page.locator('[data-act="report"]').isDisabled()) && /качете|upload/.test(await page.locator('[data-act-blocked="report"]').innerText()));
   t("the review cannot be ticked before the processing", await page.locator('[data-tick="15"]').isDisabled());
   await tick(S, 14);
@@ -205,7 +205,7 @@ try {
   await go(`/activity?scheme=${S}`);
   await page.getByText(/Close the records/).first().waitFor({ timeout: 60000 }).catch(() => {});
   const journal = await page.locator("main").innerText();
-  const want = [/Open the scheme \(invitation and applications\): Draft → Open/, /First announcement: the scheme will run: Open → In progress/, /Start processing: In progress → Processing/, /Issue the final report: Processing → Report issued/, /Close the records: Report issued → Closed/, /Step back to the previous state: Closed → Report issued — Забравен протокол за досието/, /Stage ticked: 4\. Statistical design/, /Tick withdrawn: 1\. Initiation/];
+  const want = [/Open the scheme \(invitation and applications\): Draft → Open/, /First announcement: the scheme will run: Open → In progress/, /Lock the submission and start processing: In progress → Processing/, /Issue the final report: Processing → Report issued/, /Close the records: Report issued → Closed/, /Step back to the previous state: Closed → Report issued — Забравен протокол за досието/, /Stage ticked: 4\. Statistical design/, /Tick withdrawn: 1\. Initiation/];
   const missing = want.filter((re) => !re.test(journal)).map(String);
   t("the journal: every act and every tick", !missing.length, `missing ${missing.join(" | ")}`);
 } catch (e) {

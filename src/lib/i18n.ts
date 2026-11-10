@@ -618,6 +618,9 @@ const DICT: Record<string, Entry> = {
   "act.results.unlocked": { bg: "Отключено подаване след срока", en: "Submission unlocked after the deadline" },
   // 6.5 — reported and used values
   "act.results.corrected": { bg: "Използвана стойност (корекция на подадената)", en: "Used value (a correction of the submitted one)" },
+  // 6.6 — «Заключи подаването»
+  "act.results.locked": { bg: "Подаването е заключено (начало на обработката)", en: "Submission locked (processing started)" },
+  "act.results.reopened": { bg: "Подаването е отново отворено (обработката върната)", en: "Submission reopened (processing stepped back)" },
   "act.scheme.reference_values": { bg: "Референтни стойности по точки", en: "Reference values per point" },
   "act.scheme.delivery_min_days": { bg: "Минимален брой работни дни (заместващ обект)", en: "Minimum working days (replacement object)" },
   "act.message.sent": { bg: "Изпратен имейл до лаборатория", en: "E-mail to a laboratory sent" },

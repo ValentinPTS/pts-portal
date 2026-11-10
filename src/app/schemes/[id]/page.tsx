@@ -35,8 +35,11 @@ import { skinsForTypeAsync } from "@/skins";
 import { TYPE_SLUG, typeLabel, schemeName, statusChip, ACCENT } from "@/lib/folders";
 import { markerLabels, schemeMarkers } from "@/lib/scheme-number";
 import SchemeLifecycle, { type ActButton, type StageRow } from "@/components/SchemeLifecycle";
+import { listSubmissions } from "@/lib/submissions";
+import { lockEntries, lockCounts, isNR, resultsOutsideForm } from "@/lib/submission-lock-model";
+import { activeUnlock, submissionOpen } from "@/lib/submission-model";
 import { needsAmendment } from "@/lib/amendments-model";
-import { chainWindow, deadlineState, windowDays } from "@/lib/deadlines-model";
+import { chainWindow, deadlineState, windowDays, resultsDeadline } from "@/lib/deadlines-model";
 import { holidaySet } from "@/lib/holidays";
 import { fmtSchemeDate } from "@/lib/scheme-dates";
 import { schemeNowMs, sofiaToday } from "@/lib/clock";
@@ -139,7 +142,7 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
     announce: ["Първо обявяване: схемата ще се проведе. Продължаваме?", "First announcement: the scheme will run. Go ahead?"],
     not_held: ["Схемата не се състои: всички участници се уведомяват и нищо не се фактурира. Продължаваме?", "The scheme is not held: every participant is told and nothing is invoiced. Go ahead?"],
     announce2: ["Второ обявяване: окончателният списък на участниците. Продължаваме?", "Second announcement: the final list of participants. Go ahead?"],
-    process: ["Обработката започва: от тук нататък резултати се приемат само през PTS. Продължаваме?", "Processing starts: from here on results are accepted only through PTS. Go ahead?"],
+    process: ["Обработката започва — подаването се заключва за всички, включително отключените след срока. Продължаваме?", "Processing starts — the submission is locked for everyone, those unlocked after the deadline included. Go ahead?"],
     report: ["Окончателният доклад става достъпен за всички участници и те се уведомяват. Продължаваме?", "The final report becomes available to every participant, and they are told. Go ahead?"],
     close: ["Записите по схемата се приключват. Продължаваме?", "The scheme's records are closed. Go ahead?"],
     back: ["Схемата се връща към предишното състояние. Основанието се записва. Продължаваме?", "The scheme steps back to its previous state. The reason is recorded. Go ahead?"],
@@ -167,6 +170,23 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
   const givenObjects = objectsGiven(s.coding);
   const freeObjects = s.type === "T" ? (s.batches ?? []).reduce((a, b) => a + b.objects.filter((o) => o.role === "participant" && !givenObjects.has(o.code)).length, 0) : null;
   const finalAct = finalList ? currentSecondAnnouncement(s) : undefined;
+  // 6.6 «Заключи подаването» (Реш. 21): what the lock will record — each participation on the final
+  // list, its latest submitted version, its results received outside the form (a sheet — not N/R),
+  // or none (N/R) — and whose deadline still runs (the act then needs its note); by code
+  let lockPreview: ReturnType<typeof lockEntries> | null = null, lockStillOpen: string[] = [];
+  if (canAct && s.status === "running") {
+    try {
+      const versionsNow = await listSubmissions(id);
+      lockPreview = lockEntries(goingOn, versionsNow, new Set(goingOn.filter((p) => resultsOutsideForm(s.labUploads, p)).map((p) => p.id)));
+      const nowL = schemeNowMs(s), todayL = sofiaToday(nowL);
+      lockStillOpen = lockPreview.filter(isNR).filter((e) => submissionOpen(resultsDeadline(s, e.code).at, nowL, activeUnlock(s.resultUnlocks, e.participantId, todayL)).open).map((e) => e.code);
+    } catch { lockPreview = null; }
+  }
+  const lockSay = lockPreview ? (() => {
+    const n = lockCounts(lockPreview), nrCodes = lockPreview.filter(isNR).map((e) => e.code);
+    return L(`Подаването се заключва: ${n.taken} с подадена версия, ${n.outside} получени извън формуляра (лист), ${n.nr} без резултат${n.nr ? ` — N/R: ${nrCodes.join(", ")}` : ""}.${lockStillOpen.length ? ` Формулярът още е отворен за ${lockStillOpen.join(", ")} (срокът не е изтекъл или не е зададен) — заключването иска основание.` : ""} След това резултат не се приема (Реш. 21).`,
+      `The submission is locked: ${n.taken} with a submitted version, ${n.outside} received outside the form (a sheet), ${n.nr} without results${n.nr ? ` — N/R: ${nrCodes.join(", ")}` : ""}.${lockStillOpen.length ? ` The form is still open for ${lockStillOpen.join(", ")} (its deadline has not passed, or none is set) — locking needs a reason.` : ""} After it no result is accepted (Реш. 21).`);
+  })() : L("Подадените версии не можаха да се прочетат — какво ще запише заключването не е известно.", "The submitted versions could not be read — what the lock will record is not known.");
   const acts: ActButton[] = !canAct ? [] : (ACTS_IN[s.status] ?? [])
     .filter((a) => a !== "announce2") // the second announcement has its own form (5.2)
     .map((a) => {
@@ -180,10 +200,12 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
           ? L(`Схемата се връща към «Отворена». Окончателният списък отпада — участниците не се уведомяват автоматично${proformasSent ? `, а ${proformasSent} изпратени проформи остават при лабораториите` : ""}. Основанието се записва. Продължаваме?`, `The scheme steps back to «Open». The final list is undone — the participants are not told automatically${proformasSent ? `, and ${proformasSent} proformas sent stay with the laboratories` : ""}. The reason is recorded. Go ahead?`)
           : a === "announce" && belowMin
           ? L(`В кръга са ${inRoundNow.length} участия — под минималния брой на схемата (${s.minParticipants}). По Реш. 129 такава схема не се състои. Ако все пак се провежда, това се записва с броя. Продължаваме?`, `${inRoundNow.length} participations are in the round — below the scheme's minimum (${s.minParticipants}). By Реш. 129 such a scheme is not held. If it runs all the same, that is recorded with the count. Go ahead?`)
+          : a === "process" ? `${lockSay} ${CONFIRM[a][lg === "bg" ? 0 : 1]}`
+          : a === "back" && s.status === "processing" ? L("Обработката се връща към «В процес»: подаването се отваря отново — формулярът следва срока за резултати и отключванията, които още текат; записаните като N/R се уведомяват. Основанието се записва. Продължаваме?", "Processing steps back to «In progress»: the submission opens again — the form follows the results deadline and the unlocks still running; those recorded N/R are told. The reason is recorded. Go ahead?")
           : CONFIRM[a][lg === "bg" ? 0 : 1],
         warn: a === "announce" && belowMin ? L(`под минималния брой: ${inRoundNow.length} от ${s.minParticipants} участия в кръга`, `below the minimum: ${inRoundNow.length} of ${s.minParticipants} participations in the round`)
           // a calibration's reference values not all in for 2.0 (5.7) — a warning, PTS decides
-          : a === "process" && refGap ? L(`референтните стойности не са пълни за 2.0: преди — ${refGap.before}, след — ${refGap.after}, u (калибриране) — ${refGap.uCal} точки`, `the reference values are not complete for 2.0: before — ${refGap.before}, after — ${refGap.after}, u (calibration) — ${refGap.uCal} points`)
+          : a === "process" ? [lockSay, refGap ? L(`референтните стойности не са пълни за 2.0: преди — ${refGap.before}, след — ${refGap.after}, u (калибриране) — ${refGap.uCal} точки`, `the reference values are not complete for 2.0: before — ${refGap.before}, after — ${refGap.after}, u (calibration) — ${refGap.uCal} points`) : ""].filter(Boolean).join(" · ")
           : undefined,
         blocked: p ? ACT_PROBLEM_TEXT[p][lg] : a === "process" && uncodedOnList ? CODING_PROBLEM_TEXT.uncoded[lg] : undefined,
         danger: a === "not_held" || a === "back",
