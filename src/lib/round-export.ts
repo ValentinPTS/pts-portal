@@ -11,7 +11,9 @@ import { listCaseEventsForScheme } from "./case-events";
 import { listNoticesForScheme } from "./notifications";
 import { pointKeys } from "./reference-values-model";
 import { listSubmissions, listCorrections } from "./submissions";
-import { codedSubmissionData, submissionIdentity } from "./results-model";
+import { codedSubmissionData, submissionIdentity, calRows } from "./results-model";
+import { versionValueRows, inForceRows, VALUE_COLUMNS, IN_FORCE_COLUMNS } from "./round-export-submissions";
+import { inFinalRound } from "./announcement-model";
 import { listSentForScheme } from "./sent-messages";
 import { listActivityForScheme } from "./activity-store";
 import { listRevisionsForScheme } from "./doc-revisions";
@@ -85,7 +87,7 @@ export const ROUND_TABLES: Record<string, string[]> = {
   doc_editions: ["coded/editions.csv"],
   // the submitted versions of the participations' results (6.1–6.4) — the account that
   // submitted is a person's: identity/ only
-  submissions: ["coded/submissions.csv", "identity/submissions_by.csv"],
+  submissions: ["coded/submissions.csv", "identity/submissions_by.csv", "coded/submitted_values.csv", "coded/results_in_force.csv"],
   // the coding expert's corrections next to the versions (6.5): reported and used, the reason —
   // by PTS's people, by code (as the unlocks)
   result_corrections: ["coded/result_corrections.csv"],
@@ -386,6 +388,12 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
   addCoded("coded/submissions.csv", submitted.map((x) => ({ code: codeById.get(x.participantId) ?? "—", version: x.version, submittedAt: x.submittedAt, roundAt: x.roundAt ?? "", configVersion: x.configVersion ?? "", data: JSON.stringify(codedSubmissionData(x.data)) })), ["code", "version", "submittedAt", "roundAt", "configVersion", "data"]);
   // the corrections (6.5) — the reported value and the used one, the reason, by whom: by code
   addCoded("coded/result_corrections.csv", corrected.map((c) => ({ code: codeById.get(c.participantId) ?? "—", version: c.version, key: c.key, field: c.field, reported: c.reported, used: c.used ?? "", withdrawn: c.used === null ? "yes" : "", reason: c.reason, at: c.at, by: c.by })), ["code", "version", "key", "field", "reported", "used", "withdrawn", "reason", "at", "by"]);
+  // the versions as TABLES (6.9; Реш. 136 — to go on with the current forms): every value as typed
+  // and as a number; and per participation the values in force — the lock's version, else the
+  // latest; reported and used (the corrections); N/R, N/A, «outside». The scheme's labels only.
+  const { labelOf, rank } = exportRowsOf(s);
+  addCoded("coded/submitted_values.csv", [...submitted].sort((a, b) => (codeById.get(a.participantId) ?? "").localeCompare(codeById.get(b.participantId) ?? "") || a.version - b.version).flatMap((x) => versionValueRows(x, codeById.get(x.participantId) ?? "—", labelOf, rank)), VALUE_COLUMNS);
+  addCoded("coded/results_in_force.csv", inForceRows(coded.filter((p) => inFinalRound(s, p)), submitted, corrected, s.submissionLocks, labelOf, rank, s.labUploads), IN_FORCE_COLUMNS);
   // old stamps carry a lab's e-mail and file name: redacted as for staff (N4)
   addCoded("coded/case_events.csv", events.map((e: CaseEvent) => { const r = redactCaseEventForStaff(e); return { ...r, recordedBy: r.recordedBy.startsWith("lab:") ? "laboratory" : r.recordedBy, schemeId: undefined }; }),
     ["id", "code", "kind", "at", "ref", "note", "recordedBy", "recordedAt", "source", "docKey", "voidedAt", "voidedBy", "voidReason"]);
@@ -595,6 +603,7 @@ function readme(s: Scheme, want: "all" | "coded", now: Date, files: string[], mi
 - **Ключът е кодът на участника** (\`code\`). В кодираната част той е единственият идентификатор; в identity/ \`participants.csv\` казва кой стои зад него. · **The key is the participant code** (\`code\`); identity/participants.csv says who is behind it.
 - **Юридическите лица, лабораториите и потребителите** (identity/): \`participation_snapshots.csv\` — копието към всяко участие, както е било тогава; \`entities.csv\` (ключ \`id\`), \`laboratories.csv\`, \`entity_users.csv\` — юридическите лица на участията в кръга с **всичките** им лаборатории и потребители (и неактивните, и тези извън кръга), както са в деня на изнасянето. Копието сочи към тях с \`entityId\`, \`laboratoryId\`, \`contactUserId\`. · **Legal entities, laboratories, users** (identity/): participation_snapshots.csv — each participation's copy as it was then; entities.csv (key id), laboratories.csv, entity_users.csv — the round's participations' legal entities with ALL their laboratories and users (inactive ones and ones outside this round too), as they are on the day of the export; the copy points to them by entityId, laboratoryId, contactUserId.
 - **Метрика** (\`metric\` в results.csv / assigned.csv): при изпитване — номерът на характеристиката в \`scheme.json → parameters\` (от 0); при калибриране — \`посока:точка\`. · **metric**: testing — the index into scheme.json → parameters (from 0); calibration — \`direction:point\`.
+- **Резултатите** · **the results**: \`coded/results_in_force.csv\` — какво се обработва за всеки код: версията, взета при заключването (иначе последната), подадената и използваната стойност (корекциите), N/R, N/A — **оттук кръгът продължава по действащите формуляри**; \`coded/submitted_values.csv\` — всяка стойност от всяка подадена версия, както е въведена и като число. · what is processed for each code — the version the lock took (else the latest), the submitted and the used value (the corrections), N/R, N/A — **the round goes on from here on the current forms**; every value of every submitted version, as typed and as a number. Числата са и с точка (\`reported_number\`, \`used_number\`, \`number\`); използваната U е винаги при k = 2 · the numbers also with a point; the used U is always at k = 2. Резултатите, дошли извън формуляра (лист — \`source\` = outside), са в \`identity/files/lab-uploads/\` · results that came outside the form (a sheet) are in \`identity/files/lab-uploads/\`.
 - \`coded/files/documents/\` — всеки документ като страница за печат (без имена); \`coded/files/editions/\` — всяка редакция на документите, замразена (\`editions.csv\`: номер, дата, причина, обхват, SHA-256, коя е при участниците). · every document as a printable page (no names); every edition of the documents, frozen (editions.csv: number, date, reason, scope, SHA-256, which one the participants hold).
 - Текстовете на запазените версии от редактора са файлове в \`files/revisions/\`; таблицата сочи към тях (това не са редакциите — те са в \`files/editions/\`). · The editor's saved versions are files; the table points to them (not the editions — those are in files/editions/).
 
@@ -618,6 +627,25 @@ ${want === "all" ? list("identity/") + `
 - Самите изчисления на PTS_Analysis 2.0 — порталът не смята оценки (Реш. 135) · the PTS_Analysis 2.0 calculations — the portal computes no scores
 
 ${missing.length ? `## Липсващи файлове · Missing files\n\nЗаписани, но не намерени в хранилището · recorded, but not found in storage:\n\n${missing.map((m) => `- \`${m}\``).join("\n")}\n` : ""}`;
+}
+
+/** The round export's rows (6.9): each key's label in the scheme's own words — a characteristic by its
+ *  number, name, method and unit; a calibration point by its nominal, unit and direction; one no
+ *  longer in the scheme from the configuration versions (newest first), else its key — and its rank
+ *  (the scheme's order; the rest after it). */
+function exportRowsOf(s: Scheme): { labelOf: (key: string) => string; rank: (key: string) => number } {
+  const label = new Map<string, string>(), rank = new Map<string, number>();
+  const unitC = s.calibration?.unit ?? "";
+  const tLabel = (p: Scheme["parameters"][number], i: number) => `${i + 1}. ${p.characteristicBg}${p.standardBg ? ` (${p.standardBg})` : ""}${p.unit ? `, ${p.unit}` : ""}`;
+  if (s.type === "C" && s.calibration) calRows(s.calibration).forEach((r, i) => { label.set(r.key, `${r.nominal} ${unitC}${r.direction ? ` · ${r.direction.bg}` : ""}`.replace(/\s+/g, " ").trim()); rank.set(r.key, i); });
+  else (s.parameters ?? []).forEach((p, i) => { label.set(p.id ?? `#${i}`, tLabel(p, i)); rank.set(p.id ?? `#${i}`, i); });
+  // a key no longer in the scheme — named from the configuration versions it was in (as the record, 6.8)
+  for (const v of [...(s.characteristicVersions ?? [])].sort((a, b) => b.no - a.no)) {
+    v.characteristics.forEach((p, i) => { const k = p.id ?? `#${i}`; if (!label.has(k)) label.set(k, tLabel(p, i)); });
+    (v.points?.ids ?? []).forEach((id, i) => { if (!label.has(id)) label.set(id, `${v.points!.values[i]} ${unitC}`.trim()); });
+  }
+  const pointLabel = (key: string) => { const id = key.split("|")[0]; return label.get(id) ? `${label.get(id)} · ${key.slice(id.length + 1)}` : undefined; };
+  return { labelOf: (key) => label.get(key) ?? pointLabel(key) ?? key, rank: (key) => rank.get(key) ?? Number.MAX_SAFE_INTEGER };
 }
 
 // ── the scheme's tables (plan part 3.14) ────────────────────────────────────

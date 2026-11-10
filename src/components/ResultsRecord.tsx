@@ -3,6 +3,7 @@ import type { ResultRow, CalRow } from "@/lib/results-model";
 import type { CharacteristicVersion } from "@/lib/characteristics-model";
 import { GENERAL_IDENTITY, GENERAL_FIELDS } from "@/lib/results-model";
 import PrintButton from "./PrintButton";
+import { inSchemeOrder } from "@/lib/round-export-submissions";
 
 // «Запис на подадените резултати» (plan part 6.8): in the portal path the submitted version IS the
 // record of the participant's results — what the Results Sheet Ф 7.2.1-7 was. Printable (A4), as
@@ -44,7 +45,14 @@ export default function ResultsRecord({ lang, scheme, code, version, rows, cRows
   // the rows AS SUBMITTED — the version's own, in their order (never today's configuration: a
   // characteristic or point added, or a determination count changed, after it is not in it — 6.8
   // review); named from the configuration it was submitted against, else today's, else the key
-  const keys = Object.keys(d.values ?? {});
+  // …in the scheme's order — the database keeps a version's keys in its own order (6.9 review)
+  const rankOf = (k: string) => {
+    const r = rows.findIndex((x) => x.key === k); if (r >= 0) return rows[r].index;
+    const c = cRows.findIndex((x) => x.key === k); if (c >= 0) return c;
+    const sn = (snapshot?.characteristics ?? []).findIndex((x, i) => (x.id ?? `#${i}`) === k); if (sn >= 0) return 10_000 + sn;
+    return Number.MAX_SAFE_INTEGER;
+  };
+  const keys = inSchemeOrder(Object.keys(d.values ?? {}), rankOf);
   const now = new Map(rows.map((r) => [r.key, r] as const)), nowC = new Map(cRows.map((r) => [r.key, r] as const));
   const snapT = new Map((snapshot?.characteristics ?? []).map((c, i) => [c.id ?? `#${i}`, { c, i }] as const));
   const tLabel = (k: string) => {
