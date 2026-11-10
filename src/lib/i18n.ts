@@ -653,6 +653,8 @@ const DICT: Record<string, Entry> = {
   "act.declaration.voided": { bg: "Анулирана декларация Ф 4.2-1", en: "Declaration Ф 4.2-1 voided" },
   "act.validation.criteria_recorded": { bg: "Записани критерии за приемане", en: "Acceptance criteria recorded" },
   "act.validation.criteria_voided": { bg: "Анулирани критерии за приемане", en: "Acceptance criteria voided" },
+  "act.validation.replay_imported": { bg: "Внесен приключил кръг за повторение", en: "Closed round loaded for a replay" },
+  "act.validation.replay_failed": { bg: "Неуспешно внасяне на приключил кръг", en: "Closed round load not finished" },
   "act.scheme_role.assigned": { bg: "Възложена роля в схема", en: "Scheme role assigned" },
   "act.role.permanent": { bg: "Сменена постоянна роля", en: "Permanent role changed" },
   "act.chain.order": { bg: "Подредена верига", en: "Chain order set" },

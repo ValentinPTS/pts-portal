@@ -41,15 +41,25 @@ export async function getCriteria(id: string): Promise<CriteriaEdition | null> {
   return (await listCriteria()).find((e) => e.id === id) ?? null;
 }
 
-async function ensureBucket(db: SupabaseClient): Promise<void> {
+/** What the bucket takes: the signed scans (8.1) and a replay's source file (8.2). */
+export const VALIDATION_MIMES = [...Object.keys(CRITERIA_EXT), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"];
+
+/** The private bucket, made on first use — and, made before 8.2, taught the XLSX type (8.2 review):
+ *  refused if made public; a bucket that cannot be read is never taken for one that is not there. */
+export async function ensureValidationBucket(db: SupabaseClient): Promise<void> {
   const { data: bucket, error: read } = await db.storage.getBucket(VALIDATION_BUCKET);
-  // a bucket that could not be read is never taken for one that is not there (8.1 review)
   if (read && !/not.?found|does not exist/i.test(read.message)) throw read;
   // made public by hand, every signed scan would be open at a guessable address: refuse
   if (bucket?.public) throw new Error(`the ${VALIDATION_BUCKET} bucket is public — make it private first`);
   if (!bucket) {
-    const { error } = await db.storage.createBucket(VALIDATION_BUCKET, { public: false, fileSizeLimit: "16MB", allowedMimeTypes: Object.keys(CRITERIA_EXT) });
+    const { error } = await db.storage.createBucket(VALIDATION_BUCKET, { public: false, fileSizeLimit: "16MB", allowedMimeTypes: VALIDATION_MIMES });
     if (error && !/exist/i.test(error.message)) throw error;
+    return;
+  }
+  const allowed = (bucket as { allowed_mime_types?: string[] | null }).allowed_mime_types;
+  if (allowed && VALIDATION_MIMES.some((m) => !allowed.includes(m))) {
+    const { error } = await db.storage.updateBucket(VALIDATION_BUCKET, { public: false, fileSizeLimit: "16MB", allowedMimeTypes: [...new Set([...allowed, ...VALIDATION_MIMES])] });
+    if (error) throw error;
   }
 }
 
@@ -79,7 +89,7 @@ export async function recordCriteria(p: { edition: number; signedOn: string; sig
   }
   let uploaded = false;
   try {
-    await ensureBucket(db);
+    await ensureValidationBucket(db);
     entry.filePath = `criteria/${id}.${ext}`;
     const up = await db.storage.from(VALIDATION_BUCKET).upload(entry.filePath, p.file.bytes, { contentType: p.file.mime, upsert: false });
     if (up.error) throw up.error;

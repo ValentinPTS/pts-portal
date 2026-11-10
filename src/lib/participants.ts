@@ -229,6 +229,26 @@ export async function addParticipant(input: {
   }
 }
 
+/** A participation of a REPLAY round (plan part 8.2; Реш. 119): a closed round's code as it was —
+ *  no name, no address, nobody behind it (the identity left empty). Only the replay import calls
+ *  this; every other participation draws its reference (addParticipant). */
+export async function addReplayParticipant(input: { schemeId: string; code: string; selections?: Record<string, number> }, actor: string): Promise<CodedParticipant> {
+  const coded: CodedParticipant = {
+    id: randomUUID(), schemeId: input.schemeId, code: input.code, participations: 1, status: "applied",
+    selections: input.selections && Object.keys(input.selections).length ? input.selections : undefined,
+  };
+  const identity: ParticipantIdentity = { labName: "", contact: "", email: "", phone: "", country: "", deliveryAddress: "" };
+  const db = getDb();
+  if (!db) {
+    if (mem.some((x) => x.schemeId === coded.schemeId && x.code === coded.code)) throw new Error("the participant's code is taken");
+    await addWithIdentity(toRow(coded), identity, actor);
+    mem.push({ ...coded, createdAt: new Date().toISOString() });
+    return coded;
+  }
+  await addWithIdentity(toRow(coded), identity, actor);
+  return coded;
+}
+
 // Patch one participation (edit form; Phase-4 status transitions). The code and
 // scheme are immutable — the code is the confidential identity everywhere. The
 // identity part goes to the identity store, on record (2.3).

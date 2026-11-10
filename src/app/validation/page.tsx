@@ -6,6 +6,10 @@ import { listCriteria } from "@/lib/validation-criteria";
 import { recordCriteriaAction, voidCriteriaAction } from "@/lib/validation-actions";
 import { LEVELS, LEVEL_TEXT, CRITERIA_PROBLEM_TEXT, levelStatus, nextEdition, NOTE_MAX, SIGNED_BY_MAX, MAX_EDITION } from "@/lib/validation-model";
 import PendingSubmit from "@/components/PendingSubmit";
+import ReplayImport from "@/components/ReplayImport";
+import Link from "next/link";
+import { listSchemes } from "@/lib/store";
+import { replayAllowedHere } from "@/lib/replay-import";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +23,9 @@ export default async function ValidationPage({ searchParams }: { searchParams: P
   const { lang } = await getServerT();
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const canRecord = await mayAnywhereNow("validation.record");
+  // 8.2: the replay rounds, and who may load one (technical — the test environment only)
+  const canImport = (await mayAnywhereNow("system.technical")) && replayAllowedHere();
+  const replays = (await listSchemes()).filter((x) => !!x.replay).sort((a, b) => b.replay!.importedAt.localeCompare(a.replay!.importedAt));
   const today = sofiaDay(new Date().toISOString());
   const editions = await listCriteria();
   const status = levelStatus(editions, today);
@@ -111,6 +118,18 @@ export default async function ValidationPage({ searchParams }: { searchParams: P
             </form>
           </details>
         ) : <p className="text-sm" style={{ color: "var(--muted)", marginTop: 10 }} data-criteria-read-only>{L("Записват ръководителят на РТ провайдъра и отговорникът по качеството.", "The head of the PT provider and the quality manager record them.")}</p>}
+      </section>
+
+      <section className="card p-4 mt-4" id="replays" data-replays={replays.length}>
+        <h2 className="font-bold" style={{ color: "var(--green-dark)", fontSize: 15, margin: 0 }}>{L("Приключили кръгове за повторение", "Closed rounds for the replay")}</h2>
+        <p className="text-sm" style={{ color: "var(--muted)", margin: "4px 0 8px", maxWidth: 820 }}>{L("Приключил кръг се внася от входния си файл за PTS_Analysis 2.0 (договор 2.1) — само кодове, без имена (Реш. 119), в тестовата среда, със симулационен номер (Реш. 130). Порталът го изнася отново и сравнява изнасянето с файла клетка по клетка.", "A closed round is loaded from its PTS_Analysis 2.0 input file (contract 2.1) — codes only, no names (Реш. 119), in the test environment, with a simulation number (Реш. 130). The portal exports it again and compares the export with the file cell by cell.")}</p>
+        {replays.length > 0 && (
+          <ul className="text-sm" style={{ margin: "0 0 8px", paddingLeft: 18 }}>
+            {replays.map((x) => <li key={x.id} data-replay-row={x.id}><Link href={`/schemes/${x.id}#replay`}>{x.number}</Link> — {L("възпроизвеждане на", "replay of")} {x.replay!.of} · {x.replay!.counts.participants} {L("участия", "participations")} · {day(x.replay!.importedAt.slice(0, 10))}{x.replay!.failed ? <b style={{ color: "#8f2f2f" }} data-replay-row-failed> · {L("не завърши", "not finished")}</b> : null}</li>)}
+          </ul>
+        )}
+        {canImport ? <ReplayImport lang={lang === "bg" ? "bg" : "en"} />
+          : <p className="text-sm" style={{ color: "var(--muted)" }} data-replay-not-here>{replayAllowedHere() ? L("Внася администраторът на софтуера или ръководителят на РТ провайдъра.", "The software administrator or the head of the PT provider loads them.") : L("Само в тестовата среда — истинският портал не приема възпроизвеждане.", "In the test environment only — the real portal takes no replay.")}</p>}
       </section>
 
       <section className="card p-4 mt-4" id="tests">

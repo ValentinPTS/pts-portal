@@ -179,6 +179,9 @@ export const SCHEME_FIELDS = {
   // a saved document may carry names; files carry names and uploaders
   composed: "split", docs: "split", uploads: "split", labUploads: "split", labDocs: "split",
   supersededFiles: "split",
+  // a replay round (8.2): the original number, the counts, what was said — coded; where its source
+  // file is kept is storage's
+  replay: "split",
 } satisfies Record<keyof Scheme, SchemePart>;
 
 export const PARTICIPANT_FIELDS = {
@@ -278,6 +281,7 @@ export function codedScheme(s: Scheme): Record<string, unknown> {
       case "transferChecks": out[k] = (s.transferChecks ?? []).map(({ note: _n, ...c }) => c); break;
       case "uxptChecks": out[k] = (s.uxptChecks ?? []).map(({ note: _n, ...c }) => c); break;
       case "reportIssues": out[k] = (s.reportIssues ?? []).map(({ reason: _r, scope: _s, ...i }) => i); break;
+      case "replay": { const { sourcePath: _p, ...r } = s.replay!; out[k] = r; break; }
       case "analysisImports": out[k] = (s.analysisImports ?? []).map(({ by: _b, files, ...i }) => ({ ...i, files: files.map(({ name: _n, path: _p, ...f }) => f) })); break;
     }
   }

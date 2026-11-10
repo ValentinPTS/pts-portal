@@ -780,6 +780,10 @@ export interface Scheme {
   // — x_ref before and after, u_calibration, u_other, k, for 2.0's «Calibration» sheet (D3);
   // each save a version, appended. JSONB, no migration.
   referenceValues?: import("./reference-values-model").ReferenceValues;
+  /** a REPLAY round (plan part 8.2; Реш. 130, 134): a closed round loaded from its 2.0 input file,
+   *  codes only, in the test environment — the original number, the file kept and its hash, what
+   *  was carried and what was said; its re-export is compared with the file (8.3) */
+  replay?: { of: string; importId: string; fileSha256: string; sourcePath: string; importedAt: string; by: string; counts: { participants: number; characteristics: number; results: number; nr: number }; said: { excluded: string[]; nrNotes: string[] }; failed?: string };
   // chosen document skin (visual theme) id; absent → the built-in "Classic" skin.
   skin?: string;
   // friendly folder name shown in the explorer; absent → falls back to the title/number.

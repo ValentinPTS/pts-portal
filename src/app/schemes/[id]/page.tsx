@@ -25,6 +25,7 @@ import { listStaff } from "@/lib/staff";
 import { listEditions } from "@/lib/editions";
 import { hasEditions, fmtDay } from "@/lib/editions-model";
 import SchemeTestClock from "@/components/SchemeTestClock";
+import ReplayCard from "@/components/ReplayCard";
 import { isTestEnvironment } from "@/lib/environment";
 import { clockOffsetMs } from "@/lib/clock";
 import { listParticipants } from "@/lib/participants";
@@ -438,6 +439,8 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
 
       {/* the 19 stages and the scheme's state (3.2) */}
       <SchemeLifecycle schemeId={id} lang={lg} stateLabel={STATE_LABEL[s.status][lg]} stages={stageRows} acts={acts} history={history} />
+      {/* 8.2: a replay round — the closed round it was loaded from, and its re-export against the file */}
+      {s.replay && mayReview && <ReplayCard s={s} lang={lg === "bg" ? "bg" : "en"} />}
       {/* 7.1: the export to PTS_Analysis 2.0 — the template's sheets, codes only */}
       {mayExport && analysisLink && (
         <div className="text-sm mt-2" data-analysis-export>

@@ -8,6 +8,9 @@ import { logActivity } from "./activity";
 import { sofiaDay } from "./chain";
 import { readCriteriaForm, sniffMime } from "./validation-model";
 import { recordCriteria, voidCriteria } from "./validation-criteria";
+import { importReplay, replayAllowedHere } from "./replay-import";
+import { getScheme } from "./store";
+import type { ReplayImportState } from "./replay-model";
 
 // «Валидиране» (plan part 8.1; Реш. 134): record a signed edition of the acceptance criteria, or
 // void one recorded by mistake. The head and the quality manager (validation.record) — never the
@@ -56,4 +59,30 @@ export async function voidCriteriaAction(formData: FormData): Promise<void> {
   });
   revalidatePath("/validation");
   back(logged ? "voided" : "voided-unlogged");
+}
+
+/** «Внеси приключил кръг» (plan part 8.2): a closed round's coded 2.0 input file → a replay round,
+ *  in the test environment only. The head and the software administrator (system.technical) —
+ *  loading data is technical; recording a test is not (8.1). Journalled: the original number, the
+ *  counts, the file's hash — never a value. */
+export async function importReplayAction(_prev: ReplayImportState, formData: FormData): Promise<ReplayImportState> {
+  await requireCapAnywhere("system.technical");
+  if (!replayAllowedHere()) return { problem: "environment" };
+  const by = (await getRoleContext()).email ?? "build";
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0 || file.size > 16_000_000) return { problem: "file" };
+  const r = await importReplay({ bytes: new Uint8Array(await file.arrayBuffer()), by });
+  if (!r.ok) {
+    // a round made half-way stays, marked failed — and is journalled (8.2 review)
+    if (r.schemeId) await logActivity("validation.replay_failed", { schemeId: r.schemeId, subject: `scheme:${r.schemeId}`, summary: `Replay load not finished — ${r.number}, kept and marked failed: ${r.detail ?? ""}` });
+    return { problem: r.problem, ...(r.problems ? { problems: r.problems.slice(0, 60) } : {}), ...(r.detail ? { detail: r.detail.slice(0, 200) } : {}), ...(r.schemeId ? { schemeId: r.schemeId, number: r.number } : {}) };
+  }
+  const s = await getScheme(r.schemeId);
+  const logged = await logActivity("validation.replay_imported", {
+    schemeId: r.schemeId, subject: `scheme:${r.schemeId}`,
+    after: { of: r.round.number, sha256: s?.replay?.fileSha256, counts: s?.replay?.counts },
+    summary: `Replay of ${r.round.number} loaded as ${r.number} — ${r.round.participants.length} participations by code, ${r.round.results.length} result rows; the submission locked, in processing`,
+  });
+  revalidatePath("/validation");
+  return { ok: true, schemeId: r.schemeId, number: r.number, ...(logged ? {} : { unlogged: true }) };
 }
