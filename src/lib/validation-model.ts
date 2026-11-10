@@ -151,7 +151,7 @@ export function voidProblem(e: CriteriaEdition | null, reason: unknown): "missin
   return null;
 }
 
-export const CRITERIA_PROBLEM_TEXT: Record<CriteriaProblem | "missing" | "already" | "reason", { bg: string; en: string }> = {
+export const CRITERIA_PROBLEM_TEXT: Record<CriteriaProblem | "missing" | "already" | "reason" | "rests" | "under-tests", { bg: string; en: string }> = {
   date: { bg: "Датата на подписа не е истинска (дд.мм.гггг, от 2026 г.).", en: "The date it was signed is not a real one (from 2026 on)." },
   future: { bg: "Критериите не може да са подписани след днес.", en: "The criteria cannot have been signed after today." },
   edition: { bg: "Номерът на редакцията — както е на документа (1–999).", en: "The edition's number — as on the document (1–999)." },
@@ -169,4 +169,6 @@ export const CRITERIA_PROBLEM_TEXT: Record<CriteriaProblem | "missing" | "alread
   missing: { bg: "Няма такава редакция.", en: "No such edition." },
   already: { bg: "Редакцията вече е анулирана.", en: "The edition is already voided." },
   reason: { bg: "Напишете защо се анулира (5–500 знака).", en: "Say why it is voided (5–500 characters)." },
+  rests: { bg: "На тази редакция се опира записано изпитване — не се анулира.", en: "A recorded test rests on this edition — it is not voided." },
+  "under-tests": { bg: "Вече има записано изпитване в деня на подписа или след него — нова редакция с тази дата би сменила това, на което се опира.", en: "A test is already recorded on or after the day signed — a new edition of that date would change what it rests on." },
 };

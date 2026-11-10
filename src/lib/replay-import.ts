@@ -4,18 +4,22 @@ import { getDb } from "./supabase";
 import { isTestEnvironment } from "./environment";
 import { sha256 } from "./editions";
 import { readXlsx, XlsxReadError } from "./xlsx-read";
-import { readReplay, replayParameters, replayCalibration, replayProviders, replayResults, type ReplayRound, type ReplayProblem } from "./replay-model";
+import { readReplay, replayParameters, replayCalibration, replayProviders, replayResults, replayDiff, type ReplayRound, type ReplayProblem, type ReplayDiff } from "./replay-model";
+import { inFinalRound } from "./announcement-model";
+import { analysisSheets } from "./analysis-export";
+import { xlsx } from "./xlsx";
 import { blankScheme } from "./new-scheme";
 import { nextProject } from "./folders";
 import { listSchemeSummaries, addScheme, updateSchemeWith, schemeIdTaken } from "./store";
 import { readSchemeNumber, schemeIdFromNumber } from "./scheme-number";
 import { sofiaYearMonth } from "./scheme-number";
-import { addReplayParticipant } from "./participants";
-import { addSubmission, addCorrection } from "./submissions";
+import { addReplayParticipant, listParticipants as listParts } from "./participants";
+import { addSubmission, addCorrection, listSubmissions, listCorrections } from "./submissions";
 import { lockEntries, type SubmissionLock } from "./submission-lock-model";
 import { sofiaDay } from "./chain";
 import { schemeNowMs } from "./clock";
 import { VALIDATION_BUCKET, ensureValidationBucket } from "./validation-criteria";
+import { keptExportBytes } from "./analysis-export-store";
 import type { HomogeneityValue, Batch } from "./batches-model";
 import type { ReferenceRow } from "./reference-values-model";
 
@@ -60,6 +64,27 @@ export async function replaySource(path: string): Promise<Uint8Array | null> {
   const { data, error } = await db.storage.from(VALIDATION_BUCKET).download(path);
   if (error) throw new Error(`storage (${VALIDATION_BUCKET}): ${error.message}`);
   return data ? new Uint8Array(await data.arrayBuffer()) : null;
+}
+
+/** The replay's re-export (7.1), as written and read back, against its source file (8.2) — null when
+ *  the load did not finish or the file is not there. A read error throws. */
+export async function compareReplay(s: Scheme): Promise<ReplayDiff[] | null> {
+  if (!s.replay || s.replay.failed) return null;
+  const src = await replaySource(s.replay.sourcePath);
+  if (!src) return null;
+  const [parts, subs, corr] = await Promise.all([listParts(s.id), listSubmissions(s.id), listCorrections(s.id)]);
+  const exported = analysisSheets(s, parts.filter((p) => inFinalRound(s, p)), subs, corr, s.submissionLocks).sheets;
+  return replayDiff(readXlsx(src), readXlsx(xlsx(exported)), s.replay);
+}
+
+/** THE FILE THAT WAS SENT to 2.0 (the export relied on, kept as handed out — 7.10) against the source
+ *  file, cell by cell (8.3 review: never a fresh export of the round as it is now) — null when the load
+ *  did not finish, or either file is not there. A read error throws. */
+export async function compareSent(s: Scheme, exportPath: string | undefined): Promise<ReplayDiff[] | null> {
+  if (!s.replay || s.replay.failed) return null;
+  const [src, sent] = await Promise.all([replaySource(s.replay.sourcePath), keptExportBytes(exportPath)]);
+  if (!src || !sent) return null;
+  return replayDiff(readXlsx(src), readXlsx(sent), s.replay);
 }
 
 /** Read, check and load. Nothing is made unless the whole file reads and checks. */

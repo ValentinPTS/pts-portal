@@ -34,7 +34,13 @@ const upload = async (S, buffer, name) => {
     await r.locator('button[aria-label="More"]').click();
     return page.locator("button", { hasText: /Замени файла|Replace file/ }).first().click();
   };
-  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), opener()]);
+  // a click before the page is interactive opens nothing: tried again (a flake seen in the gates, 8.3)
+  let chooser = null;
+  for (let i = 0; i < 3 && !chooser; i++) {
+    [chooser] = await Promise.all([page.waitForEvent("filechooser", { timeout: 20000 }).catch(() => null), opener().catch(() => null)]);
+    if (!chooser) await page.waitForTimeout(1000);
+  }
+  if (!chooser) throw new Error("the upload's file chooser never opened");
   await chooser.setFiles({ name, mimeType: "application/pdf", buffer });
   return waitFor(async () => (await r.innerText()).includes(name));
 };

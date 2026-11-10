@@ -10,6 +10,9 @@ import ReplayImport from "@/components/ReplayImport";
 import Link from "next/link";
 import { listSchemes } from "@/lib/store";
 import { replayAllowedHere } from "@/lib/replay-import";
+import { listTests } from "@/lib/validation-tests";
+import { voidTestAction } from "@/lib/validation-actions";
+import { TEST_PROBLEM_TEXT, ITEM_TEXT } from "@/lib/validation-test-model";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +21,7 @@ export const dynamic = "force-dynamic";
 // match, with what tolerance — and signs them BEFORE any test: each signed edition is recorded
 // here with its scan and hash, and a level's test can be recorded only once criteria covering
 // it are signed. The head and the quality manager record; the software administrator reads.
-export default async function ValidationPage({ searchParams }: { searchParams: Promise<{ v?: string }> }) {
+export default async function ValidationPage({ searchParams }: { searchParams: Promise<{ v?: string; vt?: string }> }) {
   await requireSection("validation");
   const { lang } = await getServerT();
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
@@ -29,7 +32,12 @@ export default async function ValidationPage({ searchParams }: { searchParams: P
   const today = sofiaDay(new Date().toISOString());
   const editions = await listCriteria();
   const status = levelStatus(editions, today);
-  const answer = (await searchParams).v;
+  const sp = await searchParams;
+  const answer = sp.v, testAnswer = sp.vt;
+  // the tests recorded (8.3) — every level, the newest first; unreadable (0046 not yet applied, an
+  // outage): said, and the criteria still shown (8.3 review)
+  let tests: Awaited<ReturnType<typeof listTests>> = [], testsUnread = false;
+  try { tests = await listTests(); } catch { testsUnread = true; }
   const ok: Record<string, [string, string]> = {
     recorded: ["Редакцията е записана.", "The edition is recorded."],
     voided: ["Редакцията е анулирана.", "The edition is voided."],
@@ -132,9 +140,40 @@ export default async function ValidationPage({ searchParams }: { searchParams: P
           : <p className="text-sm" style={{ color: "var(--muted)" }} data-replay-not-here>{replayAllowedHere() ? L("Внася администраторът на софтуера или ръководителят на РТ провайдъра.", "The software administrator or the head of the PT provider loads them.") : L("Само в тестовата среда — истинският портал не приема възпроизвеждане.", "In the test environment only — the real portal takes no replay.")}</p>}
       </section>
 
-      <section className="card p-4 mt-4" id="tests">
+      <section className="card p-4 mt-4" id="tests" data-tests={tests.length}>
         <h2 className="font-bold" style={{ color: "var(--green-dark)", fontSize: 15, margin: 0 }}>{L("Изпитвания", "Tests")}</h2>
-        <p className="text-sm" style={{ color: "var(--muted)", margin: "4px 0 0" }}>{L("Записът на изпитванията — дата, обхват, проверяващ, резултат, заключение — идва с части 8.3–8.6, спрямо критериите в сила в деня на изпитването.", "The record of the tests — date, scope, checker, result, conclusion — comes with parts 8.3–8.6, judged against the criteria in force on the test's day.")}</p>
+        <p className="text-sm" style={{ color: "var(--muted)", margin: "4px 0 8px", maxWidth: 820 }}>{L("Всяко изпитване — спрямо редакцията на критериите в сила в деня му за нивото му. Записва се от картата на кръга (ниво 1: кръгът за повторение). Нищо не се трие: изпитване, записано по грешка, се анулира с причина.", "Each test — against the criteria edition in force on its day for its level. Recorded from the round's card (level 1: the replay round). Nothing is deleted: a test recorded by mistake is voided with its reason.")}</p>
+        {testAnswer && <p role={testAnswer === "voided" ? "status" : "alert"} className="text-sm" data-tests-answer={testAnswer} style={{ color: testAnswer === "voided" ? "var(--green-dark)" : "#8f2f2f" }}>{testAnswer === "voided" ? L("Изпитването е анулирано.", "The test is voided.") : testAnswer === "voided-unlogged" ? L("Изпитването е анулирано, но редът в журнала не се записа — съобщете на администратора.", "The test is voided, but its journal line was not written — tell the administrator.") : L((TEST_PROBLEM_TEXT as Record<string, { bg: string; en: string }>)[testAnswer]?.bg ?? "Не е записано.", (TEST_PROBLEM_TEXT as Record<string, { bg: string; en: string }>)[testAnswer]?.en ?? "Not recorded.")}</p>}
+        {testsUnread ? <p role="alert" className="text-sm" style={{ color: "#8f2f2f" }} data-tests-unread>{L("Изпитванията не можаха да се прочетат — презаредете.", "The tests could not be read — reload.")}</p> : tests.length === 0 ? <p className="text-sm" style={{ color: "var(--muted)" }}>{L("Още няма записани изпитвания.", "No tests recorded yet.")}</p> : (
+          <div style={{ display: "grid", gap: 8 }}>
+            {tests.map((t) => (
+              <div key={t.id} data-test-row={t.id} data-test-result={t.result} data-test-voided={t.voided ? "1" : "0"} className="text-sm" style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "8px 10px", opacity: t.voided ? 0.7 : 1 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "baseline" }}>
+                  <b style={{ color: t.result === "pass" ? "var(--green-dark)" : "#8f2f2f" }}>{t.result === "pass" ? L("ПРЕМИНАВА", "PASSES") : L("НЕ ПРЕМИНАВА", "FAILS")}</b>
+                  <span>{L(`Ниво ${t.level}`, `Level ${t.level}`)} · {day(t.testedOn)}</span>
+                  <Link href={`/schemes/${t.schemeId}#level-test`}>{t.schemeNumber}</Link>{t.replayOf && <span style={{ color: "var(--muted)" }}>{L("повторение на", "replay of")} {t.replayOf}</span>}
+                  <span style={{ color: "var(--muted)" }}>{L("критерии редакция №", "criteria edition")} {t.criteriaEdition}{t.criteriaRecordedAfter ? L(" — записана в портала след деня на изпитването", " — recorded in the portal after the test's day") : ""}</span>
+                  {t.file && <a href={`/validation/tests/${t.id}`} target="_blank" rel="noopener" data-test-file>{L("доказателството", "the evidence")}</a>}
+                </div>
+                <div style={{ margin: "4px 0 0" }}>{t.items.map((i) => <span key={i.key} style={{ marginRight: 10, color: i.result === "mismatch" ? "#8f2f2f" : i.result === "na" ? "#7a5416" : "var(--green-dark)" }}>{i.result === "match" ? "✓" : i.result === "na" ? "–" : "✗"} {L(ITEM_TEXT[i.key]?.bg ?? i.key, ITEM_TEXT[i.key]?.en ?? i.key)}{i.note ? ` (${i.note})` : ""}</span>)}</div>
+                <div style={{ color: "var(--muted)", margin: "4px 0 0" }}>{L("порталът", "the portal")}: {t.auto.unexpected === null ? L("несравнено", "not compared") : L(`${t.auto.unexpected} неочаквани разлики`, `${t.auto.unexpected} unexpected differences`)}{t.auto.analysisVersion ? ` · PTS_Analysis ${t.auto.analysisVersion}` : ""}{t.auto.transferSame === false ? L(" · проверката на преноса: НЕ са същите", " · transfer check: NOT the same") : ""}</div>
+                <p style={{ margin: "4px 0 0" }}>{t.conclusion}</p>
+                <p style={{ color: "var(--muted)", margin: "2px 0 0" }}>{L("записано от", "recorded by")} {t.recordedBy} · {fmtMoment(t.recordedAt)}</p>
+                {t.voided && <p style={{ color: "#8f2f2f", margin: "2px 0 0" }} data-test-void-reason>{L("АНУЛИРАНО", "VOIDED")} — {t.voided.reason} ({t.voided.by})</p>}
+                {canRecord && !t.voided && (
+                  <details style={{ marginTop: 4 }} data-test-void>
+                    <summary>{L("Анулирай — записано по грешка", "Void — recorded by mistake")}</summary>
+                    <form action={voidTestAction} style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                      <input type="hidden" name="id" value={t.id} />
+                      <input name="reason" required minLength={5} maxLength={500} placeholder={L("Защо (5–500 знака)", "Why (5–500 characters)")} style={{ ...input, minWidth: 320 }} />
+                      <PendingSubmit className="btn btn-sm" mark="data-test-void-submit" label={L("Анулирай", "Void")} />
+                    </form>
+                  </details>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );

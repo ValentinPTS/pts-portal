@@ -1,11 +1,5 @@
-import { listParticipants } from "@/lib/participants";
-import { listSubmissions, listCorrections } from "@/lib/submissions";
-import { inFinalRound } from "@/lib/announcement-model";
-import { analysisSheets } from "@/lib/analysis-export";
-import { readXlsx } from "@/lib/xlsx-read";
-import { xlsx } from "@/lib/xlsx";
-import { replayDiff, type ReplayDiff } from "@/lib/replay-model";
-import { replaySource } from "@/lib/replay-import";
+import { type ReplayDiff } from "@/lib/replay-model";
+import { compareReplay } from "@/lib/replay-import";
 import { fmtMoment } from "@/lib/scheme-dates";
 import type { Scheme } from "@/lib/types";
 
@@ -20,15 +14,10 @@ export default async function ReplayCard({ s, lang }: { s: Scheme; lang: "bg" | 
   let diffs: ReplayDiff[] | null = null;
   let unreadable = false;
   // a load that did not finish is never compared as a replay
+  // the export as it is WRITTEN, read back with the same reader as the source (8.2 review)
   if (!r.failed) try {
-    const src = await replaySource(r.sourcePath);
-    if (!src) unreadable = true;
-    else {
-      const [parts, subs, corr] = await Promise.all([listParticipants(s.id), listSubmissions(s.id), listCorrections(s.id)]);
-      const exported = analysisSheets(s, parts.filter((p) => inFinalRound(s, p)), subs, corr, s.submissionLocks).sheets;
-      // the export as it is WRITTEN, read back with the same reader as the source (8.2 review)
-      diffs = replayDiff(readXlsx(src), readXlsx(xlsx(exported)), r);
-    }
+    diffs = await compareReplay(s);
+    if (diffs === null) unreadable = true;
   } catch {
     unreadable = true;
   }

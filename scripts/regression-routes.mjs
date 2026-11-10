@@ -88,6 +88,7 @@ export const ROUTES = [
   // the acceptance criteria and the validation record (8.1) — the portal's own, no participant
   { file: "validation/page.tsx", names: "never", paths: () => ["/validation"] },
   { file: "validation/criteria/[id]/route.ts", names: "never", paths: () => ["/validation/criteria/00000000-0000-4000-8000-000000000000"] },
+  { file: "validation/tests/[id]/route.ts", names: "never", paths: () => ["/validation/tests/00000000-0000-4000-8000-000000000000"] },
   { file: "schemes/[id]/batches/page.tsx", names: "never", paths: (c) => [`/schemes/${c.S}/batches`] },
   { file: "schemes/[id]/amendments/page.tsx", names: "never", paths: (c) => [`/schemes/${c.S}/amendments`] },
   { file: "schemes/[id]/editions/page.tsx", names: "never", paths: (c) => [`/schemes/${c.S}/editions`, `/schemes/${c.S}/editions?doc=invitation`] },

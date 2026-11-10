@@ -11,6 +11,11 @@ import { recordCriteria, voidCriteria } from "./validation-criteria";
 import { importReplay, replayAllowedHere } from "./replay-import";
 import { getScheme } from "./store";
 import type { ReplayImportState } from "./replay-model";
+import { listCriteria } from "./validation-criteria";
+import { readTestForm, testResult, criteriaOf, restsOn, isReference, editionUnderTests } from "./validation-test-model";
+import { levelOneState, type LevelOneState } from "./validation-level";
+import { recordTest, voidTest, listTests } from "./validation-tests";
+import type { Level } from "./validation-model";
 
 // «Валидиране» (plan part 8.1; Реш. 134): record a signed edition of the acceptance criteria, or
 // void one recorded by mistake. The head and the quality manager (validation.record) — never the
@@ -28,6 +33,10 @@ export async function recordCriteriaAction(formData: FormData): Promise<void> {
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) back("file");
   const f = file as File;
+  // an edition signed on or before a recorded test's day would change what that test rests on (8.3 review)
+  let under = false;
+  try { under = editionUnderTests(await listTests(), v.signedOn); } catch { back("failed"); }
+  if (under) back("under-tests");
   const bytes = new Uint8Array(await f.arrayBuffer());
   // the type the file IS, by its bytes — not the one the browser named (8.1 review)
   const r = await recordCriteria({ edition: v.edition, signedOn: v.signedOn, signedBy: v.signedBy, levels: v.levels, note: v.note, file: { bytes, mime: sniffMime(bytes) ?? f.type, name: f.name }, by });
@@ -48,6 +57,10 @@ export async function voidCriteriaAction(formData: FormData): Promise<void> {
   await requireCapAnywhere("validation.record");
   const by = (await getRoleContext()).email ?? "build";
   const id = String(formData.get("id") ?? "");
+  // an edition a recorded test rests on is not voided (8.1 review; the database holds it too, 0046)
+  let rests = false;
+  try { rests = restsOn(await listTests(), id); } catch { back("failed"); }
+  if (rests) back("rests");
   const r = await voidCriteria({ id, reason: String(formData.get("reason") ?? ""), by });
   if (!r.ok) back(r.error);
   const e = (r as Extract<typeof r, { ok: true }>).entry;
@@ -85,4 +98,63 @@ export async function importReplayAction(_prev: ReplayImportState, formData: For
   });
   revalidatePath("/validation");
   return { ok: true, schemeId: r.schemeId, number: r.number, ...(logged ? {} : { unlogged: true }) };
+}
+
+const backTo = (schemeId: string, answer: string) => redirect(`/schemes/${encodeURIComponent(schemeId)}?vt=${encodeURIComponent(answer)}#level-test`);
+
+/** «Запиши изпитването» (plan part 8.3; Реш. 134): a level's test on a round — judged against the
+ *  criteria edition in force that day for that level (none: refused); the items a person compared;
+ *  what the portal checked by itself, frozen now; the result by the rule, never by the word. The head
+ *  or the quality manager (validation.record) — never the software administrator. */
+export async function recordTestAction(formData: FormData): Promise<void> {
+  await requireCapAnywhere("validation.record");
+  const by = (await getRoleContext()).email ?? "build";
+  const schemeId = String(formData.get("schemeId") ?? "");
+  const level = Number(formData.get("level")) as Level;
+  const s = await getScheme(schemeId);
+  if (!s || !s.replay || s.replay.failed) redirect("/validation?vt=scheme#tests");
+  const sc = s!;
+  if (level === 1 && !isReference(sc.replay!.of)) backTo(schemeId, "reference");
+  // the chain and what the portal checks by itself — computed NOW, the same as the card shows (8.3 review)
+  let state: LevelOneState;
+  try { state = await levelOneState(sc); } catch { backTo(schemeId, "failed"); }
+  const st = state!;
+  if (st.missing.length) backTo(schemeId, "not-ready");
+  const read = readTestForm(level, { testedOn: formData.get("testedOn"), scope: formData.get("scope"), conclusion: formData.get("conclusion"), item: (k) => ({ result: formData.get(`item_${k}`), note: formData.get(`note_${k}`) }) }, sofiaDay(new Date().toISOString()), st.earliest);
+  if (!read.ok) backTo(schemeId, read.problem);
+  const v = read as Extract<typeof read, { ok: true }>;
+  let criteria;
+  try { criteria = criteriaOf(await listCriteria(), level, v.testedOn); } catch { backTo(schemeId, "failed"); }
+  if (!criteria) backTo(schemeId, "criteria");
+  const c = criteria!;
+  const file = formData.get("file");
+  const f = file instanceof File && file.size > 0 ? file : null;
+  const bytes = f ? new Uint8Array(await f.arrayBuffer()) : null;
+  const r = await recordTest({
+    level, kind: "pts-t", testedOn: v.testedOn, schemeId, schemeNumber: sc.number, replayOf: sc.replay!.of,
+    criteriaId: c.edition.id, criteriaEdition: c.edition.edition, criteriaRecordedAfter: c.recordedAfter,
+    scope: v.scope, items: v.items, auto: st.auto, result: testResult(v.items, st.auto, level), conclusion: v.conclusion, recordedBy: by,
+  }, f && bytes ? { bytes, mime: sniffMime(bytes) ?? f.type, name: f.name } : null);
+  if (!r.ok) backTo(schemeId, r.error);
+  const e = (r as Extract<typeof r, { ok: true }>).entry;
+  const logged = await logActivity("validation.test_recorded", {
+    schemeId, subject: `validation_test:${e.id}`,
+    after: { level: e.level, testedOn: e.testedOn, result: e.result, criteriaEdition: e.criteriaEdition, unexpected: e.auto.unexpected, importId: e.auto.importId ?? null },
+    summary: `Level ${e.level} test on ${sc.number} (replay of ${sc.replay!.of}), ${e.testedOn} — ${e.result === "pass" ? "PASSES" : "FAILS"}, against acceptance criteria edition ${e.criteriaEdition}`,
+  });
+  revalidatePath("/validation");
+  backTo(schemeId, logged ? `recorded-${e.result}` : "recorded-unlogged");
+}
+
+/** One recorded by mistake is voided with the reason, never deleted. */
+export async function voidTestAction(formData: FormData): Promise<void> {
+  await requireCapAnywhere("validation.record");
+  const by = (await getRoleContext()).email ?? "build";
+  const r = await voidTest({ id: String(formData.get("id") ?? ""), reason: String(formData.get("reason") ?? ""), by });
+  if (!r.ok) redirect(`/validation?vt=${r.error}#tests`);
+  const e = (r as Extract<typeof r, { ok: true }>).entry;
+  // the reason is on the voiding's own record — the journal line carries no words typed (8.3 review)
+  const logged = await logActivity("validation.test_voided", { subject: `validation_test:${e.id}`, before: { level: e.level, testedOn: e.testedOn, result: e.result }, after: { voided: true }, summary: `Level ${e.level} test of ${e.testedOn} on ${e.schemeNumber} voided` });
+  revalidatePath("/validation");
+  redirect(`/validation?vt=${logged ? "voided" : "voided-unlogged"}#tests`);
 }

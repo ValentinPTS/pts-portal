@@ -49,6 +49,7 @@ export const MIGRATIONS = [
   "0043_result_corrections",
   "0044_submissions_scheme_open",
   "0045_validation_criteria",
+  "0046_validation_tests",
 ] as const;
 
 /** The expected migrations the database has not recorded, in order. */

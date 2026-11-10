@@ -30,7 +30,8 @@ export function replaySheets(number = "PTS 26/03-T-1"): Sheet[] {
 
 if (process.argv[1]?.endsWith("replay-fixture.ts") && process.argv[2]) {
   const dir = process.argv[2], stamp = process.argv[3] ?? "";
-  const good = replaySheets(`PTS 26/03-T-1${stamp ? ` (${stamp})` : ""}`.slice(0, 60));
+  // the reference round's own number — level 1 is ITS replay (8.3); the stamp only marks the object
+  const good = replaySheets().map((s) => (s.name === "Scheme_meta" ? { ...s, rows: s.rows.map((r) => (r[0] === "object_title" && stamp ? ["object_title", `Скален добив ${stamp}`] : r)) } : s));
   writeFileSync(join(dir, "replay-good.xlsx"), xlsx(good));
   const named = good.map((s) => (s.name === "Participants" ? { ...s, rows: [s.rows[0], ["Лаборатория Пример ЕООД", "", "Да", "Да"], ...s.rows.slice(2)] } : s));
   writeFileSync(join(dir, "replay-name.xlsx"), xlsx(named));

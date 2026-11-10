@@ -99,7 +99,7 @@ export async function recordCriteria(p: { edition: number; signedOn: string; sig
   } catch (e) {
     console.error("[validation-criteria] not recorded:", (e as Error)?.message);
     // an insert that went through but failed to answer leaves its row: then the scan stays with it (8.1 review)
-    const stayed = uploaded && await db.from("validation_criteria").select("id").eq("id", id).then((r) => (r.data ?? []).length > 0, () => true);
+    const stayed = uploaded && await db.from("validation_criteria").select("id").eq("id", id).then((r) => (r.error ? true : (r.data ?? []).length > 0), () => true);
     if (stayed) return { ok: true, entry };
     // no record was made: a signed scan is not left behind without one
     if (uploaded) {

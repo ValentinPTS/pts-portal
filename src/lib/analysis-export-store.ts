@@ -46,3 +46,22 @@ export async function dropExportFile(path: string): Promise<void> {
     console.error(`[analysis export] a file not handed out could not be removed (${path}):`, (e as Error)?.message ?? e);
   }
 }
+
+/** The bytes of an export as it was handed out (7.10) — null when truly not there (or none was kept);
+ *  a storage error throws: a check never takes a hiccup for «nothing was sent» (8.3). */
+export async function keptExportBytes(path: string | undefined): Promise<Uint8Array | null> {
+  if (!path) return null;
+  if (path.startsWith("data:")) {
+    const m = path.match(/^data:[^;,]*;base64,(.*)$/);
+    return m ? new Uint8Array(Buffer.from(m[1], "base64")) : null;
+  }
+  const db = getDb();
+  if (!db) return null;
+  const { data, error } = await db.storage.from(ANALYSIS_EXPORT_BUCKET).download(path);
+  if (error) {
+    const e = error as { message?: string; statusCode?: string | number; status?: number };
+    if (/not.?found|does not exist|no such/i.test(e.message ?? "") || String(e.statusCode ?? e.status ?? "") === "404") return null;
+    throw new Error(`storage (${ANALYSIS_EXPORT_BUCKET}): ${e.message}`);
+  }
+  return data ? new Uint8Array(await data.arrayBuffer()) : null;
+}
