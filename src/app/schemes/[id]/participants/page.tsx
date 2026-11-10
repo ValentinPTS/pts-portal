@@ -43,7 +43,7 @@ const inputStyle = { border: "1px solid var(--line)", background: "#fff" } as co
 // Courier options exactly as they appear on the owner's F 7.2.1-4 workbook.
 // the usual carriers, offered — any other may be typed: outside the EU and the Balkans the
 // participant chooses one from the offers, and PTS records it here (Реш. 128, 5.5)
-const COURIERS = ["Спиди БГ", "Спиди EN", "Поща/Fedex"];
+const COURIERS = ["Спиди БГ", "Спиди EN", "Поща/Fedex", "Собствен куриер"]; // the last — 9.2's own courier (participation only, 9.4)
 
 const STATUS_COLOR: Record<string, string> = {
   applied: "var(--muted)", approved: "var(--success)", invoiced: "var(--info)",

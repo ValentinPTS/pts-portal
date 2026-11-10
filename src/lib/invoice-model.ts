@@ -48,16 +48,19 @@ export interface BillingInput {
   proforma?: { number?: string; at?: string };
   invoice?: { number?: string; at?: string };
   paidAt?: string;
+  /** its price (9.4, Реш. 153): the total and how it was computed; none before the applications close */
+  price?: { total: string; how: string };
 }
 
 export const BILLING_COLUMNS = [
   "№ по ред", "Код", "Юридическо лице", "ЕИК", "ДДС №", "Държава", "Адрес за кореспонденция", "МОЛ", "Официален имейл",
-  "Лаборатория", "Характеристики (участия)", "Обекти", "Проформа №", "Проформа дата", "Платено на", "Фактура №", "Фактура дата", "Цена (от 9.4)",
+  "Лаборатория", "Характеристики (участия)", "Обекти", "Проформа №", "Проформа дата", "Платено на", "Фактура №", "Фактура дата", "Цена, €", "Цена — как е сметната",
 ] as const;
 
 const day = (iso?: string) => (iso && /^\d{4}-\d{2}-\d{2}/.test(iso) ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}` : "");
 
-/** One row per participation, the columns above — the price empty until 9.4. */
+/** One row per participation, the columns above — the price from 9.4 (Реш. 153), empty before the
+ *  applications close. */
 export const billingRow = (p: BillingInput): Record<(typeof BILLING_COLUMNS)[number], string> => ({
   "№ по ред": String(p.order),
   "Код": p.code,
@@ -76,7 +79,8 @@ export const billingRow = (p: BillingInput): Record<(typeof BILLING_COLUMNS)[num
   "Платено на": day(p.paidAt),
   "Фактура №": p.invoice?.number ?? "",
   "Фактура дата": day(p.invoice?.at),
-  "Цена (от 9.4)": "",
+  "Цена, €": p.price?.total ?? "",
+  "Цена — как е сметната": p.price?.how ?? "",
 });
 
 /** The applied characteristics as words: «Плътност ×2; Якост» (5.1 selections). */

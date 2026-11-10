@@ -11,12 +11,16 @@ import { actorNow } from "@/lib/identities";
 import { csv } from "@/lib/round-export";
 import { billingRow, characteristicsText, byEntry, billedSelections, BILLING_COLUMNS } from "@/lib/invoice-model";
 import { logActivity } from "@/lib/activity";
+import { priceText } from "@/lib/price-model";
+import { schemePrices } from "@/lib/scheme-prices";
+import { waitingOf } from "@/lib/waitlist-model";
+import { schemeNowMs } from "@/lib/clock";
 
 // «Справка за фактуриране» (plan part 5.8; Реш. 98): the export for accounting — the
 // accountant has no sign-in. One row per participation going on, in the order they were
 // entered: the legal entity (from the participation's copy in force, 4.5 — else its own
 // fields), ЕИК, VAT, the characteristics applied for, the objects, the proforma's and the
-// invoice's numbers and dates, the payment; the price empty until 9.4. It names who is
+// invoice's numbers and dates, the payment; the price (9.4, Реш. 153) once the applications closed. It names who is
 // behind each code: only to who works with the participants in THIS scheme and sees names
 // there; ONE opening of the identity store for the export, on record (2.3); journalled.
 export const runtime = "nodejs";
@@ -52,6 +56,12 @@ export async function GET(req: NextRequest) {
     return new Response("The names could not be read — nothing exported. Try again.", { status: 500 });
   }
   const labels = s.parameters.map((p) => characteristicLabel(p, "bg"));
+  // the prices (9.4, Реш. 153) — one reading with «Фактури» (lib/scheme-prices): a preview after the
+  // applications close, fixed at the second announcement; the groups from the copies
+  const priced = schemePrices(s, await listParticipants(id), snaps, schemeNowMs(s));
+  const prices = priced.prices;
+  const waitingIds = new Set(waitingOf(s, await listParticipants(id)));
+  const notYet = priced.state === "not-ready" ? "след срока за заявки (Реш. 153)" : priced.state === "not-held" ? "схемата не се провежда" : "";
   const rows = coded.map((p, i) => {
     const snap = snaps.get(p.id);
     const mine = own.get(p.id);
@@ -71,6 +81,8 @@ export async function GET(req: NextRequest) {
       proforma: lab?.proforma ? { number: lab.proforma.number, at: lab.proforma.uploadedAt } : undefined,
       invoice: lab?.invoice ? { number: lab.invoice.number, at: lab.invoice.uploadedAt } : undefined,
       paidAt: s.paidAt?.[p.code],
+      // a plain amount with a point (the accountant's spreadsheet), and how it was computed
+      price: prices.get(p.id) ? { total: prices.get(p.id)!.totalCents === null ? "" : (prices.get(p.id)!.totalCents! / 100).toFixed(2), how: `${priceText(prices.get(p.id)!, "bg")}${priced.state === "preview" ? " (предварително — фиксира се при второто обявяване)" : prices.get(p.id)!.later ? " (след фиксирането — спрямо групата)" : ""}` } : { total: "", how: notYet || (waitingIds.has(p.id) ? "в списъка на изчакващите" : "") },
     });
   });
   await logActivity("names.viewed", { schemeId: id, subject: "export:billing", summary: `Laboratory names shown with their codes — the billing export (${rows.length} rows)` });

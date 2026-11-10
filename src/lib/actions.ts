@@ -16,6 +16,7 @@ import { INVITE_SUBJECT, inviteText, invitePreview, PROFILE_CONFIRMED_SUBJECT, P
   ADMIN_CHANGED_KEY, ADMIN_CHANGED_SUBJECT, adminChangedText, officialNoticePreviews } from "./fixed-texts";
 import { JOIN_LETTER_BUCKET, keepMemLetter } from "./join-letters";
 import { waitingAtAnnouncement, admissionCheck, admissionsNow, ADMIT_PROBLEM_TEXT } from "./waitlist-model";
+import { fixPrices } from "./scheme-prices";
 import { applyOpenProblem, readLabApply, labAccreditationWarning, earlierProblem, APPLY_PROBLEM_TEXT, OWN_COURIER } from "./lab-apply-model";
 import { applyOnlineWithIdentity } from "./identity-store";
 import { readRegistration, registrationProblemText, inputOf, viesOf, adminJoinProblem, ptsJoinProblem, appointPlan, APPOINT_PROBLEM_TEXT, isEu, OFFICIAL_NOTICE_KINDS_91 } from "./registration-model";
@@ -79,7 +80,7 @@ import { readEntityUser, entityUserDiff, ENTITY_USER_PROBLEM_TEXT, type EntityUs
 import { openEntityUsers, putEntityUser, userEmailTaken, linkEntityUserAccount } from "./entity-users";
 import { requireParticipant, participantActor, getParticipantSession, participationsOf } from "./participant-session";
 import { inviteParticipant } from "./participant-invite";
-import { freezeParticipation, participationEntity } from "./participation-snapshots";
+import { freezeParticipation, participationEntity, openParticipationSnapshots, inForce as copiesInForce } from "./participation-snapshots";
 import { readSelections, characteristicsOf, readRefusal, readSource, inRound, REFUSAL_CATEGORIES, STANDING_PROBLEM_TEXT, MAX_PER_CHARACTERISTIC, participationSets, selectionsOf, sameSelections, objectsNeeded, type Standing } from "./application-model";
 import { notifyParticipationRefused, notifyItemsDispatched, notifyReceiptProtocol, notifyDeliveryProblem, notifyMessage, notifyResultsUnlocked, notifyResultsCorrected, notifyResultsLockedNR, notifyResultsReopened } from "./notify-events";
 import { readDocNumber, invoiceSlotProblem, INVOICE_PROBLEM_TEXT } from "./invoice-model";
@@ -4650,6 +4651,9 @@ export async function secondAnnouncementAction(schemeId: string, input: { runs?:
 
   const at = new Date().toISOString();
   const day = sofiaToday(schemeNowMs(scheme));
+  // the copies — the prices' groups by the entity (9.4): opened on record; unread — the prices stay a
+  // preview (said in the journal), the list is made all the same
+  const copies = await openParticipationSnapshots({ actor: by, purpose: "write" }, schemeId).then(copiesInForce).catch(() => null);
   let refused: ActProblem | null = "gone";
   let changed = false;
   await updateSchemeWith(schemeId, (cur) => {
@@ -4659,7 +4663,9 @@ export async function secondAnnouncementAction(schemeId: string, input: { runs?:
     // the characteristics the list names, as they were read — changed meanwhile, refused (5.2 review)
     if (paramsSignature(cur.parameters) !== sig) { changed = true; return {}; }
     const entry: LifecycleAct = { act: "announce2", from: cur.status, to: cur.status, at, by, day, ...(note ? { note } : {}), final };
-    return { lifecycle: { ...(cur.lifecycle ?? {}), acts: [...(cur.lifecycle?.acts ?? []), entry] } };
+    // the prices fixed with the list (9.4 review) — an invoiced price never changes by itself
+    const fixedNow = copies ? fixPrices({ ...cur, lifecycle: { ...(cur.lifecycle ?? {}), acts: [...(cur.lifecycle?.acts ?? []), entry] } }, parts, copies, at, final.participants) : undefined;
+    return { lifecycle: { ...(cur.lifecycle ?? {}), acts: [...(cur.lifecycle?.acts ?? []), entry] }, ...(fixedNow ? { pricesFixed: fixedNow } : {}) };
   });
   if (changed) return { error: ANNOUNCE_REFUSAL.changed };
   if (refused) return { error: ACT_REFUSAL[refused as ActProblem] };
@@ -4667,7 +4673,7 @@ export async function secondAnnouncementAction(schemeId: string, input: { runs?:
   const label = (i: number) => ({ bg: characteristicLabel(scheme.parameters[i], "bg"), en: characteristicLabel(scheme.parameters[i], "en") });
   await logActivity("scheme.state", {
     schemeId, subject: `scheme:${schemeId}`, before: { status: scheme.status }, after: { status: scheme.status },
-    summary: `${ACTS.announce2.en}: ${final.participants.length} of ${parts.length} participation(s) on the final list${waiting.length ? `, ${waiting.length} on the waiting list` : ""}${n ? ` — running: ${final.runs.map((i) => label(i).en).join("; ")}${final.dropped.length ? `; dropped: ${final.dropped.map((i) => label(i).en).join("; ")}` : ""}` : ""}${note ? ` — ${note}` : ""}`,
+    summary: `${ACTS.announce2.en}: ${final.participants.length} of ${parts.length} participation(s) on the final list${waiting.length ? `, ${waiting.length} on the waiting list` : ""}${copies ? "; the prices fixed" : "; the prices NOT fixed (the copies could not be read)"}${n ? ` — running: ${final.runs.map((i) => label(i).en).join("; ")}${final.dropped.length ? `; dropped: ${final.dropped.map((i) => label(i).en).join("; ")}` : ""}` : ""}${note ? ` — ${note}` : ""}`,
   });
   // one notice per participation, by its code — from what IT applied for (Реш. 65)
   const onList = new Set(final.participants);

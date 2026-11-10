@@ -633,6 +633,8 @@ export interface Scheme {
   applicationsClosed?: { at: string; by: string };
   /** admitted from the waiting list after the final list (9.3, Реш. 120, 127) — each on record */
   waitlistAdmitted?: { participantId: string; at: string; by: string; listAt?: string }[];
+  /** the prices fixed at the second announcement (9.4, Реш. 153) — by its moment; no ЕИК in it */
+  pricesFixed?: import("./price-model").FixedPrices;
   status: SchemeStatus;
   titleEn: string;
   titleBg: string;

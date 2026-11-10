@@ -1,5 +1,11 @@
 import Link from "next/link";
-import { requireSection, getViewer, schemesFor } from "@/lib/access";
+import { requireSection, getViewer, schemesFor, mayNow } from "@/lib/access";
+import { priceText } from "@/lib/price-model";
+import { schemePrices } from "@/lib/scheme-prices";
+import { fmtEur } from "@/lib/commercial-model";
+import { openParticipationSnapshots, inForce } from "@/lib/participation-snapshots";
+import { actorNow } from "@/lib/identities";
+import { schemeNowMs } from "@/lib/clock";
 import { listSchemes } from "@/lib/store";
 import { listParticipants } from "@/lib/participants";
 import { inFinalRound } from "@/lib/announcement-model";
@@ -12,8 +18,8 @@ import { getServerT } from "@/lib/i18n-server";
 // works with the participants in (capability «participants.manage»), each participation going
 // on, by its code — the proforma's number and date, paid or not, the original invoice's
 // number and date — and «Справка за фактуриране», the export for accounting (the accountant
-// has no sign-in; it carries the inputs until 9.4 adds the prices). Uploading is on each
-// participation's page. Codes and numbers only here — the names are in the export alone.
+// has no sign-in; with the prices of 9.4). Uploading is on each participation's page. Codes and
+// numbers only here — the names are in the export alone; the prices (grouped by ЕИК) to who sees names.
 export const dynamic = "force-dynamic";
 
 export default async function InvoicesPage({ searchParams }: { searchParams: Promise<{ scheme?: string }> }) {
@@ -26,6 +32,21 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   const chosen = schemes.find((s) => s.id === sp.scheme) ?? schemes.find((s) => s.status === "running") ?? schemes[0];
   const parts = chosen ? (await listParticipants(chosen.id)).filter((p) => inFinalRound(chosen, p)) : [];
   const day = (iso?: string) => (iso ? fmtSchemeDate(iso.slice(0, 10)) : "");
+  // the prices (9.4, Реш. 153): grouped by the legal entity's ЕИК — from the participations' copies, so
+  // only to who sees the names in the scheme (an opening on record); only once the applications closed
+  const lg: "bg" | "en" = lang === "bg" ? "bg" : "en";
+  const showPrices = !!chosen && parts.length > 0 && (await mayNow("names.view", chosen.id));
+  let priced: ReturnType<typeof schemePrices> | null = null;
+  let pricesFailed = false;
+  if (chosen && showPrices) {
+    try {
+      const snaps = inForce(await openParticipationSnapshots({ actor: await actorNow(), purpose: "names.view" }, chosen.id));
+      // one reading with the billing export (lib/scheme-prices)
+      priced = schemePrices(chosen, await listParticipants(chosen.id), snaps, schemeNowMs(chosen));
+    } catch { pricesFailed = true; }
+  }
+  const prices = priced?.prices ?? null;
+  const ready = !!priced && (priced.state === "preview" || priced.state === "fixed");
   const counts = chosen ? {
     proforma: parts.filter((p) => chosen.labDocs?.[p.code]?.proforma).length,
     paid: parts.filter((p) => chosen.paidAt?.[p.code]).length,
@@ -71,6 +92,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
                     <th className="p-1">{L("Платено", "Paid")}</th>
                     <th className="p-1">{L("Фактура №", "Invoice No.")}</th>
                     <th className="p-1">{L("от", "of")}</th>
+                    {showPrices && <th className="p-1">{L("Цена (Реш. 153)", "Price (Decision 153)")}</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -84,6 +106,14 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
                         <td className="p-1">{paid ? day(paid) : <span style={{ color: "var(--muted)" }}>{L("не", "no")}</span>}</td>
                         <td className="p-1">{inv?.number || (inv ? "—" : "")}</td>
                         <td className="p-1">{day(inv?.uploadedAt)}</td>
+                        {showPrices && (() => {
+                          const pr = prices?.get(p.id);
+                          if (pricesFailed) return <td className="p-1 text-xs" style={{ color: "var(--muted)" }}>{L("не се прочете", "could not be read")}</td>;
+                          if (priced?.state === "not-held") return <td className="p-1 text-xs" style={{ color: "var(--muted)" }}>{L("схемата не се провежда", "the scheme is not held")}</td>;
+                          if (!ready) return <td className="p-1 text-xs" style={{ color: "var(--muted)" }}>{L("след срока за заявки", "after the applications' deadline")}</td>;
+                          if (!pr) return <td className="p-1 text-xs" style={{ color: "var(--muted)" }}>—</td>;
+                          return <td className="p-1" data-price={pr.totalCents ?? ""} data-price-lines={pr.lines.map((l) => l.kind).join(",")} data-price-state={priced!.state}><b>{pr.totalCents === null ? "—" : fmtEur(pr.totalCents, lg)}</b><div className="text-xs" style={{ color: "var(--muted)", maxWidth: 360 }}>{priceText(pr, lg)}{priced!.state === "preview" ? L(" · предварително — фиксира се при второто обявяване", " · a preview — fixed at the second announcement") : pr.later ? L(" · след фиксирането, спрямо групата", " · after the fixing, against its group") : ""}</div></td>;
+                        })()}
                       </tr>
                     );
                   })}

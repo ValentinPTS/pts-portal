@@ -187,6 +187,8 @@ export const SCHEME_FIELDS = {
   // the applications closed by hand, the admissions from the waiting list (9.3) — who (PTS's
   // person) and when, participation ids — coded
   applicationsClosed: "coded", waitlistAdmitted: "coded",
+  // the prices fixed at the second announcement (9.4) — amounts by participation id, no ЕИК
+  pricesFixed: "coded",
 } satisfies Record<keyof Scheme, SchemePart>;
 
 export const PARTICIPANT_FIELDS = {
