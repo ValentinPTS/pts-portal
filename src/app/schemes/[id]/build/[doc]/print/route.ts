@@ -83,7 +83,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
   // honoured; for anyone else they render fresh from the live data (masked per
   // `reveal`) — a saved list body may carry real names, so it never reaches a
   // role that can't reveal them.
-  if (isList && !reveal) saved = "";
+  // …and so the certificate (a document that shows identities): its saved body may carry a laboratory's
+  // name — the build page already gives it no saved body without names.view; here too, now that the
+  // read-only roles are shown this route (round 4's view — the overnight check, 2026-11-12)
+  if ((isList || showsIdentities(doc)) && !reveal) saved = "";
   // A form document's edited body bakes control states as of edit time — redraw
   // them from the latest fill-saved values (data-ff identity; fields the fill
   // never saved keep the editor's state), so print matches the locked Fill view.

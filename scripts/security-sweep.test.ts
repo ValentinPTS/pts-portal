@@ -135,5 +135,11 @@ t("Q4: a read-only role sees the document as it prints, not the editor — the S
   t("R4U-6: …and keeps its extension", decodeURIComponent(utf8Name("П".repeat(160) + "🧪.pdf")).endsWith("🧪.pdf") === false && decodeURIComponent(utf8Name("П".repeat(160) + "🧪.pdf")).endsWith(".pdf") && [...decodeURIComponent(utf8Name("П".repeat(160) + "🧪.pdf"))].length === 150);
 }
 
+// overnight 2026-11-12: the build print route (now the read-only roles' view) gives a document that shows
+// identities — the lists AND the certificate — no saved body without names.view, as the build page does
+t("a saved certificate or list body never reaches a role without names.view through the print route",
+  /if \(\(isList \|\| showsIdentities\(doc\)\) && !reveal\) saved = "";/.test(src("app/schemes/[id]/build/[doc]/print/route.ts"))
+  && /\(isList \|\| showsIdentities\(doc\)\) && !reveal \? \{ bg: "", en: "" \}/.test(src("app/schemes/[id]/build/[doc]/page.tsx")));
+
 console.log(`security-sweep.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
