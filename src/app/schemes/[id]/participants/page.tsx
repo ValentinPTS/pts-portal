@@ -28,6 +28,7 @@ import { currentFinalList, finalSelectionsOf } from "@/lib/announcement-model";
 import { isProvisional } from "@/lib/coding-model";
 import { fmtMoment } from "@/lib/scheme-dates";
 import WaitlistPanel from "@/components/WaitlistPanel";
+import CarrierOffersPanel from "@/components/CarrierOffersPanel";
 import { listCaseEventsForScheme } from "@/lib/case-events";
 import { admissionCheck, ADMIT_PROBLEM_TEXT } from "@/lib/waitlist-model";
 import { holidaySet } from "@/lib/holidays";
@@ -195,7 +196,7 @@ export default async function ParticipantsPage({
               <tr><td colSpan={8} className="p-3" style={{ color: "var(--muted)" }}>{tr("part.noneYet")}</td></tr>
             )}
             {participants.map((p) => (
-              <ParticipantRows key={p.id} p={p} schemeId={id} reveal={reveal} hidden={hidden} tr={tr} accWarn={accWarnFor(p)} L={L} twin={reveal && inRound(p) && (twins.get(nameKey(p.labName)) ?? 0) > 1} waitPos={waitPos.get(p.id)}
+              <ParticipantRows key={p.id} p={p} schemeId={id} reveal={reveal} hidden={hidden} tr={tr} accWarn={accWarnFor(p)} L={L} twin={reveal && inRound(p) && (twins.get(nameKey(p.labName)) ?? 0) > 1} waitPos={waitPos.get(p.id)} carrierRec={s.carrierOffers?.[p.id]}
                 snapshot={snapshots.get(p.id)} versions={versions.get(p.id) ?? 0} contactName={contactName} lang={lang === "bg" ? "bg" : "en"}
                 canFreeze={canFreeze && !snapshotsFailed} canManage={canFreeze} schemeType={s.type}
                 objects={onList(p) ? objectsNeeded(selNow(p), s.type) : 0} listed={finalList ? onList(p) : undefined}
@@ -270,7 +271,9 @@ export default async function ParticipantsPage({
 // participation-copy row (4.x) and a collapsed edit row (native <details>, no client
 // JS) holding the full edit form — courier, sample code and the F 7.2.1-6
 // characteristics live here so 30 labs can be filled in quickly.
-function ParticipantRows({ p, schemeId, reveal, hidden, tr, invoiced, paid, parameters, deadline, accWarn, L, snapshot, versions, contactName, canFreeze, lang, canManage, schemeType, objects, listed, twin, waitPos }: {
+function ParticipantRows({ p, schemeId, reveal, hidden, tr, invoiced, paid, parameters, deadline, accWarn, L, snapshot, versions, contactName, canFreeze, lang, canManage, schemeType, objects, listed, twin, waitPos, carrierRec }: {
+  /** its carriers' offers and the choice (9.5) */
+  carrierRec?: import("@/lib/carrier-model").CarrierRecord;
   /** its place on the waiting list (9.3) */
   waitPos?: number;
   /** another participation in the round under the same laboratory's name — a PDF application and an
@@ -341,6 +344,10 @@ function ParticipantRows({ p, schemeId, reveal, hidden, tr, invoiced, paid, para
               the same one its users read (5.5 review) */}
           {reveal && !out && listed === true && !p.courier?.trim() && needsCarrierChoice(snapshot?.entity.country || p.country) && (
             <span data-carrier-pending className="text-xs" style={{ display: "block", fontWeight: 700, color: "#7a5416" }}>{L("изчаква избор на доставчик", "awaiting the choice of carrier")}</span>
+          )}
+          {/* 9.5: the carriers' offers — entered, sent, chosen (Реш. 128) */}
+          {reveal && canManage && !out && listed === true && (carrierRec || needsCarrierChoice(snapshot?.entity.country || p.country)) && (
+            <CarrierOffersPanel lang={lang} schemeId={schemeId} participantId={p.id} rec={carrierRec ?? null} />
           )}
         </td>
         <td className="p-2"><span style={{ color: STATUS_COLOR[p.status] ?? "var(--muted)", fontWeight: 700 }}>● {tr(`pstatus.${p.status}`)}</span>

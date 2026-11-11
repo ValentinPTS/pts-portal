@@ -17,6 +17,8 @@ import { INVITE_SUBJECT, inviteText, invitePreview, PROFILE_CONFIRMED_SUBJECT, P
 import { JOIN_LETTER_BUCKET, keepMemLetter } from "./join-letters";
 import { waitingAtAnnouncement, admissionCheck, admissionsNow, ADMIT_PROBLEM_TEXT } from "./waitlist-model";
 import { fixPrices } from "./scheme-prices";
+import { participantViewer } from "./participation-view";
+import { readOffer, chooseProblem, liveOffers, OFFER_PROBLEM_TEXT, type CarrierOffer, type OfferProblem, type SentNotice } from "./carrier-model";
 import { applyOpenProblem, readLabApply, labAccreditationWarning, earlierProblem, APPLY_PROBLEM_TEXT, OWN_COURIER } from "./lab-apply-model";
 import { applyOnlineWithIdentity } from "./identity-store";
 import { readRegistration, registrationProblemText, inputOf, viesOf, adminJoinProblem, ptsJoinProblem, appointPlan, APPOINT_PROBLEM_TEXT, isEu, OFFICIAL_NOTICE_KINDS_91 } from "./registration-model";
@@ -82,7 +84,7 @@ import { requireParticipant, participantActor, getParticipantSession, participat
 import { inviteParticipant } from "./participant-invite";
 import { freezeParticipation, participationEntity, openParticipationSnapshots, inForce as copiesInForce } from "./participation-snapshots";
 import { readSelections, characteristicsOf, readRefusal, readSource, inRound, REFUSAL_CATEGORIES, STANDING_PROBLEM_TEXT, MAX_PER_CHARACTERISTIC, participationSets, selectionsOf, sameSelections, objectsNeeded, type Standing } from "./application-model";
-import { notifyParticipationRefused, notifyItemsDispatched, notifyReceiptProtocol, notifyDeliveryProblem, notifyMessage, notifyResultsUnlocked, notifyResultsCorrected, notifyResultsLockedNR, notifyResultsReopened } from "./notify-events";
+import { notifyParticipationRefused, notifyItemsDispatched, notifyReceiptProtocol, notifyDeliveryProblem, notifyMessage, notifyResultsUnlocked, notifyResultsCorrected, notifyResultsLockedNR, notifyResultsReopened, notifyCarrierOffers, notifyCarrierChosen } from "./notify-events";
 import { readDocNumber, invoiceSlotProblem, INVOICE_PROBLEM_TEXT } from "./invoice-model";
 import { readShipment, readReceipt, deliveryOf, openShipment, openProblems, replacementProblem, replacementCalledFor, minDaysOf, readMinDays, chainReceiptTarget, LIMITS as DELIVERY_LIMITS, MAX_OPEN_PROBLEMS, type Shipment, type ShipmentKind, type Deliveries } from "./delivery-model";
 import { finalListOf, splitFor, invoiceProblem, currentFinalList, inFinalRound, finalSelectionsOf, ANNOUNCEMENT_PROBLEM_TEXT, type FinalList } from "./announcement-model";
@@ -4748,6 +4750,173 @@ export async function admitFromWaitlistAction(schemeId: string, participantId: s
   revalidatePath(`/schemes/${scheme.id}/participants`);
   revalidatePath(`/schemes/${scheme.id}`);
   revalidatePath("/lab", "layout");
+  return { ok: true };
+}
+
+// ── Carrier offers (plan part 9.5; Реш. 128, О5) ───────────────────────────────────
+// A participation on the final list outside the EU and the Balkans waits for its carrier (5.5). PTS
+// enters the offers and sends them — a notice held for a person to release (1.8); the laboratory sees and
+// picks only what that notice carried, once it is released — once; PTS may record the choice it sent by
+// e-mail, or cancel a choice with its reason. The choice sets the participation's carrier (the state moves
+// on) and its price is the delivery on the invoice (9.4) while that carrier stands. An offer is withdrawn,
+// never deleted.
+
+const say95 = (k: keyof typeof OFFER_PROBLEM_TEXT) => ({ error: `${OFFER_PROBLEM_TEXT[k].bg}. · ${OFFER_PROBLEM_TEXT[k].en}.` });
+/** The participation of THIS scheme, going on in it — or why not. */
+async function carrierTarget(schemeId: string, participantId: string): Promise<{ error: string } | { scheme: Scheme; part: CodedParticipant }> {
+  const scheme = await getScheme(String(schemeId));
+  if (!scheme) return { error: "Scheme not found." };
+  const part = (await listParticipants(scheme.id)).find((x) => x.id === String(participantId));
+  if (!part) return { error: "Не е намерено. · Not found." };
+  if (!inFinalRound(scheme, part) || !currentFinalList(scheme)) return { error: "Офертите са за участие в окончателния списък (Реш. 128). · The offers are for a participation on the final list (Decision 128)." };
+  return { scheme, part };
+}
+
+export async function addCarrierOfferAction(schemeId: string, participantId: string, input: { carrier: unknown; price: unknown; days?: unknown; note?: unknown }): Promise<{ ok: true } | { error: string }> {
+  await requireCap("participants.manage", schemeId);
+  const t = await carrierTarget(schemeId, participantId);
+  if ("error" in t) return { error: t.error };
+  const by = (await getRoleContext()).email ?? "build";
+  let problem: OfferProblem | null = null;
+  await updateSchemeWith(t.scheme.id, (cur) => {
+    const rec = cur.carrierOffers?.[t.part.id];
+    const r = readOffer(input ?? {}, rec);
+    if (!r.ok) { problem = r.problem; return {}; }
+    const offer: CarrierOffer = { id: randomUUID(), ...r.fields, at: new Date().toISOString(), by };
+    // the offers changed: what was sent no longer stands — a new sending
+    return { carrierOffers: { ...(cur.carrierOffers ?? {}), [t.part.id]: { ...(rec ?? { offers: [] }), offers: [...(rec?.offers ?? []), offer], sent: undefined } } };
+  });
+  if (problem) return say95(problem);
+  await logActivity("carrier.offer_added", { schemeId: t.scheme.id, targetCode: t.part.code, summary: `A carrier's offer entered for ${t.part.code} (Реш. 128)` });
+  revalidatePath(`/schemes/${t.scheme.id}/participants`);
+  return { ok: true };
+}
+
+/** An offer withdrawn — kept on record, who and when; only before a choice. */
+export async function removeCarrierOfferAction(schemeId: string, participantId: string, offerId: string): Promise<{ ok: true } | { error: string }> {
+  await requireCap("participants.manage", schemeId);
+  const t = await carrierTarget(schemeId, participantId);
+  if ("error" in t) return { error: t.error };
+  const by = (await getRoleContext()).email ?? "build";
+  let problem: "chosen" | "no-offer" | null = null;
+  await updateSchemeWith(t.scheme.id, (cur) => {
+    const rec = cur.carrierOffers?.[t.part.id];
+    if (rec?.choice) { problem = "chosen"; return {}; }
+    if (!rec || !liveOffers(rec).some((o) => o.id === String(offerId))) { problem = "no-offer"; return {}; }
+    const at = new Date().toISOString();
+    return { carrierOffers: { ...(cur.carrierOffers ?? {}), [t.part.id]: { ...rec, offers: rec.offers.map((o) => (o.id === String(offerId) ? { ...o, withdrawnAt: at, withdrawnBy: by } : o)), sent: undefined } } };
+  });
+  if (problem) return say95(problem);
+  await logActivity("carrier.offer_removed", { schemeId: t.scheme.id, targetCode: t.part.code, summary: `A carrier's offer withdrawn for ${t.part.code} — kept on record` });
+  revalidatePath(`/schemes/${t.scheme.id}/participants`);
+  return { ok: true };
+}
+
+/** The offers to the laboratory — a notice held for a person to release (1.8). A sending before it, still
+ *  held, is withheld — never two lists out. */
+export async function sendCarrierOffersAction(schemeId: string, participantId: string): Promise<{ ok: true } | { error: string }> {
+  await requireCap("participants.manage", schemeId);
+  const t = await carrierTarget(schemeId, participantId);
+  if ("error" in t) return { error: t.error };
+  const rec = t.scheme.carrierOffers?.[t.part.id];
+  const live = liveOffers(rec);
+  if (!live.length) return say95("none");
+  if (rec?.choice) return say95("chosen");
+  const by = (await getRoleContext()).email ?? "build";
+  let labOf: Map<string, string | undefined>;
+  try { labOf = await labIdsFor(t.scheme.id, [t.part], await actorNow()); } catch { return { error: NOT_REACHED }; }
+  if (rec?.sent?.noticeId) await decideNotice(rec.sent.noticeId, "withhold", by).catch(() => false);
+  const n = await notifyCarrierOffers(labOf.get(t.part.code), t.scheme.id, t.scheme.number, t.part.code, t.part.id, live.map((o) => ({ carrier: o.carrier, cents: o.cents, days: o.days, note: o.note })));
+  if (!n) return say95("no-one");
+  const at = new Date().toISOString();
+  await updateSchemeWith(t.scheme.id, (cur) => { const r = cur.carrierOffers?.[t.part.id]; return r ? { carrierOffers: { ...(cur.carrierOffers ?? {}), [t.part.id]: { ...r, sent: { noticeId: n.id, offerIds: live.map((o) => o.id), at } } } } : {}; });
+  await logActivity("carrier.offers_sent", { schemeId: t.scheme.id, targetCode: t.part.code, summary: `The carriers' offers for ${t.part.code} put for release to the laboratory (${live.length})` });
+  revalidatePath(`/schemes/${t.scheme.id}/participants`);
+  return { ok: true };
+}
+
+/** The choice — once; confirmed by reading it back (a choice made at once elsewhere wins, this one is
+ *  told); then the participation's carrier set from it — a carrier that cannot be set gives the choice back. */
+async function recordCarrierChoice(scheme: Scheme, part: CodedParticipant, offerId: string, by: string, byPts: boolean, actor: string, lab?: { notice: SentNotice }): Promise<{ ok: true; offer: CarrierOffer } | { error: string }> {
+  let problem: ReturnType<typeof chooseProblem> = null;
+  let offer: CarrierOffer | undefined;
+  const at = new Date().toISOString();
+  await updateSchemeWith(scheme.id, (cur) => {
+    const rec = cur.carrierOffers?.[part.id];
+    problem = chooseProblem(rec, offerId, lab ? { notice: lab.notice, courier: part.courier } : undefined);
+    if (problem) return {};
+    offer = rec!.offers.find((o) => o.id === offerId)!;
+    return { carrierOffers: { ...(cur.carrierOffers ?? {}), [part.id]: { ...rec!, choice: { offerId, at, by, ...(byPts ? { byPts: true } : {}) } } } };
+  });
+  if (problem) return say95(problem);
+  const back = (await getScheme(scheme.id))?.carrierOffers?.[part.id]?.choice;
+  if (!back || back.offerId !== offerId || back.at !== at) return say95("chosen");
+  try { await updateParticipant(part.id, { courier: offer!.carrier }, actor); }
+  catch (e) {
+    console.warn("[carrier] the carrier was not set on the participation:", (e as Error)?.message ?? e);
+    await updateSchemeWith(scheme.id, (cur) => { const r = cur.carrierOffers?.[part.id]; return r?.choice?.at === at ? { carrierOffers: { ...(cur.carrierOffers ?? {}), [part.id]: { ...r, choice: undefined } } } : {}; });
+    return { error: "Изборът не се записа — опитайте пак. · The choice was not saved — try again." };
+  }
+  return { ok: true, offer: offer! };
+}
+
+/** PTS records the choice the laboratory sent (by e-mail) — marked so. */
+export async function recordCarrierChoiceAction(schemeId: string, participantId: string, offerId: string): Promise<{ ok: true } | { error: string }> {
+  await requireCap("participants.manage", schemeId);
+  const t = await carrierTarget(schemeId, participantId);
+  if ("error" in t) return { error: t.error };
+  const by = (await getRoleContext()).email ?? "build";
+  const r = await recordCarrierChoice(t.scheme, t.part, String(offerId), by, true, await actorNow());
+  if ("error" in r) return r;
+  await logActivity("carrier.chosen", { schemeId: t.scheme.id, targetCode: t.part.code, summary: `The carrier for ${t.part.code} recorded by PTS (the laboratory's choice sent to it)` });
+  revalidatePath(`/schemes/${t.scheme.id}/participants`);
+  revalidatePath("/invoices");
+  return { ok: true };
+}
+
+/** «A change through PTS»: the choice cancelled with its reason (kept), the carrier cleared — the
+ *  participation waits for its carrier again; new offers, a new sending. */
+export async function cancelCarrierChoiceAction(schemeId: string, participantId: string, reasonIn: unknown): Promise<{ ok: true } | { error: string }> {
+  await requireCap("participants.manage", schemeId);
+  const t = await carrierTarget(schemeId, participantId);
+  if ("error" in t) return { error: t.error };
+  const reason = String(reasonIn ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
+  if (reason.length < 3) return say95("reason");
+  const by = (await getRoleContext()).email ?? "build";
+  let none = false;
+  await updateSchemeWith(t.scheme.id, (cur) => {
+    const rec = cur.carrierOffers?.[t.part.id];
+    if (!rec?.choice) { none = true; return {}; }
+    return { carrierOffers: { ...(cur.carrierOffers ?? {}), [t.part.id]: { ...rec, choice: undefined, sent: undefined, cancelled: [...(rec.cancelled ?? []), { ...rec.choice, cancelledAt: new Date().toISOString(), cancelledBy: by, reason }] } } };
+  });
+  if (none) return say95("none");
+  await updateParticipant(t.part.id, { courier: "" }, await actorNow()).catch(() => null);
+  await logActivity("carrier.choice_cancelled", { schemeId: t.scheme.id, targetCode: t.part.code, summary: `The carrier's choice for ${t.part.code} cancelled by PTS — with its reason; it waits for its carrier again` });
+  revalidatePath(`/schemes/${t.scheme.id}/participants`);
+  revalidatePath("/invoices");
+  return { ok: true };
+}
+
+/** The laboratory picks its carrier — any user of its organisation (or the laboratory's account), for its
+ *  OWN participation, from the offers its released notice carried, once. */
+export async function chooseCarrierAction(participantId: string, offerId: string): Promise<{ ok: true } | { error: string }> {
+  const viewer = await participantViewer();
+  if (!viewer) return { error: "Влезте отново. · Sign in again." };
+  const row = viewer.rows.find((r) => r.participantId === String(participantId));
+  if (!row) return { error: "Не е намерено. · Not found." };
+  const t = await carrierTarget(row.schemeId, row.participantId);
+  if ("error" in t) return { error: t.error };
+  const sent = t.scheme.carrierOffers?.[t.part.id]?.sent;
+  const notice = sent?.noticeId ? await getNotice(sent.noticeId).catch(() => null) : null;
+  const by = viewer.kind === "entity" ? `entityuser:${viewer.userId}` : `lab:${viewer.lab?.id ?? ""}`;
+  const r = await recordCarrierChoice(t.scheme, t.part, String(offerId), by, false, viewer.actor, { notice });
+  if ("error" in r) return r;
+  // on record as the laboratory's act — by the same ids as its other acts
+  const whoId = viewer.kind === "entity" ? viewer.userId ?? "dev-persona" : (await getLabSession())?.userId ?? "lab";
+  await logAs({ kind: "lab", userId: whoId }, "carrier.chosen", { schemeId: t.scheme.id, targetCode: t.part.code, after: { by }, summary: `The laboratory chose its carrier (${t.part.code}) — from PTS's offers (Реш. 128)` });
+  await notifyCarrierChosen(t.scheme.id, t.scheme.number, t.part.code);
+  revalidatePath(`/lab/p/${t.part.id}`);
+  revalidatePath(`/schemes/${t.scheme.id}/participants`);
   return { ok: true };
 }
 

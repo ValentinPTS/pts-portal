@@ -131,7 +131,7 @@ const OPEN: Record<string, string> = {
   submitRegistrationAction: "the public registration of an organisation (9.1) — the honeypot, the per-address limit, a neutral answer",
   inviteLabAction: "a form wrapper of inviteLabByIdAction, which is gated",
 };
-const noGate = allActions.filter(([, name, head]) => !(name in OPEN) && !/await (requireCap|requireCapAnywhere|requireOneOf|requirePeopleManager|requireDocWriter|getLabSession|requireParticipant|myChainStop|ownGoingOn)\(/.test(head)).map(([, n]) => n);
+const noGate = allActions.filter(([, name, head]) => !(name in OPEN) && !/await (requireCap|requireCapAnywhere|requireOneOf|requirePeopleManager|requireDocWriter|getLabSession|requireParticipant|participantViewer|myChainStop|ownGoingOn)\(/.test(head)).map(([, n]) => n);
 t(`every action (${allActions.length}) starts with a gate`, allActions.length > 70 && noGate.length === 0, noGate.join());
 t("…the open ones are what they say", /export async function inviteLabAction[\s\S]{0,200}await inviteLabByIdAction\(/.test(actions));
 for (const [fn, cap] of [

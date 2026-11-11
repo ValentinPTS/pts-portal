@@ -1,3 +1,4 @@
+import { fmtEur } from "./commercial-model";
 import { isProvisional } from "./coding-model";
 import { messageText } from "./messages-model";
 import { notify } from "./notifications";
@@ -520,5 +521,30 @@ export async function notifyResultsReopened(labId: string | undefined, schemeId:
     bg: `Подаването на резултати по схема ${schemeNumber} е отново отворено — формулярът следва срока за резултати.`,
     en: `The submission of results in scheme ${schemeNumber} is open again — the form follows the results deadline.`,
     href: `/lab/p/${encodeURIComponent(participantId)}/results`,
+  });
+}
+
+/** The carriers' offers for a delivery outside the EU and the Balkans (part 9.5; Реш. 128) — to the
+ *  participation, held for a person to release like every notice to a laboratory (1.8). By its code,
+ *  every offer in words (its note too — what the laboratory sees is what was released); no name. Returns
+ *  the notice — null when there is no one in the portal to tell. */
+export async function notifyCarrierOffers(labId: string | undefined, schemeId: string, schemeNumber: string, code: string, participantId: string, offers: { carrier: string; cents: number; days?: number; note?: string }[]): Promise<import("./types").Notification | null> {
+  if (!(await anyoneToTell(labId, schemeId, code))) return null; // nobody to tell — the owner tells them directly
+  const list = (k: "bg" | "en") => offers.map((o) => `${o.carrier} — ${fmtEur(o.cents, k)}${o.days ? (k === "bg" ? `, ${o.days} дни` : `, ${o.days} days`) : ""}${o.note ? ` (${o.note})` : ""}`).join("; ");
+  return notify({
+    kind: "carrier.offers", audience: "lab", labId, schemeId, code,
+    bg: `Схема ${schemeNumber} — доставката на обекта ви${refBg(code)} е извън ЕС и Балканите: оферти на превозвачи — ${list("bg")}. Изберете една на страницата на участието.`,
+    en: `Scheme ${schemeNumber} — the delivery of your object${refEn(code)} is outside the EU and the Balkans: carriers' offers — ${list("en")}. Choose one on the participation's page.`,
+    href: `/lab/p/${participantId}`,
+  });
+}
+
+/** The laboratory chose its carrier (part 9.5) — to PTS, by the scheme's number and the code. */
+export async function notifyCarrierChosen(schemeId: string, schemeNumber: string, code: string): Promise<void> {
+  await notify({
+    kind: "carrier.chosen", audience: "provider", schemeId, code,
+    bg: `Схема ${schemeNumber} — участие ${code} избра превозвач за доставката.`,
+    en: `Scheme ${schemeNumber} — participation ${code} chose its carrier.`,
+    href: `/schemes/${schemeId}/participants`,
   });
 }

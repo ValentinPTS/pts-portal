@@ -349,7 +349,9 @@ export type NotifyKind =
   | "message"                // → lab: a one-way message a person at PTS wrote (part 5.10; Реш. 116)
   | "results.unlocked"       // → lab: PTS unlocked its results form after the deadline (part 6.4; Реш. 111)
   | "results.corrected"      // → lab: PTS recorded a used value next to its submitted one (part 6.5)
-  | "results.locked";        // → lab: the submission is locked (processing started) and none came from it — N/R (part 6.6)
+  | "results.locked"         // → lab: the submission is locked (processing started) and none came from it — N/R (part 6.6)
+  | "carrier.offers"         // → lab: the carriers' offers for its delivery outside the EU and the Balkans (part 9.5)
+  | "carrier.chosen";        // → provider: the laboratory chose its carrier (part 9.5)
 
 export interface Notification {
   id: string;
@@ -635,6 +637,8 @@ export interface Scheme {
   waitlistAdmitted?: { participantId: string; at: string; by: string; listAt?: string }[];
   /** the prices fixed at the second announcement (9.4, Реш. 153) — by its moment; no ЕИК in it */
   pricesFixed?: import("./price-model").FixedPrices;
+  /** the carriers' offers and the choice, by participation (9.5, Реш. 128) */
+  carrierOffers?: import("./carrier-model").CarrierOffers;
   status: SchemeStatus;
   titleEn: string;
   titleBg: string;

@@ -189,6 +189,9 @@ export const SCHEME_FIELDS = {
   applicationsClosed: "coded", waitlistAdmitted: "coded",
   // the prices fixed at the second announcement (9.4) — amounts by participation id, no ЕИК
   pricesFixed: "coded",
+  // the carriers' offers and the choice (9.5) — the amounts, days and moments coded; the carrier (a
+  // participation's courier is identity), the notes and who chose only in identity/ (9.5 review)
+  carrierOffers: "split",
 } satisfies Record<keyof Scheme, SchemePart>;
 
 export const PARTICIPANT_FIELDS = {
@@ -290,6 +293,15 @@ export function codedScheme(s: Scheme): Record<string, unknown> {
       case "uxptChecks": out[k] = (s.uxptChecks ?? []).map(({ note: _n, ...c }) => c); break;
       case "reportIssues": out[k] = (s.reportIssues ?? []).map(({ reason: _r, scope: _s, ...i }) => i); break;
       case "replay": { const { sourcePath: _p, ...r } = s.replay!; out[k] = r; break; }
+      case "carrierOffers": out[k] = mapValues(s.carrierOffers, (rec) => {
+        const r = rec as NonNullable<Scheme["carrierOffers"]>[string];
+        return {
+          offers: r.offers.map((o) => ({ id: o.id, cents: o.cents, ...(o.days ? { days: o.days } : {}), at: o.at, ...(o.withdrawnAt ? { withdrawnAt: o.withdrawnAt } : {}) })),
+          ...(r.sent ? { sent: { at: r.sent.at, offerIds: r.sent.offerIds } } : {}),
+          ...(r.choice ? { choice: { offerId: r.choice.offerId, at: r.choice.at, ...(r.choice.byPts ? { byPts: true } : {}) } } : {}),
+          ...(r.cancelled?.length ? { cancelled: r.cancelled.map((c) => ({ offerId: c.offerId, at: c.at, cancelledAt: c.cancelledAt })) } : {}),
+        };
+      }); break;
       case "analysisImports": out[k] = (s.analysisImports ?? []).map(({ by: _b, files, ...i }) => ({ ...i, files: files.map(({ name: _n, path: _p, ...f }) => f) })); break;
     }
   }

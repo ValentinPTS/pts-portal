@@ -13,6 +13,7 @@ import { currentSecondAnnouncement } from "./lifecycle-model";
 import { billedSelections } from "./invoice-model";
 import { selectionsOf } from "./application-model";
 import { waitingOf } from "./waitlist-model";
+import { chosenOfferCents } from "./carrier-model";
 import type { Scheme, CodedParticipant } from "./types";
 
 type Copy = { entity: { eik: string; country: string } };
@@ -37,8 +38,8 @@ export function fixPrices(s: Scheme, parts: readonly CodedParticipant[], copies:
 
 export type PricesState = "not-held" | "not-ready" | "preview" | "fixed";
 
-/** The prices now — `offers`: the delivery chosen (9.5), by participation. */
-export function schemePrices(s: Scheme, parts: readonly CodedParticipant[], copies: ReadonlyMap<string, Copy>, nowMs: number, offers: ReadonlyMap<string, number> = new Map()):
+/** The prices now — `offers`: the delivery chosen (9.5), by participation — the scheme's own record. */
+export function schemePrices(s: Scheme, parts: readonly CodedParticipant[], copies: ReadonlyMap<string, Copy>, nowMs: number, offers: ReadonlyMap<string, number> = chosenOfferCents(s.carrierOffers, new Map(parts.map((p) => [p.id, p.courier])))):
   { state: PricesState; prices: Map<string, Price & { later?: boolean }> } {
   if (s.status === "not_held") return { state: "not-held", prices: new Map() };
   if (!pricesReady(s, nowMs)) return { state: "not-ready", prices: new Map() };

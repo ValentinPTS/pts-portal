@@ -39,6 +39,10 @@ export const dynamic = "force-dynamic";
 // hour and zone, the documents released to it with whether they were opened, the proforma
 // and payment, the delivery and the receipt, the characteristics applied for, its notices.
 // For a laboratory's account and for a user of its legal entity — each only its own.
+import CarrierChoice from "@/components/CarrierChoice";
+import { chosenOffer, offersForLab } from "@/lib/carrier-model";
+import { getNotice } from "@/lib/notifications";
+
 export default async function ParticipationPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ e?: string; ok?: string }> }) {
   const { id } = await params;
   const viewer = await participantViewer();
@@ -52,6 +56,12 @@ export default async function ParticipationPage({ params, searchParams }: { para
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const T = (x: { bg: string; en: string }) => (lang === "bg" ? x.bg : x.en);
   const { scheme: s, part: p } = v;
+  // 9.5: the carriers' offers PTS sent (only once sent), and the choice
+  const carrierRec = s.carrierOffers?.[v.participantId];
+  // only what the released notice carried — never before a person released it (1.8; 9.5 review)
+  const sentNotice = carrierRec?.sent?.noticeId ? await getNotice(carrierRec.sent.noticeId).catch(() => null) : null;
+  const sentOffers = offersForLab(carrierRec, sentNotice);
+  const chosenCarrier = p.courier?.trim() ? chosenOffer(carrierRec) : undefined;
   const sp = await searchParams;
   const err = sp.e;
 
@@ -204,10 +214,19 @@ export default async function ParticipationPage({ params, searchParams }: { para
         <div style={{ margin: "14px 0 18px" }}><StageBar lang={lang} type={s.type} state={v.state} payment={v.finished ? undefined : v.payment} /></div>
         {errText && <div role="alert" data-page-err={err} style={{ background: "#fdecec", border: "1px solid #d9534f", color: "#8a1f1f", borderRadius: 10, padding: "8px 12px", marginBottom: 14, fontSize: 13 }}>{errText}</div>}
         {okText && <div role="status" data-page-ok={sp.ok} style={{ background: "var(--green-soft)", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 12px", marginBottom: 14, fontSize: 13 }}>{okText}</div>}
-        {v.state === "carrier" && (
-          <p role="note" data-carrier-pending style={{ background: "#faf2e0", border: "1px solid #ecd9ae", borderRadius: 10, padding: "10px 12px", fontSize: 13, margin: "0 0 14px" }}>
-            {L("Доставката извън ЕС и Балканите е за сметка на участника: PTS ви изпраща оферти на доставчици, вие избирате една, и PTS я записва тук. Проформата излиза след избора (Реш. 128).", "Delivery outside the EU and the Balkans is at the participant's cost: PTS sends you carriers' offers, you choose one, and PTS records it here. The proforma follows the choice (Реш. 128).")}
+        {/* 9.5: the carrier chosen — from PTS's offers */}
+        {chosenCarrier && (
+          <p role="status" data-carrier-chosen-lab style={{ background: "#eef3ea", border: "1px solid #d5e2cc", borderRadius: 10, padding: "10px 12px", fontSize: 13, margin: "0 0 14px" }}>
+            {L(`Превозвач: ${chosenCarrier.carrier} — ${(chosenCarrier.cents / 100).toFixed(2).replace(".", ",")} €. Промяна — чрез PTS.`, `Carrier: ${chosenCarrier.carrier} — ${(chosenCarrier.cents / 100).toFixed(2)} €. A change — through PTS.`)}
           </p>
+        )}
+        {v.state === "carrier" && (
+          <div role="note" data-carrier-pending style={{ background: "#faf2e0", border: "1px solid #ecd9ae", borderRadius: 10, padding: "10px 12px", fontSize: 13, margin: "0 0 14px" }}>
+            {sentOffers.length
+              ? L("Доставката извън ЕС и Балканите е за сметка на участника. Изберете една от офертите на превозвачите — проформата излиза след избора (Реш. 128).", "Delivery outside the EU and the Balkans is at the participant's cost. Choose one of the carriers' offers — the proforma follows the choice (Decision 128).")
+              : L("Доставката извън ЕС и Балканите е за сметка на участника: PTS ви изпраща оферти на доставчици, вие избирате една. Проформата излиза след избора (Реш. 128).", "Delivery outside the EU and the Balkans is at the participant's cost: PTS sends you carriers' offers, you choose one. The proforma follows the choice (Decision 128).")}
+            {sentOffers.length > 0 && <CarrierChoice lang={lang} participantId={v.participantId} offers={sentOffers.map((o) => ({ id: o.id, carrier: o.carrier, cents: o.cents, days: o.days, note: o.note }))} />}
+          </div>
         )}
 
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(260px, 340px)", gap: 18, alignItems: "start" }} className="participation-grid">
