@@ -1,3 +1,5 @@
+import { feedbackOf } from "./feedback";
+import { feedbackShown } from "./feedback-model";
 import type { Scheme, Participant, UploadedDoc, SupersededFile, CaseEvent, Notification, ActivityEvent, DocRevision, Lab, Lang } from "./types";
 import { ANALYSIS_EXPORT_BUCKET } from "./analysis-export-store";
 import { labCertificate } from "./cert-number";
@@ -71,6 +73,9 @@ export const ROUND_TABLES: Record<string, string[]> = {
     // Phase 9's records (9.6): the hand-closing, the waiting list, the fixed prices, the carriers' offers
     "coded/applications_closed.csv", "coded/waitlist.csv", "coded/prices.csv", "coded/carrier_offers.csv", "identity/carrier_offers.csv", "identity/prices.csv", "identity/carrier_offer_words.csv"],
   participants: ["coded/codes.csv", "identity/participants.csv"],
+  // the anonymous feedback (10.3): the counts and the words — never who gave or when (Реш. 92)
+  // one row per scheme; its «given» never exported
+  scheme_feedback: ["coded/feedback.csv", "coded/feedback_words.csv"],
   // the identity store (2.3): who is behind each code, and every opening of it
   "identity.participants": ["identity/participants.csv"],
   "identity.openings": ["identity/identity_openings.csv"],
@@ -467,6 +472,13 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
     ["id", "createdAt", "kind", "audience", "code", "bg", "en", "href", "readBefore46", "emailedAt", "releasedAt", "releasedBy", "withheldAt", "withheldBy"]);
   addCoded("coded/messages.csv", messages.map((m: SentMessage) => ({ ...offersHidden(m, ["body"]), to: undefined, labId: undefined, entityId: undefined, schemeId: undefined })),
     ["id", "sentAt", "class", "kind", "code", "subject", "body", "approvedBy", "approvalRef", "outcome", "error"]);
+  // 10.3: the anonymous feedback — the counts and the words (sorted), as PTS's panel shows them: only once
+  // the records are closed and from three (10.3 review); never who gave or when (Реш. 92)
+  const fb = await feedbackOf(schemeId);
+  const fbShown = feedbackShown(fb.counts.total ?? 0, s);
+  const WITHHELD = "‹fewer than three, or the records not closed — not shown (Реш. 92)›";
+  addCoded("coded/feedback.csv", fbShown ? Object.entries(fb.counts).sort(([a], [b]) => a.localeCompare(b)).map(([key, n]) => ({ key, n })) : [{ key: WITHHELD, n: "" }], ["key", "n"]);
+  addCoded("coded/feedback_words.csv", fbShown ? fb.words.map((w) => ({ question: w.q, words: w.text })) : [{ question: WITHHELD, words: "" }], ["question", "words"]);
   addCoded("coded/scheme_roles.csv", (await listSchemeRoles({ schemeId, all: true })).map((r) => ({ ...r, schemeId: undefined })),
     ["id", "role", "personEmail", "orderRef", "assignedBy", "assignedAt", "endedAt", "endedBy"]);
   addCoded("coded/processing_roles.csv", (await listDesignations({ schemeId, all: true })).map((d) => ({ ...d, schemeId: undefined })),

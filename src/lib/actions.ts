@@ -20,6 +20,8 @@ import { catalogueState, subjectOf, wishProblem, wishesToTell, activeWish, SUBJE
 import { listWishes, addWish, closeWish, eraseWishesOf } from "./catalogue-wishes";
 import { buildFeed } from "./website-feed-model";
 import { publishFeed, feedDigest, feedBase, feedBaseMissing, latestPublication } from "./website-feed";
+import { readFeedback, keysOf, wordsOf, feedbackOffered, FEEDBACK_PROBLEM_TEXT } from "./feedback-model";
+import { giveFeedback } from "./feedback";
 import { fixPrices } from "./scheme-prices";
 import { participantViewer } from "./participation-view";
 import { readOffer, chooseProblem, liveOffers, OFFER_PROBLEM_TEXT, type CarrierOffer, type OfferProblem, type SentNotice } from "./carrier-model";
@@ -5030,6 +5032,29 @@ export async function publishWebsiteFeedAction(formData: FormData): Promise<void
   await logActivity("website.published", { after: { version: r.publication.version, schemes: r.publication.schemes, digest }, summary: `Website feed published — version ${r.publication.version}, ${r.publication.schemes} schemes (10.2)` });
   revalidatePath("/website");
   redirect(`/website?published=${r.publication.version}`);
+}
+
+// ── Anonymous feedback (plan part 10.3; Реш. 92, 122; К21) ───────────────────────────
+// The ONE act in the portal outside the journal: no logActivity, no logAs — no account and no time are kept
+// with it; only counters, the words as an unordered set, and the participation's «given» (so it is offered
+// once). The participation's own session; once the report is issued and it was on the final list.
+const FB = (k: keyof typeof FEEDBACK_PROBLEM_TEXT) => ({ error: `${FEEDBACK_PROBLEM_TEXT[k].bg}. · ${FEEDBACK_PROBLEM_TEXT[k].en}.` });
+export async function giveFeedbackAction(participantId: string, formData: FormData): Promise<{ ok: true } | { error: string; given?: true }> {
+  const viewer = await participantViewer();
+  if (!viewer) return { error: "Влезте отново. · Sign in again." };
+  const row = viewer.rows.find((r) => r.participantId === String(participantId));
+  if (!row) return { error: "Не е намерено. · Not found." };
+  const s = await getScheme(row.schemeId);
+  const p = s ? (await listParticipants(s.id)).find((x) => x.id === row.participantId) : undefined;
+  if (!s || !p || !isStarted(s) || !feedbackOffered(s, inFinalRound(s, p))) return FB("not-offered");
+  const r = readFeedback(Object.fromEntries(formData.entries()));
+  if (!r.ok) return FB(r.problem);
+  const res = await giveFeedback(s.id, p.id, keysOf(r.answers), wordsOf(r.answers));
+  // a stale tab: the page shows «given», not only an error (10.3 review)
+  if (res === "already") return { ...FB("given"), given: true };
+  if (res !== "given") return FB("failed");
+  revalidatePath(`/lab/p/${p.id}`);
+  return { ok: true };
 }
 
 // ── The coding act (plan part 5.3; Zadanie «Кодиране», stage 9; А2; Реш. 124; D17) ─────

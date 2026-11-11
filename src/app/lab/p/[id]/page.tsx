@@ -1,3 +1,7 @@
+import FeedbackForm from "@/components/FeedbackForm";
+import { feedbackOffered } from "@/lib/feedback-model";
+import { feedbackGiven } from "@/lib/feedback";
+import { COMPLAINTS_URL } from "@/lib/online-applications";
 import Link from "next/link";
 import { labReport, rLabel, reportWords, isIlc } from "@/lib/report-issue-model";
 import { labReportCard } from "@/lib/lab-report-model";
@@ -88,6 +92,9 @@ export default async function ParticipationPage({ params, searchParams }: { para
   // 7.9: an ILC's report is its comparison report — named so
   const words = reportWords(s);
   const officialReport = reported && rep.state === "issued";
+  // 10.3: the feedback (Реш. 92) — offered once the report is issued, to one on the final list; «given» only
+  const fbOffered = feedbackOffered(s, inFinal);
+  const fbGiven = fbOffered ? await feedbackGiven(s.id, v.participantId).catch(() => false) : false;
   // 7.5: the report card — the R in force, its version and day; its own first opening of it (its
   // code's journal lines, oldest first, one row); a correction said in fixed words; scores only in
   // 2.0's file (Реш. 135, D3). An unread journal is said, never «not opened».
@@ -467,6 +474,9 @@ export default async function ParticipationPage({ params, searchParams }: { para
                 {repCard.state === "legacy" && !repCard.nr && <span data-lab-report-scores style={{ fontSize: 12.5, color: "var(--muted)" }}>{L("Оценките ви са в доклада — порталът не ги изчислява (Реш. 135).", "Your scores are in the report — the portal does not compute them (Реш. 135).")}</span>}
               </div>
             ), { "data-lab-report-card": "1" })}
+
+            {/* 10.3: the feedback sheet, anonymous — once the report is issued, once per participation */}
+            {fbOffered && <FeedbackForm participantId={v.participantId} given={fbGiven} lang={lang} complaintsUrl={COMPLAINTS_URL} />}
 
             {card(L("Проформа, фактура и плащане", "Proforma, invoice and payment"), (
               <div data-payment-box={v.payment} style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>

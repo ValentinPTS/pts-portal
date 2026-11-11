@@ -12,3 +12,7 @@ export const ONLINE_APPLICATIONS_OPEN = false;
 
 // Where a laboratory gets the PDF application form meanwhile.
 export const PDF_APPLICATION_URL = "https://ptsbg.eu";
+
+// Where a complaint or an appeal goes — the website's identified form (П 7.6), never the portal's anonymous
+// feedback (10.3). The site's exact address for it is PTS's / Creativiso's to give: until then, the site.
+export const COMPLAINTS_URL = "https://ptsbg.eu";

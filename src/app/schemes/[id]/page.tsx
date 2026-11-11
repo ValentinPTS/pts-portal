@@ -1,3 +1,4 @@
+import SchemeFeedbackPanel from "@/components/SchemeFeedbackPanel";
 import Link from "next/link";
 import { markState } from "@/lib/accreditation-mark";
 import { mayNow, requireCap, mayViewDoc, getViewer, mayAnywhereNow } from "@/lib/access";
@@ -591,6 +592,8 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
           // the codes as they are now — the coding act re-keys them (5.3)
           history={[...(s.messages ?? [])].reverse().map((m) => ({ id: m.id, at: ackMoment(m.at), to: messageTargetLabel(m.to, lang, (pid) => participantsNow.find((p) => p.id === pid)?.code ?? "—"), bg: m.bg, en: m.en }))} />
       )}
+      {/* 10.3: the anonymous feedback — counts and words, from three (or closed); never whose or when */}
+      {isStarted(s) && <SchemeFeedbackPanel scheme={s} lang={lang === "bg" ? "bg" : "en"} />}
     </ExplorerShell>
   );
 }
