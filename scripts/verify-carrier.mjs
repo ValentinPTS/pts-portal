@@ -4,6 +4,26 @@
 // two offers and sends them (the notice held for release); the laboratory sees both and picks one — once;
 // its carrier recorded, PTS's «Участници» shows it; «Фактури» — the price with the chosen delivery.
 import { chromium } from "playwright";
+import { inflateRawSync } from "node:zlib";
+
+// the round export's files (9.6) — a ZIP read by its central directory
+const unzip = (buf) => {
+  const out = new Map();
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= 0; i--) if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) return out;
+  let at = buf.readUInt32LE(eocd + 16);
+  const n = buf.readUInt16LE(eocd + 10);
+  for (let k = 0; k < n && buf.readUInt32LE(at) === 0x02014b50; k++) {
+    const method = buf.readUInt16LE(at + 10), csize = buf.readUInt32LE(at + 20), nlen = buf.readUInt16LE(at + 28), elen = buf.readUInt16LE(at + 30), clen = buf.readUInt16LE(at + 32), local = buf.readUInt32LE(at + 42);
+    const name = buf.subarray(at + 46, at + 46 + nlen).toString("utf8");
+    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
+    const data = buf.subarray(start, start + csize);
+    out.set(name, (method === 8 ? inflateRawSync(data) : data).toString("utf8"));
+    at += 46 + nlen + elen + clen;
+  }
+  return out;
+};
 
 const BASE = process.env.BASE ?? "http://localhost:3000";
 let pass = 0, fail = 0;
@@ -21,6 +41,7 @@ const text = async (loc) => ((await loc.count()) ? (await loc.first().textConten
 const type = async (loc, v) => { for (let i = 0; i < 20; i++) { await loc.fill(v); await page.waitForTimeout(150); if ((await loc.inputValue()) === v) return; await page.waitForTimeout(400); } };
 const stamp = Date.now() % 100000;
 const ENT = `Превоз ${stamp} Inc`, LAB = `Lab US ${stamp}`, USER = `Carrier User ${stamp}`;
+const OFFER_NOTE = `опаковка-сух-лед-${stamp}`, CANCEL_REASON = `поиска друг превозвач ${stamp}`;
 
 try {
   await go("/dev/persona?role=manager");
@@ -97,11 +118,12 @@ try {
   t("on the final list, outside the EU and the Balkans: «изчаква избор на доставчик», the offers' panel", (await page.locator("[data-carrier-pending]").count()) >= 1 && (await panel.count()) === 1);
   const openPanel = async () => { if (!(await panel.evaluate((el) => el.open))) await panel.locator("summary").click(); };
   await openPanel();
-  for (const [c, p, d] of [["DHL Express", "85,50", "4"], ["UPS", "99,00", "6"]]) {
+  for (const [c, p, d, n] of [["DHL Express", "85,50", "4", OFFER_NOTE], ["UPS", "99,00", "6", ""]]) {
     const fa = panel.locator(`[data-carrier-add="${pid}"]`);
     await fa.locator('[name="carrier"]').fill(c);
     await fa.locator('[name="price"]').fill(p);
     await fa.locator('[name="days"]').fill(d);
+    if (n) await fa.locator('[name="note"]').fill(n);
     await fa.locator('button[type="submit"]').click();
     await waitFor(async () => (await panel.locator("[data-carrier-offer]", { hasText: c }).count()) === 1);
     await openPanel();
@@ -150,9 +172,19 @@ try {
   await go(`/schemes/${S}/participants`);
   const panel2 = page.locator(`[data-carrier-offers="${pid}"]`);
   if (!(await panel2.evaluate((el) => el.open))) await panel2.locator("summary").click();
-  await panel2.locator("[data-carrier-cancel] input").fill("лабораторията поиска друг превозвач");
+  await panel2.locator("[data-carrier-cancel] input").fill(CANCEL_REASON);
   await panel2.locator("[data-carrier-cancel] button").click();
   t("review: PTS cancels the choice with its reason — the participation waits for its carrier again; the cancelled choice kept", await waitFor(async () => (await page.locator("[data-carrier-pending]").count()) >= 1) && /отменен избор|choice cancelled/.test(await text(page.locator(`[data-carrier-offers="${pid}"] [data-carrier-history]`))));
+  // ── 9.6: the round export — Phase 9's tables; the carriers only in identity/ ──
+  const zipAll = unzip(Buffer.from(await (await page.request.get(`${BASE}/schemes/${S}/export`)).body()));
+  const zipCoded = unzip(Buffer.from(await (await page.request.get(`${BASE}/schemes/${S}/export?part=coded`)).body()));
+  t("9.6: the round export carries Phase 9's tables — the prices fixed, the carriers' offers (with the cancelled choice), the source in codes.csv", zipCoded.has("coded/prices.csv") && zipCoded.has("coded/carrier_offers.csv") && zipCoded.has("coded/waitlist.csv") && zipCoded.has("coded/applications_closed.csv") && /,99\.00,/.test(zipCoded.get("coded/carrier_offers.csv") ?? "") && /source/.test((zipCoded.get("coded/codes.csv") ?? "").split("\n")[0] ?? ""), [...zipCoded.keys()].filter((k) => k.startsWith("coded/") && k.endsWith(".csv")).join(" "));
+  const codedText = [...zipCoded.values()].join("\n");
+  const codedLeaks = ["DHL Express", OFFER_NOTE, CANCEL_REASON].filter((x) => codedText.includes(x)).concat(/\bUPS\b/.test(codedText) ? ["UPS"] : []);
+  t("9.6: …the coded part never names a carrier, an offer's note or the reason of a cancelled choice; identity/ has them", codedLeaks.length === 0 && (zipAll.get("identity/carrier_offers.csv") ?? "").includes("DHL Express") && (zipAll.get("identity/carrier_offers.csv") ?? "").includes(CANCEL_REASON) && /README/.test([...zipAll.keys()].join(" ")) && /Самообслужването|Self-service/.test(zipAll.get("README.md") ?? ""), codedLeaks.join(", "));
+  const words = zipAll.get("identity/carrier_offer_words.csv") ?? "";
+  t("9.6 review: the words the offers' notice carried — out of coded/notices.csv (a placeholder), whole in identity/carrier_offer_words.csv (the carriers, the prices, the note)", /carrier_offer_words/.test(zipCoded.get("coded/notices.csv") ?? "") && words.includes("DHL Express") && words.includes("UPS") && words.includes(OFFER_NOTE) && /85,50|85\.50/.test(words));
+
   await go("/activity");
   await page.getByText(/chose its carrier/).first().waitFor({ timeout: 60000 }).catch(() => {});
   const journal = await text(page.locator("main"));

@@ -2,14 +2,14 @@
 // Phase 5's records as readable coded tables — by the codes as they are now, never a name, an
 // account, a carrier, a receiver, remarks or a person's words.
 import { readFileSync } from "node:fs";
-import { roundTables, csv } from "../src/lib/round-export.ts";
+import { codedScheme, roundTables, csv } from "../src/lib/round-export.ts";
 import type { Scheme } from "../src/lib/types.ts";
 
 let pass = 0, fail = 0;
 const t = (name: string, ok: boolean, extra = "") => { if (ok) pass++; else { fail++; console.error("FAIL:", name, extra); } };
 
 // planted — each a word that must never reach a coded table
-const NOTE2 = "PTS-NOTE-PLANT";
+const NOTE2 = "PTS-STAMP-WORDS";
 const NAME = "Иван Петров-ПЛАНТ", ACCOUNT = "entityuser:U-PLANT", USER = "USER-PLANT", CARRIER = "CARRIER-PLANT", REMARK = "REMARK-PLANT", PROBLEM = "PROBLEM-PLANT", MESSAGE = "MESSAGE-PLANT", REASON = "REASON-PLANT", NOTE = "NOTE-PLANT";
 const s = {
   id: "S", number: "26-01-T-1", type: "C", status: "running", parameters: [],
@@ -40,13 +40,19 @@ const s = {
     { id: "m1", nonce: "n", at: "2026-11-07T10:00:00Z", by: "manager@ptsbg.eu", to: { kind: "participation", participantId: "p1" }, bg: MESSAGE, en: MESSAGE },
     { id: "m2", nonce: "n2", at: "2026-11-07T11:00:00Z", by: "manager@ptsbg.eu", to: { kind: "all", count: 1, participantIds: ["p1", "p2"], missed: ["p2"] }, bg: MESSAGE, en: MESSAGE },
   ],
+  // Phase 9 (9.6): the hand-closing, the waiting list kept by the list, the fixed prices, the carriers' offers
+  applicationsClosed: { at: "2026-11-08T09:00:00Z", by: "manager@ptsbg.eu" },
+  waitlistAdmitted: [{ participantId: "p2", at: "2026-11-20T09:00:00Z", by: "manager@ptsbg.eu", listAt: "2026-11-10T10:00:00Z" }],
+  pricesFixed: { listAt: "2026-11-10T10:00:00Z", at: "2026-11-10T10:00:00Z", prices: { p1: { id: "p1", group: "", lines: [{ size: 2, kind: "full", cents: 14000 }], delivery: "addon", deliveryCents: 2550, totalCents: 16550, linked: true } } },
+  carrierOffers: { p1: { offers: [{ id: "o1", carrier: CARRIER, cents: 8550, days: 4, note: NOTE, at: "2026-11-11T08:00:00Z", by: "manager@ptsbg.eu" }], sent: { noticeId: "n9", offerIds: ["o1"], at: "2026-11-11T08:10:00Z" }, choice: { offerId: "o1", at: "2026-11-11T09:00:00Z", by: ACCOUNT }, cancelled: [{ offerId: "o1", at: "x", by: ACCOUNT, cancelledAt: "2026-11-11T07:00:00Z", cancelledBy: "manager@ptsbg.eu", reason: REASON }] } },
 } as unknown as Scheme;
 const codeOf = (pid: string) => ({ p1: "26-01-T-1-07", p2: "26-01-T-1-03" } as Record<string, string>)[pid] ?? "—";
 const tables = roundTables(s, codeOf);
+const byFile = (f: string) => (tables.find(([x]) => x === f)?.[1] ?? []) as Record<string, unknown>[];
 const by = Object.fromEntries(tables.map(([f, rows, cols]) => [f, { rows: rows as Record<string, unknown>[], cols }]));
 const all = tables.map(([, rows, cols]) => csv(cols, rows)).join("\n");
 
-t("nineteen tables (6.6: the submission locks; 7.10: the transfer checks, the u(x_pt) confirmations, the R's, the access, the software record), each a coded/ CSV", tables.length === 19 && tables.every(([f]) => /^coded\/[a-z_]+\.csv$/.test(f)));
+t("twenty-three tables (6.6: the submission locks; 7.10: the transfer checks, the u(x_pt) confirmations, the R's, the access, the software record; 9.6: the hand-closing, the waiting list, the prices, the carriers' offers), each a coded/ CSV", tables.length === 23 && tables.every(([f]) => /^coded\/[a-z_]+\.csv$/.test(f)));
 t("every row carries exactly its columns (none left out, none extra but empty)", tables.every(([, rows, cols]) => (rows as Record<string, unknown>[]).every((r) => Object.keys(r).every((k) => cols.includes(k)) && cols.every((c) => c in r))));
 t("NOTHING planted reaches them: no name, account, user, carrier, remark, problem's words, message, reason, note", [NAME, ACCOUNT, USER, CARRIER, REMARK, PROBLEM, MESSAGE, REASON, NOTE].every((x) => !all.includes(x)), [NAME, ACCOUNT, USER, CARRIER, REMARK, PROBLEM, MESSAGE, REASON, NOTE].filter((x) => all.includes(x)).join(", "));
 t("…nor a file's name (an invoice is named after its customer)", !all.includes("ЕкоЛаб"));
@@ -70,5 +76,22 @@ t("an empty scheme: every table there, empty — never a crash", roundTables({ i
 const exp = readFileSync(new URL("../src/lib/round-export.ts", import.meta.url), "utf8");
 t("written into coded/ and scrubbed like every coded table — by the codes as they are now", /for \(const \[file, rows, cols\] of roundTables\(s, \(pid\) => codeById\.get\(pid\) \?\? "—"\)\) addCoded\(file, rows, cols\);/.test(exp));
 
+// ── Phase 9 (9.6) ──
+t("9.6: the hand-closing — who, when", JSON.stringify(byFile("coded/applications_closed.csv")) === JSON.stringify([{ closedAt: "2026-11-08T09:00:00Z", closedBy: "manager@ptsbg.eu" }]));
+t("9.6: the prices fixed — by code, the lines (amounts with a point), linked; never the delivery or the total (the delivery's kind says where the laboratory is — identity/prices.csv)", byFile("coded/prices.csv")[0]?.code === "26-01-T-1-07" && byFile("coded/prices.csv")[0]?.lines === "full 2 140.00" && byFile("coded/prices.csv")[0]?.linked === "yes" && !("totalEur" in (byFile("coded/prices.csv")[0] ?? {})) && !("delivery" in (byFile("coded/prices.csv")[0] ?? {})));
+t("9.6 review: …and the fixing not in force (no current list — a step back) said so", byFile("coded/prices.csv")[0]?.inForce === "");
+t("9.6: the carriers' offers — the amount, the days, sent, chosen (by the laboratory), cancelled — never the carrier, the note, the reason or who chose", byFile("coded/carrier_offers.csv")[0]?.eur === "85.50" && byFile("coded/carrier_offers.csv")[0]?.days === 4 && byFile("coded/carrier_offers.csv")[0]?.chosen === "yes" && byFile("coded/carrier_offers.csv")[0]?.chosenByPts === "" && byFile("coded/carrier_offers.csv")[0]?.sentAt === "2026-11-11T08:10:00Z" && byFile("coded/carrier_offers.csv")[0]?.cancelledAt === "2026-11-11T07:00:00Z" && ![CARRIER, NOTE, REASON, ACCOUNT].some((x) => JSON.stringify(byFile("coded/carrier_offers.csv")).includes(x)));
+{
+  const cs = JSON.stringify(codedScheme(s));
+  t("9.6 review: the coded scheme — the carriers' offers and the fixed prices split: no carrier, note, reason, chooser; no delivery or total", ![CARRIER, NOTE, REASON, ACCOUNT].some((x) => cs.includes(x)) && !cs.includes("16550") && !cs.includes("addon") && cs.includes("14000"), [CARRIER, NOTE, REASON, ACCOUNT, "16550", "addon"].filter((x) => cs.includes(x)).join());
+}
+const acts2 = [{ act: "announce", at: "", by: "", day: "", from: "open", to: "running" }, { act: "announce2", at: "2026-11-01T10:00:00Z", by: "", day: "", from: "running", to: "running", final: { runs: [0], dropped: [], participants: ["p1"], waitlist: ["p9"] } }, { act: "back", at: "2026-11-05T10:00:00Z", by: "", day: "", from: "running", to: "open" }, { act: "announce", at: "", by: "", day: "", from: "open", to: "running" }, { act: "announce2", at: "2026-11-10T10:00:00Z", by: "", day: "", from: "running", to: "running", final: { runs: [0], dropped: [], participants: ["p1"], waitlist: ["p2", "p3"] } }];
+const wl = roundTables({ id: "W", status: "running", lifecycle: { acts: acts2 }, waitlistAdmitted: [{ participantId: "p2", at: "2026-11-20T09:00:00Z", by: "manager@ptsbg.eu", listAt: "2026-11-10T10:00:00Z" }, { participantId: "p3", at: "x", by: "y", listAt: "an-earlier-list" }] } as unknown as Scheme, (pid) => ({ p2: "C02", p3: "C03", p9: "C09" } as Record<string, string>)[pid] ?? "—").find(([f]) => f === "coded/waitlist.csv")![1] as Record<string, unknown>[];
+t("9.6 review: every list's waiting list, in order, each admission under ITS list; the one in force said", wl.length === 3 && wl[0].code === "C09" && wl[0].inForce === "" && wl[1].code === "C02" && wl[1].inForce === "yes" && wl[1].place === 1 && wl[1].admittedAt === "2026-11-20T09:00:00Z" && wl[2].code === "C03" && wl[2].admittedAt === "");
+{
+  const rex = readFileSync(new URL("../src/lib/round-export.ts", import.meta.url), "utf8");
+  t("9.6: a notice or an e-mail of carriers' offers — its words out of coded/ (the carriers are the participation's own)", /offersHidden\(n, \["bg", "en"\]\)/.test(rex) && /offersHidden\(m, \["body"\]\)/.test(rex) && /x\.kind === "carrier\.offers"/.test(rex));
+  t("9.6: the registrations and the join letters — not a round, said why", /lab_applications: "the registrations of organisations and the requests to join them \(9\.1\)/.test(rex) && /"lab-docs": "the papers of registrations and account requests, and the signed letters of joins PTS decided/.test(rex));
+}
 console.log(`round-tables.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

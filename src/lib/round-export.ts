@@ -16,7 +16,9 @@ import { pointKeys } from "./reference-values-model";
 import { listSubmissions, listCorrections } from "./submissions";
 import { codedSubmissionData, submissionIdentity, calRows } from "./results-model";
 import { versionValueRows, inForceRows, VALUE_COLUMNS, IN_FORCE_COLUMNS } from "./round-export-submissions";
-import { inFinalRound } from "./announcement-model";
+import { inFinalRound, currentFinalList } from "./announcement-model";
+import { OWN_COURIER } from "./lab-apply-model";
+import { currentSecondAnnouncement } from "./lifecycle-model";
 import { listSentForScheme } from "./sent-messages";
 import { listActivityForScheme } from "./activity-store";
 import { listRevisionsForScheme } from "./doc-revisions";
@@ -65,7 +67,9 @@ export type Part = "coded" | "identity";
 export const ROUND_TABLES: Record<string, string[]> = {
   schemes: ["coded/scheme.json", "coded/results.csv", "coded/assigned.csv", "identity/scheme-identity.json", "identity/certificates.csv", "identity/applications.csv",
     // the exchange with 2.0 and the issue (7.2–7.10)
-    "coded/analysis_imports.csv", "coded/analysis_exports.csv", "coded/transfer_checks.csv", "coded/uxpt_checks.csv", "coded/report_issues.csv", "coded/report_access.csv", "coded/software_record.csv"],
+    "coded/analysis_imports.csv", "coded/analysis_exports.csv", "coded/transfer_checks.csv", "coded/uxpt_checks.csv", "coded/report_issues.csv", "coded/report_access.csv", "coded/software_record.csv",
+    // Phase 9's records (9.6): the hand-closing, the waiting list, the fixed prices, the carriers' offers
+    "coded/applications_closed.csv", "coded/waitlist.csv", "coded/prices.csv", "coded/carrier_offers.csv", "identity/carrier_offers.csv", "identity/prices.csv", "identity/carrier_offer_words.csv"],
   participants: ["coded/codes.csv", "identity/participants.csv"],
   // the identity store (2.3): who is behind each code, and every opening of it
   "identity.participants": ["identity/participants.csv"],
@@ -109,7 +113,7 @@ export const NOT_ROUND_TABLES: Record<string, string> = {
   custom_skins: "visual skins; the round names its skin in scheme.json, and its documents are rendered with it",
   doc_templates: "reusable document templates, across rounds",
   folders: "PTS's grouping of schemes; the round names its folder in scheme.json",
-  lab_applications: "requests for a laboratory ACCOUNT — across rounds, not a round",
+  lab_applications: "the registrations of organisations and the requests to join them (9.1), and the earlier account requests — an organisation's, across rounds, not a round (an erased profile's are anonymised, 4.7)",
   library_items: "the reusable library, across rounds",
   reminder_templates: "the reminder texts, across rounds; the words each laboratory was actually sent are in messages.csv",
   staff_users: "PTS's own people; they are named in the journal",
@@ -125,7 +129,7 @@ export const NOT_ROUND_TABLES: Record<string, string> = {
 /** The storage buckets: which hold round files. */
 export const ROUND_BUCKETS = ["scheme-docs", EDITION_BUCKET, "skin-assets", ANALYSIS_EXPORT_BUCKET];
 export const NOT_ROUND_BUCKETS: Record<string, string> = {
-  "lab-docs": "documents of laboratory ACCOUNT requests — across rounds",
+  "lab-docs": "the papers of registrations and account requests, and the signed letters of joins PTS decided (9.1) — an organisation's, across rounds",
   "round-exports": "the exports themselves, kept briefly for their download",
   "staff-declarations": "the signed Ф 4.2-1 of PTS's own people (2.8) — per person, across rounds",
   "entity-proofs": "a legal entity's registration document (4.1) — per entity, across rounds",
@@ -187,8 +191,9 @@ export const SCHEME_FIELDS = {
   // the applications closed by hand, the admissions from the waiting list (9.3) — who (PTS's
   // person) and when, participation ids — coded
   applicationsClosed: "coded", waitlistAdmitted: "coded",
-  // the prices fixed at the second announcement (9.4) — amounts by participation id, no ЕИК
-  pricesFixed: "coded",
+  // the prices fixed at the second announcement (9.4) — the participations' lines coded; the delivery
+  // (its kind says where the laboratory is — MT/CY/IE, outside the EU) and the total only in identity/ (9.6 review)
+  pricesFixed: "split",
   // the carriers' offers and the choice (9.5) — the amounts, days and moments coded; the carrier (a
   // participation's courier is identity), the notes and who chose only in identity/ (9.5 review)
   carrierOffers: "split",
@@ -293,13 +298,14 @@ export function codedScheme(s: Scheme): Record<string, unknown> {
       case "uxptChecks": out[k] = (s.uxptChecks ?? []).map(({ note: _n, ...c }) => c); break;
       case "reportIssues": out[k] = (s.reportIssues ?? []).map(({ reason: _r, scope: _s, ...i }) => i); break;
       case "replay": { const { sourcePath: _p, ...r } = s.replay!; out[k] = r; break; }
+      case "pricesFixed": { const f = s.pricesFixed!; out[k] = { listAt: f.listAt, at: f.at, prices: mapValues(f.prices, (pr) => { const x = pr as NonNullable<Scheme["pricesFixed"]>["prices"][string]; return { lines: x.lines, linked: x.linked }; }) }; break; }
       case "carrierOffers": out[k] = mapValues(s.carrierOffers, (rec) => {
         const r = rec as NonNullable<Scheme["carrierOffers"]>[string];
         return {
           offers: r.offers.map((o) => ({ id: o.id, cents: o.cents, ...(o.days ? { days: o.days } : {}), at: o.at, ...(o.withdrawnAt ? { withdrawnAt: o.withdrawnAt } : {}) })),
           ...(r.sent ? { sent: { at: r.sent.at, offerIds: r.sent.offerIds } } : {}),
           ...(r.choice ? { choice: { offerId: r.choice.offerId, at: r.choice.at, ...(r.choice.byPts ? { byPts: true } : {}) } } : {}),
-          ...(r.cancelled?.length ? { cancelled: r.cancelled.map((c) => ({ offerId: c.offerId, at: c.at, cancelledAt: c.cancelledAt })) } : {}),
+          ...(r.cancelled?.length ? { cancelled: r.cancelled.map((c) => ({ offerId: c.offerId, at: c.at, cancelledAt: c.cancelledAt, ...(c.byPts ? { byPts: true } : {}) })) } : {}),
         };
       }); break;
       case "analysisImports": out[k] = (s.analysisImports ?? []).map(({ by: _b, files, ...i }) => ({ ...i, files: files.map(({ name: _n, path: _p, ...f }) => f) })); break;
@@ -402,6 +408,10 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
     ...roundLabs.flatMap((l) => [l.name, l.deliveryAddress, l.accreditationNo, l.id]),
     ...roundUsers.flatMap((u) => [u.name, u.email, u.phone, u.id]),
     ...labFileNames,
+    // the carriers — a participation's own (its courier is identity): the offers' and each courier but
+    // the own courier's words (9.6 review), wherever free text repeats them
+    ...Object.values(s.carrierOffers ?? {}).flatMap((r) => r.offers.flatMap((o) => [o.carrier, o.note])),
+    ...participants.map((p) => (p.courier && p.courier.trim().toLowerCase() !== OWN_COURIER.toLowerCase() ? p.courier : undefined)),
   ]);
 
   // the record of openings, read last — the export's own openings among them (4.8 review)
@@ -447,9 +457,13 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
     ["id", "code", "kind", "at", "ref", "note", "recordedBy", "recordedAt", "source", "docKey", "voidedAt", "voidedBy", "voidReason"]);
   // readBefore46: the first read by anyone, as it was kept before 4.6 — since, a read is
   // each person's (the bell's state, not round data)
-  addCoded("coded/notices.csv", notices.map((n: Notification) => ({ ...n, readBefore46: n.readAt, labId: undefined, schemeId: undefined })),
+  // the carriers' offers in a notice's words (9.5) — the carriers are a participation's own: the words
+  // stay out of coded/ (the offers themselves are identity/carrier_offers.csv)
+  const CARRIER_WORDS = "‹оферти на превозвачи — думите в identity/carrier_offer_words.csv› · ‹carriers' offers — the words in identity/carrier_offer_words.csv›";
+  const offersHidden = <T extends { kind: string }>(x: T, keys: (keyof T)[]): T => (x.kind === "carrier.offers" ? { ...x, ...Object.fromEntries(keys.map((k) => [k, CARRIER_WORDS])) } : x);
+  addCoded("coded/notices.csv", notices.map((n: Notification) => ({ ...offersHidden(n, ["bg", "en"]), readBefore46: n.readAt, labId: undefined, schemeId: undefined })),
     ["id", "createdAt", "kind", "audience", "code", "bg", "en", "href", "readBefore46", "emailedAt", "releasedAt", "releasedBy", "withheldAt", "withheldBy"]);
-  addCoded("coded/messages.csv", messages.map((m: SentMessage) => ({ ...m, to: undefined, labId: undefined, entityId: undefined, schemeId: undefined })),
+  addCoded("coded/messages.csv", messages.map((m: SentMessage) => ({ ...offersHidden(m, ["body"]), to: undefined, labId: undefined, entityId: undefined, schemeId: undefined })),
     ["id", "sentAt", "class", "kind", "code", "subject", "body", "approvedBy", "approvalRef", "outcome", "error"]);
   addCoded("coded/scheme_roles.csv", (await listSchemeRoles({ schemeId, all: true })).map((r) => ({ ...r, schemeId: undefined })),
     ["id", "role", "personEmail", "orderRef", "assignedBy", "assignedAt", "endedAt", "endedBy"]);
@@ -643,6 +657,23 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
       releasedBy: c.released?.by ?? "", releasedAt: c.released?.at ?? "", releasedLangs: c.released?.langs.join("+") ?? "",
     })), ["code", "no", "date", "registeredBy", "registeredAt", "fromR", "contentLangs", "typedBy", "typedAt", "checkedBy", "checkedAt", "releasedBy", "releasedAt", "releasedLangs"]));
     add("identity/applications.csv", table((s.applications ?? []).map((a) => ({ ...a })), ["id", "submittedAt", "status", "labName", "companyName", "contactPerson", "email", "phone"]));
+    // the carriers' offers whole (9.5): the carrier, the note, the amount, who entered, withdrew and chose
+    add("identity/carrier_offers.csv", table(Object.entries(s.carrierOffers ?? {}).flatMap(([pid, rec]) => rec.offers.map((o) => ({
+      code: codeById.get(pid) ?? "—", offerId: o.id, carrier: o.carrier, note: o.note ?? "", eur: (o.cents / 100).toFixed(2), days: o.days ?? "", at: o.at, enteredBy: o.by,
+      withdrawnAt: o.withdrawnAt ?? "", withdrawnBy: o.withdrawnBy ?? "",
+      chosenAt: rec.choice?.offerId === o.id ? rec.choice.at : "", chosenBy: rec.choice?.offerId === o.id ? rec.choice.by : "", chosenByPts: rec.choice?.offerId === o.id && rec.choice.byPts ? "yes" : "",
+      cancelled: (rec.cancelled ?? []).filter((c) => c.offerId === o.id).map((c) => `chosen ${c.at} by ${c.by}${c.byPts ? " (PTS)" : ""}; cancelled ${c.cancelledAt} by ${c.cancelledBy}: ${c.reason}`).join(" | "),
+    }))), ["code", "offerId", "carrier", "note", "eur", "days", "at", "enteredBy", "withdrawnAt", "withdrawnBy", "chosenAt", "chosenBy", "chosenByPts", "cancelled"]));
+    // the prices fixed whole (9.4): with the delivery and the total
+    add("identity/prices.csv", table(Object.entries(s.pricesFixed?.prices ?? {}).map(([pid, pr]) => ({
+      code: codeById.get(pid) ?? "—", listAt: s.pricesFixed!.listAt, lines: pr.lines.map((l) => `${l.kind} ${l.size} ${l.cents === null ? "—" : (l.cents / 100).toFixed(2)}`).join("; "),
+      delivery: pr.delivery, deliveryEur: pr.deliveryCents === null ? "" : (pr.deliveryCents / 100).toFixed(2), totalEur: pr.totalCents === null ? "" : (pr.totalCents / 100).toFixed(2),
+    })), ["code", "listAt", "lines", "delivery", "deliveryEur", "totalEur"]));
+    // the words each offers' notice and e-mail carried (9.5) — as released or sent, every one (9.6 review)
+    add("identity/carrier_offer_words.csv", table([
+      ...notices.filter((n: Notification) => n.kind === "carrier.offers").map((n: Notification) => ({ what: "notice", id: n.id, code: n.code ?? "", at: n.createdAt, releasedAt: n.releasedAt ?? "", withheldAt: n.withheldAt ?? "", outcome: "", bg: n.bg, en: n.en })),
+      ...messages.filter((m: SentMessage) => m.kind === "carrier.offers").map((m: SentMessage) => ({ what: "e-mail", id: m.id, code: m.code ?? "", at: m.sentAt, releasedAt: "", withheldAt: "", outcome: m.outcome, bg: m.body, en: "" })),
+    ], ["what", "id", "code", "at", "releasedAt", "withheldAt", "outcome", "bg", "en"]));
     // a notice's laboratory: its earlier account, or (4.6) the entity of its participation's copy
     const entityOfCode = new Map([...inForce(snapshots).values()].map((x) => [codeById.get(x.participantId) ?? "", x.entityId]));
     // who submitted each version of the results (6.4) — an account: a laboratory's or a user's
@@ -700,6 +731,7 @@ function readme(s: Scheme, want: "all" | "coded", now: Date, files: string[], mi
 - **PTS_Analysis 2.0:** \`coded/files/analysis/\` — всеки файл от всяко внасяне, както е дошъл (докладите, графиките, валидирането, досието), с версията на модула и хеша в \`analysis_imports.csv\` · every file of every import from 2.0, as it came, with the module's version and hash in \`analysis_imports.csv\`.
 - **Към PTS_Analysis 2.0:** \`coded/files/analysis/exports/\` — всеки изнесен файл, както е даден (по време на обработката и след издаването), с хеша, кодовете и характеристиките в \`analysis_exports.csv\` · what went to 2.0: every exported file as it was handed out, with its hash, codes and characteristics in \`analysis_exports.csv\`.
 - **Издаването (част 7):** \`transfer_checks.csv\` (проверките на преноса), \`uxpt_checks.csv\` (потвържденията за u(x_pt)), \`report_issues.csv\` (R1, R2… — източник, версия, проверката и потвърждението, на които се опират), \`report_access.csv\` (как докладът е стигнал до всеки код, D7), \`software_record.csv\` (софтуерният запис при всяко R). Бележките, причините и обхватите, написани от хората на PTS, са само в \`identity/scheme-identity.json\` (може да назовават лаборатория) · the issue: the transfer checks, the u(x_pt) confirmations, the R's, how the report reached each code, the software record per R; the notes, reasons and scopes PTS's people typed are only in \`identity/scheme-identity.json\` (they may name a laboratory).
+- **Самообслужването (част 9):** \`codes.csv\` → \`source\` (PTS или порталът); \`applications_closed.csv\` (ръчно затваряне на заявяването), \`waitlist.csv\` (списъкът на изчакващите и допуснатите), \`prices.csv\` (цените, фиксирани при второто обявяване), \`carrier_offers.csv\` (офертите на превозвачите — превозвачът и бележката са в identity/). · **Self-service (Phase 9):** the source of each participation; the hand-closing; the waiting list and admissions; the fixed prices; the carriers' offers (the carrier and note in identity/).
 - \`coded/files/documents/\` — всеки документ като страница за печат (без имена); \`coded/files/editions/\` — всяка редакция на документите, замразена (\`editions.csv\`: номер, дата, причина, обхват, SHA-256, коя е при участниците). · every document as a printable page (no names); every edition of the documents, frozen (editions.csv: number, date, reason, scope, SHA-256, which one the participants hold).
 - Текстовете на запазените версии от редактора са файлове в \`files/revisions/\`; таблицата сочи към тях (това не са редакциите — те са в \`files/editions/\`). · The editor's saved versions are files; the table points to them (not the editions — those are in files/editions/).
 
@@ -718,7 +750,7 @@ ${want === "all" ? list("identity/") + `
 
 ## Какво не е тук · What is not included
 
-- Сметките на лабораториите за други кръгове и заявките за акаунт · laboratory accounts' other rounds, and account requests (lab_applications)
+- Сметките на лабораториите за други кръгове; регистрациите на организации, заявките за присъединяване и за акаунт — на организацията, не на кръга · laboratory accounts' other rounds; the registrations, requests to join and account requests — the organisation's, not the round's (lab_applications)
 - Общите шаблони, библиотеката, облиците · shared templates, the library, skins (the documents here are already rendered with the round's skin)
 - Самите изчисления на PTS_Analysis 2.0 — порталът не смята оценки (Реш. 135) · the PTS_Analysis 2.0 calculations — the portal computes no scores
 
@@ -830,5 +862,28 @@ export function roundTables(s: Scheme, codeOf: (participantId: string) => string
     ["coded/submission_locks.csv", (s.submissionLocks ?? []).flatMap((l) => l.kind === "lock"
       ? l.entries.map((e) => ({ id: l.id, kind: "lock", at: l.at, roundAt: l.roundAt, by: l.by, code: codeOf(e.participantId), version: e.version ?? "", via: e.via ?? "", nr: e.version === null && !e.via ? "yes" : "" }))
       : [{ id: l.id, kind: "reopen", at: l.at, roundAt: "", by: l.by, code: "", version: "", via: "", nr: "" }]), ["id", "kind", "at", "roundAt", "by", "code", "version", "via", "nr"]],
+    // Phase 9 (9.6): the applications closed by hand (9.3) — who, when; where each came from is codes.csv's «source»
+    ["coded/applications_closed.csv", s.applicationsClosed ? [{ closedAt: s.applicationsClosed.at, closedBy: s.applicationsClosed.by }] : [], ["closedAt", "closedBy"]],
+    // the waiting list each final list kept, in order, and each admission under it (9.3) — every list,
+    // the one in force said (a step back undoes a list and its admissions — 9.6 review)
+    ...(() => {
+      const inForceAt = currentFinalList(s) ? currentSecondAnnouncement(s)?.at : undefined;
+      const lists = (s.lifecycle?.acts ?? []).filter((a) => a.act === "announce2" && a.final?.waitlist?.length);
+      return [["coded/waitlist.csv", lists.flatMap((a) => (a.final!.waitlist ?? []).map((pid, i) => { const ad = (s.waitlistAdmitted ?? []).find((x) => x.participantId === pid && x.listAt === a.at); return { listAt: a.at, inForce: a.at === inForceAt ? "yes" : "", place: i + 1, code: codeOf(pid), admittedAt: ad?.at ?? "", admittedBy: ad?.by ?? "" }; })), ["listAt", "inForce", "place", "code", "admittedAt", "admittedBy"]] as [string, object[], string[]]];
+    })(),
+    // the prices fixed at the second announcement (9.4) — the participations' lines, by code; the
+    // delivery and the total in identity/prices.csv (the delivery's kind says where the laboratory is)
+    ["coded/prices.csv", Object.entries(s.pricesFixed?.prices ?? {}).map(([pid, pr]) => ({
+      code: codeOf(pid), fixedAt: s.pricesFixed!.at, listAt: s.pricesFixed!.listAt, inForce: currentFinalList(s) && s.pricesFixed!.listAt === currentSecondAnnouncement(s)?.at ? "yes" : "",
+      lines: pr.lines.map((l) => `${l.kind} ${l.size} ${l.cents === null ? "—" : (l.cents / 100).toFixed(2)}`).join("; "), linked: pr.linked ? "yes" : "no",
+    })), ["code", "fixedAt", "listAt", "inForce", "lines", "linked"]],
+    // the carriers' offers and the choice (9.5) — amounts, days and moments; the carrier, the note and
+    // who chose are a participation's own: identity/carrier_offers.csv
+    ["coded/carrier_offers.csv", Object.entries(s.carrierOffers ?? {}).flatMap(([pid, rec]) => rec.offers.map((o) => ({
+      code: codeOf(pid), offerId: o.id, eur: (o.cents / 100).toFixed(2), days: o.days ?? "", at: o.at, withdrawnAt: o.withdrawnAt ?? "",
+      sentAt: rec.sent?.offerIds.includes(o.id) ? rec.sent.at : "", chosen: rec.choice?.offerId === o.id ? "yes" : "", chosenAt: rec.choice?.offerId === o.id ? rec.choice.at : "",
+      chosenByPts: rec.choice?.offerId === o.id && rec.choice.byPts ? "yes" : "",
+      cancelledAt: (rec.cancelled ?? []).filter((c) => c.offerId === o.id).map((c) => c.cancelledAt).join(" "),
+    }))), ["code", "offerId", "eur", "days", "at", "withdrawnAt", "sentAt", "chosen", "chosenAt", "chosenByPts", "cancelledAt"]],
   ];
 }

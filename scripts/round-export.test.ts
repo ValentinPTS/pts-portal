@@ -199,6 +199,16 @@ const zAll = unzip(all.zip);
 t("the export is made", !!all && zAll.size === all.files.length && zAll.has("README.md"), String(all?.files.length));
 const listed = Object.values(ROUND_TABLES).flat();
 t("each round table's files are in the ZIP", listed.every((f) => zAll.has(f)), listed.filter((f) => !zAll.has(f)).join());
+// 9.6 review: every file of the export named — by its table (ROUND_TABLES), or one of the readable
+// tables derived from the scheme's own record, named here; an unnamed new file fails
+const DERIVED = ["coded/lifecycle_acts.csv", "coded/lifecycle_stages.csv", "coded/amendments.csv", "coded/extensions.csv", "coded/batches.csv", "coded/batch_objects.csv", "coded/homogeneity.csv",
+  "coded/characteristics.csv", "coded/characteristic_versions.csv", "coded/scheme_meta.csv", "coded/external_providers.csv", "coded/scheme_lists.csv", "coded/commercial.csv", "coded/coding_acts.csv",
+  "coded/coding_map.csv", "coded/releases.csv", "coded/shipments.csv", "coded/receipts.csv", "coded/delivery_problems.csv", "coded/reference_values.csv", "coded/billing.csv", "coded/chain_stops.csv",
+  "coded/ack_required.csv", "coded/round_settings.csv", "coded/acknowledgements.csv", "coded/scheme_messages.csv", "coded/submission_locks.csv", "coded/uploads.csv", "coded/documents.csv", "coded/images.csv",
+  "identity/case_events_full.csv", "identity/documents.csv", "identity/lab_files.csv", "identity/superseded_files.csv"];
+const unnamed = [...zAll.keys()].filter((n) => n !== "README.md" && !n.includes("/files/") && !listed.includes(n) && !DERIVED.includes(n));
+t("9.6 review: every file of the export is named — by its table, or as a readable table of the scheme's record", unnamed.length === 0, unnamed.join(" "));
+t("9.6: Phase 9's files named with the schemes' table", ["coded/applications_closed.csv", "coded/waitlist.csv", "coded/prices.csv", "coded/carrier_offers.csv", "identity/carrier_offers.csv", "identity/prices.csv", "identity/carrier_offer_words.csv"].every((f) => listed.includes(f)));
 const coded = [...zAll].filter(([n]) => n.startsWith("coded/"));
 const leaks = coded.filter(([, b]) => [SECRET.name, SECRET.email, SECRET.phone, SECRET.cert, SECRET.file, lab.id].some((x) => b.toString("utf8").includes(x))).map(([n]) => n);
 t("the coded part: no laboratory name, address, phone, account id, file name or certificate number", leaks.length === 0, leaks.join());
