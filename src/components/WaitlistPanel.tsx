@@ -24,7 +24,11 @@ export default function WaitlistPanel({ lang, schemeId, canManage, closed, waiti
         <b>{L("Заявяване", "Applications")}:</b>
         {closed
           ? <span style={{ color: "#8f2f2f" }}>{L(`затворено ръчно (${closed.by}, ${closed.at.slice(0, 10)})`, `closed by hand (${closed.by}, ${closed.at.slice(0, 10)})`)}</span>
-          : <span style={{ color: "var(--green-dark)" }}>{L("отворено — до срока за заявки", "open — until the applications' deadline")}</span>}
+          : <span style={{ color: "var(--green-dark)" }}>{finalMade
+              // after the final list a new application waits in line (Реш. 120, 127) — said, so «open» never reads
+              // as «a participant may still be added» (the security sweep, UM Q3)
+              ? L("отворено — новите заявки влизат в списъка на изчакващите", "open — new applications join the waiting list")
+              : L("отворено — до срока за заявки", "open — until the applications' deadline")}</span>}
         {canManage && (closed
           ? <button type="button" className="btn btn-sm" data-applications-open disabled={pending} onClick={() => run(() => setApplicationsClosedAction(schemeId, false))}>{L("Отвори отново", "Open again")}</button>
           : <button type="button" className="btn btn-sm" data-applications-close disabled={pending} onClick={() => { if (window.confirm(L("Да се затвори ли заявяването за схемата? Лабораториите не могат да подават заявки, докато не го отворите отново.", "Close the applications for the scheme? Laboratories cannot apply until you open them again."))) run(() => setApplicationsClosedAction(schemeId, true)); }}>{L("Затвори заявяването", "Close the applications")}</button>)}

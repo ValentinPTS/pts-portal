@@ -7,14 +7,18 @@
 // and a count after let a burst of them through at once): counted as failed for its address, its number and
 // everyone, under the hour's lock; a valid answer gives it back. Ceilings an hour: an address 10 failed and
 // 30 in all (an IPv6 address by its /64), a number 20 failed, everyone 300 failed. No ticket — no lookup.
+// And a DAY's ceiling per scheme and code (the security sweep, SC-2): a report names the codes, so the
+// only secret is a number's five digits — each guess a new number never filled the number's ceiling,
+// and 300 an hour found a chosen code's laboratory in about a week. Now 20 failed a day per code.
 import { createHmac } from "node:crypto";
+import { foldSchemeNumber } from "./scheme-number";
 import { getDb } from "./supabase";
 import { listStartedSchemes } from "./store";
 import { listParticipants, withIdentities } from "./participants";
 import { readQuery, findCertificate, answerOf, hourOf, MAX_FAILED_PER_HOUR, type RegisterAnswer } from "./cert-register-model";
 
 type Outcome = "valid" | "invalid" | "incomplete" | "limited";
-export const CEILINGS = { addressFailed: MAX_FAILED_PER_HOUR, addressTries: 30, numberFailed: 20, allFailed: 300 };
+export const CEILINGS = { addressFailed: MAX_FAILED_PER_HOUR, addressTries: 30, numberFailed: 20, allFailed: 300, codeFailedPerDay: 20 };
 type Bucket = { failed: number; tries: number };
 const g = globalThis as unknown as { __ptsRegisterTickets?: { buckets: Map<string, Bucket>; lookups: Map<string, number> } };
 const mem = g.__ptsRegisterTickets ?? (g.__ptsRegisterTickets = { buckets: new Map(), lookups: new Map() });
@@ -42,28 +46,41 @@ export function normAddress(raw: string): string {
 /** The number as counted: its five random digits when it reads as a certificate number (every spelling of
  *  it one bucket); else the whole, folded. */
 const numberMark = (n: string) => { const m = String(n ?? "").match(/(\d{5})\s*$/); return m ? m[1] : String(n ?? "").replace(/\s+/g, "").toUpperCase().slice(0, 60); };
+/** The scheme and the code a lookup names, as counted for the day: every spelling of the scheme's number
+ *  and of the code one bucket (SC-2). */
+export const codeMark = (number: string, code: string) => {
+  const n = String(number ?? "").trim().replace(/[\u2010-\u2015\u2212]/g, "-");
+  const m = n.match(/^(.+?)\s*-\s*\d{5}\s*$/);
+  const scheme = m ? foldSchemeNumber(m[1]) : n.replace(/\s+/g, "").toUpperCase().slice(0, 60);
+  return `${scheme}|${String(code ?? "").replace(/\s+/g, "").toUpperCase().slice(0, 40)}`;
+};
 /** The address as kept: a keyed hash of the hour and the address — never the address itself. */
 export const addressKey = (address: string, hour: string, key = hashKey() ?? "") => hmac(key, `${hour}|a|${normAddress(address)}`);
 
-async function takeTicket(hour: string, a: string, n: string): Promise<boolean> {
+// the day's window of a code's bucket: the day's first hour, in the hours' own form
+const dayOf = (hour: string) => `${hour.slice(0, 10)}T00`;
+async function takeTicket(hour: string, a: string, n: string, c: string): Promise<boolean> {
   const db = getDb();
+  const day = dayOf(hour);
   if (!db) {
     // one process, no await between the look and the count — a burst cannot slip between them
-    for (const k of [...mem.buckets.keys()]) if (k.split("|")[1] < hour) mem.buckets.delete(k);
-    const get = (b: string) => mem.buckets.get(`${b}|${hour}`) ?? { failed: 0, tries: 0 };
-    const A = get(a), N = get(n), G = get("g");
-    if (A.failed >= CEILINGS.addressFailed || A.tries >= CEILINGS.addressTries || N.failed >= CEILINGS.numberFailed || G.failed >= CEILINGS.allFailed) return false;
-    for (const b of [a, n, "g"]) { const x = get(b); mem.buckets.set(`${b}|${hour}`, { failed: x.failed + 1, tries: x.tries + 1 }); }
+    for (const k of [...mem.buckets.keys()]) { const [b, w] = k.split("|"); if (w < (b.startsWith("c:") ? day : hour)) mem.buckets.delete(k); }
+    const key = (b: string) => `${b}|${b.startsWith("c:") ? day : hour}`;
+    const get = (b: string) => mem.buckets.get(key(b)) ?? { failed: 0, tries: 0 };
+    const A = get(a), N = get(n), G = get("g"), C = get(c);
+    if (A.failed >= CEILINGS.addressFailed || A.tries >= CEILINGS.addressTries || N.failed >= CEILINGS.numberFailed || G.failed >= CEILINGS.allFailed || C.failed >= CEILINGS.codeFailedPerDay) return false;
+    for (const b of [a, n, "g", c]) { const x = get(b); mem.buckets.set(key(b), { failed: x.failed + 1, tries: x.tries + 1 }); }
     return true;
   }
-  const { data, error } = await db.rpc("register_try", { p_hour: hour, p_address: a, p_number: n });
+  const { data, error } = await db.rpc("register_try", { p_hour: hour, p_day: day, p_address: a, p_number: n, p_code: c });
   if (error) throw error;
   return data === true;
 }
-async function refund(hour: string, a: string, n: string): Promise<void> {
+async function refund(hour: string, a: string, n: string, c: string): Promise<void> {
   const db = getDb();
-  if (!db) { for (const b of [a, n, "g"]) { const x = mem.buckets.get(`${b}|${hour}`); if (x) x.failed = Math.max(0, x.failed - 1); } return; }
-  const { error } = await db.rpc("register_refund", { p_hour: hour, p_address: a, p_number: n });
+  const day = dayOf(hour);
+  if (!db) { for (const b of [a, n, "g", c]) { const x = mem.buckets.get(`${b}|${b.startsWith("c:") ? day : hour}`); if (x) x.failed = Math.max(0, x.failed - 1); } return; }
+  const { error } = await db.rpc("register_refund", { p_hour: hour, p_day: day, p_address: a, p_number: n, p_code: c });
   if (error) console.error("[register] refund:", error.message);
 }
 async function countOutcome(o: Outcome): Promise<void> {
@@ -85,8 +102,10 @@ export async function lookupCertificate(input: { number?: unknown; code?: unknow
   const q = readQuery(input);
   const a = `a:${addressKey(address, hour, key)}`;
   const n = `n:${hmac(key, `${hour}|n|${numberMark(q?.number ?? String(input.number ?? ""))}`)}`;
+  // (an incomplete query names no code: its own bucket, by its address)
+  const c = `c:${hmac(key, q ? `${dayOf(hour)}|c|${codeMark(q.number, q.code)}` : `${dayOf(hour)}|c-none|${a}`)}`;
   let ticket: boolean;
-  try { ticket = await takeTicket(hour, a, n); } catch (e) { console.error("[register] ticket:", (e as Error)?.message ?? e); return { state: "failed" }; }
+  try { ticket = await takeTicket(hour, a, n, c); } catch (e) { console.error("[register] ticket:", (e as Error)?.message ?? e); return { state: "failed" }; }
   if (!ticket) { await countOutcome("limited"); return { state: "limited" }; }
   if (!q) { await countOutcome("incomplete"); return { state: "incomplete" }; }
   let hit;
@@ -95,10 +114,11 @@ export async function lookupCertificate(input: { number?: unknown; code?: unknow
   try {
     // the laboratory's name as its certificate prints it — opened for the register, on record (2.3)
     const coded = (await listParticipants(hit.scheme.id)).filter((p) => p.code === hit.code);
-    const [p] = await withIdentities(coded, hit.scheme.id, { actor: "public:register", purpose: "system" });
+    // under its own purpose — an outsider's lookup, never «a job of the portal» (the security sweep, SC-4)
+    const [p] = await withIdentities(coded, hit.scheme.id, { actor: "public:register", purpose: "register" });
     if (!p?.labName) throw new Error("no laboratory name for a released certificate");
     const answer = answerOf(hit, p.labName);
-    await refund(hour, a, n);
+    await refund(hour, a, n, c);
     await countOutcome("valid");
     return { state: "valid", answer };
   } catch (e) {

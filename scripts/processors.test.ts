@@ -91,7 +91,7 @@ const keptBefore = '<head>\n<meta charset="utf-8">\n<title>t</title>\n<link rel=
 const servedNow = localizeFontLinks(keptBefore);
 t("a copy kept before the move is served with the portal's copies of the same families, nothing from Google", servedNow === '<head>\n<meta charset="utf-8">\n<title>t</title>\n<link href="/fonts/pt-serif.css" rel="stylesheet">\n<link href="/fonts/sofia-sans-condensed.css" rel="stylesheet">\n<style>x</style>\n</head>', servedNow);
 t("…a copy kept since is served unchanged, and every kept copy is served through that", localizeFontLinks(shell) === shell && /new Response\(localizeFontLinks\(html\)/.test(readFileSync(join(portal, "src/lib/editions.ts"), "utf8")));
-t("the proxy gate lets /fonts/ through — a lab's document and the PDF renderer load them with no owner session", /matcher: \["\/\(\(\?![^"]*\|fonts\/\|/.test(readFileSync(join(portal, "src/proxy.ts"), "utf8")));
+t("the proxy gate lets /fonts/ through — a lab's document and the PDF renderer load them with no owner session", /matcher: \[\s*"\/\(\(\?![^"]*\|fonts\/\|/.test(readFileSync(join(portal, "src/proxy.ts"), "utf8")) && /\|fonts\\\/\|/.test(readFileSync(join(portal, "src/proxy.ts"), "utf8")));
 
 // the translation: a document naming laboratories never goes out
 const actions = readFileSync(join(portal, "src/lib/actions.ts"), "utf8");

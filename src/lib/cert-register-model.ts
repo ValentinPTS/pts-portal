@@ -19,6 +19,8 @@ export const NUMBER_MAX = 60, CODE_MAX = 40;
 export interface RegisterQuery { number: string; code: string }
 /** The typed query — both parts required, within their limits; null when it is not a whole query. */
 export function readQuery(input: { number?: unknown; code?: unknown }): RegisterQuery | null {
+  // text only: an array or an object is not a number or a code (the security sweep, UP-3 — «["…"]» read as its one element)
+  if (typeof input.number !== "string" || typeof input.code !== "string") return null;
   const clean = (v: unknown) => String(v ?? "").replace(/[\u0000-\u001F\u007F]/g, " ").replace(/\s+/g, " ").trim();
   const number = clean(input.number), code = clean(input.code);
   if (!number || !code || [...number].length > NUMBER_MAX || [...code].length > CODE_MAX) return null;

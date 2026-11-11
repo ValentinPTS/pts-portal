@@ -6,6 +6,7 @@ import { submitResultsAction, type SubmitReceipt } from "@/lib/actions";
 import { SUBMIT_PROBLEM_TEXT } from "@/lib/submission-model";
 import { blocking, type CheckProblem } from "@/lib/results-model";
 import CheckReport from "./CheckReport";
+import { sofiaZoneAt } from "@/lib/scheme-dates";
 
 // «Прегледай и подай» (plan part 6.4; Zadanie §7; D1): the draft saved first; the checks (6.3) — a
 // blocking problem stops here, the notices go on; a summary of what will be submitted; the
@@ -64,7 +65,8 @@ export default function SubmitPanel({ schemeId, participantId, lang, kind, flush
     const t = SUBMIT_PROBLEM_TEXT[r.error];
     setError(t ? L(t.bg, t.en) : L("Подаването НЕ е записано.", "The submission was NOT recorded."));
   };
-  const when = (iso: string) => new Intl.DateTimeFormat(lang === "bg" ? "bg-BG" : "en-GB", { timeZone: "Europe/Sofia", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "short" }).format(new Date(iso));
+  // the hour in Bulgaria and its zone as EET/EEST (6.4) — never the browser's «Гринуич+2» (UL-7)
+  const when = (iso: string) => `${new Intl.DateTimeFormat(lang === "bg" ? "bg-BG" : "en-GB", { timeZone: "Europe/Sofia", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(iso))} ${sofiaZoneAt(Date.parse(iso))}`;
 
   if (!open) return null;
   const blocks = checked ? blocking(checked) : [];

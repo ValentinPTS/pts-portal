@@ -7,6 +7,7 @@ import { getServerT } from "@/lib/i18n-server";
 import { bodyFor, subjectFor, classFor, mailBaseUrl } from "@/lib/notify-deliver";
 import { testSubject } from "@/lib/environment";
 import { listSent, type MessageClass } from "@/lib/sent-messages";
+import { noticeKindText } from "@/lib/notice-kinds";
 
 // Notices to laboratories (Реш. 138, plan parts 0.8 and 1.8). Nothing reaches a
 // participant unless a person saw the exact text and pressed «Изпрати» — or, for a
@@ -35,6 +36,12 @@ export default async function NoticesPage({ searchParams }: { searchParams: Prom
   // a laboratory's address is an identity: per message, in its scheme (Реш. 93)
   const isManager = authorizeAnywhere(viewer, "names.view");
   const seesAddress = (schemeId?: string) => authorize(viewer, "names.view", schemeId);
+  // a message's words: those to a participation are by its code, never a name — the rest
+  // (a registration's, a profile's: to an organisation) name it and its people, and their time
+  // matches the journal's lines: only to who sees names, or manages the organisations
+  // (the security sweep, SC-1)
+  const managesLabs = authorizeAnywhere(viewer, "labs.manage");
+  const seesWords = (m: { schemeId?: string; code?: string }) => !!m.code || seesAddress(m.schemeId) || (!m.schemeId && managesLabs);
   const { lang } = await getServerT();
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   // only the schemes this person works in: a notice carries a code (2.4)
@@ -47,7 +54,9 @@ export default async function NoticesPage({ searchParams }: { searchParams: Prom
   // 10.1 review: a «the next scheme started» notice of a scheme no longer started is never released (Реш. 147)
   const startedIds = new Set(schemes.filter((x) => x.status !== "draft").map((x) => x.id));
   const releasable = (n: { kind: string; schemeId?: string }) => n.kind !== "catalogue.next" || (!!n.schemeId && startedIds.has(n.schemeId));
-  const refused = (await searchParams).refused === "not-started";
+  const refusedAs = (await searchParams).refused;
+  const refused = refusedAs === "not-started";
+  const decidedMeanwhile = refusedAs === "decided";
   const base = mailBaseUrl();
   const CLASS: Record<MessageClass, string> = {
     provider: L("известие", "notice"),
@@ -70,6 +79,7 @@ export default async function NoticesPage({ searchParams }: { searchParams: Prom
         <Link href="/notices/texts" style={{ color: "var(--green-dark)", fontWeight: 700 }}>{L("«Текстове на напомнянията»", "«Reminder texts»")}</Link>.
       </p>
 
+      {decidedMeanwhile && <div role="alert" data-notice-decided className="card p-3 mt-4" style={{ borderLeft: "4px solid var(--amber)" }}>{L("Нищо не е променено: това известие вече е решено — от друг раздел или от друг човек. Вижте «Изпратени имейли» по-долу.", "Nothing changed: this notice was already decided — from another tab or by another person. See «E-mails sent» below.")}</div>}
       {refused && <div role="alert" data-notice-refused className="card p-3 mt-4" style={{ borderLeft: "4px solid var(--red)" }}>{L("Не е изпратено: схемата вече не е започнала (върната в чернова или архивирана) — изберете «Не изпращай».", "Not sent: the scheme is no longer started (back to draft or archived) — choose «Do not send».")}</div>}
       {held.length === 0 ? (
         <div className="card p-4 mt-5" style={{ color: "var(--muted)" }}>{L("Няма задържани известия.", "No notices are waiting.")}</div>
@@ -81,7 +91,7 @@ export default async function NoticesPage({ searchParams }: { searchParams: Prom
                 <span>{fmt(n.createdAt)}</span>
                 {n.schemeId && <Link href={`/schemes/${n.schemeId}`} style={{ color: "var(--green-dark)", fontWeight: 700 }}>{number.get(n.schemeId) ?? n.schemeId}</Link>}
                 {n.code && <span className="font-mono font-bold" style={{ color: "var(--green-dark)" }}>{n.code}</span>}
-                <span style={{ fontSize: 11 }}>{CLASS[classFor(n)]} · {n.kind}</span>
+                <span style={{ fontSize: 11 }} data-kind={n.kind}>{CLASS[classFor(n)]} · {noticeKindText(n.kind, lang === "bg" ? "bg" : "en")}</span>
               </div>
               {/* the exact e-mail: what the transport will be handed, word for word */}
               <div className="text-sm mt-2"><b>{L("Тема", "Subject")}:</b> {testSubject(subjectFor(n))}</div>
@@ -130,10 +140,12 @@ export default async function NoticesPage({ searchParams }: { searchParams: Prom
                 <tr key={m.id} style={{ borderTop: "1px solid var(--line)", verticalAlign: "top" }}>
                   <td className="p-2" style={{ whiteSpace: "nowrap" }}>{fmt(m.sentAt)}</td>
                   <td className="p-2">
-                    <details><summary>{CLASS[m.class]} · {m.kind}</summary>
-                      <div className="text-xs mt-1"><b>{L("Тема", "Subject")}:</b> {m.subject}</div>
-                      <pre className="text-xs mt-1" style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>{m.body}</pre>
-                    </details>
+                    {seesWords(m) ? (
+                      <details><summary data-kind={m.kind}>{CLASS[m.class]} · {noticeKindText(m.kind, lang === "bg" ? "bg" : "en")}</summary>
+                        <div className="text-xs mt-1"><b>{L("Тема", "Subject")}:</b> {m.subject}</div>
+                        <pre className="text-xs mt-1" style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>{m.body}</pre>
+                      </details>
+                    ) : <span data-sent-words-hidden data-kind={m.kind}>{CLASS[m.class]} · {noticeKindText(m.kind, lang === "bg" ? "bg" : "en")}</span>}
                   </td>
                   <td className="p-2">{m.schemeId ? (number.get(m.schemeId) ?? m.schemeId) : "—"}{m.code ? <span className="font-mono"> · {m.code}</span> : null}</td>
                   {isManager && <td className="p-2 font-mono text-xs">{seesAddress(m.schemeId) ? m.to : "—"}</td>}

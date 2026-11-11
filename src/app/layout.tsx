@@ -5,7 +5,7 @@ import "./globals.css";
 import Chrome from "@/components/Chrome";
 import { LangProvider } from "@/components/LangProvider";
 import { getUiLang } from "@/lib/i18n-server";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, REQUIRE_2FA } from "@/lib/auth";
 import { getRoleContext, canManagePeople } from "@/lib/roles";
 import { listForProvider, withReadState, readerKey } from "@/lib/notifications";
 import { isTestEnvironment } from "@/lib/environment";
@@ -40,13 +40,15 @@ export default async function RootLayout({
   const user = session ? { email: session.email, role: ctx.role } : null;
   // Managers (incl. build mode, where there's no session yet) see the Users link —
   // and the head of the PT provider, who manages PTS's people there (2.2)
-  const managesPeople = await canManagePeople(ctx);
+  // (a session still owing its new password or its second factor: nothing — the security sweep, SA-3)
+  const settled = !ctx.authEnabled || (!ctx.mustChangePassword && (!REQUIRE_2FA || ctx.aal2 || ctx.role === "lab"));
+  const managesPeople = settled && (await canManagePeople(ctx));
   const canManageUsers = (await mayAnywhereNow("labs.manage")) || managesPeople;
   // the administrative panel's sections this person may open (2.7)
   // — only for one of PTS: signed in and not a laboratory (with login off, the local
   // build and its personas). A signed-out visitor or a laboratory resetting a password
   // on /auth/* gets no panel.
-  const ofPts = ctx.authEnabled ? !!ctx.email && !!ctx.role && ctx.role !== "lab" : ctx.role !== "lab";
+  const ofPts = ctx.authEnabled ? settled && !!ctx.email && !!ctx.role && ctx.role !== "lab" : ctx.role !== "lab";
   const sections = ofPts ? visibleSections(await getViewer(), managesPeople).map(({ key, href, bg, en, group, comesIn }) => ({ key, href, bg, en, group, comesIn })) : [];
   // Any internal role (manager / staff / auditor) sees the Activity log; labs don't.
   const canViewActivity = await mayAnywhereNow("journal.read"); // the role model (2.4)

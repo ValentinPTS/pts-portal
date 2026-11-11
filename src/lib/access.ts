@@ -52,6 +52,10 @@ export const getViewer = cache(async (): Promise<Viewer> => {
     return { email: null, roles: NONE, build: true, auditor: false, lab: false };
   }
   if (!ctx.email || !ctx.role) return { email: ctx.email, roles: NONE, build: false, auditor: false, lab: false };
+  // a session still owing its new password, or (one of PTS) its second factor, reads nothing
+  // — not the panel, not the bell, not a page that asks mayNow alone (the security sweep, SA-3:
+  // the gates refused it, the layout's reads did not)
+  if (ctx.mustChangePassword || (REQUIRE_2FA && !ctx.aal2 && ctx.role !== "lab")) return { email: ctx.email, roles: NONE, build: false, auditor: false, lab: false };
   if (ctx.role === "lab") return { email: ctx.email, roles: NONE, build: false, auditor: false, lab: true };
   // the auditor stays outside the model: codes, results and the journal — never more,
   // whatever roles were given to that address
@@ -78,7 +82,9 @@ async function gate(ok: (v: Viewer) => boolean): Promise<void> {
     if (!ctx.role || ctx.role === "lab") redirect("/login?denied=1");
     if (REQUIRE_2FA && !ctx.aal2) redirect("/account?enroll=1");
   }
-  if (!ok(await getViewer())) redirect("/login?denied=1");
+  // one of PTS, signed in, without this right: said as such — never the sign-in page (the security sweep, UR-1);
+  // a laboratory (a persona with login off) is not one of PTS: the sign-in, as before
+  if (!ok(await getViewer())) redirect(ctx.role === "lab" ? "/login?denied=1" : "/denied");
 }
 
 export async function requireCap(cap: Capability, schemeId?: string): Promise<void> {
@@ -116,7 +122,7 @@ export async function mayViewDoc(docKey: string, schemeId: string): Promise<bool
 }
 
 export async function requireDocView(docKey: string, schemeId: string): Promise<void> {
-  if (!(await mayViewDoc(docKey, schemeId))) redirect("/login?denied=1");
+  if (!(await mayViewDoc(docKey, schemeId))) redirect("/denied");
 }
 
 /** A section of the administrative panel (2.7): the rule the panel shows it by

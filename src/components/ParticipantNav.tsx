@@ -14,7 +14,8 @@ export default function ParticipantNav({ lang, active, name, role, persona }: { 
   return (
     <header className="flex items-center gap-4 px-6 py-3" style={{ background: "#fff", borderBottom: "1px solid var(--line)", color: "var(--ink)", flexWrap: "wrap" }}>
       <span className="font-bold text-lg tracking-tight"><span style={{ color: "var(--green-dark)" }}>PTS</span> Bulgaria</span>
-      <nav className="flex gap-4" aria-label={L("Портал за участници", "Participant portal")} data-participant-nav>
+      {/* wraps on a phone — at 390 px «Заявки за присъединяване» was off the screen (the security sweep, UL-5) */}
+      <nav className="flex gap-x-4 gap-y-1" style={{ flexWrap: "wrap", minWidth: 0 }} aria-label={L("Портал за участници", "Participant portal")} data-participant-nav>
         {tab("/lab/overview", active === "overview", L("Начало", "Home"))}
         {/* 9.2: the schemes open for applications — every user of the entity */}
         {tab("/lab/apply", active === "apply", L("Заявяване", "Apply"))}

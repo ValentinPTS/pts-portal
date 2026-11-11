@@ -50,12 +50,73 @@ t("0018 revokes the browser roles, now and by default",
 for (const n of names.filter((x) => x >= "0018")) {
   // PUBLIC's EXECUTE on a new function cannot be revoked by default per schema: each
   // migration that makes a function takes it away itself
-  for (const fn of [...code(sql[n]).toLowerCase().matchAll(/create (?:or replace )?function (?:public\.)?([a-z_]+)/g)].map((m) => m[1])) {
-    t(`${n}: function ${fn} is not executable by public`, new RegExp(`revoke execute on function (?:public\\.)?${fn}[^;]* from public`).test(code(sql[n]).toLowerCase()));
-  }
+  // (each function by its exact signature, after its last making — the security sweep: the old
+  // check read every identity.* function as «identity» and took any revoke starting so)
   t(`${n} records itself in app_migrations`, new RegExp(`insert into (?:public\\.)?app_migrations \\(name\\) values \\('${n}'\\)`).test(code(sql[n])));
   t(`${n} cascades nothing (ground rule 2)`, !/on delete cascade/i.test(code(sql[n])));
 }
+// every function a migration makes — by schema, name and argument types — is not executable by
+// PUBLIC, anon or authenticated after its LAST making (a drop and create resets its rights;
+// create or replace keeps them), and has its search_path set (the security sweep, SD-5)
+{
+  const argTypes = (args: string) => args.split(",").map((a) => a.trim()).filter(Boolean).map((a) => {
+    const parts = a.replace(/\s+default\s+[\s\S]*$/i, "").trim().split(/\s+/);
+    return (parts.length > 1 ? parts.slice(1).join(" ") : parts[0]).toLowerCase();
+  }).join(",");
+  type Fn = { file: string; path: boolean; public: boolean; anon: boolean; auth: boolean; dropped: boolean };
+  const fns = new Map<string, Fn>();
+  const unknown: string[] = [];
+  const re = /(create\s+(?:or\s+replace\s+)?function\s+(?:([a-z_]+)\.)?([a-z_0-9]+)\s*\(([^)]*)\)([\s\S]*?)\$([a-z]*)\$[\s\S]*?\$\6\$)|(drop\s+function\s+(?:if\s+exists\s+)?(?:([a-z_]+)\.)?([a-z_0-9]+)\s*\(([^)]*)\))|(revoke\s+execute\s+on\s+function\s+(?:([a-z_]+)\.)?([a-z_0-9]+)\s*\(([^)]*)\)\s+from\s+([^;]+);)|(grant\s+execute\s+on\s+function\s+(?:([a-z_]+)\.)?([a-z_0-9]+)\s*\(([^)]*)\)\s+to\s+([^;]+);)/g;
+  for (const n of names.filter((x) => x >= "0018")) {
+    for (const m of code(sql[n]).toLowerCase().matchAll(re)) {
+      if (m[1]) {
+        const key = `${m[2] ?? "public"}.${m[3]}(${argTypes(m[4])})`;
+        const prev = fns.get(key);
+        const fresh = !prev || prev.dropped;
+        fns.set(key, { file: n, path: /set\s+search_path/.test(m[5]), public: fresh || prev.public, anon: fresh || prev.anon, auth: fresh || prev.auth, dropped: false });
+      } else if (m[7]) {
+        const p = fns.get(`${m[8] ?? "public"}.${m[9]}(${argTypes(m[10])})`);
+        if (p) p.dropped = true;
+      } else if (m[11] || m[16]) {
+        const [s, f, a, who] = m[11] ? [m[12], m[13], m[14], m[15]] : [m[17], m[18], m[19], m[20]];
+        const key = `${s ?? "public"}.${f}(${argTypes(a)})`;
+        const p = fns.get(key);
+        if (!p) { unknown.push(`${n}: ${key}`); continue; }
+        const v = !!m[16];
+        if (/\bpublic\b/.test(who)) p.public = v;
+        if (/\banon\b/.test(who)) p.anon = v;
+        if (/\bauthenticated\b/.test(who)) p.auth = v;
+      }
+    }
+  }
+  const live = [...fns].filter(([, v]) => !v.dropped);
+  t("functions found by signature", live.length >= 60, String(live.length));
+  t("every revoke or grant names a function made before it", unknown.length === 0, unknown.join("; "));
+  for (const [k, v] of live) {
+    t(`${k} (${v.file}): not executable by public, anon or authenticated`, !v.public && !v.anon && !v.auth);
+    t(`${k} (${v.file}): its search_path set`, v.path);
+  }
+}
+
+// a function or a named check redefined by a later migration: the earlier file refuses to run
+// once a later one is recorded — pasting it again would silently undo the later one (SD-2)
+{
+  const made = new Map<string, string[]>();
+  for (const n of names) {
+    const s = code(sql[n]).toLowerCase();
+    for (const m of s.matchAll(/create (?:or replace )?function (?:([a-z_]+)\.)?([a-z_0-9]+)\s*\(/g)) { const k = `function ${m[1] ?? "public"}.${m[2]}`; made.set(k, [...new Set([...(made.get(k) ?? []), n])]); }
+    for (const m of s.matchAll(/add constraint ([a-z_0-9]+)/g)) { const k = `constraint ${m[1]}`; made.set(k, [...new Set([...(made.get(k) ?? []), n])]); }
+  }
+  const superseded = new Set([...made.values()].filter((f) => f.length > 1).flatMap((f) => f.sort().slice(0, -1)));
+  t("superseded migrations found", superseded.size >= 10, [...superseded].join(","));
+  for (const n of superseded) {
+    const s = code(sql[n]).toLowerCase();
+    const guard = s.indexOf(`select 1 from public.app_migrations where name > '${n}'`);
+    const firstChange = s.search(/\b(create|alter|drop|insert|update|delete|grant|revoke)\b/);
+    t(`${n} refuses to run once a later migration is recorded`, guard >= 0 && /raise exception/.test(s.slice(guard, guard + 300)) && guard < firstChange, `guard ${guard}, first change ${firstChange}`);
+  }
+}
+
 const backfill = [...code(sql["0018_app_migrations"]).matchAll(/\('(\d{4}_[a-z_]+)'\)/g)].map((m) => m[1]).filter((n) => n !== "0018_app_migrations");
 t("0018 records exactly 0001–0017", JSON.stringify(backfill) === JSON.stringify(names.filter((n) => n < "0018")), backfill.join(","));
 // 0019: one row, starting as the real portal, no rights for the browser roles

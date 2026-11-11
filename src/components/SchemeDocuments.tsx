@@ -30,7 +30,7 @@ export interface DocStageView { key: string; label: string; docs: DocRow[] }
 
 const ACCEPT = "application/pdf,image/png,image/jpeg";
 
-export default function SchemeDocuments({ schemeId, lang, stages, lists = [] }: { schemeId: string; lang: "bg" | "en"; stages: DocStageView[]; lists?: DocRow[] }) {
+export default function SchemeDocuments({ schemeId, lang, stages, lists = [], canWrite = true }: { schemeId: string; lang: "bg" | "en"; stages: DocStageView[]; lists?: DocRow[]; /** may upload a file (UR-1) */ canWrite?: boolean }) {
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -211,7 +211,7 @@ export default function SchemeDocuments({ schemeId, lang, stages, lists = [] }: 
                         <Link className="btn" style={btnSm} href={d.buildHref}>{L("Отвори", "Open")}</Link>
                       ) : (
                         <>
-                          <button className="btn" style={btnSm} onClick={() => pickFile(d.key)}>＋ {L("Качи", "Upload")}</button>
+                          {canWrite && <button className="btn" style={btnSm} onClick={() => pickFile(d.key)}>＋ {L("Качи", "Upload")}</button>}
                           <Link className="btn btn-primary" style={btnSm} href={d.buildHref}>{L("Създай", "Create")}</Link>
                         </>
                       )}
@@ -255,7 +255,7 @@ export default function SchemeDocuments({ schemeId, lang, stages, lists = [] }: 
                         ) : (
                           <>
                             <Link style={menuItem} href={d.buildHref}>✎ {L("Отвори в редактора", "Open in editor")}</Link>
-                            <button style={menuItem} onClick={() => pickFile(d.key)}>＋ {L("Качи готов файл", "Upload a ready file")}</button>
+                            {canWrite && <button style={menuItem} onClick={() => pickFile(d.key)}>＋ {L("Качи готов файл", "Upload a ready file")}</button>}
                             {d.hasUpload && <button style={menuItem} onClick={() => switchSource(d.key, "uploaded")}>◱ {L("Използвай качения", "Use the uploaded file")}</button>}
                           </>
                         )}

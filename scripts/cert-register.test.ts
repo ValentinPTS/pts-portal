@@ -63,10 +63,20 @@ t("never a simulation round's or a replay's, whatever its flags", findCertificat
 const api = src("app/api/certificate/route.ts");
 t("the website's question: POST, JSON only and small, the same lookup; CORS for ptsbg.eu only; no-store", /export async function POST/.test(api) && /lookupCertificate\(/.test(api) && /https:\/\/ptsbg\.eu/.test(api) && !/"\*"/.test(api) && /no-store/.test(api) && !/export async function GET/.test(api) && /status: 415/.test(api) && /raw\.length > 1024/.test(api));
 const core = src("lib/cert-register.ts");
-t("10.4 review: the ticket before the look (fail closed), its own hash key (never the database's), given back only on a valid answer", /ticket = await takeTicket\(/.test(core) && core.indexOf("takeTicket(hour") < core.indexOf("findCertificate(") && /REGISTER_HASH_KEY/.test(core) && !/SUPABASE_KEY/.test(core) && /await refund\(hour, a, n\);\s*await countOutcome\("valid"\)/.test(core));
+t("10.4 review: the ticket before the look (fail closed), its own hash key (never the database's), given back only on a valid answer", /ticket = await takeTicket\(/.test(core) && core.indexOf("takeTicket(hour") < core.indexOf("findCertificate(") && /REGISTER_HASH_KEY/.test(core) && !/SUPABASE_KEY/.test(core) && /await refund\(hour, a, n, c\);\s*await countOutcome\("valid"\)/.test(core));
 const pg = src("app/certificate/page.tsx");
 t("the page: the number from a QR link, never the code; public (the proxy; no staff panel)", /\(await searchParams\)\.no/.test(pg) && !/\.code\b/.test(pg) && /certificate\(\?:\/\|\$\)/.test(src("proxy.ts")) && /path === "\/certificate"/.test(src("components/Chrome.tsx")));
 t("the form posts — the code never in a link", /useActionState/.test(src("components/CertificateLookup.tsx")) && !/method="get"/i.test(src("components/CertificateLookup.tsx")));
+
+// the security sweep (SC-2): a chosen code with a new number each time — 20 failed a DAY, from any
+// address, any spelling of the scheme's number; another code, or the next day, not limited
+const perCode = [];
+for (let i = 0; i < 21; i++) perCode.push((await lookupCertificate({ number: `PTS 26/01-T-1-6${String(i).padStart(4, "0")}`, code: "C42" }, `203.0.113.${i + 1}`, AT + i * 60_000)).state);
+t("one code, a new number each time: 20 failed, then limited for the day", perCode.slice(0, 20).every((x) => x === "invalid") && perCode[20] === "limited", perCode.join());
+t("…another spelling of the scheme's number and of the code counts as it", (await lookupCertificate({ number: "РТС 26/1-Т-01 – 61111", code: "c 42" }, "203.0.113.200", AT + 2 * 3600_000)).state === "limited");
+t("…another code is not limited; the next day, neither", (await lookupCertificate({ number: "PTS 26/01-T-1-61111", code: "C43" }, "203.0.113.201", AT + 2 * 3600_000)).state === "invalid" && (await lookupCertificate({ number: "PTS 26/01-T-1-61111", code: "C42" }, "203.0.113.202", AT + 24 * 3600_000)).state === "invalid");
+t("…an array is not a number or a code (UP-3)", readQuery({ number: ["PTS 26/01-T-1-12345"], code: ["C07"] }) === null && readQuery({ number: "PTS 26/01-T-1-12345", code: 7 as unknown as string }) === null);
+t("…the register opens a laboratory's name under its own purpose (SC-4)", /purpose: "register"/.test(core) && !/purpose: "system"/.test(core));
 
 console.log(`cert-register.test: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

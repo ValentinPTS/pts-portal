@@ -27,6 +27,14 @@
 -- than once. Same access posture as the rest (0018).
 
 begin;
+-- re-run guard (the security sweep, 2026-11-11): a later migration (0050_online_applications) redefines what this
+-- one makes — running this file again after a later one would silently undo it. Nothing is changed then.
+do $$ begin
+  if exists (select 1 from public.app_migrations where name > '0024_identity_store') then
+    raise exception '0024_identity_store is superseded by a later migration — running it again would undo that. Nothing was changed.';
+  end if;
+end $$;
+
 
 create schema if not exists identity;
 revoke all on schema identity from public, anon, authenticated, service_role;

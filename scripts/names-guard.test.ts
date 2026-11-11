@@ -56,5 +56,30 @@ t("app stamp with a reference unchanged", redactCaseEventForStaff(cert) === cert
 const newUpload = ce({ recordedBy: LAB_RECORDER });
 t("new lab stamp unchanged", redactCaseEventForStaff(newUpload) === newUpload);
 
+// the security sweep (SA-1, SC-1, SC-3): an organisation's, a laboratory's or a user's id is the same in
+// every scheme — next to a code it links the codes, and /organizations names it; a waybill leads to the
+// laboratory's address. Never shown to who sees no names — in the subject, before/after, or the text.
+{
+  const UID = "7b81e94d-0bbf-4008-a67c-f454b4bfbdaf", ENT = "529fa393-1111-4222-8333-944455556666";
+  const applied = redactActivityForStaff(ev({ actorRole: "lab", actorEmail: "laboratory", actorId: UID, action: "participant.applied_online", schemeId: "26-11-C-3", targetCode: "2611317", after: { by: `entityuser:${UID}`, participations: 1 } }));
+  t("an account id in after.by — masked", JSON.stringify(applied.after) === JSON.stringify({ by: "•••", participations: 1 }) && applied.actorId === undefined && applied.targetCode === "2611317", JSON.stringify(applied.after));
+  const made = redactActivityForStaff(ev({ action: "entityuser.created", subject: `entityuser:${UID}`, after: { entity: ENT, role: "admin" } }));
+  t("an entity's and a user's id — masked, their kind and the role kept", made.subject === "entityuser:•••" && JSON.stringify(made.after) === JSON.stringify({ entity: "•••", role: "admin" }), `${made.subject} ${JSON.stringify(made.after)}`);
+  const approved = redactActivityForStaff(ev({ action: "registration.approved", subject: `entity:${ENT}`, after: { notice: "sent" } }));
+  t("a registration's line: the entity's id masked", approved.subject === "entity:•••" && JSON.stringify(approved.after) === JSON.stringify({ notice: "sent" }));
+  const admin = redactActivityForStaff(ev({ action: "entity.admin_changed", subject: `entity:${ENT}`, after: { admin: `entityuser:${UID}`, list: [UID, `lab:${ENT}`], nested: { who: `laboratory:${ENT}`, mail: "a@b.bg" } } }));
+  t("…nested, in lists, by kind or as a bare id — masked", !JSON.stringify(admin.after).includes(UID) && !JSON.stringify(admin.after).includes(ENT) && !JSON.stringify(admin.after).includes("a@b.bg"), JSON.stringify(admin.after));
+  const sent = redactActivityForStaff(ev({ action: "delivery.dispatched", schemeId: "S", targetCode: "26111677", subject: "shipment:sh-1", summary: "The object for 26111677 — 2026-11-11, waybill W2-52234", after: { kind: "dispatch", day: "2026-11-11", waybill: "W2-52234", docs: [] } }));
+  t("a waybill — masked in the text and in after; the shipment's own id kept", !sent.summary.includes("W2-52234") && /waybill •••/.test(sent.summary) && (sent.after as Record<string, unknown>).waybill === "•••" && sent.subject === "shipment:sh-1", `${sent.summary} ${JSON.stringify(sent.after)}`);
+  const staff = redactActivityForStaff(ev({ action: "staff.updated", subject: `user:${UID}`, after: { by: "head@ptsbg.eu" } }));
+  t("a line about PTS's own people — as it is", staff.subject === `user:${UID}` && JSON.stringify(staff.after) === JSON.stringify({ by: "head@ptsbg.eu" }));
+  const plain = redactActivityForStaff(ev({ action: "lifecycle.act", schemeId: "S", before: { status: "open" }, after: { status: "running" } }));
+  t("a line with no one in it — as it is", JSON.stringify(plain.before) === JSON.stringify({ status: "open" }) && JSON.stringify(plain.after) === JSON.stringify({ status: "running" }));
+  const disp = redactCaseEventForStaff(ce({ kind: "items_dispatched", source: "auto", ref: "W2-52234", recordedBy: "build" }));
+  const rec = redactCaseEventForStaff(ce({ kind: "receipt_confirmed", source: "auto", ref: "W2-52234", recordedBy: LAB_RECORDER }));
+  const typed = redactCaseEventForStaff(ce({ kind: "note", source: "manual", ref: "R-1", recordedBy: "manager@ptsbg.eu" }));
+  t("the timeline: a dispatch's and a receipt's waybill — not to who sees no names; a typed entry's reference kept", disp.ref === undefined && rec.ref === undefined && disp.recordedBy === "build" && typed.ref === "R-1", JSON.stringify([disp, rec, typed]));
+}
+
 console.log(`names-guard.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

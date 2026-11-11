@@ -12,6 +12,14 @@
 -- transaction; safe to run more than once. Apply after 0041.
 
 begin;
+-- re-run guard (the security sweep, 2026-11-11): a later migration (0044_submissions_scheme_open) redefines what this
+-- one makes — running this file again after a later one would silently undo it. Nothing is changed then.
+do $$ begin
+  if exists (select 1 from public.app_migrations where name > '0042_submissions') then
+    raise exception '0042_submissions is superseded by a later migration — running it again would undo that. Nothing was changed.';
+  end if;
+end $$;
+
 
 create table if not exists public.submission_drafts (
   participant_id uuid primary key references public.participants(id),

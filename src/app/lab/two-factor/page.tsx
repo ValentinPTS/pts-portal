@@ -17,7 +17,7 @@ export default async function ParticipantTwoFactorPage() {
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   return (
     <div style={{ minHeight: "100dvh", background: "var(--bg)" }}>
-      <header className="flex items-center gap-3 px-6 py-3" style={{ background: "#fff", borderBottom: "1px solid var(--line)", color: "var(--ink)" }}>
+      <header className="flex items-center gap-3 px-6 py-3" style={{ background: "#fff", borderBottom: "1px solid var(--line)", color: "var(--ink)", flexWrap: "wrap" }}>
         <span className="font-bold text-lg tracking-tight"><span style={{ color: "var(--green-dark)" }}>PTS</span> Bulgaria</span>
         <span className="text-sm" style={{ color: "var(--muted)" }}>· {L("Портал за участници", "Participant portal")}</span>
         <form action={signOutLabAction} style={{ marginLeft: "auto" }}><button type="submit" className="btn btn-sm">{L("Изход", "Sign out")}</button></form>

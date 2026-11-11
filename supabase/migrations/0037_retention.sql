@@ -19,6 +19,14 @@
 -- Apply after 0036.
 
 begin;
+-- re-run guard (the security sweep, 2026-11-11): a later migration (0055_security_sweep) redefines what this
+-- one makes — running this file again after a later one would silently undo it. Nothing is changed then.
+do $$ begin
+  if exists (select 1 from public.app_migrations where name > '0037_retention') then
+    raise exception '0037_retention is superseded by a later migration — running it again would undo that. Nothing was changed.';
+  end if;
+end $$;
+
 
 -- ── the erasure of a profile on request ──────────────────────────────────────────
 alter table identity.legal_entities add column if not exists erased_at timestamptz;

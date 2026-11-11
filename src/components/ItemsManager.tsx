@@ -16,7 +16,7 @@ const inputStyle: React.CSSProperties = { width: "100%", border: "1px solid var(
 // document editor). Category filter chips (add via the item form, remove reassigns to
 // the default bucket), a live RENDERED preview of each element, and add / edit / delete
 // with BG⇄EN auto-translate. The editor's inline quick-add writes to the same library.
-export default function ItemsManager({ initial, builtins = [] }: { initial: LibraryItem[]; builtins?: Builtin[] }) {
+export default function ItemsManager({ initial, builtins = [], canEdit = true }: { initial: LibraryItem[]; builtins?: Builtin[]; /** may add, edit, remove (UR-1) */ canEdit?: boolean }) {
   const { lang, t } = useLang();
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const [items, setItems] = useState<LibraryItem[]>(initial);
@@ -139,13 +139,13 @@ export default function ItemsManager({ initial, builtins = [] }: { initial: Libr
     <div>
       {/* toolbar: add + category filter chips */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <button className="btn btn-primary" onClick={openNew}>＋ {t("items.new")}</button>
+        {canEdit && <button className="btn btn-primary" onClick={openNew}>＋ {t("items.new")}</button>}
         <span style={{ width: 1, height: 24, background: "var(--line)", margin: "0 4px" }} />
         <button style={chip(!filter)} onClick={() => setFilter("")}>{L("Всички", "All")} <span style={{ opacity: .6 }}>({items.length})</span></button>
         {categories.map((c) => (
           <span key={c} style={chip(filter === c)}>
             <span onClick={() => setFilter(filter === c ? "" : c)} style={{ cursor: "pointer" }}>{categoryLabel(c, lang)} <span style={{ opacity: .6 }}>({countIn(c)})</span></span>
-            {c !== DEFAULT_CAT && (
+            {canEdit && c !== DEFAULT_CAT && (
               <button
                 title={L("Премахни категорията", "Remove category")}
                 onClick={() => removeCategory(c)}
@@ -206,10 +206,10 @@ export default function ItemsManager({ initial, builtins = [] }: { initial: Libr
                 {/* rendered preview (what gets inserted), in the current UI language */}
                 <div style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "8px 10px", background: "#fff", fontFamily: "'PT Serif',Georgia,serif", fontSize: 12.5, lineHeight: 1.5, maxHeight: 108, overflow: "auto" }}
                   dangerouslySetInnerHTML={{ __html: previewHtml(it) }} />
-                <div className="flex gap-2 mt-auto">
+                {canEdit && <div className="flex gap-2 mt-auto">
                   <button className="btn" style={{ fontSize: 12, padding: "4px 10px" }} onClick={() => openEdit(it)}>✎ {t("common.edit")}</button>
                   <button className="btn" style={{ fontSize: 12, padding: "4px 10px", borderColor: "var(--red)", color: "var(--red)" }} onClick={() => del(it)}>{t("common.delete")}</button>
-                </div>
+                </div>}
               </div>
             ))}
           </div>
@@ -223,7 +223,7 @@ export default function ItemsManager({ initial, builtins = [] }: { initial: Libr
             <div className="text-xs font-bold" style={{ letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted)" }}>{L("Вградени елементи", "Built-in elements")}</div>
             <span style={{ fontSize: 12, color: "var(--muted)" }}>{L("готови за добавяне и редактиране", "ready to add & edit")}</span>
             <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
-            <button className="btn" style={{ fontSize: 12, padding: "5px 12px" }} onClick={addAllBuiltins} disabled={busy === "bi:all"}>{busy === "bi:all" ? "…" : L("Добави всички", "Add all")}</button>
+            {canEdit && <button className="btn" style={{ fontSize: 12, padding: "5px 12px" }} onClick={addAllBuiltins} disabled={busy === "bi:all"}>{busy === "bi:all" ? "…" : L("Добави всички", "Add all")}</button>}
           </div>
           <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))" }}>
             {availableBuiltins.map((b) => (
@@ -231,7 +231,7 @@ export default function ItemsManager({ initial, builtins = [] }: { initial: Libr
                 <div className="font-bold" style={{ fontSize: 14 }}>{b.name} <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>· {categoryLabel(b.category, lang)}</span></div>
                 <div style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "8px 10px", background: "#fff", fontFamily: "'PT Serif',Georgia,serif", fontSize: 12.5, lineHeight: 1.5, maxHeight: 108, overflow: "auto" }}
                   dangerouslySetInnerHTML={{ __html: sanitizeDocHtml(`<p>${esc((lang === "bg" ? b.bg : b.en) || "")}</p>`) }} />
-                <button className="btn btn-primary" style={{ fontSize: 12.5, padding: "5px 12px", marginTop: "auto" }} disabled={busy === "bi:" + b.id} onClick={() => addBuiltin(b)}>{busy === "bi:" + b.id ? "…" : L("＋ Добави за редакция", "＋ Add for editing")}</button>
+                {canEdit && <button className="btn btn-primary" style={{ fontSize: 12.5, padding: "5px 12px", marginTop: "auto" }} disabled={busy === "bi:" + b.id} onClick={() => addBuiltin(b)}>{busy === "bi:" + b.id ? "…" : L("＋ Добави за редакция", "＋ Add for editing")}</button>}
               </div>
             ))}
           </div>

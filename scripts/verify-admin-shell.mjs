@@ -25,7 +25,7 @@ const html = async (path) => {
 };
 // refused = sent to the sign-in's refusal (a redirect, or a streamed page's in-page
 // one), or 401/403 — never a page that merely crashed
-const refused = (r) => r.url.includes("denied") || /NEXT_REDIRECT[^"]*login\?denied=1|login\?denied=1/.test(r.text) || r.status === 401 || r.status === 403;
+const refused = (r) => r.url.includes("denied") || /NEXT_REDIRECT[^"]*(?:login\?denied=1|\/denied)|login\?denied=1/.test(r.text) || r.status === 401 || r.status === 403;
 const rail = async () => { await go("/dashboard"); await page.locator("[data-admin-rail]").waitFor(); return page.locator("[data-admin-rail] [data-section]").evaluateAll((els) => els.map((e) => e.getAttribute("data-section")).join(" ")); };
 
 // «Почивни дни» joined «Още» in part 3.4

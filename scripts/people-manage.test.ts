@@ -54,7 +54,7 @@ for (const fn of ["addStaffAction", "inviteStaffAction", "setStaffRoleAction", "
 for (const fn of ["addLabAction", "setLabStatusAction", "inviteLabByIdAction"]) {
   t(`${fn}: who works with laboratory accounts (labs.manage, 2.4) — laboratories are not PTS's people`, guard(fn) === "requireCapAnywhere" && new RegExp(`export async function ${fn}\\([^\\n]*\\{\\n\\s*await requireCapAnywhere\\("labs\\.manage"\\)`).test(actions), guard(fn));
 }
-t("the guard asks the decision above", /export async function canManagePeople[^{]*\{\s*return mayManagePeople\(ctx \?\? \(await getRoleContext\(\)\)\);/.test(roles) && /export async function requirePeopleManager[\s\S]{0,300}if \(!\(await canManagePeople\(ctx\)\)\) redirect\("\/login\?denied=1"\)/.test(roles));
+t("the guard asks the decision above", /export async function canManagePeople[^{]*\{\s*return mayManagePeople\(ctx \?\? \(await getRoleContext\(\)\)\);/.test(roles) && /export async function requirePeopleManager[\s\S]{0,300}if \(!\(await canManagePeople\(ctx\)\)\) redirect\(ctx\.role && ctx\.role !== "lab" \? "\/denied" : "\/login\?denied=1"\)/.test(roles));
 t("…while login is off, the manager persona (as requireManager)", /export async function requirePeopleManager\(\)[^{]*\{\s*if \(!AUTH_ENABLED\) return personaGate\(\["manager"\]\);/.test(roles));
 t("«Потребители»: who manages laboratory accounts, or the head — through a full gate either way (a temporary password, 2FA)", /const peopleManager = await canManagePeople\(ctx\);[\s\S]{0,160}if \(peopleManager\) await requirePeopleManager\(\);\s*else await requireCapAnywhere\("labs\.manage"\);/.test(page));
 for (const fn of ["setStaffRoleAction", "setStaffStatusAction", "setPermanentRoleAction"]) {

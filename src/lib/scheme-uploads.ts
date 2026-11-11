@@ -53,6 +53,12 @@ export async function uploadedDocResponse(up: UploadedDoc, download: boolean): P
   return uploadedBytesResponse(got.bytes, got.mime, up.name, download);
 }
 
+/** A file's own name for «filename*» (RFC 5987): control characters, quotes and slashes out; every byte
+ *  outside the attribute characters percent-encoded. */
+export const utf8Name = (name: string) =>
+  encodeURIComponent(String(name || "document").replace(/[\u0000-\u001F\u007F"\\/]+/g, "_").slice(0, 150))
+    .replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+
 /** Serve a file's bytes as the uploads are served. */
 export function uploadedBytesResponse(bytes: Uint8Array, mime: string, name: string, download: boolean): Response {
   const safeName = (name || "document").replace(/[^\w.\-]+/g, "_");
@@ -62,7 +68,9 @@ export function uploadedBytesResponse(bytes: Uint8Array, mime: string, name: str
   return new Response(out, {
     headers: {
       "content-type": mime,
-      "content-disposition": `${download ? "attachment" : "inline"}; filename="${safeName}"`,
+      // …and the name as it was, for every browser that reads RFC 6266's «filename*» — a Cyrillic name was
+      // left as «_1_.pdf» (the security sweep, UL-4); the plain one stays for the rest
+      "content-disposition": `${download ? "attachment" : "inline"}; filename="${safeName}"; filename*=UTF-8''${utf8Name(name)}`,
       "content-security-policy": "frame-ancestors 'self'",
       "x-content-type-options": "nosniff",
       "cache-control": "private, no-store",

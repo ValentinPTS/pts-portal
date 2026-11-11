@@ -7,10 +7,12 @@ import PasswordForm from "@/components/PasswordForm";
 export const dynamic = "force-dynamic";
 
 // A lab edits its own profile. Email (the login) is shown read-only.
-export default async function LabProfilePage({ searchParams }: { searchParams: Promise<{ review?: string }> }) {
+export default async function LabProfilePage({ searchParams }: { searchParams: Promise<{ review?: string; err?: string }> }) {
   const { lab, userId } = await requireLab();
   // after accepting an invitation: review the data PTS entered (the step 4.4 uses)
-  const review = !!(await searchParams).review;
+  const sp = await searchParams;
+  const review = !!sp.review;
+  const err = sp.err === "eik" || sp.err === "phone" ? sp.err : null;
   const { tr } = await getServerT();
   const field = (name: string, label: string, value: string) => (
     <label style={{ display: "block", marginBottom: 14 }}>
@@ -20,7 +22,7 @@ export default async function LabProfilePage({ searchParams }: { searchParams: P
   );
   return (
     <div style={{ minHeight: "100dvh", background: "var(--bg)" }}>
-      <header className="flex items-center gap-3 px-6 py-3" style={{ background: "#fff", borderBottom: "1px solid var(--line)", color: "var(--ink)" }}>
+      <header className="flex items-center gap-3 px-6 py-3" style={{ background: "#fff", borderBottom: "1px solid var(--line)", color: "var(--ink)", flexWrap: "wrap" }}>
         <span className="font-bold text-lg tracking-tight"><span style={{ color: "var(--green-dark)" }}>PTS</span> Bulgaria</span>
         <span className="text-sm" style={{ color: "var(--muted)" }}>· {tr("header.labPortal")}</span>
       </header>
@@ -30,6 +32,13 @@ export default async function LabProfilePage({ searchParams }: { searchParams: P
         {review && (
           <div role="note" data-review-data className="card" style={{ padding: 14, marginBottom: 14, background: "var(--green-soft)" }}>
             {tr("lab.reviewData")}
+          </div>
+        )}
+        {err && (
+          <div role="alert" data-profile-error={err} className="card" style={{ padding: 14, marginBottom: 14, background: "#fbeeee", color: "#8f2f2f" }}>
+            {err === "eik"
+              ? "Не е записано: ЕИК не е валиден (9 или 13 цифри, контролна цифра). · Not saved: the ЕИК is not valid (9 or 13 digits, check digit)."
+              : "Не е записано: телефонът не се разчита (цифри, интервали, + ( ) - . /). · Not saved: the phone does not read (digits, spaces, + ( ) - . /)."}
           </div>
         )}
         <form action={updateLabProfileAction} className="card" style={{ padding: 24 }}>

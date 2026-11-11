@@ -3,6 +3,7 @@ import { LIBRARY } from "@/lib/blocks";
 import ItemsManager from "@/components/ItemsManager";
 import { getServerT } from "@/lib/i18n-server";
 import { requireStaff } from "@/lib/roles";
+import { mayAnywhereNow } from "@/lib/access";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export default async function ItemsPage() {
     <div>
       <h1 className="text-3xl font-bold" style={{ color: "var(--green-dark)", letterSpacing: "-0.01em" }}>{tr("items.title")}</h1>
       <p style={{ color: "var(--muted)", marginTop: 4, marginBottom: 18 }}>{tr("items.subtitle")}</p>
-      <ItemsManager initial={items} builtins={builtins} />
+      <ItemsManager initial={items} builtins={builtins} canEdit={await mayAnywhereNow("library.manage")} />
     </div>
   );
 }

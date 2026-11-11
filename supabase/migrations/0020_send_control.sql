@@ -17,6 +17,14 @@
 -- Safe to run more than once. Same access posture as the rest (RLS on, no policy,
 -- no rights for anon/authenticated — 0018).
 
+-- re-run guard (the security sweep, 2026-11-11): a later migration (0037_retention) redefines what this
+-- one makes — running this file again after a later one would silently undo it. Nothing is changed then.
+do $$ begin
+  if exists (select 1 from public.app_migrations where name > '0020_send_control') then
+    raise exception '0020_send_control is superseded by a later migration — running it again would undo that. Nothing was changed.';
+  end if;
+end $$;
+
 create table if not exists public.sent_messages (
   id uuid primary key,
   sent_at timestamptz not null default now(),

@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { requireParticipant } from "@/lib/participant-session";
+import { requireParticipant, participantActor, participationsOf } from "@/lib/participant-session";
+import { openLaboratories } from "@/lib/laboratories";
 import { listOpenSchemes, getScheme } from "@/lib/store";
 import { isStarted } from "@/lib/visibility";
 import { isProvisional } from "@/lib/coding-model";
 import { getServerT } from "@/lib/i18n-server";
-import { applyOpenProblem } from "@/lib/lab-apply-model";
+import { applyOpenProblem, earlierProblem } from "@/lib/lab-apply-model";
 import { schemeFull } from "@/lib/waitlist-model";
 import { listParticipants } from "@/lib/participants";
 import { schemeNowMs } from "@/lib/clock";
@@ -17,7 +18,8 @@ export const dynamic = "force-dynamic";
 // draft, Реш. 147), the deadline not passed (on the round's own clock, Sofia's day), the final list not
 // announced. An approved organisation only (Реш. 12): until PTS has checked it, the page says so.
 export default async function LabApplyPage({ searchParams }: { searchParams: Promise<{ done?: string; code?: string; warn?: string }> }) {
-  const { user, entity, persona } = await requireParticipant();
+  const ps = await requireParticipant();
+  const { user, entity, persona } = ps;
   const { lang } = await getServerT();
   const lg: "bg" | "en" = lang === "bg" ? "bg" : "en";
   const L = (bg: string, en: string) => (lg === "bg" ? bg : en);
@@ -26,7 +28,13 @@ export default async function LabApplyPage({ searchParams }: { searchParams: Pro
     .sort((a, b) => (a.dates?.applicationsDue ?? "9999").localeCompare(b.dates?.applicationsDue ?? "9999") || a.number.localeCompare(b.number));
   const approved = entity.state === "active";
   // «Запълнена» (9.3, Реш. 120): a label — an application goes on the waiting list; never the maximum (3.7)
-  const full = new Set((await Promise.all(open.map(async (s) => (schemeFull(s, await listParticipants(s.id)) ? [s.id] : []) as string[]))).flat());
+  const rowsOf = new Map(await Promise.all(open.map(async (s) => [s.id, await listParticipants(s.id)] as const)));
+  const full = new Set(open.filter((s) => schemeFull(s, rowsOf.get(s.id) ?? [])).map((s) => s.id));
+  // a scheme every one of the organisation's laboratories has applied to already: said here too, never a
+  // bare «Заяви» that only leads to «вече е заявила» (the security sweep, UL Q5)
+  const labs = approved ? (await openLaboratories({ actor: participantActor(user.id), purpose: "lab.own" }, { entityId: entity.id })).filter((l) => l.state === "active") : [];
+  const mine = approved ? await participationsOf(ps) : [];
+  const appliedAll = new Set(open.filter((s) => labs.length > 0 && labs.every((l) => !!earlierProblem(mine.filter((m) => m.schemeId === s.id && m.laboratoryId === l.id).map((m) => (rowsOf.get(s.id) ?? []).find((x) => x.id === m.participantId) ?? { standing: null })))).map((s) => s.id));
   const doneScheme = sp.done ? await getScheme(sp.done) : null;
   const done = doneScheme && isStarted(doneScheme) ? doneScheme : null;
   // a provisional reference is never shown to the laboratory (5.3)
@@ -59,7 +67,9 @@ export default async function LabApplyPage({ searchParams }: { searchParams: Pro
                     {" · "}{s.type === "C" ? L("калибриране", "calibration") : L("изпитване", "testing")}
                   </div>
                 </div>
-                <Link href={`/lab/apply/${s.id}`} className="btn btn-primary btn-sm" data-apply-open={s.id}>{L("Заяви", "Apply")}</Link>
+                {appliedAll.has(s.id)
+                  ? <Link href={`/lab/apply/${s.id}`} className="btn btn-sm" data-apply-open={s.id} data-apply-done-already>{L("Заявено — виж", "Applied — see")}</Link>
+                  : <Link href={`/lab/apply/${s.id}`} className="btn btn-primary btn-sm" data-apply-open={s.id}>{L("Заяви", "Apply")}</Link>}
               </section>
             ))}
           </div>

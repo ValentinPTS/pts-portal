@@ -32,6 +32,10 @@ import { META_GAP_TEXT, type ExternalProvider } from "@/lib/scheme-meta";
 
 export interface SchemeEditorInit {
   id: string;
+  /** the save count the form was opened at (UM-2) */
+  editRev?: number;
+  /** who may read it but not save it (an auditor, the quality manager…): no save offered (UR-1) */
+  readOnly?: boolean;
   number: string;
   type: "T" | "C";
   // what the number carries, as kept (Реш. 102, 3.1)
@@ -348,6 +352,7 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
   return (
     <form action={updateSchemeAction} onSubmit={guardCalibrationEdit}>
       <input type="hidden" name="id" value={init.id} />
+      <input type="hidden" name="editRev" value={init.editRev ?? 0} />
       <input ref={confirmRef} type="hidden" name="calslotsConfirm" defaultValue="" />
 
       {/* ── Essentials ─────────────────────────────────────────────── */}
@@ -740,7 +745,9 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
         )}
       </details>
 
-      <SaveBar id={init.id} label={L("Запази промените", "Save changes")} cancel={L("Отказ", "Cancel")} />
+      {init.readOnly
+        ? <div data-read-only className="card p-3 mt-7 text-sm" style={{ color: "var(--muted)" }}>{L("Само за четене: вашата роля не записва данните на схемата.", "Read only: your role does not save the scheme's data.")}</div>
+        : <SaveBar id={init.id} label={L("Запази промените", "Save changes")} cancel={L("Отказ", "Cancel")} />}
     </form>
   );
 }

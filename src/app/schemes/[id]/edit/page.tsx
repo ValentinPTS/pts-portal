@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PROVIDER_PROBLEM_TEXT, reportDate, legacyProviders, metaGaps, type ProviderProblem } from "@/lib/scheme-meta";
 import { designApproved } from "@/lib/lifecycle-model";
 import { M1_BLOCKS, usesM1 } from "@/lib/m1-render";
-import { requireCap } from "@/lib/access";
+import { requireCap, mayNow } from "@/lib/access";
 import { notFound } from "next/navigation";
 import { getScheme } from "@/lib/store";
 import SchemeEditor from "@/components/SchemeEditor";
@@ -60,6 +60,13 @@ export default async function EditSchemePage({
         {tr("edit.subtitle")}
       </p>
 
+      {err === "stale" && (
+        <div role="alert" data-edit-stale className="card p-3 mt-3 text-sm" style={{ background: "#fbeeee", border: "1px solid #e3c8c8", color: "#8f2f2f" }}>
+          {lang === "bg"
+            ? "Не е записано: данните бяха записани от друг раздел или човек, след като отворихте формата. Отдолу е записаното сега — направете промяната си отново."
+            : "Not saved: the data was saved from another tab or by another person after you opened the form. Below is what is saved now — make your change again."}
+        </div>
+      )}
       {err === "list-final" && (
         <div className="card p-3 mt-3 text-sm" data-err-list-final style={{ background: "#fbeeee", border: "1px solid #e3c8c8", color: "#8f2f2f" }}>
           <b>{L("Промените НЕ са запазени.", "The changes were NOT saved.")}</b>{" "}
@@ -190,6 +197,8 @@ export default async function EditSchemePage({
         key={t ?? "form"}
         init={{
           id: s.id,
+          editRev: s.editRev ?? 0,
+          readOnly: !(await mayNow("scheme.edit", id)),
           number: s.number,
           type: s.type,
           kind: s.kind,

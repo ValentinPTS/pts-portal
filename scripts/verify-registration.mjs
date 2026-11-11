@@ -153,7 +153,9 @@ try {
   // ── each notice on record, to the official e-mail ──
   await go("/notices");
   const sent = await text(page.locator("[data-sent]"));
-  t("on record: the profile made, the users joined (by the administrator, by PTS), the administrator changed — each to the official e-mail", ["profile.created", "profile.user_joined", "profile.admin_changed"].every((k) => sent.includes(k)) && (sent.match(/profile\.user_joined/g) ?? []).length >= 2 && sent.includes(OFFICIAL), sent.slice(0, 400));
+  // the kinds as the page keeps them (data-kind) — shown in words since the security sweep (UR-2)
+  const kinds = await page.locator("[data-sent] [data-kind]").evaluateAll((els) => els.map((e) => e.getAttribute("data-kind")));
+  t("on record: the profile made, the users joined (by the administrator, by PTS), the administrator changed — each to the official e-mail", ["profile.created", "profile.user_joined", "profile.admin_changed"].every((k) => kinds.includes(k)) && kinds.filter((k) => k === "profile.user_joined").length >= 2 && sent.includes(OFFICIAL) && !/profile\.(created|user_joined)/.test(sent), sent.slice(0, 400));
 
   // ── a refusal, kept with its reason ──
   await register({ org: ORG2, eik: EIK2, name: "Отказан", email: `no${stamp}@lab-test.bg` });

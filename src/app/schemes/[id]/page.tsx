@@ -571,7 +571,7 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
           </div>
         );
       })()}
-      <SchemeDocuments schemeId={id} lang={lang} stages={stages} lists={lists} />
+      <SchemeDocuments schemeId={id} lang={lang} stages={stages} lists={lists} canWrite={await mayNow("scheme.edit", id)} />
       {/* 5.9: which documents ask to be acknowledged, and how many have — counts, no code named */}
       {(() => {
         const going = isStarted(s) ? participantsNow.filter((p) => inFinalRound(s, p)) : [];

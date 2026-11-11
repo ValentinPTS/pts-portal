@@ -23,6 +23,7 @@ export const IDENTITY_PURPOSES = [
   "lab.own", // the laboratory itself, in its own portal
   "write", // adding or editing a participant
   "system", // a job of the portal itself (reminders)
+  "register", // the public certificate register: a valid lookup's laboratory (10.4; the security sweep, SC-4)
 ] as const;
 export type IdentityPurpose = (typeof IDENTITY_PURPOSES)[number];
 export type Opener = { actor: string; purpose: IdentityPurpose };

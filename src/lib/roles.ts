@@ -136,7 +136,7 @@ async function personaGate(allowed: readonly EffectiveRole[]): Promise<void> {
   // nothing opens — the open mode is the developer's own computer (1.11, 2.4)
   if (onDeployment()) redirect("/login?denied=1");
   const ctx = await getRoleContext();
-  if (ctx.persona && !allowed.includes(ctx.role as EffectiveRole)) redirect("/login?denied=1");
+  if (ctx.persona && !allowed.includes(ctx.role as EffectiveRole)) redirect(ctx.role === "lab" ? "/login?denied=1" : "/denied");
 }
 
 // Gate for manager-only pages/actions (Users & roles, name reveal, report issuing).
@@ -147,7 +147,7 @@ export async function requireManager(): Promise<void> {
   const ctx = await getRoleContext();
   if (!ctx.email) redirect("/login");
   if (ctx.mustChangePassword) redirect("/auth/set-password?must=1"); // a temporary password first (1.5)
-  if (ctx.role !== "manager") redirect("/login?denied=1");
+  if (ctx.role !== "manager") redirect(ctx.role && ctx.role !== "lab" ? "/denied" : "/login?denied=1"); // UR-1
   if (REQUIRE_2FA && !ctx.aal2) redirect("/account?enroll=1");
 }
 
@@ -164,7 +164,7 @@ export async function requirePeopleManager(): Promise<void> {
   const ctx = await getRoleContext();
   if (!ctx.email) redirect("/login");
   if (ctx.mustChangePassword) redirect("/auth/set-password?must=1"); // a temporary password first (1.5)
-  if (!(await canManagePeople(ctx))) redirect("/login?denied=1");
+  if (!(await canManagePeople(ctx))) redirect(ctx.role && ctx.role !== "lab" ? "/denied" : "/login?denied=1"); // UR-1
   if (REQUIRE_2FA && !ctx.aal2) redirect("/account?enroll=1");
 }
 
@@ -189,6 +189,6 @@ export async function requireWriter(): Promise<void> {
   const ctx = await getRoleContext();
   if (!ctx.email) redirect("/login");
   if (ctx.mustChangePassword) redirect("/auth/set-password?must=1"); // a temporary password first (1.5)
-  if (ctx.role !== "manager" && ctx.role !== "staff") redirect("/login?denied=1");
+  if (ctx.role !== "manager" && ctx.role !== "staff") redirect(ctx.role && ctx.role !== "lab" ? "/denied" : "/login?denied=1"); // UR-1
   if (REQUIRE_2FA && !ctx.aal2) redirect("/account?enroll=1");
 }

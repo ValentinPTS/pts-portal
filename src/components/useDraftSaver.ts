@@ -72,7 +72,16 @@ export function useDraftSaver({ schemeId, participantId, initial, rev, savedAt }
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [unsaved]);
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  // leaving by a link inside the portal raises no «beforeunload»: what was typed and not yet sent is
+  // saved as the form goes, never dropped with its timer (the security sweep, UL-2 — a value typed
+  // within four seconds of «← Към участието» came back empty)
+  const saveNow = useRef(save);
+  useEffect(() => { saveNow.current = save; });
+  useEffect(() => () => {
+    const pending = timer.current !== null || JSON.stringify(latest.current) !== lastSent.current;
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    if (pending && !stopped.current) void saveNow.current();
+  }, []);
   /** Save now, waiting for any save in flight (6.4: the review submits exactly what was saved) —
    *  the revision saved, or null when the draft could not be saved (stale, an error). */
   const flush = async (): Promise<number | null> => {

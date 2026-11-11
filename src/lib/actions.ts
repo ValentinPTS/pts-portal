@@ -23,6 +23,9 @@ import { publishFeed, feedDigest, feedBase, feedBaseMissing, latestPublication }
 import { readFeedback, keysOf, wordsOf, feedbackOffered, FEEDBACK_PROBLEM_TEXT } from "./feedback-model";
 import { giveFeedback } from "./feedback";
 import { lookupCertificate, requestAddress } from "./cert-register";
+import { publicFormAllowed } from "./public-limit";
+import { imageUrlAllowed } from "./image-hosts";
+import { validateEik } from "./verify-eik";
 import { REGISTER_TEXT, type RegisterAnswer } from "./cert-register-model";
 import { getServerT } from "./i18n-server";
 import { fixPrices } from "./scheme-prices";
@@ -292,7 +295,9 @@ export async function saveDocTemplateAction(
   if (!bg.trim() && !en.trim()) return { error: "Nothing to save — the document is empty." };
   const item = await addSavedTemplate({
     docKey, type: type === "C" ? "C" : "T", name: name.trim(),
-    bg: markCodedList(docKey, String(bg ?? "")), en: markCodedList(docKey, String(en ?? "")),
+    // sanitized as a document is (the security sweep, SI-1: a template was stored as typed, and every
+    // scheme that took it carried it)
+    bg: markCodedList(docKey, sanitizeDocHtml(String(bg ?? ""))), en: markCodedList(docKey, sanitizeDocHtml(String(en ?? ""))),
   });
   await settingChanged(`Шаблон на документ «${name.trim()}» (${docKey}) записан`, `A reusable template for ${docKey} saved.`, `doc-template:${item.id}`);
   return { item };
@@ -629,7 +634,7 @@ export async function setDocSentAction(
   // Refuse to release an empty slot — a laboratory opening a blank document is
   // worse than not having it yet. Either an uploaded file or a built body will do.
   if (!scheme.uploads?.[docKey] && !hasDocContent(scheme, docKey)) {
-    return { error: "There is nothing in this document yet — upload a file or create it first." };
+    return { error: EDITION_REFUSAL.empty };
   }
 
   // Already with the participants: a second «Изпрати» (a stale tab, a colleague)
@@ -823,12 +828,13 @@ export async function withdrawReleaseAction(schemeId: string, releaseId: string)
 }
 
 const EDITION_REFUSAL: Record<string, string> = {
-  reason: "From the second edition on, say what changed and why (5 characters at least).",
-  "too-long": "The note is too long (1000 characters at most each).",
-  empty: "There is nothing in this document yet — upload a file or create it first.",
-  conflict: "Someone issued an edition of this document at the same moment. Reload and look at it first.",
-  editionless: "This document has no editions: it is drawn from the live data.",
-  failed: "Could not keep the edition's file, so nothing was issued. Try again in a moment.",
+  // both languages, as the rest of the table (the security sweep, UM-3)
+  reason: "От втората редакция нататък напишете какво е променено и защо (поне 5 знака). · From the second edition on, say what changed and why (5 characters at least).",
+  "too-long": "Бележката е твърде дълга (най-много 1000 знака всяка). · The note is too long (1000 characters at most each).",
+  empty: "В документа още няма нищо — качете файл или го създайте. · There is nothing in this document yet — upload a file or create it first.",
+  conflict: "Някой издаде редакция на този документ в същия момент. Презаредете и я вижте първо. · Someone issued an edition of this document at the same moment. Reload and look at it first.",
+  editionless: "Този документ няма редакции: съставя се от текущите данни. · This document has no editions: it is drawn from the live data.",
+  failed: "Файлът на редакцията не можа да се запази, затова нищо не е издадено. Опитайте отново след малко. · Could not keep the edition's file, so nothing was issued. Try again in a moment.",
   incomplete: "Документът не е готов за издаване: има места «за попълване», липсва заглавие от M1 или число, което вече не е на схемата. · The document is not ready to issue: a place to fill in, a missing M1 heading, or a number that is no longer the scheme's.",
   "by-email": "След Gate B документът още казва, че фактурите, протоколът или декларацията се изпращат по имейл — създайте го наново от шаблона или поправете изречението, после го издайте. · Past Gate B, the document still says the invoices, the protocol or the declaration go by e-mail — rebuild it from the template or correct the sentence, then issue it.",
   amendment: "Планът и поканата на отворена схема се изменят само със заповед за изменение — «Изменения» на схемата (Zadanie §3). · Once the scheme is open, the plan and the invitation change only by an order of amendment — the scheme's «Amendments».",
@@ -1298,31 +1304,14 @@ export async function translateDocHtmlAction(html: string, docKey?: string): Pro
     // remaining run as well — and a silently partial translation is worse than none,
     // because nothing on the page shows which paragraphs are genuinely translated.
     if (r.error) return { error: r.error };
-    out.push(r.text ?? part);
+    // a third party's words, as TEXT — never markup (the security sweep, SI-5: its public memory takes
+    // anyone's «translations», and the result went into the editor as HTML)
+    out.push(r.text !== undefined && r.text !== null ? String(r.text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : part);
   }
   return { html: out.join("") };
 }
 
-// ── public application form: lightweight in-memory rate-limit per IP ──────────
-const appHits = new Map<string, number[]>();
-function allowSubmission(ip: string, max = 8, windowMs = 15 * 60 * 1000): boolean {
-  const now = Date.now();
-  // Bound memory: when the map grows large, drop entries whose window has expired
-  // (a flood of unique IPs would otherwise leak one entry per IP forever).
-  if (appHits.size > 5000) {
-    for (const [k, v] of appHits) {
-      if (v.every((t) => now - t >= windowMs)) appHits.delete(k);
-    }
-  }
-  const arr = (appHits.get(ip) ?? []).filter((t) => now - t < windowMs);
-  if (arr.length >= max) {
-    appHits.set(ip, arr);
-    return false;
-  }
-  arr.push(now);
-  appHits.set(ip, arr);
-  return true;
-}
+// (the public forms' limit: lib/public-limit — in the database; the security sweep, SD-1)
 
 // Public self-service application (заявка). No auth (public form). Spam defence:
 // a honeypot field + a per-IP rate limit; both fail silently to the thank-you
@@ -1336,8 +1325,8 @@ export async function submitApplicationAction(formData: FormData) {
 
   if (get("website")) redirect("/apply/thanks"); // honeypot tripped → drop quietly
   const h = await headers();
-  const ip = (h.get("x-forwarded-for") ?? "local").split(",")[0].trim();
-  if (!allowSubmission(ip)) redirect("/apply/thanks"); // rate-limited → drop quietly
+  // counted in the database, by the platform's address (the security sweep, SD-1)
+  if (!(await publicFormAllowed("application", requestAddress(h)))) redirect("/apply/thanks"); // rate-limited → drop quietly
 
   const scheme = await getScheme(schemeId);
   // basic server-side validation (the client validates too). Only an OPEN scheme
@@ -1610,13 +1599,20 @@ export async function updateLabProfileAction(formData: FormData) {
   const ls = await getLabSession();
   if (!ls) redirect("/lab/login");
   const get = (k: string) => String(formData.get(k) ?? "").trim().slice(0, 200);
+  // checked as everywhere else: an ЕИК by its check digit, a phone that reads as one — a «123» or a word
+  // was saved with no word said (the security sweep, UL-6)
+  const eikTyped = get("eik");
+  const eik = eikTyped ? validateEik(eikTyped) : { ok: true, normalized: "" };
+  if (!eik.ok) redirect("/lab/profile?err=eik");
+  const phone = get("phone");
+  if (phone && !/^[+()0-9 .\-/]{5,40}$/.test(phone)) redirect("/lab/profile?err=phone");
   await updateLab(ls.lab.id, {
     name: get("name") || ls.lab.name,
     accreditationCert: get("accreditationCert"),
     contactPerson: get("contactPerson"),
-    phone: get("phone"),
+    phone,
     registeredAddress: get("registeredAddress"),
-    eik: get("eik"),
+    eik: eik.normalized,
     vat: get("vat"),
     mol: get("mol"),
   });
@@ -1838,9 +1834,10 @@ export async function submitRegistrationAction(_prev: RegistrationFormState, for
   const { entity, laboratory, person } = r.value;
   // the per-address limit counts what could be a registration — never a mistake in the form; reached,
   // it is said (it tells nothing of any organisation): a valid registration is never dropped unsaid
+  // counted in the database, by the platform's address (an IPv6 one by its /64) — each registration is
+  // kept for years: one server's memory was not a limit (the security sweep, SD-1, SI-6)
   const h = await headers();
-  const ip = (h.get("x-forwarded-for") ?? "local").split(",")[0].trim();
-  if (!allowSubmission(ip)) return mistake("later");
+  if (!(await publicFormAllowed("registration", requestAddress(h)))) return mistake("later");
   // anti-spam: at most 3 pending registrations per e-mail — dropped quietly (neutral)
   if ((await countPendingByEmail(person.email)) >= 3) redirect("/register/thanks");
   const region: LabRegion = isEu(entity.country) ? "eu" : "non_eu";
@@ -3366,7 +3363,9 @@ export async function updateSchemeAction(formData: FormData) {
   // of an attribute in the rendered documents (defense alongside esc()).
   const coverRaw = str("coverImage", existing.coverImage ?? "");
   const coverImage =
-    coverRaw === "" || (/^(\/|https:\/\/)/.test(coverRaw) && !/["'<>\s\\]/.test(coverRaw))
+    // an https picture only from the portal's own places (1.12; the security sweep, SI-2/SI-3 — every
+    // laboratory's browser, and the PDF renderer, fetch it)
+    coverRaw === "" || ((coverRaw.startsWith("/") && !coverRaw.startsWith("//") || imageUrlAllowed(coverRaw)) && !/["'<>\s\\]/.test(coverRaw))
       ? coverRaw
       : existing.coverImage ?? "";
   const cwRaw = parseInt(str("coverImageWidth", ""), 10);
@@ -3441,7 +3440,12 @@ export async function updateSchemeAction(formData: FormData) {
   // labs' requested participations, the T-scheme scoring keys) are remapped from
   // the FRESH state inside the lock — a заявка submitted while this action was
   // running is remapped too, never clobbered (lib/param-remap).
+  // the form as it was opened: a save from a stale tab would write back every field it showed — the other
+  // tab's save silently undone (the security sweep, UM-2). Refused, the person sees what is saved now.
+  const seenRev = formData.get("editRev");
+  let staleEdit = false;
   await updateSchemeWith(id, (current) => {
+    if (seenRev !== null && Number(seenRev) !== (current.editRev ?? 0)) { staleEdit = true; return {}; }
     // …re-checked here: a final list announced meanwhile refuses the reorder (5.2 review)
     if (paramsRestructured && currentFinalList(current)) { listFinalLate = true; return {}; }
     // official PTS number — shown on every document + drives the year grouping.
@@ -3595,8 +3599,10 @@ export async function updateSchemeAction(formData: FormData) {
       const filled = backfillCharacteristicIds(moved, withIds.params.map((p) => p.id));
       return filled !== current.batches ? { batches: filled } : {};
     })(),
+      editRev: (current.editRev ?? 0) + 1,
     };
   });
+  if (staleEdit) redirect(`/schemes/${id}/edit?err=stale&t=${Date.now()}`);
   if (listFinalLate) redirect(`/schemes/${id}/edit?err=list-final`);
 
   // Participants' registered characteristics follow their standards too (separate
@@ -4150,7 +4156,9 @@ async function myChainStop(schemeId: string): Promise<{ scheme: Scheme; code: st
   // on record as the account that pressed it — a laboratory's or the entity user's (1.9)
   const log = async (action: string, meta: { targetCode: string; summary: string }) => {
     if (ls) await logActivity(action, { schemeId, ...meta });
-    else await logAs({ kind: "lab", userId: ps!.user.id }, action, { schemeId, ...meta, after: { by: `entityuser:${ps!.user.id}` } });
+    // the account is the line's actor (redacted to who sees no names) — never again in its after: next to
+    // a code, an id the same in every scheme links the codes (the security sweep, SA-1)
+    else await logAs({ kind: "lab", userId: ps!.user.id }, action, { schemeId, ...meta });
   };
   return { scheme, code: scheme.chain.stops[index].code!, index, log };
 }
@@ -4371,7 +4379,8 @@ export async function decideNoticeAction(formData: FormData): Promise<void> {
   if (changed && decision === "release") await logActivity("notice.released", { subject: `notice:${id}`, summary: "Notice to a laboratory released («Изпрати»)" });
   if (changed && decision === "withhold") await logActivity("notice.withheld", { subject: `notice:${id}`, summary: "Notice to a laboratory withheld" });
   revalidatePath("/notices");
-  redirect("/notices");
+  // decided meanwhile (another tab, another person): said, never a silent nothing (the security sweep, UM Q4)
+  redirect(decision && !changed ? "/notices?refused=decided" : "/notices");
 }
 
 
@@ -4934,7 +4943,7 @@ export async function chooseCarrierAction(participantId: string, offerId: string
   if ("error" in r) return r;
   // on record as the laboratory's act — by the same ids as its other acts
   const whoId = viewer.kind === "entity" ? viewer.userId ?? "dev-persona" : (await getLabSession())?.userId ?? "lab";
-  await logAs({ kind: "lab", userId: whoId }, "carrier.chosen", { schemeId: t.scheme.id, targetCode: t.part.code, after: { by }, summary: `The laboratory chose its carrier (${t.part.code}) — from PTS's offers (Реш. 128)` });
+  await logAs({ kind: "lab", userId: whoId }, "carrier.chosen", { schemeId: t.scheme.id, targetCode: t.part.code, summary: `The laboratory chose its carrier (${t.part.code}) — from PTS's offers (Реш. 128)` });
   await notifyCarrierChosen(t.scheme.id, t.scheme.number, t.part.code);
   revalidatePath(`/lab/p/${t.part.id}`);
   revalidatePath(`/schemes/${t.scheme.id}/participants`);
@@ -6169,6 +6178,8 @@ const regProblem = (code: string) => { const t = registrationProblemText(code); 
 
 /** A person's login for a participant's user: never one of PTS's people, nor an earlier laboratory
  *  account, nor another user's (4.3) — `except` the user already made for it. A lookup that fails refuses. */
+const JOIN_LOGIN_REFUSALS = new Set((["staff", "lab-account", "taken"] as const).map((k) => sayUser(k).error));
+const JOIN_HELD_FOR_PTS = "Тази заявка не може да се одобри оттук — остава за PTS. · This request cannot be approved here — it is left for PTS.";
 async function personLoginProblem(actor: string, email: string, except?: string): Promise<{ error: string } | null> {
   try {
     if (await providerMailbox(email)) return sayUser("staff");
@@ -6375,7 +6386,10 @@ export async function decideJoinAction(id: string, approve: boolean, reasonIn?: 
   const shown = invitePreview();
   if (inviteKey !== shown.key) return { error: "Текстът на поканата е променен — отворете страницата отново. · The invitation's text has changed — open the page again." };
   const j = await joinUser(a, entity.id, actor, { as: "admin", by: `entityuser:${user.id}` });
-  if ("error" in j) return j;
+  // whose login the e-mail already is (PTS's people, an earlier laboratory account, another user) is never
+  // told to an organisation's administrator — anyone may register a request to join with any e-mail
+  // (the security sweep, SA-4): one neutral answer, the request left pending for PTS, which sees why
+  if ("error" in j) return JOIN_LOGIN_REFUSALS.has(j.error) ? { error: JOIN_HELD_FOR_PTS } : j;
   // the invitation — the portal's own fixed text, shown and sent on the administrator's action; when it
   // cannot go, PTS sends it from «Организации» (the user waits there as «поканен»)
   const inv = await sendParticipantInvite(j.user, { by: `entityuser:${user.id}`, ref: `invite:${shown.key}` }, actor, "triggered");
@@ -6533,7 +6547,7 @@ export async function labApplyAction(formData: FormData): Promise<{ ok: true; co
   if (p === "already" || p === "refused") return say(p);
   if (!p) return FAILED;
   const whoId = user.authUserId ?? "dev-persona";
-  await logAs({ kind: "lab", userId: whoId }, "participant.applied_online", { schemeId: scheme.id, targetCode: p.code, after: { by: `entityuser:${user.id}`, participations: p.participations, ownCourier: r.value.ownCourier }, summary: `${isProvisional(p.code) ? `Online application ${p.code} (no code until the coding act)` : `Participant ${p.code} applied online`} — from the laboratory's portal (9.2)${p.drawnFrom ? ` (laboratory number drawn at random from ${p.drawnFrom} free — D17)` : ""}` });
+  await logAs({ kind: "lab", userId: whoId }, "participant.applied_online", { schemeId: scheme.id, targetCode: p.code, after: { participations: p.participations, ownCourier: r.value.ownCourier }, summary: `${isProvisional(p.code) ? `Online application ${p.code} (no code until the coding act)` : `Participant ${p.code} applied online`} — from the laboratory's portal (9.2)${p.drawnFrom ? ` (laboratory number drawn at random from ${p.drawnFrom} free — D17)` : ""}` });
   // a code assigned now only at admission (D17); else at the coding act (5.3) — as PTS's entry (5.1)
   if (!isProvisional(p.code)) {
     await addCaseEvent({ schemeId: scheme.id, code: p.code, kind: "code_assigned", at: await roundDay(scheme.id), source: "auto" });
@@ -6870,7 +6884,8 @@ async function ownGoingOn(schemeId: string, participantId: string) {
   const by = ls ? `lab:${ls.lab.id}` : `entityuser:${ps!.user.id}`;
   const log = async (action: string, meta: { targetCode: string; subject?: string; summary: string; after?: Record<string, unknown> }) => {
     if (ls) await logActivity(action, { schemeId, ...meta });
-    else await logAs({ kind: "lab", userId: ps!.user.id }, action, { schemeId, ...meta, after: { ...(meta.after ?? {}), by } });
+    // the account is the line's actor — never in its after, next to a code (the security sweep, SA-1)
+    else await logAs({ kind: "lab", userId: ps!.user.id }, action, { schemeId, ...meta });
   };
   return { scheme, part, by, log };
 }

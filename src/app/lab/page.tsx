@@ -304,7 +304,6 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
             lang={lang}
             state={it.chain.state}
             position={it.chain.position?.position}
-            total={it.chain.position?.total}
             wait={it.chain.wait}
             started={it.chain.started}
             closed={it.chain.closed}
@@ -388,7 +387,7 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
 
   return (
     <div style={{ minHeight: "100dvh", background: "var(--bg)" }}>
-      <header className="flex items-center gap-3 px-6 py-3" style={{ background: "#fff", borderBottom: "1px solid var(--line)", color: "var(--ink)" }}>
+      <header className="flex items-center gap-3 px-6 py-3" style={{ background: "#fff", borderBottom: "1px solid var(--line)", color: "var(--ink)", flexWrap: "wrap" }}>
         <span className="font-bold text-lg tracking-tight"><span style={{ color: "var(--green-dark)" }}>PTS</span> Bulgaria</span>
         <span className="text-sm" style={{ color: "var(--muted)" }}>· {tr("header.labPortal")}</span>
         <span className="ml-auto text-sm" style={{ fontWeight: 700 }}>{lab.name}</span>

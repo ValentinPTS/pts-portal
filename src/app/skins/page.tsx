@@ -7,7 +7,7 @@ import DeleteSkinButton from "@/components/DeleteSkinButton";
 import DefaultCoverCard from "@/components/DefaultCoverCard";
 import { getServerT } from "@/lib/i18n-server";
 import { requireStaff } from "@/lib/roles";
-import { getViewer, schemesFor } from "@/lib/access";
+import { getViewer, schemesFor, mayAnywhereNow } from "@/lib/access";
 
 const BUILTIN = new Set(SKINS.map((s) => s.meta.id));
 
@@ -16,6 +16,8 @@ const BUILTIN = new Set(SKINS.map((s) => s.meta.id));
 // visual editor; set a per-type default.
 export default async function SkinsPage({ searchParams }: { searchParams: Promise<{ type?: string }> }) {
   await requireStaff(); // read gate: manager/staff/auditor only
+  // who manages the library sets, makes and removes skins; the rest read (the security sweep, UR-1)
+  const canManage = await mayAnywhereNow("library.manage");
   const { type: t } = await searchParams;
   const type: "T" | "C" = t === "C" ? "C" : "T";
   const skins = await skinsForTypeAsync(type);
@@ -48,10 +50,10 @@ export default async function SkinsPage({ searchParams }: { searchParams: Promis
           <h1 className="text-3xl font-bold" style={{ color: "var(--green-dark)", letterSpacing: "-0.01em" }}>{tr("skins.title")}</h1>
           <p style={{ color: "var(--muted)" }}>{tr("skins.subtitle")}</p>
         </div>
-        <Link href="/skins/new" className="btn btn-primary" style={{ fontSize: 14 }}>{tr("skins.new")}</Link>
+        {canManage && <Link href="/skins/new" className="btn btn-primary" style={{ fontSize: 14 }}>{tr("skins.new")}</Link>}
       </div>
 
-      <DefaultCoverCard current={defaultCover} />
+      {canManage && <DefaultCoverCard current={defaultCover} />}
 
       <div className="flex gap-2 mt-4 mb-5">{tab("T", tr("skins.tabTesting"))}{tab("C", tr("skins.tabCalibration"))}</div>
 
@@ -88,18 +90,18 @@ export default async function SkinsPage({ searchParams }: { searchParams: Promis
                 </div>
                 <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>{sk.meta.description}</p>
                 <div className="flex gap-2 mt-3" style={{ flexWrap: "wrap" }}>
-                  {!isDefault && (
+                  {canManage && !isDefault && (
                     <form action={setDefaultSkinAction}>
                       <input type="hidden" name="type" value={type} />
                       <input type="hidden" name="skinId" value={sk.meta.id} />
                       <button type="submit" className="btn btn-primary" style={{ fontSize: 13 }}>{tr("skins.setDefault")}</button>
                     </form>
                   )}
-                  {isCustom && <Link href={`/skins/${sk.meta.id}/edit`} className="btn" style={{ fontSize: 13 }}>{tr("common.edit")}</Link>}
+                  {canManage && isCustom && <Link href={`/skins/${sk.meta.id}/edit`} className="btn" style={{ fontSize: 13 }}>{tr("common.edit")}</Link>}
                   {sample && (
                     <a href={previewUrl} target="_blank" rel="noreferrer" className="btn" style={{ fontSize: 13 }}>{tr("skins.preview")}</a>
                   )}
-                  {isCustom && <DeleteSkinButton id={sk.meta.id} name={sk.meta.name} />}
+                  {canManage && isCustom && <DeleteSkinButton id={sk.meta.id} name={sk.meta.name} />}
                 </div>
               </div>
             </div>

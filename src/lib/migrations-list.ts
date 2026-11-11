@@ -58,6 +58,7 @@ export const MIGRATIONS = [
   "0052_website_feed",
   "0053_feedback",
   "0054_certificate_register",
+  "0055_security_sweep",
 ] as const;
 
 /** The expected migrations the database has not recorded, in order. */

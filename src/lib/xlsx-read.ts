@@ -7,6 +7,7 @@ import type { Cell } from "./xlsx";
 // openpyxl. Formulas are read by their cached value; styles and dates are not interpreted (a date is
 // its serial number, as stored). Bounded: a file that would inflate past the limit is refused.
 
+const MAX_ROWS = 1_048_576, MAX_COLS = 16_384;
 export interface ReadSheet { name: string; rows: Cell[][] }
 export class XlsxReadError extends Error {}
 
@@ -94,12 +95,16 @@ export function readXlsx(bytes: Uint8Array): ReadSheet[] {
       const rAttr = r[1] ?? r[2] ?? "";
       const rn = Number(attr(`<x ${rAttr}>`, "r"));
       const ri = Number.isFinite(rn) && rn > 0 ? rn - 1 : rows.length;
+      // a sheet's own bounds (Excel: 1 048 576 rows, 16 384 columns) — beyond them a crafted reference
+      // filled arrays until the process ran out of memory (the security sweep, SI-7)
+      if (ri >= MAX_ROWS) throw new XlsxReadError("xlsx: a row beyond a sheet's bounds");
       const row: Cell[] = [];
       let next = 0;
       for (const c of (r[3] ?? "").matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
         const tag = `<c ${c[1]}>`, body = c[2] ?? "";
         const ref = attr(tag, "r");
         const ci = ref ? colIndex(ref.replace(/\d+$/, "")) : next;
+        if (!Number.isFinite(ci) || ci < 0 || ci >= MAX_COLS) throw new XlsxReadError("xlsx: a column beyond a sheet's bounds");
         next = ci + 1;
         const type = attr(tag, "t") ?? "n";
         const v = body.match(/<v>([\s\S]*?)<\/v>/)?.[1];

@@ -1,4 +1,5 @@
 import { AUTH_ENABLED } from "@/lib/auth";
+import { safeNext } from "@/lib/auth-links";
 import LoginForm from "@/components/LoginForm";
 import LanguageToggle from "@/components/LanguageToggle";
 
@@ -11,7 +12,8 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string; denied?: string }>;
 }) {
   const sp = await searchParams;
-  const next = sp.next && sp.next.startsWith("/") ? sp.next : "/";
+  // the security sweep (SA-2): never a backslash or a control character — another site to a browser
+  const next = safeNext(sp.next, "/");
 
   return (
     <div
@@ -31,7 +33,7 @@ export default async function LoginPage({
       <LoginForm next={next} denied={sp.denied === "1"} />
       {!AUTH_ENABLED && (
         <p className="text-center text-xs mt-4" style={{ color: "var(--muted)", maxWidth: 420 }}>
-          Authentication is currently disabled (AUTH_ENABLED is off) — the app is open. This page is for setup.
+          Влизането е изключено (AUTH_ENABLED не е включено) — порталът е отворен; тази страница е за настройка. · Authentication is currently disabled (AUTH_ENABLED is off) — the app is open. This page is for setup.
         </p>
       )}
     </div>

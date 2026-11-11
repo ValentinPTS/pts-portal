@@ -18,7 +18,7 @@ const stamp = Date.now() % 100000;
 const PDF = Buffer.from(`%PDF-1.4\n% Критерии за приемане ${stamp}\n1 0 obj <<>> endobj\ntrailer <<>>\n%%EOF\n`);
 const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Sofia" });
 const levelOf = async (n) => page.locator(`[data-level="${n}"]`).getAttribute("data-level-criteria");
-const refused = async (path) => { const r = await go(path); const text = await page.content(); return page.url().includes("denied") || /login\?denied=1/.test(text) || r?.status() === 401 || r?.status() === 403; };
+const refused = async (path) => { const r = await go(path); const text = await page.content(); return page.url().includes("denied") || /login\?denied=1|NEXT_REDIRECT[^"]*\/denied/.test(text) || r?.status() === 401 || r?.status() === 403; };
 const record = async ({ buffer, name, levels, signedBy }) => {
   await go("/validation");
   const box = page.locator("[data-criteria-form-box]");

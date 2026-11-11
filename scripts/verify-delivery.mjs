@@ -201,8 +201,11 @@ try {
     for (let i = 0; i < checkIds.length; i++) await f.locator(`input[name="check_${checkIds[i]}"][value="${answers[i]}"]`).check();
   };
   // a day before the object left: refused (review)
+  // the form offers no day before the dispatch (the security sweep, UL-3) — the server's own refusal is
+  // checked with the browser's limits taken off
+  t("…the day of receipt: no day before the dispatch offered", /^\d{4}-\d{2}-\d{2}$/.test(await rf.locator('input[name="day"]').getAttribute("min") ?? ""));
   await fill(rf, day(-2), ["yes", "no"]);
-  await rf.evaluate((f) => f.querySelector('input[name="day"]').removeAttribute("max"));
+  await rf.evaluate((f) => { f.querySelector('input[name="day"]').removeAttribute("max"); f.querySelector('input[name="day"]').removeAttribute("min"); });
   await submit(page, rf.locator('button[type="submit"]'), /e=receipt-before/);
   t("…a day of receipt before the dispatch: refused", (await attr(page.locator("[data-page-err]"), "data-page-err")) === "receipt-before");
   // a second tab with the same form, kept open: its protocol after the first is refused (review)

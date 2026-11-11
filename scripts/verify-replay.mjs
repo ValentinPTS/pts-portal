@@ -38,7 +38,7 @@ try {
   // ── a scheme role: no import ──
   await go("/dev/persona?model=statistics_expert@26-01-T-1");
   const r0 = await go("/validation");
-  t("a scheme role: «Валидиране» refused — no import", page.url().includes("denied") || /login\?denied=1/.test(await page.content()) || r0?.status() === 403);
+  t("a scheme role: «Валидиране» refused — no import", page.url().includes("denied") || /login\?denied=1|NEXT_REDIRECT[^"]*\/denied/.test(await page.content()) || r0?.status() === 403);
 
   // ── the software administrator loads a closed round ──
   await go("/dev/persona?model=software_admin");

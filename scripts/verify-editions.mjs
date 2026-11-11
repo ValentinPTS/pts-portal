@@ -150,6 +150,8 @@ try {
   await go(`/dev/persona?role=lab&join=${S}`);
   const lab1 = await page.request.get(`${BASE}/lab/doc/${S}/instruction`);
   t("the laboratory gets edition 1's file", lab1.status() === 200 && Buffer.from(await lab1.body()).equals(PDF1), `status ${lab1.status()}`);
+  // the route's own policy only — the app's baseline never replaces it (the security sweep, SI-2)
+  t("…with the document route's own policy, never the baseline over it", (lab1.headers()["content-security-policy"] ?? "") === "frame-ancestors 'self'", lab1.headers()["content-security-policy"]);
 
   // ── 2. the file replaced: the laboratory still holds edition 1 ──
   await go("/dev/persona?role=manager");
@@ -183,6 +185,7 @@ try {
     /сменен срок/.test(e2) && /т\. 3/.test(e2) && (await ed("instruction", 2).locator("[data-held]").count()) === 1 && (await ed("instruction", 1).count()) === 1 && (await ed("instruction", 1).locator("[data-held]").count()) === 0);
   const e1 = await page.request.get(BASE + ed1Href);
   t("edition 1 still opens — exactly its file", e1.status() === 200 && Buffer.from(await e1.body()).equals(PDF1), `status ${e1.status()}`);
+  t("…with the edition route's own policy (SI-2)", (e1.headers()["content-security-policy"] ?? "") === "frame-ancestors 'self'", e1.headers()["content-security-policy"]);
   await go(`/dev/persona?role=lab&join=${S}`);
   const lab3 = await page.request.get(`${BASE}/lab/doc/${S}/instruction`);
   t("the laboratory now gets edition 2", lab3.status() === 200 && Buffer.from(await lab3.body()).equals(PDF2));

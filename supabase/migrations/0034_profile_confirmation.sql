@@ -18,6 +18,14 @@
 -- Nothing is removed. All in one transaction; safe to run more than once. Apply after 0033.
 
 begin;
+-- re-run guard (the security sweep, 2026-11-11): a later migration (0037_retention) redefines what this
+-- one makes — running this file again after a later one would silently undo it. Nothing is changed then.
+do $$ begin
+  if exists (select 1 from public.app_migrations where name > '0034_profile_confirmation') then
+    raise exception '0034_profile_confirmation is superseded by a later migration — running it again would undo that. Nothing was changed.';
+  end if;
+end $$;
+
 
 -- ── the official e-mail and the confirmation ────────────────────────────────────
 alter table identity.legal_entities add column if not exists official_email text not null default '';

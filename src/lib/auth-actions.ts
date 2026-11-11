@@ -4,8 +4,8 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { createServerSupabase, REQUIRE_2FA, isOwnerEmail, getSessionUser } from "./auth";
-import { afterLinkDest, authErrorText, isOtpType, passwordProblem, RESET_RETURN, safeNext, siteOrigin, type PasswordProblem } from "./auth-links";
+import { AUTH_ENABLED, createServerSupabase, REQUIRE_2FA, isOwnerEmail, getSessionUser } from "./auth";
+import { afterLinkDest, authErrorText, isOtpType, passwordProblem, RESET_RETURN, safeDest, safeNext, siteOrigin, type PasswordProblem } from "./auth-links";
 import { mailAllowedHere } from "./environment";
 import { logActivity, logAs } from "./activity";
 import { getDb } from "./supabase";
@@ -15,6 +15,8 @@ import { getLabByEmail } from "./labs";
 import { recordPending, settle, recentCount, recentCountTo } from "./sent-messages";
 import { entityUserByAuth, acceptEntityUserInvitation, entityUserForLogin } from "./entity-users";
 import { SUPABASE_TEMPLATES, fixedApproval } from "./fixed-texts";
+import { publicFormAllowed } from "./public-limit";
+import { requestAddress } from "./cert-register";
 
 export type AuthState = { error?: string; needsTotp?: boolean };
 
@@ -66,11 +68,7 @@ async function cameByEmailLink(): Promise<boolean> {
 // Where to land after a successful sign-in. `next` is only honoured when it stays
 // inside the area the account is actually allowed in (defence against an open
 // redirect / cross-area jump via a crafted ?next=).
-function safeDest(role: LoginRole, next: string): string {
-  if (role === "lab") return next.startsWith("/lab") && !next.startsWith("/lab/login") ? next : "/lab";
-  const ok = next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/lab") && !next.startsWith("/login");
-  return ok ? next : "/";
-}
+// (safeDest: lib/auth-links — a pure module, tested; the security sweep, SA-2)
 
 // Step 1 of login: email + password. On success we resolve the account's role and
 // route by it. Internal accounts must satisfy 2FA (unless REQUIRE_2FA=false); labs
@@ -91,6 +89,11 @@ export async function signInAction(_prev: AuthState, formData: FormData): Promis
   const password = String(formData.get("password") ?? "");
   const next = String(formData.get("next") ?? "/") || "/";
   if (!email || !password) return { error: "Enter your email and password." };
+  // sign-in off, or no sign-in service configured: said plainly — never the client library's own
+  // error page (the security sweep, UP Q2: «Your project's URL and Key are required…»)
+  if (!AUTH_ENABLED || !process.env.NEXT_PUBLIC_SUPABASE_URL || !(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)) {
+    return { error: "Влизането не е включено тук. · Sign-in is not available here." };
+  }
 
   const supabase = await createServerSupabase();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -426,9 +429,11 @@ export async function requestPasswordResetAction(_prev: PasswordState, formData:
   const email = String(formData.get("email") ?? "").trim().toLowerCase().slice(0, 254);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { message: "Въведете имейл. · Enter an e-mail address." };
   const h = await headers();
-  const ip = (h.get("x-forwarded-for") ?? "local").split(",")[0].trim(); // Vercel sets it
+  // the address as the platform gives it, counted in the database (the security sweep, SD-1: each
+  // request opens the identity store and writes the journal — the count lived in one server's memory)
+  if (!(await publicFormAllowed("password_reset", requestAddress(h)))) return done;
   // a shared mailbox gets no link — and the same answer as any address (Реш. 139)
-  if (!allowed(`ip:${ip}`, 5) || !allowed(`to:${email}`, 3) || !mailAllowedHere(email) || isSharedMailbox(email)) return done;
+  if (!allowed(`to:${email}`, 3) || !mailAllowedHere(email) || isSharedMailbox(email)) return done;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   const origin = siteOrigin(h.get("host") ?? "", h.get("x-forwarded-proto") ?? "https");

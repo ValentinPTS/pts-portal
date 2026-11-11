@@ -82,6 +82,9 @@ export default async function ParticipationPage({ params, searchParams }: { para
   // the calibration device's protocols, filed at its stop
   const chainReceipts = s.type === "C" ? delivery.receipts.filter((r) => r.shipmentId.startsWith("chain:")) : [];
   const today = sofiaToday(schemeNowMs(s));
+  // never a day before its dispatch — refused on the server, and the form then came back empty (the
+  // security sweep, UL-3): not offered at all
+  const awaitingDay = (() => { const d = (awaiting as { day?: unknown } | null)?.day; return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= today ? d : undefined; })();
   const field = { border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px", fontSize: 13, fontFamily: "inherit" } as const;
   const reported = s.status === "report" || s.status === "closed";
   const lockNR = (s.status === "processing" || s.status === "report" || s.status === "closed") && lockWord(lockEntryOf(lockInForce(s.submissionLocks), v.participantId)) === "nr";
@@ -203,7 +206,7 @@ export default async function ParticipationPage({ params, searchParams }: { para
       {viewer.kind === "entity" && viewer.user ? (
         <ParticipantNav lang={lang} active="overview" name={viewer.user.name} role={viewer.user.role} persona={viewer.user.persona} />
       ) : (
-        <header className="flex items-center gap-3 px-6 py-3" style={{ background: "#fff", borderBottom: "1px solid var(--line)", color: "var(--ink)" }}>
+        <header className="flex items-center gap-3 px-6 py-3" style={{ background: "#fff", borderBottom: "1px solid var(--line)", color: "var(--ink)", flexWrap: "wrap" }}>
           <span className="font-bold text-lg tracking-tight"><span style={{ color: "var(--green-dark)" }}>PTS</span> Bulgaria</span>
           <span className="ml-auto text-sm" style={{ fontWeight: 700 }}>{viewer.lab?.name}</span>
           <LanguageToggle />
@@ -325,7 +328,7 @@ export default async function ParticipationPage({ params, searchParams }: { para
             ) : null}
 
             {s.type === "C" && chain ? (
-              <DeviceChainCard schemeId={s.id} lang={lang} state={chain.state} position={chain.position?.position} total={chain.position?.total} wait={chain.wait} started={chain.started} closed={chain.closed} incoming={chain.incoming} next={chain.next} handOnBy={chain.handOnBy} />
+              <DeviceChainCard schemeId={s.id} lang={lang} state={chain.state} position={chain.position?.position} wait={chain.wait} started={chain.started} closed={chain.closed} incoming={chain.incoming} next={chain.next} handOnBy={chain.handOnBy} />
             ) : null}
 
             {card(L("Доставка и получаване", "Delivery and receipt"), (
@@ -376,7 +379,7 @@ export default async function ParticipationPage({ params, searchParams }: { para
                     <input type="hidden" name="participantId" value={v.participantId} />
                     <input type="hidden" name="shipmentId" value={awaiting.id} />
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                      <label style={{ display: "grid", fontSize: 12, color: "var(--muted)" }}>{L("Получен на", "Received on")}<input type="date" name="day" required max={today} defaultValue={today} style={field} /></label>
+                      <label style={{ display: "grid", fontSize: 12, color: "var(--muted)" }}>{L("Получен на", "Received on")}<input type="date" name="day" required max={today} min={awaitingDay} defaultValue={today} style={field} /></label>
                       <label style={{ display: "grid", fontSize: 12, color: "var(--muted)" }}>{L("Час", "Time")}<input type="time" name="time" required style={field} /></label>
                       <label style={{ display: "grid", fontSize: 12, color: "var(--muted)", flex: 1, minWidth: 180 }}>{L("Получил (име и фамилия)", "Received by (name and surname)")}<input name="receivedBy" required maxLength={120} style={field} /></label>
                     </div>

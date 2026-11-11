@@ -61,8 +61,20 @@ export function safeNext(next: string | null | undefined, fallback: string): str
   let u: URL;
   try { u = new URL(n, "http://portal.invalid"); } catch { return fallback; }
   if (u.origin !== "http://portal.invalid") return fallback;
+  // «/.//evil.example», «/x/..//evil.example» normalise to «//evil.example» — another site (the security sweep, SI-4)
+  if (u.pathname.startsWith("//")) return fallback;
   if (u.pathname.startsWith("/auth/confirm")) return fallback;
   return u.pathname + u.search;
+}
+
+// Where to land after a successful sign-in. `next` is only honoured when it stays inside the
+// area the account is allowed in — and first through safeNext: a backslash («/\\evil.example»)
+// or a control character («/<TAB>/evil.example») is read by a browser as another site (the
+// security sweep, SA-2: the sign-in's own check had only refused «//»).
+export function safeDest(role: "internal" | "lab", next: string): string {
+  const n = safeNext(next, role === "lab" ? "/lab" : "/");
+  if (role === "lab") return (n === "/lab" || n.startsWith("/lab/") || n.startsWith("/lab?")) && !n.startsWith("/lab/login") ? n : "/lab";
+  return !n.startsWith("/lab") && !n.startsWith("/login") ? n : "/";
 }
 
 // A password the portal accepts: long enough to be worth having, and typed the

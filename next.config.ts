@@ -24,6 +24,10 @@ const nextConfig: NextConfig = {
     // lab application, which is honeypot- + per-IP-rate-limited, so this doesn't open
     // a meaningful DoS surface; all other actions are auth-gated.
     serverActions: { bodySizeLimit: "16mb" },
+    // …and the proxy buffers a body at 10 MB by default: a 10–15 MB upload under /lab (or any page the
+    // proxy runs on) arrived cut — «Unexpected end of form», a 500 — though the page promises 15 MB (the
+    // security sweep, UL-1). The same 16 MB here. (On Vercel a function's body is about 4.5 MB at most.)
+    proxyClientMaxBodySize: "16mb",
 
     // WHY THE DEV DISK CACHE IS OFF. Next 16.1+ keeps a Turbopack cache for `next dev`
     // in .next/dev/cache, and on 16.2.x it never prunes: it keeps every task it ever
@@ -71,8 +75,12 @@ const nextConfig: NextConfig = {
         // and the Fill route's per-request script nonce were silently overridden by
         // this baseline (leaving the sanitizer as the only XSS defense on those
         // routes). The negative lookahead skips any path ending in `/print` or
-        // containing `/fill/` so their own CSP is the only one sent.
-        source: "/((?!.*(?:/print$|/fill/)).*)",
+        // containing `/fill/` so their own CSP is the only one sent — and every route that
+        // serves a document's EDITION with its own `default-src 'none'` (lib/editions
+        // editionResponse; the security sweep, SI-2: the baseline replaced it on the lab's
+        // and the public's document routes): /lab/doc/…, /apply/<id>/plan|invitation,
+        // /schemes/<id>/released/…, /schemes/<id>/editions/<edition>.
+        source: "/((?!.*(?:/print$|/fill/))(?!lab/doc/|apply/[^/]+/(?:plan|invitation)$|schemes/[^/]+/(?:released/|editions/[^/]+$)).*)",
         headers: [
           {
             key: "Content-Security-Policy",

@@ -17,6 +17,14 @@
 -- Nothing is removed. All in one transaction; safe to run more than once. Apply after 0035.
 
 begin;
+-- re-run guard (the security sweep, 2026-11-11): a later migration (0037_retention) redefines what this
+-- one makes — running this file again after a later one would silently undo it. Nothing is changed then.
+do $$ begin
+  if exists (select 1 from public.app_migrations where name > '0036_notice_recipients') then
+    raise exception '0036_notice_recipients is superseded by a later migration — running it again would undo that. Nothing was changed.';
+  end if;
+end $$;
+
 
 -- ── read state, per person (N28) ─────────────────────────────────────────────────
 create table if not exists public.notification_reads (

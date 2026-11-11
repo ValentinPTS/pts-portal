@@ -20,7 +20,7 @@ export interface ChainNext {
 }
 
 export default function DeviceChainCard({
-  schemeId, lang, state, position, total, wait, started, closed, incoming, next, handOnBy,
+  schemeId, lang, state, position, wait, started, closed, incoming, next, handOnBy,
 }: {
   /** its own window while it holds the instrument (3.4): the day it ends, in working
    *  days from its receipt — or its extension; overdue said, never a block */
@@ -29,7 +29,6 @@ export default function DeviceChainCard({
   lang: "bg" | "en";
   state: "waiting" | "holding" | "done";
   position?: number;
-  total?: number;
   wait?: string;
   started: boolean;
   /** PTS has closed the chain — the device is back; nothing more is recorded. */
@@ -116,8 +115,8 @@ export default function DeviceChainCard({
       <div style={{ ...shell, background: "#f7faf8" }}>
         {label}
         <span style={{ fontSize: 13 }}>
-          {position && total
-            ? L(`Вие сте ${position}-${ordinalSuffixBg(position)} от ${total} в реда.`, `You are ${position} of ${total} in the queue.`)
+          {position
+            ? L(`Вие сте ${position}-${ordinalSuffixBg(position)} в реда.`, `You are number ${position} in the queue.`)
             : L("Вие сте във веригата.", "You are in the chain.")}
         </span>
         <span style={{ fontSize: 12.5, color: "var(--muted)" }}>

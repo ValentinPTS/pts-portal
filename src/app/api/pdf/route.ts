@@ -8,6 +8,7 @@ import { footerLine } from "@/lib/doc-css";
 import { isTestEnvironment } from "@/lib/environment";
 import { requireStaff } from "@/lib/roles";
 import { logActivity } from "@/lib/activity";
+import { docImgSrc, imageUrlAllowed } from "@/lib/image-hosts";
 
 // Generates any document's PDF with Playwright (loads the generic /doc/[doc]/print
 // route), adding A4 page numbers in the footer. Node runtime (Playwright needs Node).
@@ -121,7 +122,12 @@ export async function POST(req: NextRequest) {
   // The markup carries site-relative asset URLs (/brand/logo.png). Without a document
   // URL to resolve against they'd break, so anchor them to this origin. `brand` is
   // exempt from the proxy gate, so the logo needs no credentials.
-  html = html.replace(/<head(\s[^>]*)?>/i, (m) => `${m}<base href="${origin}/">`);
+  // …and the print route's own policy again (the security sweep, SI-3): a page set from a string has
+  // no HTTP headers — its «default-src 'none'» was lost, so a document's script would run here and a
+  // CSS url() or a picture would be fetched from anywhere. No script; pictures only from the portal's
+  // own places.
+  const policy = `default-src 'none'; img-src ${origin} ${docImgSrc()}; style-src 'unsafe-inline' ${origin}; font-src ${origin}; base-uri ${origin}`;
+  html = html.replace(/<head(\s[^>]*)?>/i, (m) => `${m}<meta http-equiv="Content-Security-Policy" content="${policy}"><base href="${origin}/">`);
 
   const browser = await getBrowser();
   const context = await browser.newContext();
@@ -150,6 +156,11 @@ export async function POST(req: NextRequest) {
           return;
         }
         await route.continue();
+        return;
+      }
+      // only a picture from the portal's own places (1.12) — never any other address, from the server (SI-3)
+      if (!imageUrlAllowed(route.request().url())) {
+        await route.abort().catch(() => {});
         return;
       }
       try {

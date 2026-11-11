@@ -119,6 +119,7 @@ export const NOT_ROUND_TABLES: Record<string, string> = {
   doc_templates: "reusable document templates, across rounds",
   folders: "PTS's grouping of schemes; the round names its folder in scheme.json",
   register_attempts: "the certificate register's failed lookups per hour (10.4) — an address only as a keyed hash; no participant, not a round",
+  public_form_attempts: "the public forms' requests per hour (the security sweep) — an address only as a keyed hash; no participant, not a round",
   register_lookups: "how many register lookups a day ended how (10.4) — counts only; not a round",
   website_feed: "what PTS published to its website (10.2) — started schemes' public facts, across rounds, no participant; not a round",
   catalogue_wishes: "an organisation's wishes to be told when the next scheme of a subject starts (10.1, К25) — the organisation's, across rounds, not a round (erased with it)",
@@ -154,7 +155,7 @@ export const SCHEME_FIELDS = {
   revisionDate: "coded", standard: "coded", regNo: "coded", orderDate: "coded", minParticipants: "coded", team: "coded", partner: "coded",
   parameters: "coded", resultTables: "coded", schedule: "coded", prices: "coded", assignedValueMethodEn: "coded", assignedValueMethodBg: "coded",
   scoresEn: "coded", scoresBg: "coded", clauses: "coded", calibration: "coded", scoring: "coded", testClock: "coded",
-  formData: "coded", docActive: "coded", docReady: "coded", sentToParticipants: "coded", releasedEditions: "coded", archivedAt: "coded", archivedBy: "coded",
+  formData: "coded", docActive: "coded", docReady: "coded", sentToParticipants: "coded", releasedEditions: "coded", archivedAt: "coded", archivedBy: "coded", editRev: "coded",
   paidAt: "coded", dates: "coded", chain: "coded", remindedAt: "coded", coding: "coded", deliveryMinDays: "coded",
   // the reference laboratory's values per point (5.7) — the device's, no participant's
   referenceValues: "coded",
@@ -324,13 +325,13 @@ export function codedScheme(s: Scheme): Record<string, unknown> {
 }
 
 /** Delivery and receipt as the coded part holds them (5.6): what went, when, with which
- *  waybill and documents, fit or not — never the carrier, who received it, a hand-over's
- *  receiver, the remarks, a replacement's reason, a problem's words, or which account
- *  entered them. */
+ *  documents, fit or not — never the carrier, the waybill (its tracking page shows where it
+ *  went — the security sweep, SC-3), who received it, a hand-over's receiver, the remarks, a
+ *  replacement's reason, a problem's words, or which account entered them. */
 export const codedDeliveries = (d: Scheme["deliveries"]) => d === undefined ? undefined : Object.fromEntries(Object.entries(d).map(([pid, x]) => [pid, {
   // the carrier is a participant's own (its courier is identity here too) — a hand-over's
   // may be its own person: kept only in identity/ (5.6 review)
-  shipments: (x.shipments ?? []).map(({ handover, reason: _why, carrier: _c, ...sh }) => ({ ...sh, ...(handover ? { handover: { time: handover.time } } : {}) })),
+  shipments: (x.shipments ?? []).map(({ handover, reason: _why, carrier: _c, waybill: _w, ...sh }) => ({ ...sh, ...(handover ? { handover: { time: handover.time } } : {}) })),
   receipts: (x.receipts ?? []).map(({ by: _b, receivedBy: _r, remarks: _m, ...r }) => r),
   problems: (x.problems ?? []).map((pr) => ({ id: pr.id, at: pr.at, ...(pr.resolved ? { resolvedAt: pr.resolved.at } : {}) })),
 }]));
@@ -839,7 +840,7 @@ export function roundTables(s: Scheme, codeOf: (participantId: string) => string
     // releases to one participation or one user (5.4) — the user is a person: identity/ only
     ["coded/releases.csv", (s.releases ?? []).map((r) => ({ id: r.id, docKey: r.docKey, level: r.level, code: r.level === "participation" && r.participantId ? codeOf(r.participantId) : "", editionNo: r.editionNo, at: r.at, by: r.by, withdrawnAt: r.withdrawnAt ?? "", withdrawnBy: r.withdrawnBy ?? "" })), ["id", "docKey", "level", "code", "editionNo", "at", "by", "withdrawnAt", "withdrawnBy"]],
     // delivery and receipt (5.6; the calibration device's protocol at its chain stop, 5.11)
-    ["coded/shipments.csv", deliveries.flatMap(([pid, d]) => (d.shipments ?? []).map((x) => ({ code: codeOf(pid), id: x.id, kind: x.kind, day: x.day, at: x.at, by: x.by, waybill: x.waybill ?? "", docs: (x.docs ?? []).join(" "), handoverTime: x.handover?.time ?? "" }))), ["code", "id", "kind", "day", "at", "by", "waybill", "docs", "handoverTime"]],
+    ["coded/shipments.csv", deliveries.flatMap(([pid, d]) => (d.shipments ?? []).map((x) => ({ code: codeOf(pid), id: x.id, kind: x.kind, day: x.day, at: x.at, by: x.by, docs: (x.docs ?? []).join(" "), handoverTime: x.handover?.time ?? "" }))), ["code", "id", "kind", "day", "at", "by", "docs", "handoverTime"]],
     // of: a shipment (shipments.csv) or a calibration chain stop (chain_stops.csv) — by its id (review)
     ["coded/receipts.csv", deliveries.flatMap(([pid, d]) => (d.receipts ?? []).map((r) => ({ code: codeOf(pid), id: r.id, ofKind: r.shipmentId.startsWith("chain:") ? "chain stop" : "shipment", ofId: r.shipmentId.startsWith("chain:") ? r.shipmentId.slice(6) : r.shipmentId, day: r.day, time: r.time, undamaged: r.undamaged ? "yes" : "no", suitable: r.suitable ? "yes" : "no", failed: Object.entries(r.checks ?? {}).filter(([, v]) => !v).map(([k]) => k).join(" "), at: r.at }))), ["code", "id", "ofKind", "ofId", "day", "time", "undamaged", "suitable", "failed", "at"]],
     ["coded/delivery_problems.csv", deliveries.flatMap(([pid, d]) => (d.problems ?? []).map((x) => ({ code: codeOf(pid), id: x.id, at: x.at, resolvedAt: x.resolved?.at ?? "" }))), ["code", "id", "at", "resolvedAt"]],

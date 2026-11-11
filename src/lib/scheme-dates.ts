@@ -58,6 +58,10 @@ function sofiaOffsetMin(utcMs: number): number {
   return m ? (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3] ?? 0)) : 120;
 }
 
+/** The zone a moment is in, in Bulgaria — «EET» or «EEST», never the browser's own words for it («Гринуич+2»;
+ *  the security sweep, UL-7). */
+export const sofiaZoneAt = (utcMs: number): "EET" | "EEST" => (sofiaOffsetMin(utcMs) === 180 ? "EEST" : "EET");
+
 /** The zone a Bulgarian day is in: EET (UTC+2) in winter, EEST (UTC+3) in summer. */
 export function sofiaZone(day: string): "EET" | "EEST" {
   const ms = Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10)), 12);

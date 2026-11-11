@@ -731,6 +731,9 @@ export interface Scheme {
   // its row, participants, documents and journal all stay.
   archivedAt?: string;
   archivedBy?: string;
+  // how many times «Редактирай данните» saved it — a save from a form opened before the last one is
+  // refused (the security sweep, UM-2: a stale tab silently undid another's save)
+  editRev?: number;
   // Documents the provider sends to ONE laboratory rather than to all of them —
   // today the proforma invoice, whose amount differs per lab. The mirror image
   // of labUploads: code → slot → file. JSONB, no migration.

@@ -13,6 +13,14 @@
 -- Nothing is removed. All in one transaction; safe to run more than once. Apply after 0038.
 
 begin;
+-- re-run guard (the security sweep, 2026-11-11): a later migration (0050_online_applications) redefines what this
+-- one makes — running this file again after a later one would silently undo it. Nothing is changed then.
+do $$ begin
+  if exists (select 1 from public.app_migrations where name > '0039_applications') then
+    raise exception '0039_applications is superseded by a later migration — running it again would undo that. Nothing was changed.';
+  end if;
+end $$;
+
 
 alter table public.participants add column if not exists selections jsonb;
 alter table public.participants add column if not exists standing jsonb;

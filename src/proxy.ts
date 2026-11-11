@@ -74,8 +74,17 @@ async function isParticipantUser(authUserId: string | undefined): Promise<boolea
   return !!u && u.state !== "inactive";
 }
 
+// The parts the matcher below leaves out — asked again here on the NORMALISED path (the
+// security sweep): Next matches the matcher against the path as sent (and decoded), with its
+// «..» segments still in, but serves the page they resolve to — «/certificate/%2e%2e/dashboard»
+// was left out as «certificate» and served the dashboard. So a path with a dot segment (or a
+// backslash) is matched too (the second matcher), and what is public is decided here, on
+// request.nextUrl.pathname (a WHATWG URL: its dot segments resolved).
+const PUBLIC_PATH = /^\/(?:_next\/static\/|_next\/image(?:\/|$)|favicon\.ico$|brand\/|fonts\/|apply(?:\/|$)|register(?:\/|$)|catalogue(?:\/|$)|certificate(?:\/|$)|feed\/|api(?:\/|$))/;
+
 export async function proxy(request: NextRequest) {
   if (!AUTH_ENABLED) return NextResponse.next(); // scaffolded off → app stays open
+  if (PUBLIC_PATH.test(request.nextUrl.pathname)) return NextResponse.next();
 
   // Internal render bypass: the PDF generator (server-side headless browser) fetches
   // owner render routes with a secret token so it isn't blocked by the gate. The token
@@ -174,5 +183,10 @@ export const config = {
   // 10.2 — the last publication), and API
   // routes (which self-guard). Role checks live above
   // (owner area vs lab) and in requireOwner()/requireLab() for mutations.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|brand|fonts/|apply|register(?:/|$)|catalogue(?:/|$)|certificate(?:/|$)|feed/|api).*)"],
+  // The second: any path with a dot segment or a backslash, whatever it starts with — the
+  // proxy then decides on the path it resolves to (PUBLIC_PATH above; the security sweep).
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|brand|fonts/|apply|register(?:/|$)|catalogue(?:/|$)|certificate(?:/|$)|feed/|api).*)",
+    "/(.*(?:\\.\\.|%2[eE]|\\\\|%5[cC]).*)",
+  ],
 };

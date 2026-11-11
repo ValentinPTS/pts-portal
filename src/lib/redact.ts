@@ -27,15 +27,50 @@ export function redactActivityForStaff(e: ActivityEvent): ActivityEvent {
   // the same in every scheme — never sits next to its per-scheme codes.
   const team = TEAM_ROLES.has(e.actorRole);
   const mask = (v: string | undefined) => (v && !team && new RegExp(EMAIL.source, "i").test(v) ? "•••@•••" : v);
+  // the security sweep (SA-1, SC-1): an organisation's, a laboratory's or a user's id is the same
+  // in every scheme — next to a code it links that code to the others, and /organizations to a
+  // name; a courier's waybill leads to the laboratory's address (SC-3). Never shown here, in the
+  // line's subject, its before/after or its text — lines about PTS's own people excepted.
+  const staffLine = STAFF_ACTIONS.test(e.action);
+  if (!staffLine) summary = summary.replace(WAYBILL_TEXT, "$1 •••");
   return {
     ...e,
     actorEmail: e.actorRole === "lab" ? LAB_ACTOR : mask(e.actorEmail) ?? "",
     actorName: e.actorRole === "lab" ? LAB_ACTOR : mask(e.actorName),
     actorId: team ? e.actorId : undefined,
     summary,
+    subject: staffLine ? e.subject : scrubRef(e.subject),
+    before: staffLine ? e.before : scrubIdentity(e.before),
+    after: staffLine ? e.after : scrubIdentity(e.after),
   };
 }
 const TEAM_ROLES = new Set(["manager", "staff", "auditor", "internal", "system"]);
+
+// an identity's reference: «entity:<id>», «entityuser:<id>», «lab:<id>»… — its kind kept, its id not
+const IDENTITY_REF = /^(entity|entityuser|lab|laboratory|user|auth|registration):\s*\S/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// keys that hold who: an account, an organisation, a laboratory, a person, a courier's waybill
+const IDENTITY_KEYS = new Set(["by", "entity", "entityId", "lab", "labId", "laboratory", "laboratoryId", "user", "userId", "entityUserId", "authUserId", "admin", "email", "waybill", "accountsLeft", "documentsLeft"]);
+const WAYBILL_TEXT = /\b(waybill|товарителница)\s+[^\s,;)]+/gi;
+const MASK = "•••";
+function scrubRef(v: string | undefined): string | undefined {
+  if (!v) return v;
+  const m = v.match(/^([a-z]+):/i);
+  return m && IDENTITY_REF.test(v) ? `${m[1]}:${MASK}` : v;
+}
+export function scrubIdentity(v: unknown, depth = 0): unknown {
+  if (typeof v === "string") {
+    if (IDENTITY_REF.test(v)) return scrubRef(v);
+    if (UUID.test(v)) return MASK;
+    return v.replace(EMAIL, "•••@•••").replace(WAYBILL_TEXT, `$1 ${MASK}`);
+  }
+  if (Array.isArray(v)) return depth > 6 ? MASK : v.map((x) => scrubIdentity(x, depth + 1));
+  if (v && typeof v === "object") {
+    if (depth > 6) return MASK;
+    return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, IDENTITY_KEYS.has(k) && x !== null && x !== undefined ? MASK : scrubIdentity(x, depth + 1)]));
+  }
+  return v;
+}
 
 // What the laboratory itself stamps (its portal upload) is recorded as the
 // laboratory, never its e-mail — the entry already carries the code (§4.2, N4).
@@ -46,6 +81,10 @@ export const LAB_RECORDER = "laboratory";
 // names the lab); both are masked on display. Entries typed by staff, and the
 // app's own stamps, are shown as they are.
 export function redactCaseEventForStaff(e: CaseEvent): CaseEvent {
+  // a dispatch's or a receipt's reference is the courier's waybill — its tracking page shows
+  // where the object went (the security sweep, SC-3): never to who does not see names
+  const waybill = e.source === "auto" && (e.kind === "items_dispatched" || e.kind === "receipt_confirmed") && !!e.ref;
+  if (waybill) e = { ...e, ref: undefined };
   if (e.source !== "auto" || !e.recordedBy.includes("@")) return e;
   return { ...e, recordedBy: LAB_RECORDER, ref: undefined };
 }

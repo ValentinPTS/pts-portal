@@ -153,5 +153,20 @@ const fn = act.slice(act.indexOf("export async function importReplayAction"));
 t("the action: system.technical; the environment again; journalled with the number, the counts, the hash — never a value; a half-made round journalled too (review)", /await requireCapAnywhere\("system\.technical"\);/.test(fn) && /if \(!replayAllowedHere\(\)\) return \{ problem: "environment" \};/.test(fn) && /logActivity\("validation\.replay_imported"/.test(fn) && /logActivity\("validation\.replay_failed"/.test(fn));
 t("the round export: the replay's field placed; its source path never in coded/", SCHEME_FIELDS.replay === "split" && !!S && !JSON.stringify(codedScheme(S)).includes(S.replay!.sourcePath.slice(0, 40)) && JSON.stringify(codedScheme(S)).includes("PTS 26/03-T-1"));
 
+// the security sweep (SI-7): a 567-byte workbook with a cell «ZZZZZZZZ1» (or a row number past a sheet's
+// bounds) filled arrays until the process ran out of memory — now refused at once
+{
+  const enc = (x: string) => new TextEncoder().encode(x);
+  const book = (sheet: string) => zip([
+    { name: "xl/workbook.xml", data: enc(`<workbook><sheets><sheet name="A" r:id="rId1"/></sheets></workbook>`) },
+    { name: "xl/_rels/workbook.xml.rels", data: enc(`<Relationships><Relationship Id="rId1" Target="worksheets/s.xml"/></Relationships>`) },
+    { name: "xl/worksheets/s.xml", data: enc(`<worksheet><sheetData>${sheet}</sheetData></worksheet>`) },
+  ], new Date());
+  const refused = (sheet: string) => { const t0 = Date.now(); try { readXlsx(book(sheet)); return false; } catch (e) { return /beyond a sheet's bounds/.test(String((e as Error).message)) && Date.now() - t0 < 2000; } };
+  t("a column past a sheet's bounds — refused at once", refused(`<row r="1"><c r="ZZZZZZZZ1" t="inlineStr"><is><t>x</t></is></c></row>`));
+  t("a row past a sheet's bounds — refused at once", refused(`<row r="99999999"><c r="A99999999" t="inlineStr"><is><t>x</t></is></c></row>`));
+  t("the last cell of a sheet is still read", readXlsx(book(`<row r="3"><c r="XFD3" t="inlineStr"><is><t>z</t></is></c></row>`))[0].rows[2][16383] === "z");
+}
+
 console.log(`replay.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

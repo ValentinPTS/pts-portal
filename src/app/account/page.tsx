@@ -15,8 +15,8 @@ export default async function AccountPage() {
       <div className="card p-6 mt-6" style={{ maxWidth: 560 }}>
         <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>{tr("account.title")}</h1>
         <p className="mt-2" style={{ color: "var(--muted)" }}>
-          Authentication is currently <b>disabled</b> (AUTH_ENABLED is off), so there are no accounts yet.
-          Set it up via <code>.env.example</code> when you’re ready, then this page manages your sign-in and 2FA.
+          Влизането е <b>изключено</b> (AUTH_ENABLED не е включено), затова още няма акаунти. · Authentication is currently <b>disabled</b> (AUTH_ENABLED is off), so there are no accounts yet.
+          Настройте го по <code>.env.example</code>; после тази страница управлява входа и 2FA. · Set it up via <code>.env.example</code> when you’re ready, then this page manages your sign-in and 2FA.
         </p>
         <Link href="/" className="btn mt-4 inline-flex">← {tr("common.back")}</Link>
       </div>

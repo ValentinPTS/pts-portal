@@ -25,7 +25,11 @@
 import { imageUrlAllowed } from "./image-hosts";
 const DANGER_BLOCK = /<(script|style|noscript|template)\b[^>]*>[\s\S]*?<\/\1>/gi;
 // the same tags plus other never-in-a-document elements, as bare/unclosed tags.
-const DANGER_TAG = /<\/?(?:script|style|iframe|object|embed|link|meta|base|form|noscript|template|frame|frameset|applet)\b[^>]*>/gi;
+// An unclosed one at the very end too (the security sweep, SI-1: «<iframe srcdoc=…» with no «>»
+// was left alone — the wrapper's own «</div>» then closed it).
+const DANGER_TAG = /<\/?(?:script|style|iframe|object|embed|link|meta|base|form|noscript|template|frame|frameset|applet)\b[^>]*(?:>|$)/gi;
+// an iframe's inline document, a button's target — never in a document (SI-1)
+const SRCDOC_ATTR = /([\s/"'`])(?:srcdoc|formaction)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;
 // inline event handlers: on<name>=… preceded by ANY separator the HTML tokenizer
 // accepts before a new attribute — whitespace, `/`, or the closing quote of the
 // previous attribute — NOT just whitespace. Matching only whitespace let
@@ -85,9 +89,23 @@ function urlValueSafe(raw: string, isHref: boolean): boolean {
   return true;
 }
 
+// The whole pass, again until nothing changes (the security sweep, SI-1): removing one tag
+// joins the text around it — «<scr<script>ipt>» is «<script>» once the inner one is gone, and
+// N layers of it survived N single passes. Every step only removes or blanks, so the input
+// settles; if it ever did not within the bound, every «<» is escaped — nothing runs.
 export function sanitizeDocHtml(html: string | null | undefined): string {
   if (!html) return "";
   let out = String(html);
+  for (let i = 0; i < 25; i++) {
+    const next = sanitizeOnce(out);
+    if (next === out) return out;
+    out = next;
+  }
+  return out.replace(/</g, "&lt;");
+}
+
+function sanitizeOnce(input: string): string {
+  let out = input;
   out = out.replace(DANGER_BLOCK, "");
   out = out.replace(DANGER_TAG, "");
   // Re-run until stable: consuming one separator can leave a second, chained handler
@@ -98,6 +116,7 @@ export function sanitizeDocHtml(html: string | null | undefined): string {
     if (next === out) break;
     out = next;
   }
+  out = out.replace(SRCDOC_ATTR, "$1");
   out = out.replace(URL_ATTR, (full, name, _eq, _whole, dq, sq, bare) => {
     const isHref = /href/i.test(name);
     const value = dq ?? sq ?? bare ?? "";

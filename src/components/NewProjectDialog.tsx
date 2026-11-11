@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import PendingSubmit from "@/components/PendingSubmit";
 import { createProjectAction } from "@/lib/actions";
 import { useLang } from "@/components/LangProvider";
 import { composeSchemeNumber, type Activity, type SchemeKind } from "@/lib/scheme-number";
@@ -20,7 +21,12 @@ export default function NewProjectDialog({
   samples?: { key: string; label: string }[];
 }) {
   const { t } = useLang();
-  const [open, setOpen] = useState(false);
+  const [open, setOpenState] = useState(false);
+  // one press makes one scheme: a second click while the first is sent re-posted the same number,
+  // and the person was told «a scheme with this number already exists» of the scheme just made
+  // (the security sweep, UM-1). Free again when the dialog is opened again, or after a while.
+  const sent = useRef(false);
+  const setOpen = (v: boolean) => { if (v) sent.current = false; setOpenState(v); };
   const [sample, setSample] = useState("");
   const [name, setName] = useState("");
   const [kind, setKind] = useState<SchemeKind>("PTS");
@@ -66,6 +72,11 @@ export default function NewProjectDialog({
         >
           <form
             action={createProjectAction}
+            onSubmit={(e) => {
+              if (sent.current) { e.preventDefault(); return; }
+              sent.current = true;
+              window.setTimeout(() => { sent.current = false; }, 10000);
+            }}
             onClick={(e) => e.stopPropagation()}
             className="card"
             style={{ width: 500, maxWidth: "100%", padding: 26, display: "flex", flexDirection: "column", gap: 16, boxShadow: "0 18px 48px rgba(0,0,0,0.25)" }}
@@ -142,7 +153,7 @@ export default function NewProjectDialog({
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 4 }}>
               <button type="button" onClick={() => setOpen(false)} className="btn">{t("common.cancel")}</button>
-              <button type="submit" className="btn btn-primary">{t("np.create")}</button>
+              <PendingSubmit label={t("np.create")} mark="data-create-project" />
             </div>
           </form>
         </div>

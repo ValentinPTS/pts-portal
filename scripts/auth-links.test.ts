@@ -1,7 +1,7 @@
 // Account e-mail links and passwords (plan part 1.5, finding P4.b): the pure rules,
 // and the wiring that makes an invited or resetting person able to set a password.
 import { readFileSync } from "node:fs";
-import { isOtpType, afterLinkDest, safeNext, passwordProblem, inviteLink, RESET_RETURN, INVITE_RETURN, OTP_TYPES, siteOrigin, authErrorText } from "../src/lib/auth-links.ts";
+import { isOtpType, afterLinkDest, safeNext, safeDest, passwordProblem, inviteLink, RESET_RETURN, INVITE_RETURN, OTP_TYPES, siteOrigin, authErrorText } from "../src/lib/auth-links.ts";
 
 let pass = 0, fail = 0;
 const t = (name: string, ok: boolean, extra = "") => { if (ok) pass++; else { fail++; console.error("FAIL:", name, extra); } };
@@ -81,6 +81,19 @@ t("an account with an authenticator passes its code before a new password", (aut
 t("«forgot password» sends after the response — the timing tells nothing", /after\(async \(\) => \{[\s\S]{0,900}resetPasswordForEmail/.test(authActions));
 t("the journal never carries the address for these", !/logActivity\("auth\.[a-z_]+", \{[^}]*email/.test(authActions));
 t("«forgot password» answers the same whatever the address", /const done: PasswordState = \{ sent: true \};/.test(authActions) && /return done;\n\}/.test(authActions));
+
+// ── the security sweep (SA-2, SI-4): nothing a browser reads as another site ─────────────
+for (const n of ["/\\evil.example", "/\\evil.example/x", "/\t/evil.example", "/.//evil.example", "/x/..//evil.example", "/%2e//evil.example", "//evil.example", "https://evil.example", "/\n/evil.example"]) {
+  t(`safeNext refuses ${JSON.stringify(n)}`, safeNext(n, "/x") === "/x", safeNext(n, "/x"));
+  t(`safeDest (staff) refuses ${JSON.stringify(n)}`, safeDest("internal", n) === "/", safeDest("internal", n));
+  t(`safeDest (lab) refuses ${JSON.stringify(n)}`, safeDest("lab", n) === "/lab", safeDest("lab", n));
+}
+t("safeDest: a staff page is followed", safeDest("internal", "/schemes/26-11-T-1?tab=x") === "/schemes/26-11-T-1?tab=x");
+t("safeDest: staff never to the lab side or the sign-in", safeDest("internal", "/lab/p/1") === "/" && safeDest("internal", "/login?next=/") === "/");
+t("safeDest: a lab to its own side", safeDest("lab", "/lab/p/1") === "/lab/p/1" && safeDest("lab", "/lab") === "/lab");
+t("safeDest: a lab never elsewhere, never «/labx», never its sign-in", safeDest("lab", "/schemes") === "/lab" && safeDest("lab", "/labx") === "/lab" && safeDest("lab", "/lab/login") === "/lab");
+t("the sign-in page passes «next» through safeNext", /const next = safeNext\(sp\.next, "\/"\)/.test(readFileSync(new URL("../src/app/login/page.tsx", import.meta.url), "utf8")));
+t("the sign-in's actions use safeDest from auth-links (never a sync export of a «use server» file)", /safeDest, safeNext/.test(authActions) && !/export function safeDest/.test(authActions));
 
 console.log(`auth-links.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

@@ -144,6 +144,8 @@ export const ROUTES = [
   { file: "register/page.tsx", names: "never", paths: () => ["/register"] },
   { file: "register/thanks/page.tsx", names: "never", paths: () => ["/register/thanks"] },
   { file: "login/page.tsx", names: "never", paths: () => ["/login", "/login?denied=1"] },
+  // one of PTS without a right — said, never the sign-in page (the security sweep, UR-1)
+  { file: "denied/page.tsx", names: "never", paths: () => ["/denied"] },
   { file: "auth/confirm/page.tsx", names: "never", paths: () => ["/auth/confirm"] },
   { file: "auth/confirmed/page.tsx", names: "never", paths: () => ["/auth/confirmed"] },
   { file: "auth/forgot/page.tsx", names: "never", paths: () => ["/auth/forgot", "/auth/forgot?area=lab"] },

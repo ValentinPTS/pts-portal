@@ -124,7 +124,7 @@ try {
   // ── the software administrator: no form ──
   await go("/dev/persona?model=software_admin");
   const ra = await go(`/schemes/${S}#level-test`);
-  const deniedPage = page.url().includes("denied") || /login\?denied=1/.test(await page.content()) || ra?.status() === 403;
+  const deniedPage = page.url().includes("denied") || /login\?denied=1|NEXT_REDIRECT[^"]*\/denied/.test(await page.content()) || ra?.status() === 403;
   t("the software administrator: no way to record a test — the round's page is not his (codes), and no form", deniedPage && (await page.locator("[data-level-form]").count()) === 0);
 } catch (e) {
   fail++;

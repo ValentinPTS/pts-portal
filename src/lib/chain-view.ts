@@ -52,7 +52,9 @@ export async function chainViewFor(scheme: Scheme, code: string, lang: "bg" | "e
   return {
     handOnBy,
     state,
-    position: positionOf(chain, code),
+    // its place only — never how many stops the chain has: a calibration round is small, and its size
+    // is the participants' number (the security sweep, SC-5; the design names «position + estimate»)
+    position: ((p) => (p ? { position: p.position } : null))(positionOf(chain, code)),
     wait: describeWait(estimatedWaitDays(chain, code), lang),
     started: !!chain.dispatchedAt,
     closed: !!chain.returnedAt,

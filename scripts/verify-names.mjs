@@ -89,7 +89,7 @@ try {
     }
     for (const p of [`/schemes/${S}/doc/results-coded`, `/schemes/${S}/build/results-coded`, `/schemes/${S}/build/results-coded/history`]) {
       const r = await html(p);
-      const refused = r.url.includes("denied") || r.text.includes("NEXT_REDIRECT;replace;/login?denied=1");
+      const refused = r.url.includes("denied") || (r.text.includes("NEXT_REDIRECT;replace;/login?denied=1") || r.text.includes("NEXT_REDIRECT;replace;/denied"));
       t(`${role}: ${p} refused`, refused && !r.text.includes(NAME), r.url);
     }
     // an invented key (the old template key) is simply not a document
@@ -104,7 +104,7 @@ try {
     t(`${role}: scheme page does not list F 7.2.1-6`, !sch.text.includes(`/doc/results-coded`) && !sch.text.includes(`/build/results-coded`));
 
     const apps = await html(`/schemes/${S}/applications`);
-    const refused = (apps.url.includes("/login") && apps.url.includes("denied")) || apps.text.includes("NEXT_REDIRECT;replace;/login?denied=1");
+    const refused = (apps.url.includes("/login") && apps.url.includes("denied")) || (apps.text.includes("NEXT_REDIRECT;replace;/login?denied=1") || apps.text.includes("NEXT_REDIRECT;replace;/denied"));
     t(`${role}: applications page refused`, refused, apps.url);
     t(`${role}: applications page sends no applicant data`, !apps.text.includes("ЕИК / VAT"));
   }
@@ -122,7 +122,7 @@ try {
   await persona("scheme_manager@25-06-C-1");
   for (const p of [...pages.filter((x) => x.startsWith(`/schemes/${S}`)), `/schemes/${S}/doc/results-coded/print?lang=bg`]) {
     const r = await html(p);
-    const refused = r.status === 403 || r.url.includes("denied") || r.text.includes("NEXT_REDIRECT;replace;/login?denied=1");
+    const refused = r.status === 403 || r.url.includes("denied") || (r.text.includes("NEXT_REDIRECT;replace;/login?denied=1") || r.text.includes("NEXT_REDIRECT;replace;/denied"));
     t(`another scheme's manager: ${p} refused, no name`, refused && !r.text.includes(NAME), `status ${r.status} ${r.url}`);
   }
 } finally {
