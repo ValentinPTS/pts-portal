@@ -1691,6 +1691,19 @@ export default function WordEditor({
       </div>
     );
   }
+  // a role that reads the scheme but does not edit it: the document as it prints, never the editor's
+  // controls — its saves were refused by the server, yet the whole editor was offered (round 3, Q4)
+  if (!canEdit) {
+    return (
+      <div data-doc-read-only style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div className="card p-4" style={{ borderLeft: "4px solid var(--line)", color: "var(--muted)", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ flex: 1, minWidth: 220 }}>{L("Само за четене — документът се редактира от който редактира схемата.", "Read only — the document is edited by who edits the scheme.")}</span>
+          <a className="btn btn-sm" href={`/schemes/${encodeURIComponent(schemeId)}/doc/${encodeURIComponent(docKey)}`}>{L("Преглед и PDF →", "View and PDF →")}</a>
+        </div>
+        <iframe title={docNameEn} src={`/schemes/${encodeURIComponent(schemeId)}/doc/${encodeURIComponent(docKey)}/print?lang=${lang}`} style={{ width: "100%", minHeight: "80vh", border: "1px solid var(--line)", borderRadius: 8, background: "#fff" }} />
+      </div>
+    );
+  }
 
   if (!started) {
     const startRow: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--line)", borderRadius: 9, padding: "8px 10px" };

@@ -51,7 +51,7 @@ export default async function LabProfilePage({ searchParams }: { searchParams: P
           {field("name", tr("lab.field.labName"), lab.name)}
           {field("accreditationCert", tr("lab.field.accreditationCert"), lab.accreditationCert)}
           {field("contactPerson", tr("lab.field.contactPerson"), lab.contactPerson)}
-          {field("phone", tr("lab.field.phone"), lab.phone, { pattern: "[+()0-9 .\\-\\/]{5,40}( *(вътр\\.?|ext\\.?|доп\\.?) *[0-9]{1,6})?", title: "Телефон: цифри, интервали, + ( ) - . / · Phone: digits, spaces, + ( ) - . /" })}
+          {field("phone", tr("lab.field.phone"), lab.phone, { pattern: "[+\\(\\)0-9 .\\-\\/]{5,40}( *(вътр\\.?|ext\\.?|доп\\.?) *[0-9]{1,6})?", title: "Телефон: цифри, интервали, + ( ) - . / · Phone: digits, spaces, + ( ) - . /" })}
           {field("registeredAddress", tr("lab.field.registeredAddress"), lab.registeredAddress)}
           {field("eik", "ЕИК", lab.eik, { pattern: "(BG ?)?[0-9]{9}([0-9]{4})?|[A-Za-z0-9 .\\-\\/]*[A-Za-z][A-Za-z0-9 .\\-\\/]*", title: "ЕИК: 9 или 13 цифри (или регистрационният номер в чужбина) · ЕИК: 9 or 13 digits (or the registration number abroad)" })}
           {field("vat", "ДДС №", lab.vat)}

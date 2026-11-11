@@ -32,9 +32,11 @@ export function redactActivityForStaff(e: ActivityEvent): ActivityEvent {
   // name; a courier's waybill leads to the laboratory's address (SC-3). Never shown here, in the
   // line's subject, its before/after or its text — lines about PTS's own people excepted.
   const staffLine = STAFF_ACTIONS.test(e.action);
-  if (!staffLine) summary = summary.replace(WAYBILL_TEXT, "$1 •••")
+  if (!staffLine) summary = summary.replace(WAYBILL_TEXT, "$1$2 •••")
     // an older line typed by hand: «Timeline: items_dispatched for <code> (<waybill>)» (round 2, R2S-3)
-    .replace(/^(Timeline: (?:items_dispatched|receipt_confirmed) for \S+) \([^)]*\)/, "$1 (•••)");
+    .replace(/^(Timeline: (?:items_dispatched|receipt_confirmed) for \S+) \([^)]*\)/, "$1 (•••)")
+    // an older dispatch line: its waybill was the line's last words, commas and all (R3S-4)
+    .replace(/(, (?:waybill|товарителница) )[\s\S]*$/, "$1•••");
   return {
     ...e,
     actorEmail: e.actorRole === "lab" ? LAB_ACTOR : mask(e.actorEmail) ?? "",
@@ -53,7 +55,9 @@ const IDENTITY_REF = /^(entity|entityuser|lab|laboratory|user|auth|registration)
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // keys that hold who: an account, an organisation, a laboratory, a person, a courier's waybill
 const IDENTITY_KEYS = new Set(["by", "entity", "entityId", "lab", "labId", "laboratory", "laboratoryId", "user", "userId", "entityUserId", "authUserId", "admin", "email", "waybill", "accountsLeft", "documentsLeft"]);
-const WAYBILL_TEXT = /\b(waybill|товарителница)\s+[^\s,;)]+/gi;
+// a waybill typed with spaces («62 123 456 789») is masked whole, to the next «,», «;», «)» or the end;
+// «товарителница» too («\b» is ASCII-only in a JS pattern — it never matched; round 3, R3S-4)
+const WAYBILL_TEXT = /(^|[^\p{L}\p{N}_])(waybill|товарителница)\s+[^,;)]+/giu;
 const MASK = "•••";
 function scrubRef(v: string | undefined): string | undefined {
   if (!v) return v;
@@ -64,7 +68,7 @@ export function scrubIdentity(v: unknown, depth = 0): unknown {
   if (typeof v === "string") {
     if (IDENTITY_REF.test(v)) return scrubRef(v);
     if (UUID.test(v)) return MASK;
-    return v.replace(EMAIL, "•••@•••").replace(WAYBILL_TEXT, `$1 ${MASK}`);
+    return v.replace(EMAIL, "•••@•••").replace(WAYBILL_TEXT, `$1$2 ${MASK}`);
   }
   if (Array.isArray(v)) return depth > 6 ? MASK : v.map((x) => scrubIdentity(x, depth + 1));
   if (v && typeof v === "object") {

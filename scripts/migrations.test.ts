@@ -107,16 +107,23 @@ for (const n of names.filter((x) => x >= "0018")) {
     for (const m of s.matchAll(/create (?:or replace )?function (?:([a-z_]+)\.)?([a-z_0-9]+)\s*\(/g)) { const k = `function ${m[1] ?? "public"}.${m[2]}`; made.set(k, [...new Set([...(made.get(k) ?? []), n])]); }
     for (const m of s.matchAll(/add constraint ([a-z_0-9]+)/g)) { const k = `constraint ${m[1]}`; made.set(k, [...new Set([...(made.get(k) ?? []), n])]); }
   }
-  const superseded = new Set([...made.values()].filter((f) => f.length > 1).flatMap((f) => f.sort().slice(0, -1)));
-  t("superseded migrations found", superseded.size >= 10, [...superseded].join(","));
-  for (const n of superseded) {
+  // each file, and the later files that redefine any of what it makes
+  const supersededBy = new Map<string, Set<string>>();
+  for (const f of made.values()) {
+    const sorted = [...f].sort();
+    sorted.slice(0, -1).forEach((n, i) => supersededBy.set(n, new Set([...(supersededBy.get(n) ?? []), ...sorted.slice(i + 1)])));
+  }
+  t("superseded migrations found", supersededBy.size >= 10, [...supersededBy.keys()].join(","));
+  for (const [n, later] of supersededBy) {
     const s = code(sql[n]).toLowerCase();
-    const guard = s.indexOf(`select 1 from public.app_migrations where name > '${n}'`);
+    // refused once one of THOSE files is recorded — a re-run, or a first application after it, would undo
+    // it (round 3); a first application before it passes (R2S-6) — and inside one transaction, so the
+    // guard's exception stops the rest whatever the client
+    const list = [...later].sort().map((x) => `'${x}'`).join(", ");
+    const guard = s.indexOf(`select 1 from public.app_migrations where name in (${list})`);
     const firstChange = s.search(/\b(create|alter|drop|insert|update|delete|grant|revoke)\b/);
-    t(`${n} refuses to run once a later migration is recorded`, guard >= 0 && /raise exception/.test(s.slice(guard, guard + 300)) && guard < firstChange, `guard ${guard}, first change ${firstChange}`);
-    // …only a RE-run — this file recorded already — so a first application out of order passes; and inside
-    // one transaction, so the guard's exception stops the rest whatever the client (round 2, R2S-6)
-    t(`${n}: only a re-run is refused, inside one transaction`, s.includes(`select 1 from public.app_migrations where name = '${n}')`) && /^begin;/m.test(s) && s.search(/^begin;/m) < guard && /^commit;/m.test(s));
+    t(`${n} refuses to run once ${[...later].join(" or ")} is recorded`, guard >= 0 && /raise exception/.test(s.slice(guard, guard + 300)) && guard < firstChange, `guard ${guard}, first change ${firstChange}, wanted (${list})`);
+    t(`${n}: not refused for an unrelated later file; inside one transaction`, !s.includes(`where name > '${n}'`) && /^begin;/m.test(s) && s.search(/^begin;/m) < guard && /^commit;/m.test(s));
   }
 }
 

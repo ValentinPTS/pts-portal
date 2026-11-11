@@ -12,11 +12,10 @@ begin;
 -- re-run guard (the security sweep, 2026-11-11): a later migration (0048_validation_dry_run) redefines what this
 -- one makes — running this file again after a later one would silently undo it. Nothing is changed then.
 do $$ begin
-  -- only a RE-run: this file recorded already and a later one too (a first application out of order
-  -- passes — round 2, R2S-6)
-  if exists (select 1 from public.app_migrations where name = '0047_validation_levels')
-     and exists (select 1 from public.app_migrations where name > '0047_validation_levels') then
-    raise exception '0047_validation_levels is superseded by a later migration — running it again would undo that. Nothing was changed.';
+  -- refused once a migration that redefines what this one makes is recorded — a re-run, or a first
+  -- application after it, would undo it (round 3); before it, a first application passes (R2S-6)
+  if exists (select 1 from public.app_migrations where name in ('0048_validation_dry_run')) then
+    raise exception '0047_validation_levels is superseded by a later migration already applied — running it now would undo that. Nothing was changed.';
   end if;
 end $$;
 

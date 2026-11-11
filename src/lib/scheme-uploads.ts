@@ -55,9 +55,14 @@ export async function uploadedDocResponse(up: UploadedDoc, download: boolean): P
 
 /** A file's own name for «filename*» (RFC 5987): control characters, quotes and slashes out; every byte
  *  outside the attribute characters percent-encoded. */
-export const utf8Name = (name: string) =>
-  encodeURIComponent(String(name || "document").replace(/[\u0000-\u001F\u007F"\\/]+/g, "_").slice(0, 150))
-    .replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+// cut at 150 CHARACTERS, never inside one: «.slice(0, 150)» halved an emoji and encodeURIComponent threw on
+// the lone half — a 500 for the download (the security sweep, round 3 — R3S-6); a lone half typed as
+// such becomes «_»
+export const utf8Name = (name: string) => {
+  const clean = Array.from(String(name || "document").replace(/[\u0000-\u001F\u007F"\\/]+/g, "_"))
+    .slice(0, 150).map((ch) => (/^[\ud800-\udfff]$/.test(ch) ? "_" : ch)).join("");
+  return encodeURIComponent(clean).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+};
 
 /** Serve a file's bytes as the uploads are served. */
 export function uploadedBytesResponse(bytes: Uint8Array, mime: string, name: string, download: boolean): Response {

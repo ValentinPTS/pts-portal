@@ -90,6 +90,8 @@ export const REGISTER_TEXT = {
   limited: { bg: "Твърде много неуспешни справки от този адрес — опитайте след час.", en: "Too many failed lookups from this address — try again in an hour." },
   // the ceiling reached is a code's for the day, or everyone's — said as such, never «this address» (round 2, R2U-6)
   limitedCode: { bg: "Справките за този код днес са спрени след много неуспешни опити — опитайте утре или се обърнете към PTS.", en: "Lookups for this code are stopped for today after many failed attempts — try again tomorrow or contact PTS." },
+  // …or a certificate number's for the hour (round 3: it was said as everyone's)
+  limitedNumber: { bg: "Справките за този номер са спрени за час след много неуспешни опити — опитайте по-късно или се обърнете към PTS.", en: "Lookups for this number are stopped for an hour after many failed attempts — try again later or contact PTS." },
   limitedAll: { bg: "Регистърът получава твърде много справки в момента — опитайте след малко.", en: "The register is receiving too many lookups right now — try again in a while." },
   failed: { bg: "Справката не може да се направи сега — опитайте след малко.", en: "The lookup cannot be made now — try again shortly." },
   valid: { bg: "Валиден", en: "Valid" },

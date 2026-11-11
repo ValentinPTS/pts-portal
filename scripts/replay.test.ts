@@ -169,6 +169,19 @@ t("the round export: the replay's field placed; its source path never in coded/"
   const far = Array.from({ length: 3000 }, (_, i) => `<row r="${i + 1}"><c r="XFD${i + 1}" t="inlineStr"><is><t>x</t></is></c></row>`).join("");
   t("3 000 rows with a cell at XFD — refused at once (a cell budget)", (() => { const t0 = Date.now(); try { readXlsx(book(far)); return false; } catch (e) { return /too many cells/.test(String((e as Error).message)) && Date.now() - t0 < 2000; } })());
   t("the last cell of a sheet is still read", readXlsx(book(`<row r="3"><c r="XFD3" t="inlineStr"><is><t>z</t></is></c></row>`))[0].rows[2][16383] === "z");
+  // round 3 (R3S-5): one part listed as many sheets — the budget was per sheet; now one per workbook,
+  // each part read once, and a bound on the sheets
+  const many = (k: number, sheet: string, distinct = false) => zip([
+    { name: "xl/workbook.xml", data: enc(`<workbook><sheets>${Array.from({ length: k }, (_, i) => `<sheet name="S${i}" r:id="rId${distinct ? i : 1}"/>`).join("")}</sheets></workbook>`) },
+    { name: "xl/_rels/workbook.xml.rels", data: enc(`<Relationships>${Array.from({ length: distinct ? k : 1 }, (_, i) => `<Relationship Id="rId${distinct ? i : 1}" Target="worksheets/s${distinct ? i : ""}.xml"/>`).join("")}</Relationships>`) },
+    ...Array.from({ length: distinct ? k : 1 }, (_, i) => ({ name: `xl/worksheets/s${distinct ? i : ""}.xml`, data: enc(`<worksheet><sheetData>${sheet}</sheetData></worksheet>`) })),
+  ], new Date());
+  const why = (b: Uint8Array) => { try { readXlsx(b); return "read"; } catch (e) { return String((e as Error).message); } };
+  const wide = Array.from({ length: 100 }, (_, i) => `<row r="${i + 1}"><c r="XFD${i + 1}"><v>1</v></c></row>`).join("");
+  t("round 3 — one sheet's part listed twice: refused", /listed twice/.test(why(many(50, wide))));
+  t("round 3 — the cell budget is the workbook's: 2 × 1.6 M slots in two sheets refused", /too many cells/.test(why(many(2, wide, true))));
+  t("round 3 — more than 255 sheets: refused", /more sheets/.test(why(many(256, `<row r="1"><c r="A1"><v>1</v></c></row>`, true))));
+  t("round 3 — two ordinary sheets still read", why(many(2, `<row r="1"><c r="A1"><v>1</v></c></row>`, true)) === "read");
 }
 
 console.log(`replay.test: ${pass} passed, ${fail} failed`);

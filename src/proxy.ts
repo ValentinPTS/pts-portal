@@ -82,9 +82,20 @@ async function isParticipantUser(authUserId: string | undefined): Promise<boolea
 // request.nextUrl.pathname (a WHATWG URL: its dot segments resolved).
 const PUBLIC_PATH = /^\/(?:_next\/static\/|_next\/image(?:\/|$)|favicon\.ico$|brand\/|fonts\/|apply(?:\/|$)|register(?:\/|$)|catalogue(?:\/|$)|certificate(?:\/|$)|feed\/|api(?:\/|$))/;
 
+// A portal page is never a picture, a script, a style, a font or a frame's object: a browser says
+// what it fetches for (Sec-Fetch-Dest), and a page asked for as one of those is refused before it
+// runs — a document's «<img src="…/schemes/S/export">» (or a site on the same domain) made every
+// viewer's browser run the export in that viewer's name, on record (the security sweep, round 3 —
+// R3S-2). A navigation, a frame and the app's own fetches («document», «iframe», «empty») pass.
+const NOT_A_PAGE = new Set(["image", "script", "style", "font", "audio", "video", "track", "worker", "sharedworker", "serviceworker", "manifest", "object", "embed", "paintworklet", "audioworklet", "xslt"]);
+
 export async function proxy(request: NextRequest) {
+  const publicPath = PUBLIC_PATH.test(request.nextUrl.pathname);
+  if (!publicPath && NOT_A_PAGE.has((request.headers.get("sec-fetch-dest") ?? "").toLowerCase())) {
+    return new NextResponse(null, { status: 403 });
+  }
   if (!AUTH_ENABLED) return NextResponse.next(); // scaffolded off → app stays open
-  if (PUBLIC_PATH.test(request.nextUrl.pathname)) return NextResponse.next();
+  if (publicPath) return NextResponse.next();
 
   // Internal render bypass: the PDF generator (server-side headless browser) fetches
   // owner render routes with a secret token so it isn't blocked by the gate. The token

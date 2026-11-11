@@ -76,7 +76,7 @@ t("UL-7: a submission's hour with EET/EEST, never the browser's zone words", ["c
 t("UL Q5: a scheme every laboratory applied to — «Заявено» on the list", /data-apply-done-already/.test(src("app/lab/apply/page.tsx")));
 
 // round 2 — the second security review's findings (R2S-*)
-t("R2S-1: the shell's markers out before the body is sanitized; never removed from what it passed", /sanitizeDocHtml\(stripBodyMarkers\(/.test(src("lib/doc-template.ts")) && /input\.replace\(BODY_MARKS, ""\)/.test(src("lib/sanitize-html.ts")));
+t("R2S-1: the shell's markers out before the body is sanitized; never removed from what it passed", /sanitizeDocHtml\(stripBodyMarkers\(/.test(src("lib/doc-template.ts")) && /String\(html\)\.replace\(BODY_MARKS, ""\)/.test(src("lib/sanitize-html.ts")));
 t("R2S-1: every document route's own policy refuses forms and <base>", ["app/schemes/[id]/doc/[doc]/print/route.ts", "app/schemes/[id]/build/[doc]/print/route.ts", "app/lab/doc/[scheme]/[doc]/route.ts", "lib/editions.ts"].every((f) => /form-action 'none'; base-uri 'none'/.test(src(f))));
 t("R2S-3: a courier's notice — read, released and exported only with names", /COURIER_NOTICE_KINDS\.has\(notice\.kind\) && !\(await mayNow\("names\.view", notice\.schemeId\)\)\) redirect\("\/notices\?refused=names"\)/.test(actions) && /const seesHeld = /.test(notices) && /x\.kind === "items\.dispatched" \? \{ \.\.\.x, \.\.\.Object\.fromEntries\(keys\.map\(\(k\) => \[k, DISPATCH_WORDS\]\)\) \}/.test(src("lib/round-export.ts")));
 t("R2S-3: a typed dispatch's waybill never in the journal's words", /summary: `Timeline: \$\{kind\} for \$\{code\}\$\{ref && !courierRef \? ` \(\$\{ref\}\)` : ""\}`/.test(actions));
@@ -90,6 +90,49 @@ t("R2U-4: the receiver's name at least two letters, in the browser too", /name="
 t("R2U-5: the lab profile's ЕИК and phone checked before sending", /pattern: "\(BG \?\)\?\[0-9\]\{9\}/.test(src("app/lab/profile/page.tsx")));
 t("R2U-6: a register's ceiling said in its own words", /REGISTER_TEXT\[r\.why === "code" \? "limitedCode"/.test(actions));
 t("R2U-7: the staff side's downloads keep their names", ["app/schemes/[id]/uploaded/[doc]/route.ts", "app/users/declarations/[id]/route.ts"].every((f) => /filename\*=UTF-8''\$\{utf8Name\(/.test(src(f))));
+
+// round 3 (after dcaa376)
+const proxySrc = src("proxy.ts");
+t("R3S-2: a page fetched as a picture/script/style is refused in the proxy, before the auth switch",
+  /const NOT_A_PAGE = new Set\(\["image", "script", "style"/.test(proxySrc) && proxySrc.indexOf("NOT_A_PAGE.has(") < proxySrc.indexOf("if (!AUTH_ENABLED)") && /status: 403/.test(proxySrc));
+t("R3S-3: a document's and a template's size checked before they are sanitized",
+  (() => { const save = actions.slice(actions.indexOf("export async function saveDocHtmlAction")); const tpl = actions.slice(actions.indexOf("bg: markCodedList(docKey, sanitizeDocHtml(String(bg") - 600, actions.indexOf("bg: markCodedList(docKey, sanitizeDocHtml(String(bg"));
+    return save.indexOf("docHtmlTooLarge(bg, en)") >= 0 && save.indexOf("docHtmlTooLarge(bg, en)") < save.indexOf("sanitizeDocHtml(bg)") && /docHtmlTooLarge\(bg, en\)/.test(tpl); })());
+t("R3S-4: the dispatch line's words never carry the waybill", !/`, waybill \$\{fields\.waybill\}`/.test(actions) && /fields\.waybill \? ", with a waybill" : ""/.test(actions));
+t("Q3: the per-number ceiling in its own words", /r\.why === "number" \? "limitedNumber"/.test(actions) && /limitedNumber: \{ bg:/.test(src("lib/cert-register-model.ts")));
+t("Q4: a read-only role sees the document as it prints, not the editor", /if \(!canEdit\) \{\s*return \(\s*<div data-doc-read-only/.test(src("components/WordEditor.tsx")));
+{
+  const m54 = readFileSync(new URL("../supabase/migrations/0054_certificate_register.sql", import.meta.url), "utf8");
+  const m55 = readFileSync(new URL("../supabase/migrations/0055_security_sweep.sql", import.meta.url), "utf8");
+  t("Q1: 0054 drops the earlier forms of register_try/register_refund before making them",
+    m54.indexOf("drop function if exists public.register_try(text, text, text, text, text);") >= 0 && m54.indexOf("drop function if exists public.register_try(text, text, text);") >= 0 && m54.indexOf("drop function if exists public.register_try(text, text, text, text, text);") < m54.indexOf("create or replace function public.register_try("));
+  t("Q1: 0055 drops public_form_try's first form before making it", m55.indexOf("drop function if exists public.public_form_try(text, text, text, integer, integer);") >= 0 && m55.indexOf("drop function if exists public.public_form_try(") < m55.indexOf("create or replace function public.public_form_try("));
+}
+// R3S-7: every «pattern» in a form compiles as the browser compiles it (the «v» flag) — an invalid one is
+// silently ignored, and the field checks nothing
+{
+  const { readdirSync, statSync } = await import("node:fs");
+  const walk = (d: string): string[] => readdirSync(d).flatMap((f) => { const p = `${d}/${f}`; return statSync(p).isDirectory() ? walk(p) : /\.tsx$/.test(f) ? [p] : []; });
+  const { fileURLToPath } = await import("node:url");
+  const root = fileURLToPath(new URL("../src", import.meta.url));
+  const pats: [string, string][] = [];
+  for (const f of walk(root)) {
+    const text = readFileSync(f, "utf8");
+    for (const m of text.matchAll(/\bpattern="([^"]*)"/g)) pats.push([f.slice(root.length), m[1]]); // JSX: as written
+    for (const m of text.matchAll(/\bpattern: "((?:[^"\\]|\\.)*)"/g)) pats.push([f.slice(root.length), JSON.parse(`"${m[1]}"`)]);
+  }
+  t("R3S-7: form patterns found", pats.length >= 5, String(pats.length));
+  for (const [f, p] of pats) {
+    let okv = true; try { new RegExp(`^(?:${p})$`, "v"); } catch { okv = false; }
+    t(`R3S-7: ${f} — «${p.slice(0, 40)}» is a valid pattern`, okv);
+  }
+}
+{
+  const { utf8Name } = await import("../src/lib/scheme-uploads.ts");
+  let threw = false, out = "";
+  try { out = utf8Name("a".repeat(149) + "😀.pdf") + utf8Name("😀".repeat(80) + ".pdf") + utf8Name("x\ud800y"); } catch { threw = true; }
+  t("R3S-6: a download's name cut at 150 characters never halves one (no URIError, no 500)", !threw && !out.includes("%ED%A0"), out.slice(0, 80));
+}
 
 console.log(`security-sweep.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

@@ -74,6 +74,13 @@ t("new lab stamp unchanged", redactCaseEventForStaff(newUpload) === newUpload);
   t("…nested, in lists, by kind or as a bare id — masked", !JSON.stringify(admin.after).includes(UID) && !JSON.stringify(admin.after).includes(ENT) && !JSON.stringify(admin.after).includes("a@b.bg"), JSON.stringify(admin.after));
   const sent = redactActivityForStaff(ev({ action: "delivery.dispatched", schemeId: "S", targetCode: "26111677", subject: "shipment:sh-1", summary: "The object for 26111677 — 2026-11-11, waybill W2-52234", after: { kind: "dispatch", day: "2026-11-11", waybill: "W2-52234", docs: [] } }));
   t("a waybill — masked in the text and in after; the shipment's own id kept", !sent.summary.includes("W2-52234") && /waybill •••/.test(sent.summary) && (sent.after as Record<string, unknown>).waybill === "•••" && sent.subject === "shipment:sh-1", `${sent.summary} ${JSON.stringify(sent.after)}`);
+  // round 3 (R3S-4): a waybill typed with spaces or a comma, and the Bulgarian word — masked whole
+  for (const wb of ["62 123 456 789", "JD0146 0000 1234 5678", "1234,5678"]) {
+    const old = redactActivityForStaff(ev({ action: "delivery.dispatched", schemeId: "S", targetCode: "26111677", summary: `The object for 26111677 — 2026-11-11, waybill ${wb}`, after: { kind: "dispatch", waybill: wb } }));
+    t(`round 3 — an older line's waybill «${wb}» masked whole`, !/\d{3}/.test(old.summary.replace("26111677", "").replace("2026-11-11", "")), old.summary);
+  }
+  const bg = redactActivityForStaff(ev({ action: "case.updated", schemeId: "S", summary: "Изпратено с товарителница 62 123 456 789 днес" }));
+  t("round 3 — «товарителница» masked too", !bg.summary.includes("456"), bg.summary);
   const staff = redactActivityForStaff(ev({ action: "staff.updated", subject: `user:${UID}`, after: { by: "head@ptsbg.eu" } }));
   t("a line about PTS's own people — as it is", staff.subject === `user:${UID}` && JSON.stringify(staff.after) === JSON.stringify({ by: "head@ptsbg.eu" }));
   const plain = redactActivityForStaff(ev({ action: "lifecycle.act", schemeId: "S", before: { status: "open" }, after: { status: "running" } }));

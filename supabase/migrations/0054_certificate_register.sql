@@ -34,6 +34,13 @@ alter table public.register_attempts enable row level security;
 alter table public.register_lookups enable row level security;
 revoke all on public.register_attempts, public.register_lookups from anon, authenticated;
 
+-- earlier forms of these functions go first (round 3): 10.4's had three arguments, and the sweep's first
+-- answered true/false — «create or replace» cannot change what a function returns, and an old overload
+-- would stay behind, executable as it was granted
+drop function if exists public.register_try(text, text, text);
+drop function if exists public.register_refund(text, text, text);
+drop function if exists public.register_try(text, text, text, text, text);
+
 -- A ticket for one lookup: refused (false) when any ceiling is reached; else counted as failed in each
 -- bucket, and as a try for the address. The hours before this one removed (a code's: the days before).
 -- (its answer: 'ok', or which ceiling — 'all', 'code', 'number', 'address' — said in its own words, round 2)

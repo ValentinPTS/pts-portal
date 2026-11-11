@@ -30,6 +30,10 @@ create table if not exists public.public_form_attempts (
 alter table public.public_form_attempts enable row level security;
 revoke all on public.public_form_attempts from anon, authenticated;
 
+-- the first form of this function answered true/false — «create or replace» cannot change what a
+-- function returns, so it goes first (round 3)
+drop function if exists public.public_form_try(text, text, text, integer, integer);
+
 -- One request of a public form: 'ok' (counted), or why not — 'address' (its address's ceiling) or 'all'
 -- (everyone's, said to the person: round 2, R2S-4). The hours before this one removed.
 create or replace function public.public_form_try(p_form text, p_hour text, p_address text, p_per_address integer, p_global integer)

@@ -294,6 +294,7 @@ export async function saveDocTemplateAction(
   if (docKey === ORDER_DOC) return { error: "Заповедта не се пази като шаблон — тя е на една схема (Реш. 149). · The Order is not kept as a template — it belongs to one scheme." };
   if (!name.trim()) return { error: "A template name is required." };
   if (!bg.trim() && !en.trim()) return { error: "Nothing to save — the document is empty." };
+  if (docHtmlTooLarge(bg, en)) return { error: DOC_TOO_LARGE }; // before it is read (R3S-3)
   const item = await addSavedTemplate({
     docKey, type: type === "C" ? "C" : "T", name: name.trim(),
     // sanitized as a document is (the security sweep, SI-1: a template was stored as typed, and every
@@ -1256,16 +1257,18 @@ const REPORT_UNDER_APPROVAL = "Обработката е прегледана и
 // stripping any <script>/event-handler/js: URL — and size-capped so a document
 // can't run script in the app origin or bloat the scheme row unbounded.
 const MAX_DOC_HTML = 3_000_000; // 3 MB per language (images now go to storage, not base64)
+const DOC_TOO_LARGE = "Документът е твърде голям — вмъквайте снимките като снимки (качват се сами), не ги поставяйте в текста. · Document is too large. Insert images as photos (they upload automatically) rather than pasting them inline.";
+const docHtmlTooLarge = (bg: unknown, en: unknown) => String(bg ?? "").length > MAX_DOC_HTML || String(en ?? "").length > MAX_DOC_HTML;
 export async function saveDocHtmlAction(schemeId: string, docKey: string, bg: string, en: string) {
   await requireDocWriter(docKey, schemeId);
   const scheme = await getScheme(schemeId);
   if (!scheme) throw new Error("Scheme not found");
-  // the coded lists' mark goes on after sanitizing (it is an HTML comment)
+  // the size checked BEFORE the body is read (the security sweep, round 3 — R3S-3: a 50 MB body was
+  // sanitized first and refused after); the coded lists' mark goes on after sanitizing (an HTML comment)
+  if (docHtmlTooLarge(bg, en)) throw new Error(DOC_TOO_LARGE);
   const cleanBg = markCodedList(docKey, sanitizeDocHtml(bg));
   const cleanEn = markCodedList(docKey, sanitizeDocHtml(en));
-  if (cleanBg.length > MAX_DOC_HTML || cleanEn.length > MAX_DOC_HTML) {
-    throw new Error("Document is too large. Insert images as photos (they upload automatically) rather than pasting them inline.");
-  }
+  if (cleanBg.length > MAX_DOC_HTML || cleanEn.length > MAX_DOC_HTML) throw new Error(DOC_TOO_LARGE);
   const docs = { ...(scheme.docs ?? {}), [docKey]: { bg: cleanBg, en: cleanEn } };
   await updateScheme(schemeId, { docs });
   // §8.3 — snapshot a revision (skips if unchanged). Records who saved it.
@@ -5101,7 +5104,7 @@ export async function lookupCertificateAction(_prev: CertLookupState, formData: 
   if (r.state === "valid") return { state: "valid", number, answer: r.answer };
   const { lang } = await getServerT();
   // a ceiling in its own words: this address, this code for the day, or everyone (round 2, R2U-6)
-  const t = r.state === "limited" ? REGISTER_TEXT[r.why === "code" ? "limitedCode" : r.why === "address" ? "limited" : "limitedAll"] : REGISTER_TEXT[r.state];
+  const t = r.state === "limited" ? REGISTER_TEXT[r.why === "code" ? "limitedCode" : r.why === "number" ? "limitedNumber" : r.why === "address" ? "limited" : "limitedAll"] : REGISTER_TEXT[r.state];
   return { state: r.state, number, message: lang === "bg" ? t.bg : t.en };
 }
 
@@ -6839,7 +6842,9 @@ export async function dispatchAction(formData: FormData): Promise<void> {
   await advanceStatusForEvent(schemeId, part!.code, "items_dispatched");
   await notifyItemsDispatched(tell!.labId, schemeId, scheme!.number, part!.code, { kind: kind!, day: fields.day, waybill: fields.waybill, carrier: fields.carrier, time: fields.handover?.time });
   // the carrier and a replacement's reason stay in the record — never in the journal's words (§4.2)
-  await logActivity("delivery.dispatched", { schemeId, targetCode: part!.code, subject: `shipment:${shipment.id}`, summary: `${kind === "replacement" ? "A replacement object" : kind === "handover" ? "The object handed to the participant's own courier" : "The object"} for ${part!.code} — ${fields.day}${fields.waybill ? `, waybill ${fields.waybill}` : ""}`, after: { kind, day: fields.day, waybill: fields.waybill ?? null, docs: fields.docs } });
+  // the waybill itself only in «after» (masked for who has no names.view) — never in the line's words,
+  // where a hand-typed «62 123 456 789» slipped past the mask (the security sweep, round 3 — R3S-4)
+  await logActivity("delivery.dispatched", { schemeId, targetCode: part!.code, subject: `shipment:${shipment.id}`, summary: `${kind === "replacement" ? "A replacement object" : kind === "handover" ? "The object handed to the participant's own courier" : "The object"} for ${part!.code} — ${fields.day}${fields.waybill ? ", with a waybill" : ""}`, after: { kind, day: fields.day, waybill: fields.waybill ?? null, docs: fields.docs } });
   revalidatePath("/deliveries");
   revalidatePath(`/schemes/${schemeId}`, "layout");
   redirect(back(`ok=${kind}`));

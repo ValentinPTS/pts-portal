@@ -11,6 +11,7 @@ const MAX_ROWS = 1_048_576, MAX_COLS = 16_384;
 // …and a workbook's cells in all, the gaps a far reference opens included: 3 000 rows with one cell at
 // XFD filled 565 MB from a 16 KB file (the security sweep, round 2, R2S-7)
 const MAX_SLOTS = 2_000_000;
+const MAX_SHEETS = 255;
 export interface ReadSheet { name: string; rows: Cell[][] }
 export class XlsxReadError extends Error {}
 
@@ -85,17 +86,25 @@ export function readXlsx(bytes: Uint8Array): ReadSheet[] {
   // the self-closing form first — else «<si/>» would swallow the next string (8.2 review)
   const shared = [...(text("xl/sharedStrings.xml") ?? "").matchAll(/<si\b[^>]*\/>|<si\b[^>]*>([\s\S]*?)<\/si>/g)].map((m) => textOf(m[1] ?? ""));
   const sheets: ReadSheet[] = [];
-  for (const m of wb.matchAll(/<sheet\b[^>]*\/?>/g)) {
+  // one budget for the whole workbook, each sheet's part read once, and a bound on the sheets — a
+  // workbook listing one 2-million-cell part a hundred times passed every sheet's own budget (the
+  // security sweep, round 3 — R3S-5)
+  let slots = 0;
+  const spend = (n: number) => { slots += Math.max(0, n); if (slots > MAX_SLOTS) throw new XlsxReadError("xlsx: too many cells for a workbook the portal reads"); };
+  const read = new Set<string>();
+  const listed = [...wb.matchAll(/<sheet\b[^>]*\/?>/g)];
+  if (listed.length > MAX_SHEETS) throw new XlsxReadError("xlsx: more sheets than a workbook the portal reads");
+  for (const m of listed) {
     const name = unxml(attr(m[0], "name") ?? "");
     const rid = attr(m[0], "r:id") ?? [...m[0].matchAll(/\s([\w]+:id)="([^"]*)"/g)].find((x) => x[1].endsWith(":id"))?.[2] ?? "";
     let t = target.get(rid) ?? "";
     if (!t) continue;
     t = t.startsWith("/") ? t.slice(1) : `xl/${t}`.replace(/\/\.\//g, "/");
+    if (read.has(t)) throw new XlsxReadError("xlsx: one sheet's part listed twice");
+    read.add(t);
     const xml = text(t);
     if (xml === null) continue;
     const rows: Cell[][] = [];
-    let slots = 0;
-    const spend = (n: number) => { slots += Math.max(0, n); if (slots > MAX_SLOTS) throw new XlsxReadError("xlsx: too many cells for a workbook the portal reads"); };
     for (const r of xml.matchAll(/<row\b([^>]*)\/>|<row\b([^>]*)>([\s\S]*?)<\/row>/g)) {
       const rAttr = r[1] ?? r[2] ?? "";
       const rn = Number(attr(`<x ${rAttr}>`, "r"));

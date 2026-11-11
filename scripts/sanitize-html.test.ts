@@ -101,7 +101,9 @@ ok("isUnsafeDocHtml false for clean", !isUnsafeDocHtml(rich));
 ok("empty/nullish safe", sanitizeDocHtml("") === "" && sanitizeDocHtml(null) === "" && sanitizeDocHtml(undefined) === "");
 
 // ── the security sweep (SI-1): nested and unclosed tags, an iframe's inline document ────────
-const live = (h: string) => /<\s*(script|iframe|object|embed|frame|base|meta|form)\b/i.test(h) || /\bsrcdoc\s*=/i.test(h) || /\bon[a-z]+\s*=/i.test(h.replace(/&[a-z]+;/g, ""));
+// what a browser would read as live: only inside a tag (text never carries a «<» that starts one)
+const tagsOf = (h: string) => h.match(/<[a-zA-Z][^>]*>?/g) ?? [];
+const live = (h: string) => tagsOf(h).some((t) => /^<\s*(script|iframe|object|embed|frame|base|meta|form)\b/i.test(t) || /\bsrcdoc\s*=/i.test(t) || /[\s/"']on[a-z]+\s*=/i.test(t));
 for (const payload of [
   `<scr<script>ipt>alert(1)</scr<script>ipt>`,
   `<ifr<script>ame srcdoc="&lt;script&gt;parent.x=1&lt;/script&gt;"></iframe>`,
@@ -117,7 +119,7 @@ for (const payload of [
   `<object data="x"`,
 ]) {
   const once = sanitizeDocHtml(payload);
-  ok(`nothing live survives: ${payload.slice(0, 50)}`, !live(once) && !/javascript:/i.test(once), once);
+  ok(`nothing live survives: ${payload.slice(0, 50)}`, !live(once) && !tagsOf(once).some((t) => /javascript:/i.test(t)), once);
   ok(`…and sanitizing again changes nothing (a fixed point): ${payload.slice(0, 40)}`, sanitizeDocHtml(once) === once, sanitizeDocHtml(once));
   // what the print shell does: wrap and close — an unclosed tag must not be closed into life
   ok(`…nor once wrapped in the print shell: ${payload.slice(0, 40)}`, !live(`<div>${once}</div>`), once);
@@ -149,6 +151,59 @@ ok("round 2 — the portal's own pictures kept", sanitizeDocHtml(`<img src="/bra
 {
   const t0 = Date.now(); sanitizeDocHtml("<style>".repeat(120_000)); sanitizeDocHtml("<script ".repeat(60_000));
   ok("round 2 — a pathological body is handled in linear time", Date.now() - t0 < 2000, `${Date.now() - t0} ms`);
+}
+
+// round 3 (R3S-1/2/3): the body read as a browser reads it — a «>» inside quotes, a tag cut off at
+// the end, the first of two same-named attributes, pictures resolved as the browser resolves them,
+// CSS decoded before it is judged, and linear time on every shape
+{
+  const JE = "&#106;avascript:alert(1)";
+  const inTags = (h: string, re: RegExp) => tagsOf(h).some((t) => re.test(t.replace(/&#106;/g, "j")));
+  for (const [name, html] of [
+    ["a «>» inside quotes hides nothing", `<a title=">" x=href="a href=${JE}//">click</a>`],
+    ["…single quotes too", `<a title='>' x=href='a href=${JE}//'>click</a>`],
+    ["a tag cut off at the end is dropped", `<p>x</p><a x=href="a href=${JE}//"`],
+    ["SVG's xlink link, misread", `<svg><a title=">" x=xlink:href="a xlink:href=${JE}//"><text y="20">t</text></a></svg>`],
+    ["the second of two hrefs is not the one checked", `<a href="#ok" href="${JE}">c</a>`],
+  ] as const) {
+    const out = sanitizeDocHtml(html);
+    ok(`round 3 — ${name}`, !inTags(out, /javascript:/i), out);
+  }
+  ok("round 3 — the first of two same-named attributes is the one kept", sanitizeDocHtml(`<a href="#ok" href="${JE}">c</a>`) === `<a href="#ok">c</a>`);
+  for (const [name, html] of [
+    ["/brand/ then «..»", `<img src="/brand/../lab/doc/S/report">`],
+    ["/brand/ then %2e%2e", `<img src="/brand/%2e%2e/lab/doc/S/report">`],
+    ["/brand/ then «..\\»", `<img src="/brand/..\\lab/doc/S/report">`],
+    ["/brand/ then «.&#9;.»", `<img src="/brand/.&#9;./lab/doc/S/report">`],
+    ["an SVG image's href", `<svg><image href="/schemes/S/export"/></svg>`],
+    ["an SVG image's xlink:href", `<svg><image xlink:href="/schemes/S/audit-pack"/></svg>`],
+    ["feImage", `<svg><filter id=f><feImage href="/lab/doc/S/report"/></filter></svg>`],
+    ["a misread «x=src»", `<img x=src="/brand/ src=/schemes/S/audit-pack">`],
+    ["a style's image-set()", `<p style="background-image:image-set('/lab/doc/S/report' 1x)">x</p>`],
+    ["a style's escaped url()", `<p style="background:u\\72l(/lab/doc/S/report)">x</p>`],
+    ["a style's url&#40;", `<p style="background:url&#40;/lab/doc/S/report)">x</p>`],
+    ["a style after a «>» in quotes", `<p title=">" style="background:url(/lab/doc/S/report)">x</p>`],
+    ["an SVG fill", `<svg><rect fill="url(/lab/doc/S/report#p)"/></svg>`],
+    ["an input's picture", `<input type=image src="/lab/doc/S/report">`],
+  ] as const) {
+    const out = sanitizeDocHtml(html);
+    ok(`round 3 — no portal page as a picture: ${name}`, !inTags(out, /\/lab\/|\/schemes\//), out);
+  }
+  ok("round 3 — the portal's own pictures and a style's /brand/ background kept",
+    sanitizeDocHtml(`<p style="background-image:url('/brand/embroidery-border.png')">e</p><svg><use href="#m"/></svg>`) === `<p style="background-image:url('/brand/embroidery-border.png')">e</p><svg><use href="#m"/></svg>`);
+  ok("round 3 — «ΔM < 0.1 %» stays as written", sanitizeDocHtml(`<p>ΔM < 0.1 %</p>`) === `<p>ΔM < 0.1 %</p>`);
+  ok("round 3 — a «<» a dropped tag would join to what follows is escaped", !/<script/i.test(sanitizeDocHtml(`a<<x!>script>alert(1)`)), sanitizeDocHtml(`a<<x!>script>alert(1)`));
+  ok("round 3 — a button never reaches the editor page's own forms or popovers",
+    sanitizeDocHtml(`<button form="f" formmethod="post" popovertarget="p" commandfor="d" command="show-modal">b</button>`) === `<button>b</button>`);
+  // the portal on a ptsbg.eu name: its own pages are no picture, its /brand/ is; the website's are
+  process.env.NEXT_PUBLIC_SITE_URL = "https://portal.ptsbg.eu";
+  ok("round 3 — the portal's own address: a page is no picture", !/schemes/.test(sanitizeDocHtml(`<img src="https://portal.ptsbg.eu/schemes/S/export">`)));
+  ok("round 3 — …its /brand/ and the website's pictures are", sanitizeDocHtml(`<img src="https://portal.ptsbg.eu/brand/logo.png"><img src="https://ptsbg.eu/x.jpg">`) === `<img src="https://portal.ptsbg.eu/brand/logo.png"><img src="https://ptsbg.eu/x.jpg">`);
+  delete process.env.NEXT_PUBLIC_SITE_URL;
+  const t0 = Date.now();
+  sanitizeDocHtml("<a ".repeat(70_000)); sanitizeDocHtml(`<p style="` + "url(".repeat(50_000) + `">x</p>`); sanitizeDocHtml(`<img src="` + " ".repeat(200_000) + `x">`);
+  sanitizeDocHtml("<!--".repeat(50_000)); sanitizeDocHtml(`<a href="` + "&amp".repeat(50_000) + `">`);
+  ok("round 3 — every pathological shape in linear time", Date.now() - t0 < 1500, `${Date.now() - t0} ms`);
 }
 
 ok("text that merely mentions a form or a script is not touched", sanitizeDocHtml(`<p>The script of the form: 5 &lt; 6</p>`) === `<p>The script of the form: 5 &lt; 6</p>`);

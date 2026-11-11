@@ -32,7 +32,7 @@ export default function EraseEntityForm({ lang, entityId }: { lang: "bg" | "en";
         <p className="text-xs" style={{ color: "var(--muted)" }}>{L("Само ръководителят на PTS. Юридическото лице, лабораториите и потребителите му, писмата до тях и документите му се заличават; профилите за вход се изтриват.", "The head of PTS only. The legal entity, its laboratories and users, the messages to them and its documents are erased; the sign-in accounts deleted.")}</p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <label style={{ display: "grid", gap: 3 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{L("Входящ № на искането *", "Incoming no. of the request *")}</span>
-            <input name="requestNo" required maxLength={30} pattern="[0-9A-Za-zА-Яа-я№/.\-]{1,30}" title={L("букви, цифри, № / . - — без интервали", "letters, digits, № / . - — no spaces")} style={{ ...field, minWidth: 140 }} /></label>
+            <input name="requestNo" required maxLength={30} pattern="[0-9A-Za-zА-Яа-я№\/.\-]{1,30}" title={L("букви, цифри, № / . - — без интервали", "letters, digits, № / . - — no spaces")} style={{ ...field, minWidth: 140 }} /></label>
           <label style={{ display: "grid", gap: 3 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{L("Дата на искането *", "Date of the request *")}</span>
             <input name="requestDate" type="date" required style={{ ...field, minWidth: 150 }} /></label>
         </div>
