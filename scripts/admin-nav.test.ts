@@ -23,16 +23,16 @@ t("every section is built («Обекти и партиди» in 3.5, «Дост
 // ── who sees what, role by role (hand-written) ──────────────────────────────
 const MORE = "library skins changes holidays";
 const EXPECT: [string, Viewer, boolean, string][] = [
-  ["the local build", viewer(NONE, { build: true }), false, `dashboard schemes organizations registrations batches deliveries invoices journal people notices ${MORE} validation system`],
-  ["the head (manages PTS's people)", viewer({ permanent: ["head"], schemes: {} }), true, `dashboard schemes journal people notices ${MORE} validation system`],
-  ["the quality manager", viewer({ permanent: ["quality"], schemes: {} }), false, `dashboard schemes journal notices ${MORE} validation`],
-  ["the software administrator", viewer(effectiveRoles({ permanent: ["software_admin"], schemes: { A: ["scheme_manager"] } })), false, `dashboard journal notices ${MORE} validation system`],
-  ["the scheme manager", viewer({ permanent: [], schemes: { A: ["scheme_manager"] } }), false, `dashboard schemes organizations registrations batches deliveries invoices journal people notices ${MORE}`],
+  ["the local build", viewer(NONE, { build: true }), false, `dashboard schemes organizations registrations batches deliveries invoices journal people notices website ${MORE} validation system`],
+  ["the head (manages PTS's people)", viewer({ permanent: ["head"], schemes: {} }), true, `dashboard schemes journal people notices website ${MORE} validation system`],
+  ["the quality manager", viewer({ permanent: ["quality"], schemes: {} }), false, `dashboard schemes journal notices website ${MORE} validation`],
+  ["the software administrator", viewer(effectiveRoles({ permanent: ["software_admin"], schemes: { A: ["scheme_manager"] } })), false, `dashboard journal notices website ${MORE} validation system`],
+  ["the scheme manager", viewer({ permanent: [], schemes: { A: ["scheme_manager"] } }), false, `dashboard schemes organizations registrations batches deliveries invoices journal people notices website ${MORE}`],
   ["the coding expert", viewer({ permanent: [], schemes: { A: ["coding_expert"] } }), false, `dashboard schemes organizations registrations deliveries invoices people ${MORE}`],
   ["the statistics expert", viewer({ permanent: [], schemes: { A: ["statistics_expert"] } }), false, `dashboard schemes ${MORE}`],
   ["the technical expert", viewer({ permanent: [], schemes: { A: ["technical_expert"] } }), false, `dashboard schemes batches ${MORE}`],
-  ["the authorised reviewer", viewer({ permanent: [], schemes: { A: ["reviewer"] } }), false, `dashboard schemes journal notices ${MORE}`],
-  ["the auditor", viewer(NONE, { auditor: true }), false, `dashboard schemes journal notices ${MORE}`],
+  ["the authorised reviewer", viewer({ permanent: [], schemes: { A: ["reviewer"] } }), false, `dashboard schemes journal notices website ${MORE}`],
+  ["the auditor", viewer(NONE, { auditor: true }), false, `dashboard schemes journal notices website ${MORE}`],
   ["someone of PTS with no role yet (day one)", viewer(NONE), false, `dashboard ${MORE}`],
   ["a founder managing PTS's people while no head can act, with no role", viewer(NONE), true, `dashboard people ${MORE}`],
 ];

@@ -7,7 +7,7 @@ export type SectionKey =
   | "dashboard" | "schemes" | "organizations" | "registrations" | "batches" | "deliveries" | "invoices"
   | "journal" | "people"
   // the portal's own pages the design does not draw: under «Още»
-  | "notices" | "library" | "skins" | "system" | "changes" | "holidays" | "validation";
+  | "notices" | "website" | "library" | "skins" | "system" | "changes" | "holidays" | "validation";
 
 export interface Section {
   key: SectionKey;
@@ -31,6 +31,8 @@ export const SECTIONS: readonly Section[] = [
   { key: "journal", href: "/activity", bg: "Регистър на действията", en: "Register of actions", group: "records" },
   { key: "people", href: "/users", bg: "Потребители на провайдъра", en: "The provider's users", group: "records" },
   { key: "notices", href: "/notices", bg: "Известия", en: "Notices", group: "more" },
+  // the website's feed — what the site gets, by a button (10.2)
+  { key: "website", href: "/website", bg: "Сайт", en: "Website", group: "more" },
   { key: "library", href: "/items", bg: "Елементи", en: "My items", group: "more" },
   { key: "skins", href: "/skins", bg: "Облици", en: "Skins", group: "more" },
   { key: "changes", href: "/changes", bg: "Регистър на промените", en: "Change register", group: "more" },

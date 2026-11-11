@@ -4,7 +4,7 @@ import { randomUUID, randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { getScheme, updateScheme, updateSchemeWith, addScheme, archiveScheme, listSchemeSummaries, listSchemesInFolder, schemeIdTaken, schemeNumberExists, listSchemes } from "./store";
+import { getScheme, updateScheme, updateSchemeWith, addScheme, archiveScheme, listSchemeSummaries, listSchemesInFolder, schemeIdTaken, schemeNumberExists, listSchemes, listStartedSchemes } from "./store";
 import { blankScheme } from "./new-scheme";
 import { nextProject } from "./folders";
 import { sameSchemeNumber, schemeIdFromNumber, sofiaYearMonth, readSchemeNumber, markersFor, schemeMarkers, isKind, isActivity, type SchemeKind, type Activity } from "./scheme-number";
@@ -18,6 +18,8 @@ import { JOIN_LETTER_BUCKET, keepMemLetter } from "./join-letters";
 import { waitingAtAnnouncement, admissionCheck, admissionsNow, ADMIT_PROBLEM_TEXT, schemeFull } from "./waitlist-model";
 import { catalogueState, subjectOf, wishProblem, wishesToTell, activeWish, SUBJECT_MAX, WISH_PROBLEM_TEXT, type CatalogueWish } from "./catalogue-model";
 import { listWishes, addWish, closeWish, eraseWishesOf } from "./catalogue-wishes";
+import { buildFeed } from "./website-feed-model";
+import { publishFeed, feedDigest, feedBase, feedBaseMissing, latestPublication } from "./website-feed";
 import { fixPrices } from "./scheme-prices";
 import { participantViewer } from "./participation-view";
 import { readOffer, chooseProblem, liveOffers, OFFER_PROBLEM_TEXT, type CarrierOffer, type OfferProblem, type SentNotice } from "./carrier-model";
@@ -5005,6 +5007,29 @@ async function tellCatalogueWishes(s: Scheme): Promise<void> {
   } catch (e) {
     console.error("[catalogue] telling the wishes failed:", (e as Error)?.message ?? e);
   }
+}
+
+// ── The website's feed (plan part 10.2) ─────────────────────────────────────────────────
+// Published only by a person's press — the head's: what goes out in PTS's name (1.8) — and only the feed
+// that person saw (its fingerprint); each publication a new version, on record.
+export async function publishWebsiteFeedAction(formData: FormData): Promise<void> {
+  await requireCapAnywhere("texts.approve");
+  // on a deployment the links must be the portal's own address (10.2 review)
+  if (feedBaseMissing()) redirect("/website?refused=no-address");
+  const started = await listStartedSchemes();
+  const full = new Set((await Promise.all(started.filter((s) => s.status === "open").map(async (s) => (schemeFull(s, await listParticipants(s.id)) ? [s.id] : []) as string[]))).flat());
+  const feed = buildFeed(started, schemeNowMs, (s) => full.has(s.id), feedBase());
+  const digest = feedDigest(feed);
+  if (String(formData.get("digest") ?? "") !== digest) redirect("/website?refused=changed");
+  // the same as the last publication — nothing to publish (a second press, 10.2 review)
+  const last = await latestPublication().catch(() => null);
+  if (last?.digest === digest) redirect(`/website?refused=unchanged`);
+  const by = (await getRoleContext()).email ?? "build";
+  const r = await publishFeed(feed, by);
+  if (!r.ok) redirect(`/website?refused=${r.error}`);
+  await logActivity("website.published", { after: { version: r.publication.version, schemes: r.publication.schemes, digest }, summary: `Website feed published — version ${r.publication.version}, ${r.publication.schemes} schemes (10.2)` });
+  revalidatePath("/website");
+  redirect(`/website?published=${r.publication.version}`);
 }
 
 // ── The coding act (plan part 5.3; Zadanie «Кодиране», stage 9; А2; Реш. 124; D17) ─────

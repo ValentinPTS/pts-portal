@@ -95,6 +95,16 @@ export async function listStartedSchemes(): Promise<Scheme[]> {
   }
 }
 
+/** The ids of the started schemes, nothing else — for the website's feed as served (10.2 review: never
+ *  every scheme's whole document on a public, polled address). Throws on a database error. */
+export async function listStartedSchemeIds(): Promise<string[]> {
+  const db = getDb();
+  if (!db) return mem.filter((s) => s.status !== "draft" && live(s)).map((s) => s.id);
+  const { data, error } = await db.from("schemes").select("id, archived:data->>archivedAt").neq("status", "draft");
+  if (error) throw error;
+  return ((data ?? []) as { id: string; archived: string | null }[]).filter((r) => !r.archived).map((r) => r.id);
+}
+
 // Open schemes only — for the PUBLIC apply landing, which showed the small subset
 // of open schemes but was loading every scheme's full document payload to do it.
 // Scoping the ROWS by status at the DB keeps the closed-scheme history out of each

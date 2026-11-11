@@ -35,6 +35,8 @@ export function maySection(key: SectionKey, v: Viewer, managesPeople: boolean): 
     case "journal": return any("journal.read");
     case "people": return managesPeople || any("labs.manage");
     case "notices": return any("journal.read");
+    // the website's feed (10.2): who reads the notices sees what goes to the site; the head publishes it
+    case "website": return any("journal.read");
     case "library": case "skins": return true; // the editor's elements and the skins: every staff page (requireStaff)
     case "changes": return true;
     // the calendar every working-day count reads: read by PTS's people, kept by the head
