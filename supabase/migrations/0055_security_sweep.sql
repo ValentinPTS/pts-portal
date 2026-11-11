@@ -59,8 +59,13 @@ revoke execute on function public.public_form_try(text, text, text, integer, int
 grant execute on function public.public_form_try(text, text, text, integer, integer) to service_role;
 
 -- ── 2. a row's scheme is its participation's scheme ──────────────────────────────────────
-alter table public.participants drop constraint if exists participants_id_scheme;
-alter table public.participants add constraint participants_id_scheme unique (id, scheme_id);
+-- the pair's unique key: made only when missing, never dropped — the three checks below rest on it, and a
+-- second run that dropped it first was refused (2BP01, «other objects depend on it»; 2026-11-12)
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'participants_id_scheme' and conrelid = 'public.participants'::regclass) then
+    alter table public.participants add constraint participants_id_scheme unique (id, scheme_id);
+  end if;
+end $$;
 alter table public.submissions drop constraint if exists submissions_participation_scheme;
 alter table public.submissions add constraint submissions_participation_scheme
   foreign key (participant_id, scheme_id) references public.participants (id, scheme_id) not valid;

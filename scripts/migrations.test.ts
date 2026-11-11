@@ -127,6 +127,22 @@ for (const n of names.filter((x) => x >= "0018")) {
   }
 }
 
+// a key that foreign keys rest on is never dropped to be made again — a second run of 0055 dropped the
+// participations' (id, scheme) key while three checks stood on it, and Postgres refused (2BP01, 2026-11-12)
+{
+  const keys = new Map<string, string>(); // a unique / primary key constraint → its table
+  const referenced = new Set<string>();
+  for (const n of names) {
+    const s = code(sql[n]).toLowerCase();
+    for (const m of s.matchAll(/alter table (?:public\.)?([a-z_0-9]+)\s+add constraint ([a-z_0-9]+)\s+(?:unique|primary key)/g)) keys.set(m[2], m[1]);
+    for (const m of s.matchAll(/references (?:public\.)?([a-z_0-9]+)\s*\(/g)) referenced.add(m[1]);
+  }
+  const dropped = names.flatMap((n) => [...code(sql[n]).toLowerCase().matchAll(/alter table (?:public\.)?([a-z_0-9]+)\s+drop constraint (?:if exists )?([a-z_0-9]+)/g)]
+    .filter((m) => keys.get(m[2]) === m[1] && referenced.has(m[1])).map((m) => `${n}: ${m[2]}`));
+  t("no migration drops a unique key that foreign keys rest on (a re-run would be refused)", dropped.length === 0, dropped.join(", "));
+  t("0055 makes the participations' (id, scheme) key only when missing", /if not exists \(select 1 from pg_constraint where conname = 'participants_id_scheme'/.test(sql["0055_security_sweep"]));
+}
+
 const backfill = [...code(sql["0018_app_migrations"]).matchAll(/\('(\d{4}_[a-z_]+)'\)/g)].map((m) => m[1]).filter((n) => n !== "0018_app_migrations");
 t("0018 records exactly 0001–0017", JSON.stringify(backfill) === JSON.stringify(names.filter((n) => n < "0018")), backfill.join(","));
 // 0019: one row, starting as the real portal, no rights for the browser roles
