@@ -28,13 +28,16 @@
 //
 // What it REMOVES: script/style/iframe/textarea/title/xmp/noembed/noframes/noscript/
 // plaintext/template WITH what is in them; object/embed/link/meta/base/form/frame/
-// frameset/applet and SVG's animation elements as tags; every on…= handler, srcdoc,
-// formaction, srcset, ping; a link to anything but http/https/mailto/tel or a relative
-// address; a picture from anywhere but the portal's places (a relative one only under
-// /brand/, as the browser resolves it); a style that loads from elsewhere or calls
-// anything but the ordinary CSS functions; and any attribute holding a script's scheme.
+// frameset/applet and SVG's animation elements as tags; every attribute NOT ON ITS LIST
+// (an allow-list since round 4 — handlers, srcdoc, srcset, ping, attributionsrc, a
+// button's form/popover/command targets never are; «name» only on a form field); a link
+// to anything but http/https/mailto/tel/sms/viber/ftp or a relative address; a picture
+// from anywhere but the portal's places — «https://» exactly, a relative one only
+// «/brand/<file>» as written — and the picture's tag with it; a style's declarations that
+// load from elsewhere or call anything but the ordinary CSS functions; «rel=opener»; and
+// any attribute holding a script's scheme.
 
-import { imageUrlAllowed } from "./image-hosts";
+import { BRAND_FILE, imageUrlAllowed } from "./image-hosts";
 
 // ── what is dropped ─────────────────────────────────────────────────────────────────
 // Elements whose content the browser reads as raw text (or never shows): dropped with
@@ -49,16 +52,46 @@ const DROP_TAG = new Set([
   "animate", "animatemotion", "animatetransform", "animatecolor", "set", "discard", "handler", "listener",
   "html", "head", "body", "isindex", "keygen", "param",
 ]);
-// Attributes never kept: an iframe's inline document, a list of pictures from anywhere, a ping on
-// every click, a form's target — and a button's hold on the editor page's own forms, popovers and
-// dialogs (form=, form…=, popovertarget=, commandfor=).
-const DROP_ATTR = new Set(["srcdoc", "srcset", "imagesrcset", "ping", "action", "http-equiv", "popovertarget",
-  "popovertargetaction", "commandfor", "command", "interestfor"]);
+// The attributes a document may carry — an ALLOW-list (round 4, R4S-2): a deny-list missed what browsers
+// add — «attributionsrc» fetched any address, with the viewer's cookies, past every other check. Anything
+// not named here is dropped: formatting, tables, pictures and links, SVG drawing, MathML, the form fields
+// the builder inserts, and data-*/aria-*.
+const ALLOWED_ATTR = new Set((
+  // every element
+  "class style title lang dir id role hidden translate contenteditable spellcheck tabindex " +
+  // layout and formatting (the editor, pasted documents)
+  "align valign width height border bgcolor color face size nowrap clear start reversed type value " +
+  // tables
+  "colspan rowspan scope headers span cellpadding cellspacing summary abbr axis frame rules char charoff " +
+  // pictures, links, maps, media (each checked as what it is)
+  "src alt href target rel hreflang cite datetime usemap ismap shape coords background poster controls muted loop playsinline " +
+  // the builder's form fields
+  "name checked disabled readonly selected multiple placeholder label for min max step maxlength minlength " +
+  // SVG
+  "xmlns xmlns:xlink xlink:href xml:space version viewbox preserveaspectratio x y x1 y1 x2 y2 cx cy r rx ry fx fy dx dy " +
+  "d points pathlength transform fill fill-opacity fill-rule stroke stroke-width stroke-opacity stroke-linecap " +
+  "stroke-linejoin stroke-dasharray stroke-dashoffset stroke-miterlimit opacity offset stop-color stop-opacity " +
+  "gradientunits gradienttransform spreadmethod patternunits patterncontentunits patterntransform clip-path " +
+  "clippathunits clip-rule mask maskunits maskcontentunits filter filterunits primitiveunits stddeviation in in2 " +
+  "result operator mode values rotate textlength lengthadjust text-anchor dominant-baseline alignment-baseline " +
+  "baseline-shift font-family font-size font-weight font-style text-decoration letter-spacing word-spacing " +
+  "writing-mode visibility display overflow marker-start marker-mid marker-end markerwidth markerheight markerunits " +
+  "refx refy orient vector-effect shape-rendering text-rendering image-rendering focusable paint-order " +
+  // MathML
+  "displaystyle mathvariant mathsize mathcolor mathbackground stretchy fence separator accent accentunder largeop " +
+  "movablelimits symmetric lspace rspace minsize maxsize linethickness numalign denomalign bevelled scriptlevel " +
+  "columnalign rowalign columnspacing rowspacing columnlines rowlines notation open close separators depth voffset encoding"
+).split(" "));
+// …and per element: MathML's «form» on an operator (on a button it would reach the editor page's own forms)
+const ALLOWED_ON: Record<string, Set<string>> = { form: new Set(["mo"]) };
+// «name» only on a form field or a map — on a picture it named the editor page's own document
+// («<img name=createElement>» broke the editor for everyone who opened it — round 4, R4S-5)
+const NAME_ON = new Set(["input", "select", "textarea", "button", "map", "fieldset", "output"]);
 // Attributes that fetch what they name, wherever they stand.
-const PICTURE_ATTR = new Set(["src", "lowsrc", "dynsrc", "background", "poster", "data", "longdesc"]);
+const PICTURE_ATTR = new Set(["src", "background", "poster"]);
 // Attributes that are only ever words (never read as a URL or as CSS).
-const TEXT_ATTR = new Set(["title", "alt", "placeholder", "value", "label", "class", "id", "name", "lang", "dir", "content", "summary", "abbr"]);
-const SAFE_LINK_SCHEME = new Set(["http", "https", "mailto", "tel"]);
+const TEXT_ATTR = new Set(["title", "alt", "placeholder", "value", "label", "class", "id", "name", "lang", "dir", "summary", "abbr"]);
+const SAFE_LINK_SCHEME = new Set(["http", "https", "mailto", "tel", "sms", "viber", "ftp"]);
 const SCRIPTISH = /(?:java|vb|live)script:|data:text\/html/;
 
 // ── character references, as the browser reads them inside an attribute ───────────────
@@ -158,7 +191,6 @@ function linkSafe(raw: string): boolean {
   return !flat.startsWith("//"); // never protocol-relative («\\host» too, read as «//host»)
 }
 
-const PORTAL = "https://portal.invalid";
 const RASTER = /^data:image\/(?:png|jpe?g|gif|webp|avif|bmp)[;,]/;
 
 /** May this be fetched as a picture? Only inline pictures, the portal's own /brand/ (as the browser
@@ -167,28 +199,39 @@ function pictureUrlSafe(decoded: string, opts: { svgData?: boolean; fragment?: b
   const flat = urlFlat(decoded);
   if (flat === "") return true;
   const lower = flat.toLowerCase();
-  if (opts.fragment && flat.startsWith("#")) return true; // an SVG reference inside the document itself
+  if (opts.fragment && flat.startsWith("#")) return true; // a reference inside the document itself (an SVG gradient, a map)
   if (lower.startsWith("data:")) return RASTER.test(lower) || (!!opts.svgData && lower.startsWith("data:image/svg+xml"));
-  const m = /^([a-z][a-z0-9+.-]*):/.exec(lower);
-  if (m) {
-    if ((m[1] !== "http" && m[1] !== "https") || !imageUrlAllowed(flat)) return false;
-    // on the portal's own address (it may live on a ptsbg.eu name) only /brand/, as a relative one
+  // an absolute address is «https://host/…» exactly: «https:/ptsbg.eu/../x», «https:ptsbg.eu/x» are RELATIVE
+  // to a page on https — the scheme taken as the page's own — and so a portal page (round 4, R4S-1)
+  if (/^https?:[\\/]{2}/i.test(flat)) {
     let u: URL;
     try { u = new URL(flat); } catch { return false; }
-    return !portalHosts().includes(u.host.toLowerCase()) || BRAND_PATH.test(u.pathname);
+    // on the portal's own address (it may live on a ptsbg.eu name) only /brand/ — first, so a picture
+    // copied inside the editor (the clipboard writes it whole) is kept (round 4, R4U-3)
+    if (portalOrigins().includes(u.origin)) return BRAND_FILE.test(u.pathname);
+    return imageUrlAllowed(u.href);
   }
-  if (/^[\\/]{2}/.test(flat)) return false; // protocol-relative
-  let u: URL;
-  try { u = new URL(flat, `${PORTAL}/doc/page`); } catch { return false; }
-  return u.origin === PORTAL && BRAND_PATH.test(u.pathname);
+  // any other scheme, or one without «//», is no picture; a relative one only «/brand/<file>» as written —
+  // judged after resolving it against one page, «../brand/x» from a deeper page was another page (R4S-1)
+  if (/^[a-z][a-z0-9+.-]*:/.test(lower)) return false;
+  return BRAND_FILE.test(flat);
 }
-const BRAND_PATH = /^\/brand\/[A-Za-z0-9._\-/]+$/;
-/** The portal's own host(s): its fixed address, and in a browser the page's own. */
-function portalHosts(): string[] {
-  const hosts: string[] = [];
-  try { const site = process.env.NEXT_PUBLIC_SITE_URL; if (site) hosts.push(new URL(site).host.toLowerCase()); } catch { /* none set */ }
-  try { const here = (globalThis as { location?: { host?: string } }).location?.host; if (here) hosts.push(here.toLowerCase()); } catch { /* not a browser */ }
-  return hosts;
+/** The portal's own origin(s): its fixed address, and in a browser the page's own. */
+function portalOrigins(): string[] {
+  const origins: string[] = [];
+  try { const site = process.env.NEXT_PUBLIC_SITE_URL; if (site) origins.push(new URL(site).origin); } catch { /* none set */ }
+  try { const here = (globalThis as { location?: { origin?: string } }).location?.origin; if (here && here !== "null") origins.push(here); } catch { /* not a browser */ }
+  return origins;
+}
+/** A picture on the portal's own address under /brand/, written whole — its path, so it is the same
+ *  picture on any address the portal answers on (and the PDF renderer loads it). */
+function ownBrandPath(decoded: string): string | null {
+  const flat = urlFlat(decoded);
+  if (!/^https?:[\\/]{2}/i.test(flat)) return null;
+  try {
+    const u = new URL(flat);
+    return portalOrigins().includes(u.origin) && BRAND_FILE.test(u.pathname) && !u.search && !u.hash ? u.pathname : null;
+  } catch { return null; }
 }
 
 // ── CSS (a style attribute, or an SVG attribute read as CSS) ─────────────────────────
@@ -287,7 +330,7 @@ function cssSafe(css: string): boolean {
       const d = css.charCodeAt(i);
       if (d === 34 || d === 39) {
         const [url, r, good] = readString(i, d);
-        if (!good || !pictureUrlSafe(url)) return false;
+        if (!good || !pictureUrlSafe(url, { fragment: true })) return false;
         i = r;
         continue;
       }
@@ -300,7 +343,7 @@ function cssSafe(css: string): boolean {
         if (e === 92) { if (!validEscape(i)) return false; const [ch, r] = escape(i); url += ch; i = r; continue; }
         url += css[i]; i++;
       }
-      if (!pictureUrlSafe(url)) return false;
+      if (!pictureUrlSafe(url, { fragment: true })) return false; // «url(#gradient)» is the document's own (R4 Q2)
       continue;
     }
     if (c === 92 /* a stray «\» */) { i += 2; continue; }
@@ -370,25 +413,60 @@ function readTag(s: string, p: number): Tag {
 
 type Verdict = { keep: true } | { keep: false } | { keep: true; value: string };
 
+/** A style's declarations, split at each «;» outside a string, a comment or brackets — linear. */
+function cssDeclarations(css: string): string[] {
+  const out: string[] = [];
+  let depth = 0, quote = 0, from = 0;
+  for (let i = 0; i < css.length; i++) {
+    const c = css.charCodeAt(i);
+    if (c === 92 /* \ */) { i++; continue; }
+    if (quote) { if (c === quote) quote = 0; continue; }
+    if (c === 47 && css.charCodeAt(i + 1) === 42) { const e = css.indexOf("*/", i + 2); if (e < 0) break; i = e + 1; continue; }
+    if (c === 34 || c === 39) quote = c;
+    else if (c === 40 || c === 91 || c === 123) depth++;
+    else if ((c === 41 || c === 93 || c === 125) && depth > 0) depth--;
+    else if (c === 59 && depth === 0) { out.push(css.slice(from, i)); from = i + 1; }
+  }
+  out.push(css.slice(from));
+  return out;
+}
+// a decoded value written into an attribute: its «&», «"» and «<» as references
+const escAttr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+
 function decideAttr(tag: string, name: string, raw: string | null): Verdict {
   if (!ATTR_NAME_OK.test(name)) return { keep: false };
-  if (name.startsWith("on") || name.startsWith("form") || DROP_ATTR.has(name)) return { keep: false };
+  const allowed = name.startsWith("data-") || name.startsWith("aria-") || ALLOWED_ATTR.has(name) || !!ALLOWED_ON[name]?.has(tag);
+  if (!allowed) return { keep: false };
+  if (name === "name" && !NAME_ON.has(tag)) return { keep: false };
   if (raw === null) return { keep: true }; // a bare attribute («checked»)
-  const isLink = (name === "href" && (tag === "a" || tag === "area")) || (name === "xlink:href" && tag === "a");
+  const isLink = (name === "href" && (tag === "a" || tag === "area")) || (name === "xlink:href" && tag === "a") || name === "cite";
   if (isLink) return linkSafe(raw) ? { keep: true } : { keep: true, value: "#" };
   const decoded = decodeAttr(raw);
+  // a map's name, only within the document
+  if (name === "usemap") return decoded !== null && /^#[^\s]*$/.test(urlFlat(decoded)) ? { keep: true } : { keep: false };
   const isPicture = PICTURE_ATTR.has(name) || name === "href" || name === "xlink:href";
   if (isPicture) {
     if (decoded === null) return { keep: false };
+    const own = ownBrandPath(decoded);
+    if (own) return { keep: true, value: own };
     const ok = pictureUrlSafe(decoded, { svgData: tag === "img" && name === "src", fragment: name === "href" || name === "xlink:href" });
     return ok ? { keep: true } : { keep: false };
   }
   const isText = TEXT_ATTR.has(name) || name.startsWith("data-") || name.startsWith("aria-");
   if (decoded === null) return isText ? { keep: true } : { keep: false };
   // a script's scheme anywhere in a value, read as the browser reads it (R2S-2)
-  if (SCRIPTISH.test(decoded.replace(/[\u0000- \u007f-\u009f]/g, "").toLowerCase())) return { keep: false };
+  if (SCRIPTISH.test(decoded.replace(/[\u0000-\u0020\u007f-\u009f]/g, "").toLowerCase())) return { keep: false };
+  // a link never hands the page it opens a hold on this one («rel=opener» — round 4, R4S-8)
+  if (name === "rel" && /(^|\s)opener(\s|$)/i.test(decoded)) return { keep: false };
   // a style, and any other value with a function in it (SVG reads fill/filter/mask/… as CSS)
-  if (name === "style" || (!isText && decoded.indexOf("(") >= 0)) return cssSafe(decoded) ? { keep: true } : { keep: false };
+  if (name === "style") {
+    if (cssSafe(decoded)) return { keep: true };
+    // only the declarations that load from elsewhere go — a pasted paragraph keeps its colour and width
+    // (round 4, R4U-9); what stays is written back from what the browser reads
+    const kept = cssDeclarations(decoded).filter((d) => d.trim() && cssSafe(d));
+    return kept.length ? { keep: true, value: escAttr(kept.join(";")) } : { keep: false };
+  }
+  if (!isText && decoded.indexOf("(") >= 0) return cssSafe(decoded) ? { keep: true } : { keep: false };
   return { keep: true };
 }
 
@@ -401,6 +479,8 @@ function commentKept(data: string): boolean {
   if (/[<>]|--/.test(data) || data.startsWith("-")) return false;
   return !/^pts:/i.test(data) || data === "PTS:CV";
 }
+
+const COMMENT_END = /--!?>/g;
 
 function sanitizePass(s: string): string {
   const n = s.length;
@@ -443,14 +523,17 @@ function sanitizePass(s: string): string {
       const seen = new Set<string>();
       const kept: string[] = [];
       let changed = s.slice(lt + 1, tag.end).includes("<"); // a «<» inside: rebuilt, escaped
+      let pictureRefused = false;
       for (const a of tag.attrs) {
         if (seen.has(a.name)) { changed = true; continue; } // the browser keeps the first
         seen.add(a.name);
         const v = decideAttr(tag.name, a.name, a.raw);
-        if (!v.keep) { changed = true; continue; }
+        if (!v.keep) { changed = true; if (a.name === "src") pictureRefused = true; continue; }
         if ("value" in v) { changed = true; kept.push(` ${a.name}="${quoteAttr(v.value)}"`); continue; }
         kept.push(a.raw === null ? ` ${a.name}` : ` ${a.name}="${quoteAttr(a.raw)}"`);
       }
+      // a picture from where none may come is no picture at all — never an empty sized box (R4U-3)
+      if (pictureRefused && (tag.name === "img" || tag.name === "image")) continue;
       out += changed ? `<${tag.name}${kept.join("")}${tag.selfClosing ? "/" : ""}>` : s.slice(lt, tag.end);
       continue;
     }
@@ -480,12 +563,13 @@ function sanitizePass(s: string): string {
         const p = lt + 4;
         if (s.charCodeAt(p) === 62) { i = text = p + 1; continue; } // «<!-->»
         if (s.charCodeAt(p) === 45 && s.charCodeAt(p + 1) === 62) { i = text = p + 2; continue; } // «<!--->»
-        const a = s.indexOf("-->", p), b = s.indexOf("--!>", p);
-        if (a < 0 && b < 0) return out; // runs to the end
-        if (a >= 0 && (b < 0 || a < b)) {
-          if (commentKept(s.slice(p, a))) out += s.slice(lt, a + 3);
-          i = text = a + 3;
-        } else i = text = b + 4;
+        // its end — «-->» or «--!>», whichever comes first — in ONE forward scan: two searches each ran to
+        // the end for the end that was not there, for every comment (round 4, R4S-3: 256 KB of comments took 24 s)
+        COMMENT_END.lastIndex = p;
+        const e = COMMENT_END.exec(s);
+        if (!e) return out; // runs to the end
+        if (e[0] === "-->" && commentKept(s.slice(p, e.index))) out += s.slice(lt, e.index + 3);
+        i = text = e.index + e[0].length;
         continue;
       }
       const e = s.indexOf(">", lt + 2); // <!DOCTYPE …>, <![CDATA[ … — dropped

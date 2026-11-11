@@ -6,6 +6,7 @@ import { reportResultsTesting, reportResultsCalibration } from "./scoring";
 export interface Element {
   id: string;
   name: string;
+  nameBg?: string; // shown on a Bulgarian screen (round 4, R4U-5)
   category: string;
   bg: string;
   en: string;
@@ -13,32 +14,32 @@ export interface Element {
 
 export const LIBRARY: Element[] = [
   {
-    id: "confidentiality", name: "Confidentiality", category: "General",
+    id: "confidentiality", name: "Confidentiality", nameBg: "Поверителност", category: "General",
     en: "Each participant is assigned a unique random laboratory code. The identity of participants is known only to PTS Bulgaria staff. Participants sign a Confidentiality Declaration.",
     bg: "На всеки участник се присвоява уникален случаен лабораторен код. Самоличността на участниците е известна само на служителите на PTS Bulgaria. Участниците подписват Декларация за конфиденциалност.",
   },
   {
-    id: "publicity", name: "Publicity / Register", category: "General",
+    id: "publicity", name: "Publicity / Register", nameBg: "Публичност / регистър", category: "General",
     en: "Participant identities and performance are confidential. Information on issued certificates is published in the Register section of www.ptsbg.eu.",
     bg: "Самоличността и представянето на участниците са конфиденциални. Информация за издадените сертификати се публикува в раздел „Регистър“ на www.ptsbg.eu.",
   },
   {
-    id: "homogeneity", name: "Homogeneity & stability", category: "Plan",
+    id: "homogeneity", name: "Homogeneity & stability", nameBg: "Хомогенност и стабилност", category: "Plan",
     en: "Homogeneity and stability of the PT items are assessed by the provider in accordance with ISO 13528 before distribution.",
     bg: "Хомогенността и стабилността на обектите се оценяват от организатора съгласно ISO 13528 преди разпространението.",
   },
   {
-    id: "traceability", name: "Assigned value & traceability", category: "Report",
+    id: "traceability", name: "Assigned value & traceability", nameBg: "Приписана стойност и проследимост", category: "Report",
     en: "The assigned value and its uncertainty are determined from the participants' results; metrological traceability is ensured through the applied standard methods.",
     bg: "Приетата стойност и нейната неопределеност се определят от резултатите на участниците; метрологичната проследимост е осигурена чрез приложените стандартни методи.",
   },
   {
-    id: "scores", name: "z / ζ score criterion", category: "Report",
+    id: "scores", name: "z / ζ score criterion", nameBg: "Критерий за z / ζ оценка", category: "Report",
     en: "Each participant's performance is expressed as a z-score and a ζ-score. A result is satisfactory when the absolute value of the score is 2 or below, of warning when above 2 and below 3, and unsatisfactory when 3 or above.",
     bg: "Представянето на всеки участник се изразява чрез z-оценка и ζ-оценка. Резултатът е удовлетворителен при абсолютна стойност 2 или по-малка, предупредителен при стойност над 2 и под 3 и неудовлетворителен при 3 и повече.",
   },
   {
-    id: "feedback", name: "Feedback note", category: "Report",
+    id: "feedback", name: "Feedback note", nameBg: "Бележка за обратна връзка", category: "Report",
     en: "After the Final Report, participants receive a Feedback Sheet to assess satisfaction, needs and expectations.",
     bg: "След окончателния доклад участниците получават Формуляр за обратна връзка за оценка на удовлетвореност, потребности и очаквания.",
   },

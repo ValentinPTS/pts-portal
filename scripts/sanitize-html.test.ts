@@ -198,12 +198,49 @@ ok("round 2 — the portal's own pictures kept", sanitizeDocHtml(`<img src="/bra
   // the portal on a ptsbg.eu name: its own pages are no picture, its /brand/ is; the website's are
   process.env.NEXT_PUBLIC_SITE_URL = "https://portal.ptsbg.eu";
   ok("round 3 — the portal's own address: a page is no picture", !/schemes/.test(sanitizeDocHtml(`<img src="https://portal.ptsbg.eu/schemes/S/export">`)));
-  ok("round 3 — …its /brand/ and the website's pictures are", sanitizeDocHtml(`<img src="https://portal.ptsbg.eu/brand/logo.png"><img src="https://ptsbg.eu/x.jpg">`) === `<img src="https://portal.ptsbg.eu/brand/logo.png"><img src="https://ptsbg.eu/x.jpg">`);
+  ok("round 3 — …its /brand/ (as its path — round 4) and the website's pictures are", sanitizeDocHtml(`<img src="https://portal.ptsbg.eu/brand/logo.png"><img src="https://ptsbg.eu/x.jpg">`) === `<img src="/brand/logo.png"><img src="https://ptsbg.eu/x.jpg">`);
   delete process.env.NEXT_PUBLIC_SITE_URL;
   const t0 = Date.now();
   sanitizeDocHtml("<a ".repeat(70_000)); sanitizeDocHtml(`<p style="` + "url(".repeat(50_000) + `">x</p>`); sanitizeDocHtml(`<img src="` + " ".repeat(200_000) + `x">`);
   sanitizeDocHtml("<!--".repeat(50_000)); sanitizeDocHtml(`<a href="` + "&amp".repeat(50_000) + `">`);
   ok("round 3 — every pathological shape in linear time", Date.now() - t0 < 1500, `${Date.now() - t0} ms`);
+}
+
+// round 4 (R4S-1/2/3/5/8, R4U-3/9): «https:/host» is relative to an https page; an allow-list of attributes;
+// comments in one scan; no picture names the page's own document; no «rel=opener»; a pasted portal picture kept
+{
+  const inTags = (h: string, re: RegExp) => tagsOf(h).some((t) => re.test(t));
+  for (const [name, html] of [
+    ["«https:/ptsbg.eu/../»", `<img src="https:/ptsbg.eu/../schemes/S1/export">`],
+    ["«https:ptsbg.eu»", `<img src="https:ptsbg.eu/../../../../schemes/S1/export">`],
+    ["«https:\\ptsbg.eu\\..»", `<img src="https:\\ptsbg.eu\\..\\schemes">`],
+    ["entities", `<img src="https&colon;/ptsbg&period;eu/&period;&period;/schemes/S1/export">`],
+    ["a video's poster", `<video poster="https:/ptsbg.eu/../schemes/S1/export"></video>`],
+    ["an SVG image", `<svg><image href="https:/ptsbg.eu/../schemes/S1/export"/></svg>`],
+    ["a style", `<p style="background:url(https:/ptsbg.eu/../schemes/S1/export)">x</p>`],
+    ["«../brand/» from a deeper page", `<img src="../brand/print">`],
+    ["«/brand/./»", `<img src="/brand/./../schemes/x">`],
+  ] as const) {
+    const out = sanitizeDocHtml(html);
+    ok(`round 4 — no portal page as a picture: ${name}`, !inTags(out, /schemes|print/), out);
+  }
+  for (const a of ["attributionsrc", "ping", "srcset", "sharedstoragewritable", "popovertarget", "formaction", "onfocus"]) {
+    ok(`round 4 — an attribute not on the list is dropped: ${a}`, !new RegExp(a, "i").test(sanitizeDocHtml(`<img src="/brand/logo.png" ${a}="/schemes/S1/export"><a href="/x" ${a}="/schemes/S1/export">l</a>`)));
+  }
+  ok("round 4 — a picture names nothing on the editor page's own document", sanitizeDocHtml(`<img name="createElement" src="/brand/logo.png">`) === `<img src="/brand/logo.png">`);
+  ok("round 4 — …a form field keeps its name", sanitizeDocHtml(`<input type="checkbox" name="a" checked>`) === `<input type="checkbox" name="a" checked>`);
+  ok("round 4 — «rel=opener» dropped, «noopener» kept", sanitizeDocHtml(`<a href="https://x.example" target="_blank" rel="opener">a</a><a href="https://x.example" target="_blank" rel="noopener">b</a>`) === `<a href="https://x.example" target="_blank">a</a><a href="https://x.example" target="_blank" rel="noopener">b</a>`);
+  ok("round 4 — an SVG gradient and MathML's «form» kept", sanitizeDocHtml(`<svg><defs><linearGradient id="g1"><stop offset="0" stop-color="red"/></linearGradient></defs><rect fill="url(#g1)" width="10" height="10"/></svg><math><mo form="prefix">−</mo></math>`) === `<svg><defs><linearGradient id="g1"><stop offset="0" stop-color="red"/></linearGradient></defs><rect fill="url(#g1)" width="10" height="10"/></svg><math><mo form="prefix">−</mo></math>`);
+  ok("round 4 — a pasted style loses only what loads from elsewhere", sanitizeDocHtml(`<p style="color:red;background:url(https://evil.example/x.png);width:50%">x</p>`) === `<p style="color:red;width:50%">x</p>`, sanitizeDocHtml(`<p style="color:red;background:url(https://evil.example/x.png);width:50%">x</p>`));
+  ok("round 4 — a picture from nowhere it may come from leaves no empty box", sanitizeDocHtml(`<p>a<img src="file:///C:/x.png" style="width:60mm">b</p>`) === `<p>ab</p>`);
+  ok("round 4 — sms:, viber: and ftp: links kept", !/#/.test(sanitizeDocHtml(`<a href="sms:+359">s</a><a href="viber://chat?number=1">v</a><a href="ftp://ptsbg.eu/f">f</a>`)));
+  (globalThis as { location?: unknown }).location = { origin: "https://pts-portal.vercel.app", host: "pts-portal.vercel.app" };
+  ok("round 4 — a portal picture copied inside the editor (written whole) is kept, as its path", sanitizeDocHtml(`<img src="https://pts-portal.vercel.app/brand/team-data.png">`) === `<img src="/brand/team-data.png">`);
+  ok("round 4 — …another portal page copied so is not", sanitizeDocHtml(`<img src="https://pts-portal.vercel.app/schemes/S/export">`) === ``);
+  delete (globalThis as { location?: unknown }).location;
+  const t0 = Date.now();
+  sanitizeDocHtml("<!--x-->".repeat(40_000)); sanitizeDocHtml("<p>a</p><!--x-->".repeat(30_000)); sanitizeDocHtml("<!--x--!>".repeat(40_000));
+  ok("round 4 — many comments in linear time", Date.now() - t0 < 1500, `${Date.now() - t0} ms`);
 }
 
 ok("text that merely mentions a form or a script is not touched", sanitizeDocHtml(`<p>The script of the form: 5 &lt; 6</p>`) === `<p>The script of the form: 5 &lt; 6</p>`);

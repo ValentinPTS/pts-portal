@@ -57,7 +57,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IDENTITY_KEYS = new Set(["by", "entity", "entityId", "lab", "labId", "laboratory", "laboratoryId", "user", "userId", "entityUserId", "authUserId", "admin", "email", "waybill", "accountsLeft", "documentsLeft"]);
 // a waybill typed with spaces («62 123 456 789») is masked whole, to the next «,», «;», «)» or the end;
 // «товарителница» too («\b» is ASCII-only in a JS pattern — it never matched; round 3, R3S-4)
-const WAYBILL_TEXT = /(^|[^\p{L}\p{N}_])(waybill|товарителница)\s+[^,;)]+/giu;
+// …and with no space after the word, or a sign between («waybill:621…», «Waybill-621…», «товарителница№621…»),
+// the plural, «AWB» (round 4, R4S-7); the word alone, with nothing after it, is left
+const WAYBILL_TEXT = /(^|[^\p{L}\p{N}_])(waybills?|awb|товарителниц\p{L}*)[\s:№#.\-–—]*(?=[^\s,;)])[^,;)]+/giu;
 const MASK = "•••";
 function scrubRef(v: string | undefined): string | undefined {
   if (!v) return v;
@@ -92,6 +94,11 @@ export function redactCaseEventForStaff(e: CaseEvent): CaseEvent {
   // …typed by hand too: a calibration scheme's dispatch is recorded only so (round 2, R2S-3)
   const waybill = (e.kind === "items_dispatched" || e.kind === "receipt_confirmed") && !!e.ref;
   if (waybill) e = { ...e, ref: undefined };
+  // …and a waybill written into any step's reference or note, whatever its kind (round 4, R4S-7, R4U-4:
+  // «получено с куриер, товарителница 62 555 444 333» reached the quality manager, the auditor, the expert)
+  const scrub = (v: string | undefined) => (v ? v.replace(WAYBILL_TEXT, `$1$2 ${MASK}`) : v);
+  const ref = scrub(e.ref), note = scrub(e.note);
+  if (ref !== e.ref || note !== e.note) e = { ...e, ref, note };
   if (e.source !== "auto" || !e.recordedBy.includes("@")) return e;
   return { ...e, recordedBy: LAB_RECORDER, ref: undefined };
 }

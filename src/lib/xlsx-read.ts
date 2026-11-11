@@ -60,13 +60,81 @@ export function unzipEntries(buf: Uint8Array, only: (name: string) => boolean = 
 }
 
 const ENTITY: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+const codePointText = (n: number) => { try { return String.fromCodePoint(n); } catch { return "\ufffd"; } }; // «&#x110000;» threw (round 4)
 /** XML text unescaped: the five named entities and numeric references. */
 export const unxml = (s: string): string =>
-  s.replace(/&(#x[0-9a-fA-F]+|#\d+|amp|lt|gt|quot|apos);/g, (_, e: string) => (e[0] === "#" ? String.fromCodePoint(e[1] === "x" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10)) : ENTITY[e]));
+  s.replace(/&(#x[0-9a-fA-F]{1,8}|#\d{1,10}|amp|lt|gt|quot|apos);/g, (_, e: string) => (e[0] === "#" ? codePointText(e[1] === "x" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10)) : ENTITY[e]));
+
+// Every element is found by ONE forward scan (the security sweep, round 4 — R4S-6): a pattern like
+// «<row>([\s\S]*?)</row>» ran to the end of the part for every opener never closed — a 1.7 KB workbook
+// took 14 s, a 64 MB part hours. An opener whose «>» or closing tag never comes refuses the file.
+type Element = { attrs: string; body: string | null; start: number; end: number };
+function elements(xml: string, name: string, withBody = true): Element[] {
+  const out: Element[] = [];
+  const open = `<${name}`, close = `</${name}>`;
+  let p = 0;
+  for (;;) {
+    const i = xml.indexOf(open, p);
+    if (i < 0) return out;
+    const after = xml.charCodeAt(i + open.length);
+    // «<c» is not «<cols», «<sheet» not «<sheets»: the name ends at whitespace, «/» or «>»
+    if (!(after === 62 || after === 47 || after === 32 || after === 9 || after === 10 || after === 13)) { p = i + open.length; continue; }
+    const gt = xml.indexOf(">", i + open.length);
+    if (gt < 0) throw new XlsxReadError("xlsx: a broken part (a tag never closed)");
+    const self = xml.charCodeAt(gt - 1) === 47;
+    const attrs = xml.slice(i + open.length, self ? gt - 1 : gt);
+    if (self || !withBody) { out.push({ attrs, body: null, start: i, end: gt + 1 }); p = gt + 1; continue; }
+    const e = xml.indexOf(close, gt + 1);
+    if (e < 0) throw new XlsxReadError("xlsx: a broken part (an element never closed)");
+    out.push({ attrs, body: xml.slice(gt + 1, e), start: i, end: e + close.length });
+    p = e + close.length;
+  }
+}
+/** What stands between the first «open» and the «close» after it, or undefined. */
+const between = (xml: string, open: string, close: string): string | undefined => {
+  const i = xml.indexOf(open);
+  if (i < 0) return undefined;
+  const e = xml.indexOf(close, i + open.length);
+  return e < 0 ? undefined : xml.slice(i + open.length, e);
+};
 /** Every <t> of an element (a rich string's runs too), joined — never the phonetic <rPh> guide. */
-const textOf = (xml: string) => [...xml.replace(/<rPh\b[\s\S]*?<\/rPh>/g, "").matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>|<t(?:\s[^>]*)?\/>/g)].map((m) => unxml(m[1] ?? "")).join("");
-// either quote — Excel writes double, other writers single (8.2 review)
-const attr = (tag: string, name: string) => { const m = tag.match(new RegExp(`\\s${name}=(?:"([^"]*)"|'([^']*)')`)); return m ? (m[1] ?? m[2]) : undefined; };
+const textOf = (xml: string) => {
+  let plain = xml;
+  if (xml.indexOf("<rPh") >= 0) {
+    let kept = "", from = 0;
+    for (const ph of elements(xml, "rPh")) { kept += xml.slice(from, ph.start); from = ph.end; }
+    plain = kept + xml.slice(from);
+  }
+  return elements(plain, "t").map((t) => unxml(t.body ?? "")).join("");
+};
+// either quote — Excel writes double, other writers single (8.2 review); found by a scan, never a pattern
+// that runs to the end for each «name=» without its closing quote (R4S-6)
+const attr = (tag: string, name: string): string | undefined => {
+  const key = `${name}=`;
+  for (let p = 0; ;) {
+    const i = tag.indexOf(key, p);
+    if (i < 0) return undefined;
+    const before = tag.charCodeAt(i - 1), q = tag[i + key.length];
+    if (i > 0 && (before === 32 || before === 9 || before === 10 || before === 13) && (q === '"' || q === "'")) {
+      const e = tag.indexOf(q, i + key.length + 1);
+      return e < 0 ? undefined : tag.slice(i + key.length + 1, e);
+    }
+    p = i + key.length;
+  }
+};
+/** A sheet's relationship id: its «r:id», or any «<prefix>:id» (another writer's prefix). */
+const relId = (tag: string): string => {
+  const own = attr(tag, "r:id");
+  if (own !== undefined) return own;
+  for (let p = 0; ;) {
+    const i = tag.indexOf(':id="', p);
+    if (i < 0) return "";
+    let j = i;
+    while (j > 0 && /\w/.test(tag[j - 1])) j--;
+    if (j < i && j > 0 && /\s/.test(tag[j - 1])) { const e = tag.indexOf('"', i + 5); return e < 0 ? "" : tag.slice(i + 5, e); }
+    p = i + 5;
+  }
+};
 
 /** A column's index from its letters: A → 0, Z → 25, AA → 26. */
 export function colIndex(letters: string): number {
@@ -82,9 +150,9 @@ export function readXlsx(bytes: Uint8Array): ReadSheet[] {
   const wb = text("xl/workbook.xml");
   if (!wb) throw new XlsxReadError("not a workbook (no xl/workbook.xml)");
   const rels = text("xl/_rels/workbook.xml.rels") ?? "";
-  const target = new Map([...rels.matchAll(/<Relationship\b[^>]*>/g)].map((m) => [attr(m[0], "Id") ?? "", attr(m[0], "Target") ?? ""]));
-  // the self-closing form first — else «<si/>» would swallow the next string (8.2 review)
-  const shared = [...(text("xl/sharedStrings.xml") ?? "").matchAll(/<si\b[^>]*\/>|<si\b[^>]*>([\s\S]*?)<\/si>/g)].map((m) => textOf(m[1] ?? ""));
+  const target = new Map(elements(rels, "Relationship", false).map((m) => [attr(` ${m.attrs}`, "Id") ?? "", attr(` ${m.attrs}`, "Target") ?? ""]));
+  // «<si/>» is an empty string, never the start of the next (8.2 review)
+  const shared = elements(text("xl/sharedStrings.xml") ?? "", "si").map((m) => textOf(m.body ?? ""));
   const sheets: ReadSheet[] = [];
   // one budget for the whole workbook, each sheet's part read once, and a bound on the sheets — a
   // workbook listing one 2-million-cell part a hundred times passed every sheet's own budget (the
@@ -92,11 +160,12 @@ export function readXlsx(bytes: Uint8Array): ReadSheet[] {
   let slots = 0;
   const spend = (n: number) => { slots += Math.max(0, n); if (slots > MAX_SLOTS) throw new XlsxReadError("xlsx: too many cells for a workbook the portal reads"); };
   const read = new Set<string>();
-  const listed = [...wb.matchAll(/<sheet\b[^>]*\/?>/g)];
+  const listed = elements(wb, "sheet", false);
   if (listed.length > MAX_SHEETS) throw new XlsxReadError("xlsx: more sheets than a workbook the portal reads");
   for (const m of listed) {
-    const name = unxml(attr(m[0], "name") ?? "");
-    const rid = attr(m[0], "r:id") ?? [...m[0].matchAll(/\s([\w]+:id)="([^"]*)"/g)].find((x) => x[1].endsWith(":id"))?.[2] ?? "";
+    const tagText = ` ${m.attrs}`;
+    const name = unxml(attr(tagText, "name") ?? "");
+    const rid = relId(tagText);
     let t = target.get(rid) ?? "";
     if (!t) continue;
     t = t.startsWith("/") ? t.slice(1) : `xl/${t}`.replace(/\/\.\//g, "/");
@@ -105,26 +174,25 @@ export function readXlsx(bytes: Uint8Array): ReadSheet[] {
     const xml = text(t);
     if (xml === null) continue;
     const rows: Cell[][] = [];
-    for (const r of xml.matchAll(/<row\b([^>]*)\/>|<row\b([^>]*)>([\s\S]*?)<\/row>/g)) {
-      const rAttr = r[1] ?? r[2] ?? "";
-      const rn = Number(attr(`<x ${rAttr}>`, "r"));
+    for (const r of elements(xml, "row")) {
+      const rn = Number(attr(` ${r.attrs}`, "r"));
       const ri = Number.isFinite(rn) && rn > 0 ? rn - 1 : rows.length;
       // a sheet's own bounds (Excel: 1 048 576 rows, 16 384 columns) — beyond them a crafted reference
       // filled arrays until the process ran out of memory (the security sweep, SI-7)
       if (ri >= MAX_ROWS) throw new XlsxReadError("xlsx: a row beyond a sheet's bounds");
       const row: Cell[] = [];
       let next = 0;
-      for (const c of (r[3] ?? "").matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
-        const tag = `<c ${c[1]}>`, body = c[2] ?? "";
+      for (const c of elements(r.body ?? "", "c")) {
+        const tag = ` ${c.attrs}`, body = c.body ?? "";
         const ref = attr(tag, "r");
-        const ci = ref ? colIndex(ref.replace(/\d+$/, "")) : next;
+        const ci = ref ? colIndex(/^[A-Za-z]*/.exec(ref)![0]) : next;
         if (!Number.isFinite(ci) || ci < 0 || ci >= MAX_COLS) throw new XlsxReadError("xlsx: a column beyond a sheet's bounds");
         next = ci + 1;
         const type = attr(tag, "t") ?? "n";
-        const v = body.match(/<v>([\s\S]*?)<\/v>/)?.[1];
+        const v = between(body, "<v>", "</v>");
         let val: Cell = null;
         if (type === "s") val = v !== undefined ? shared[Number(v)] ?? "" : "";
-        else if (type === "inlineStr") val = textOf(body.match(/<is>([\s\S]*?)<\/is>/)?.[1] ?? "");
+        else if (type === "inlineStr") val = textOf(between(body, "<is>", "</is>") ?? "");
         else if (type === "str" || type === "e") val = v !== undefined ? unxml(v) : "";
         else if (type === "b") val = v === "1" ? "TRUE" : v === "0" ? "FALSE" : null;
         else if (v !== undefined && v.trim() !== "") { const n = Number(v); val = Number.isFinite(n) ? n : unxml(v); }

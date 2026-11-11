@@ -58,15 +58,18 @@ export async function uploadedDocResponse(up: UploadedDoc, download: boolean): P
 // cut at 150 CHARACTERS, never inside one: «.slice(0, 150)» halved an emoji and encodeURIComponent threw on
 // the lone half — a 500 for the download (the security sweep, round 3 — R3S-6); a lone half typed as
 // such becomes «_»
+// …and the extension kept: a long name lost its «.pdf» (round 4, R4U-6)
 export const utf8Name = (name: string) => {
-  const clean = Array.from(String(name || "document").replace(/[\u0000-\u001F\u007F"\\/]+/g, "_"))
-    .slice(0, 150).map((ch) => (/^[\ud800-\udfff]$/.test(ch) ? "_" : ch)).join("");
+  const chars = Array.from(String(name || "document").replace(/[\u0000-\u001F\u007F"\\/]+/g, "_"))
+    .map((ch) => (/^[\ud800-\udfff]$/.test(ch) ? "_" : ch));
+  const ext = /\.[A-Za-z0-9]{1,8}$/.exec(chars.slice(-9).join(""))?.[0] ?? "";
+  const clean = chars.length <= 150 ? chars.join("") : chars.slice(0, 150 - ext.length).join("") + ext;
   return encodeURIComponent(clean).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 };
 
 /** Serve a file's bytes as the uploads are served. */
 export function uploadedBytesResponse(bytes: Uint8Array, mime: string, name: string, download: boolean): Response {
-  const safeName = (name || "document").replace(/[^\w.\-]+/g, "_");
+  const safeName = String(name || "document").replace(/[^\w.\-]+/g, "_");
   // copy into a fresh (plain-ArrayBuffer-backed) array so the Response body type is exact
   const out = new Uint8Array(bytes.byteLength);
   out.set(bytes);

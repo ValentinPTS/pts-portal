@@ -89,11 +89,19 @@ const PUBLIC_PATH = /^\/(?:_next\/static\/|_next\/image(?:\/|$)|favicon\.ico$|br
 // R3S-2). A navigation, a frame and the app's own fetches («document», «iframe», «empty») pass.
 const NOT_A_PAGE = new Set(["image", "script", "style", "font", "audio", "video", "track", "worker", "sharedworker", "serviceworker", "manifest", "object", "embed", "paintworklet", "audioworklet", "xslt"]);
 
+// …nor a request a page makes on its own with no answer to read: a link's ping, a prefetch, an attribution
+// report («attributionsrc» — round 4, R4S-2) — «empty» and «no-cors», or flagged for attribution. The
+// app's own fetches and actions are «cors»; a navigation is «navigate».
+function notAPage(request: NextRequest): boolean {
+  const dest = (request.headers.get("sec-fetch-dest") ?? "").toLowerCase();
+  if (NOT_A_PAGE.has(dest)) return true;
+  if (request.headers.has("attribution-reporting-eligible")) return true;
+  return dest === "empty" && (request.headers.get("sec-fetch-mode") ?? "").toLowerCase() === "no-cors";
+}
+
 export async function proxy(request: NextRequest) {
   const publicPath = PUBLIC_PATH.test(request.nextUrl.pathname);
-  if (!publicPath && NOT_A_PAGE.has((request.headers.get("sec-fetch-dest") ?? "").toLowerCase())) {
-    return new NextResponse(null, { status: 403 });
-  }
+  if (!publicPath && notAPage(request)) return new NextResponse(null, { status: 403 });
   if (!AUTH_ENABLED) return NextResponse.next(); // scaffolded off → app stays open
   if (publicPath) return NextResponse.next();
 
@@ -196,8 +204,10 @@ export const config = {
   // (owner area vs lab) and in requireOwner()/requireLab() for mutations.
   // The second: any path with a dot segment or a backslash, whatever it starts with — the
   // proxy then decides on the path it resolves to (PUBLIC_PATH above; the security sweep).
+  // Each left-out part whole («brand/», «apply» then «/» or the end): a prefix alone would also have left
+  // out a later «/applications» or «/brandbook» — no gate at all (round 4, R4S-9).
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|brand|fonts/|apply|register(?:/|$)|catalogue(?:/|$)|certificate(?:/|$)|feed/|api).*)",
+    "/((?!_next/static/|_next/image(?:/|$)|favicon\\.ico$|brand/|fonts/|apply(?:/|$)|register(?:/|$)|catalogue(?:/|$)|certificate(?:/|$)|feed/|api(?:/|$)).*)",
     "/(.*(?:\\.\\.|%2[eE]|\\\\|%5[cC]).*)",
   ],
 };

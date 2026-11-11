@@ -54,6 +54,10 @@ const manual = ce({ source: "manual", ref: "Econt 1234567", recordedBy: "ana@pts
 t("a staff-typed dispatch: its waybill masked, the rest kept", redactCaseEventForStaff(manual).ref === undefined && redactCaseEventForStaff(manual).recordedBy === "ana@ptsbg.eu");
 const typedNote = ce({ source: "manual", ref: "Протокол 12", recordedBy: "ana@ptsbg.eu", kind: "other" });
 t("staff-typed entry of another kind unchanged", redactCaseEventForStaff(typedNote) === typedNote);
+// round 4 (R4U-4, R4S-7): a waybill typed into ANY step's note or reference — masked
+const noted = redactCaseEventForStaff(ce({ source: "manual", kind: "receipt_confirmed", ref: "x", note: "получено с куриер, товарителница 62 555 444 333", recordedBy: "ana@ptsbg.eu" }));
+const otherKind = redactCaseEventForStaff(ce({ source: "manual", kind: "other", ref: "товарителница 62123456789", note: "waybill:62123456789", recordedBy: "ana@ptsbg.eu" }));
+t("round 4 — a waybill in a step's note, or a step of any kind, masked", !/555 444|62123456789/.test(`${noted.note} ${otherKind.ref} ${otherKind.note}`) && /получено с куриер/.test(noted.note ?? ""), `${noted.note} | ${otherKind.ref} | ${otherKind.note}`);
 const cert = ce({ kind: "report_issued", ref: "PTS 26/07-T-1-48217" });
 t("app stamp with a reference unchanged", redactCaseEventForStaff(cert) === cert);
 const newUpload = ce({ recordedBy: LAB_RECORDER });
@@ -81,6 +85,12 @@ t("new lab stamp unchanged", redactCaseEventForStaff(newUpload) === newUpload);
   }
   const bg = redactActivityForStaff(ev({ action: "case.updated", schemeId: "S", summary: "Изпратено с товарителница 62 123 456 789 днес" }));
   t("round 3 — «товарителница» masked too", !bg.summary.includes("456"), bg.summary);
+  // round 4 (R4S-7): no space after the word, a sign between, the plural, AWB
+  for (const txt of ["товарителница:62123456789", "товарителница№62123456789", "waybill:62123456789", "Waybill-62123456789", "товарителници 62123456789 и 62987654321", "AWB 62123456789"]) {
+    const r = redactActivityForStaff(ev({ action: "case.updated", schemeId: "S", summary: `Бележка: ${txt}` }));
+    t(`round 4 — «${txt}» masked`, !/6212345/.test(r.summary), r.summary);
+  }
+  t("round 4 — the dispatch line's «with a waybill» stays as it is", redactActivityForStaff(ev({ action: "delivery.dispatched", schemeId: "S", summary: "The object for 26111677 — 2026-11-11, with a waybill" })).summary === "The object for 26111677 — 2026-11-11, with a waybill");
   const staff = redactActivityForStaff(ev({ action: "staff.updated", subject: `user:${UID}`, after: { by: "head@ptsbg.eu" } }));
   t("a line about PTS's own people — as it is", staff.subject === `user:${UID}` && JSON.stringify(staff.after) === JSON.stringify({ by: "head@ptsbg.eu" }));
   const plain = redactActivityForStaff(ev({ action: "lifecycle.act", schemeId: "S", before: { status: "open" }, after: { status: "running" } }));

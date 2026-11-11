@@ -182,6 +182,13 @@ t("the round export: the replay's field placed; its source path never in coded/"
   t("round 3 — the cell budget is the workbook's: 2 × 1.6 M slots in two sheets refused", /too many cells/.test(why(many(2, wide, true))));
   t("round 3 — more than 255 sheets: refused", /more sheets/.test(why(many(256, `<row r="1"><c r="A1"><v>1</v></c></row>`, true))));
   t("round 3 — two ordinary sheets still read", why(many(2, `<row r="1"><c r="A1"><v>1</v></c></row>`, true)) === "read");
+  // round 4 (R4S-6): an opener never closed — found by one forward scan, refused at once (it took 14 s)
+  for (const [label, sheet] of [["rows", "<row>".repeat(160_000)], ["cells", `<row r="1">${"<c>".repeat(160_000)}</row>`], ["text", `<row r="1"><c r="A1" t="inlineStr"><is>${"<t>".repeat(160_000)}</is></c></row>`]] as const) {
+    const t0 = Date.now();
+    const r = why(book(sheet));
+    t(`round 4 — ${label} never closed: refused at once`, /broken part/.test(r) && Date.now() - t0 < 1500, `${r} ${Date.now() - t0} ms`);
+  }
+  t("round 4 — a reference past Unicode is no crash", why(book(`<row r="1"><c r="A1" t="inlineStr"><is><t>&#x110000;</t></is></c></row>`)) === "read");
 }
 
 console.log(`replay.test: ${pass} passed, ${fail} failed`);

@@ -98,6 +98,8 @@ export default async function BuildDocPage({
       bg: d?.bg ?? "", en: d?.en ?? "",
     }));
 
+  // a role that reads but does not edit: the document as saved, titled as a document (round 4, R4U-2)
+  const canEdit = await mayNow("scheme.edit", s.id);
   return (
     <div>
       <div className="flex items-center justify-between gap-3">
@@ -109,12 +111,13 @@ export default async function BuildDocPage({
         </Link>
       </div>
       <h1 className="text-3xl font-bold mt-1 mb-4" style={{ color: "var(--green-dark)", letterSpacing: "-0.01em" }}>
-        {tr("build.prefix")}: {(lang === "bg" ? def?.nameBg : def?.nameEn) ?? doc}
+        {canEdit ? tr("build.prefix") : lang === "bg" ? "Документ" : "Document"}: {(lang === "bg" ? def?.nameBg : def?.nameEn) ?? doc}
       </h1>
       <WordEditor
         schemeId={s.id}
         docKey={doc}
         docNameEn={def?.nameEn ?? "Document"}
+        docNameBg={def?.nameBg}
         initialReady={!!s.docReady?.[doc]}
         initialBg={saved.bg}
         initialEn={saved.en}
@@ -134,7 +137,7 @@ export default async function BuildDocPage({
         customItems={custom}
         savedTemplates={savedTemplates}
         copyFrom={copyFrom}
-        canEdit={await mayNow("scheme.edit", s.id)}
+        canEdit={canEdit}
       />
     </div>
   );

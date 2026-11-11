@@ -43,13 +43,14 @@ export function coverDocHtml(s: Scheme, docKey: string, participants: Participan
 }
 
 // Items for the right-hand insert panel — HTML ready to drop at the cursor (both langs).
-export function insertableSnippets(): { id: string; name: string; category?: string; bg: string; en: string }[] {
-  return LIBRARY.map((e) => ({ id: e.id, name: e.name, category: e.category, bg: `<p>${esc(e.bg)}</p>`, en: `<p>${esc(e.en)}</p>` }));
+export function insertableSnippets(): { id: string; name: string; nameBg?: string; category?: string; bg: string; en: string }[] {
+  return LIBRARY.map((e) => ({ id: e.id, name: e.name, nameBg: e.nameBg, category: e.category, bg: `<p>${esc(e.bg)}</p>`, en: `<p>${esc(e.en)}</p>` }));
 }
-export function insertableFields(s: Scheme, participants: Participant[] = []): { key: string; label: string; bg: string; en: string }[] {
+export function insertableFields(s: Scheme, participants: Participant[] = []): { key: string; label: string; labelBg: string; bg: string; en: string }[] {
   return FIELDS.map((f) => ({
     key: f.key,
     label: f.en,
+    labelBg: f.bg, // a Bulgarian screen names it in Bulgarian (round 4, R4U-5)
     bg: renderFieldHtml(s, f.key, "bg", participants),
     en: renderFieldHtml(s, f.key, "en", participants),
   }));

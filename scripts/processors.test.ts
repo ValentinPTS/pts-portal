@@ -95,8 +95,8 @@ t("the proxy gate lets /fonts/ through — a lab's document and the PDF renderer
 
 // the translation: a document naming laboratories never goes out
 const actions = readFileSync(join(portal, "src/lib/actions.ts"), "utf8");
-t("the whole-document translation refuses a document naming laboratories — by its kind and by its content", /export async function translateDocHtmlAction\(html: string, docKey\?: string\)[\s\S]{0,200}isListDoc\(docKey\) \|\| pairsNamesWithCodes\(docKey\)[\s\S]{0,120}hasCohortNames\(/.test(actions));
-t("…and the editor sends its kind, and greys the button out for those", /translateDocHtmlAction\(nb, docKey\)/.test(readFileSync(join(portal, "src/components/WordEditor.tsx"), "utf8")) && /disabled=\{busy === "tr" \|\| NAMES_DOCS\.has\(docKey\)\}/.test(readFileSync(join(portal, "src/components/WordEditor.tsx"), "utf8")));
+t("the whole-document translation refuses a document naming laboratories — by its kind and by its content", /export async function translateDocHtmlAction\(input: \{ html\?: unknown \} \| string, docKey\?: string\)[\s\S]{0,200}isListDoc\(docKey\) \|\| pairsNamesWithCodes\(docKey\)[\s\S]{0,400}hasCohortNames\(/.test(actions));
+t("…and the editor sends its kind, and greys the button out for those", /translateDocHtmlAction\(\{ html: nb \}, docKey\)/.test(readFileSync(join(portal, "src/components/WordEditor.tsx"), "utf8")) && /disabled=\{busy === "tr" \|\| NAMES_DOCS\.has\(docKey\)\}/.test(readFileSync(join(portal, "src/components/WordEditor.tsx"), "utf8")));
 t("the system check: the registry, where the server runs, and London is not the EU", /EXTERNAL_SERVICES\.map/.test(readFileSync(join(portal, "src/app/system/page.tsx"), "utf8")) && /\/\^\(fra\|cdg\|arn\|dub\)\\d\//.test(readFileSync(join(portal, "src/app/system/page.tsx"), "utf8")));
 
 // the document for PTS names every one of them — checked where the documents are

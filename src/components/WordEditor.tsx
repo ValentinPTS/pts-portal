@@ -33,8 +33,8 @@ import { sanitizeDocHtml } from "@/lib/sanitize-html";
 import { formulaToMathML, PT_FORMULAS } from "@/lib/formula";
 import { categoryLabel, groupByCategory } from "@/lib/element-categories";
 
-type Snippet = { id: string; name: string; category?: string; bg: string; en: string };
-type Field = { key: string; label: string; bg: string; en: string };
+type Snippet = { id: string; name: string; nameBg?: string; category?: string; bg: string; en: string };
+type Field = { key: string; label: string; labelBg?: string; bg: string; en: string };
 type FormEl = { id: string; nameBg: string; nameEn: string; category?: string; bg: string; en: string };
 type Tmpl = { id: string; name: string; bg: string; en: string };
 type CopyItem = { id: string; number: string; title: string; bg: string; en: string };
@@ -320,6 +320,7 @@ export default function WordEditor({
   schemeId,
   docKey,
   docNameEn,
+  docNameBg,
   initialBg,
   initialEn,
   defaultBg,
@@ -345,6 +346,7 @@ export default function WordEditor({
   schemeId: string;
   docKey: string;
   docNameEn: string;
+  docNameBg?: string; // the Bulgarian sentences name it in Bulgarian (round 4, R4U-5)
   initialReady?: boolean;
   initialBg: string;
   initialEn: string;
@@ -405,6 +407,8 @@ export default function WordEditor({
   const [selEl, setSelEl] = useState<HTMLSelectElement | null>(null); // selected dropdown
   const [selOpts, setSelOpts] = useState(0); // its option count (for the bar)
   const [preview, setPreview] = useState(false);              // inline PDF preview open
+  const [saveErr, setSaveErr] = useState(""); // why the last save did not go through (R4U-1)
+  const [pasteNote, setPasteNote] = useState(""); // pictures a paste could not bring (R4U-3)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);  // object URL of the rendered PDF
   const pgTimer = useRef<ReturnType<typeof setTimeout> | null>(null); // debounce page-gap reflow
   const [colorOpen, setColorOpen] = useState(false);          // text-colour palette open
@@ -1461,7 +1465,7 @@ export default function WordEditor({
   // owner says so. Any unsaved edits are saved first so the flag matches the content.
   async function toggleReady() {
     setBusy("ready");
-    if (!savedRef.current) await save();
+    if (!savedRef.current && !(await save())) { setBusy(""); return; }
     const next = !ready;
     const r = await setDocReadyAction(schemeId, docKey, next);
     setBusy("");
@@ -1474,7 +1478,20 @@ export default function WordEditor({
   // pastes fall through to the browser default.
   function onEditorPaste(e: React.ClipboardEvent) {
     const html = e.clipboardData?.getData("text/html");
-    if (!html) return;
+    if (!html) {
+      // a picture on the clipboard (a screenshot): as an inserted photo — made smaller, uploaded — never the
+      // browser's own inline copy of it, as large as the screen (R4U-1)
+      const pic = Array.from(e.clipboardData?.files ?? []).find((f) => /^image\//.test(f.type));
+      if (!pic) return;
+      e.preventDefault();
+      setBusy("img");
+      void uploadOrDataUrl(pic).then((src) => {
+        setBusy("");
+        if (src) insertImageAt(src);
+        else alert(L("Неуспешно добавяне на изображението.", "Could not add the image."));
+      });
+      return;
+    }
     e.preventDefault();
     let frag = html;
     const m = /<!--StartFragment-->([\s\S]*?)<!--EndFragment-->/i.exec(frag);
@@ -1483,19 +1500,38 @@ export default function WordEditor({
       const b = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(frag);
       if (b) frag = b[1];
     }
-    insertHtml(sanitizeDocHtml(frag));
+    const clean = sanitizeDocHtml(frag);
+    // pictures the paste could not bring (from the computer's own disk, or from elsewhere) — said, not left
+    // as empty boxes (R4U-3)
+    const lost = (frag.match(/<img\b/gi)?.length ?? 0) - (clean.match(/<img\b/gi)?.length ?? 0);
+    if (lost > 0) {
+      setPasteNote(L(`${lost} ${lost === 1 ? "картинка не можа" : "картинки не можаха"} да се постави — вмъкнете ги с «Изображение».`, `${lost} picture${lost === 1 ? "" : "s"} could not be pasted — insert ${lost === 1 ? "it" : "them"} with «Image».`));
+      setTimeout(() => setPasteNote(""), 12000);
+    }
+    insertHtml(clean);
   }
 
-  async function save() {
+  // Saves, and says so when it could not — never left «Запазване…» (round 4, R4U-1: a refused save threw,
+  // and every later edit was lost without a word). The bodies go as one object (see saveDocHtmlAction).
+  async function save(): Promise<boolean> {
     const { nb, ne } = fold();
     setBusy("save");
-    await saveDocHtmlAction(schemeId, docKey, nb, ne);
-    setBusy(""); setSaved(true);
+    try {
+      const r = await saveDocHtmlAction(schemeId, docKey, { bg: nb, en: ne });
+      if (r?.error) { setSaveErr(r.error); return false; }
+      setSaved(true); setSaveErr("");
+      return true;
+    } catch {
+      setSaveErr(L("Не е записано — проверете връзката и натиснете «Запази» (Ctrl+S) отново.", "Not saved — check the connection and press «Save» (Ctrl+S) again."));
+      return false;
+    } finally {
+      setBusy("");
+    }
   }
   async function translate() {
     const { nb } = fold();
     setBusy("tr");
-    const r = await translateDocHtmlAction(nb, docKey);
+    const r = await translateDocHtmlAction({ html: nb }, docKey);
     setBusy("");
     if (r.error) return alert(L("Превод: ", "Translation: ") + r.error);
     const clean = sanitizeDocHtml(r.html ?? "");
@@ -1513,7 +1549,7 @@ export default function WordEditor({
     return URL.createObjectURL(await res.blob());
   }
   async function downloadPdf() {
-    await save();
+    if (!(await save())) return;
     setBusy("pdf");
     try {
       const url = await renderPdfUrl();
@@ -1528,13 +1564,13 @@ export default function WordEditor({
   // Lock the document for filling: save the layout, then open the fields-only Fill
   // view (only the form controls stay editable there).
   async function lockToFill() {
-    await save();
+    if (!(await save())) return;
     window.location.href = `/schemes/${encodeURIComponent(schemeId)}/fill/${encodeURIComponent(docKey)}`;
   }
   // Inline page preview = the real PDF (true pages 1, 2 … with gaps, exactly as
   // downloaded). Editing stays in the continuous view; this is the faithful check.
   async function openPreview() {
-    await save();
+    if (!(await save())) return;
     setBusy("prev");
     try {
       const url = await renderPdfUrl();
@@ -1554,7 +1590,8 @@ export default function WordEditor({
   // document stays small — a URL, not a multi-MB base64 blob that also duplicates
   // into every revision), falling back to an inline data URL only when storage isn't
   // available (e.g. local dev with no Supabase configured).
-  async function uploadOrDataUrl(f: File): Promise<string> {
+  async function uploadOrDataUrl(picked: File): Promise<string> {
+    const f = await shrinkPicture(picked);
     try {
       const fd = new FormData();
       fd.append("file", f);
@@ -1567,6 +1604,28 @@ export default function WordEditor({
       rd.onerror = () => resolve("");
       rd.readAsDataURL(f);
     });
+  }
+  // A large photo made smaller before it goes anywhere — at most 2000 px a side, as JPEG (a document prints
+  // it at a few centimetres): a phone photo inline in the body was more than a document can hold (R4U-1).
+  async function shrinkPicture(f: File): Promise<File> {
+    if (!/^image\/(jpeg|png|webp)$/.test(f.type) || f.size <= 900_000) return f;
+    try {
+      const bmp = await createImageBitmap(f);
+      const k = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+      const c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(bmp.width * k));
+      c.height = Math.max(1, Math.round(bmp.height * k));
+      const g = c.getContext("2d");
+      if (!g) return f;
+      g.fillStyle = "#fff";
+      g.fillRect(0, 0, c.width, c.height);
+      g.drawImage(bmp, 0, 0, c.width, c.height);
+      const blob = await new Promise<Blob | null>((res) => c.toBlob(res, "image/jpeg", 0.85));
+      if (!blob || blob.size >= f.size) return f;
+      return new File([blob], f.name.replace(/\.[A-Za-z0-9]+$/, "") + ".jpg", { type: "image/jpeg" });
+    } catch {
+      return f;
+    }
   }
   function insertImageAt(src: string) {
     if (!src) return;
@@ -1629,14 +1688,14 @@ export default function WordEditor({
 
   async function saveAsTemplate() {
     const name = window.prompt(
-      L(`Наименувайте този шаблон „${docNameEn}“ (ще се предлага при стартиране на този документ във всяка ${schemeType === "C" ? "калибровъчна" : "изпитвателна"} схема):`,
+      L(`Наименувайте този шаблон „${docNameBg ?? docNameEn}“ (ще се предлага при стартиране на този документ във всяка ${schemeType === "C" ? "калибровъчна" : "изпитвателна"} схема):`,
         `Name this “${docNameEn}” template (it'll be offered when starting this document in any ${schemeType === "C" ? "calibration" : "testing"} scheme):`),
-      docNameEn,
+      L(docNameBg ?? docNameEn, docNameEn),
     );
     if (name === null) return;
     const { nb, ne } = fold();
     setBusy("tmpl");
-    const r = await saveDocTemplateAction(docKey, schemeType, name, nb, ne);
+    const r = await saveDocTemplateAction(docKey, schemeType, name, { bg: nb, en: ne });
     setBusy("");
     if (r.error) return alert(r.error);
     if (r.item) setTmpls((t) => [...t, { id: r.item!.id, name: r.item!.name, bg: r.item!.bg, en: r.item!.en }]);
@@ -1687,20 +1746,22 @@ export default function WordEditor({
   if (!started && !canEdit) {
     return (
       <div data-doc-not-started className="card p-5" style={{ borderLeft: "4px solid var(--line)", maxWidth: 640, color: "var(--muted)" }}>
-        {L(`„${docNameEn}“ още не е създаден — създава го който редактира схемата.`, `“${docNameEn}” is not created yet — it is made by who edits the scheme.`)}
+        {L(`„${docNameBg ?? docNameEn}“ още не е създаден — създава го който редактира схемата.`, `“${docNameEn}” is not created yet — it is made by who edits the scheme.`)}
       </div>
     );
   }
   // a role that reads the scheme but does not edit it: the document as it prints, never the editor's
   // controls — its saves were refused by the server, yet the whole editor was offered (round 3, Q4)
   if (!canEdit) {
+    const roPrint = `/schemes/${encodeURIComponent(schemeId)}/build/${encodeURIComponent(docKey)}/print?lang=${lang}`;
     return (
       <div data-doc-read-only style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div className="card p-4" style={{ borderLeft: "4px solid var(--line)", color: "var(--muted)", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <span style={{ flex: 1, minWidth: 220 }}>{L("Само за четене — документът се редактира от който редактира схемата.", "Read only — the document is edited by who edits the scheme.")}</span>
-          <a className="btn btn-sm" href={`/schemes/${encodeURIComponent(schemeId)}/doc/${encodeURIComponent(docKey)}`}>{L("Преглед и PDF →", "View and PDF →")}</a>
+          <a className="btn btn-sm" href={roPrint} target="_blank" rel="noopener">{L("Отвори за печат и PDF →", "Open to print or PDF →")}</a>
         </div>
-        <iframe title={docNameEn} src={`/schemes/${encodeURIComponent(schemeId)}/doc/${encodeURIComponent(docKey)}/print?lang=${lang}`} style={{ width: "100%", minHeight: "80vh", border: "1px solid var(--line)", borderRadius: 8, background: "#fff" }} />
+        {/* the document AS SAVED and printed — never the generated template (round 4, R4S-4 / R4U-2) */}
+        <iframe title={L(docNameBg ?? docNameEn, docNameEn)} src={roPrint} style={{ width: "100%", minHeight: "80vh", border: "1px solid var(--line)", borderRadius: 8, background: "#fff" }} />
       </div>
     );
   }
@@ -1712,7 +1773,7 @@ export default function WordEditor({
         <style>{EDITOR_CSS + COVER_CSS + scopeCss(extraCss, ".we-page")}</style>
         {BRAND_FONTS.map((f) => <link key={f} rel="stylesheet" href={fontHref(f)} />)}
         <div className="card p-5" style={{ borderLeft: "4px solid var(--green-dark)", maxWidth: 640 }}>
-          <div className="font-bold" style={{ color: "var(--green-dark)", fontSize: 18 }}>{L(`Започни „${docNameEn}“ от…`, `Start “${docNameEn}” from…`)}</div>
+          <div className="font-bold" style={{ color: "var(--green-dark)", fontSize: 18 }}>{L(`Започни „${docNameBg ?? docNameEn}“ от…`, `Start “${docNameEn}” from…`)}</div>
           <div className="flex gap-2 mt-4 flex-wrap">
             {hasDefault && <button className="btn btn-primary" onClick={() => startWith(coverBg ? coverBg + "\n" + defaultBg : defaultBg, coverEn ? coverEn + "\n" + defaultEn : defaultEn)}>{L("Шаблон по подразбиране", "Default template")}</button>}
             <button className="btn" onClick={() => startWith("", "")}>{L("＋ Празна страница", "＋ Blank page")}</button>
@@ -1781,6 +1842,8 @@ export default function WordEditor({
         <span className="text-sm" style={{ color: saved ? "var(--green-dark)" : "var(--muted)", minWidth: 116, display: "inline-flex", alignItems: "center", gap: 5 }} title={L("Документът се запазва автоматично", "The document autosaves as you work")}>
           {busy === "save" ? L("Запазване…", "Saving…")
             : busy === "img" ? L("Качване на изображение…", "Uploading image…")
+            : saveErr && !saved ? <span data-save-error style={{ color: "#b42318" }}>{saveErr}</span>
+            : pasteNote ? <span data-paste-note style={{ color: "#9a6700" }}>{pasteNote}</span>
             : saved ? L("Всичко е запазено", "All changes saved")
             : L("Незапазени промени", "Unsaved changes")}
         </span>
@@ -2213,7 +2276,7 @@ export default function WordEditor({
             </div>
 
             <div className="we-seclabel" style={{ margin: "8px 0 4px" }}>{L("АВТО-ПОЛЕТА", "AUTO-FIELDS")}</div>
-            {fields.map((f) => itemCard(`f:${f.key}`, f.label, lang === "bg" ? f.bg : f.en))}
+            {fields.map((f) => itemCard(`f:${f.key}`, uiLang === "bg" ? f.labelBg ?? f.label : f.label, lang === "bg" ? f.bg : f.en))}
 
             {/* snippets, form elements and own items grouped by the document they
                 serve (Общи · План · Заявка · Лист с резултати · Доклад …) so it's
@@ -2222,7 +2285,7 @@ export default function WordEditor({
             {groupByCategory(snippets, (s) => s.category || "General", (s) => s.name).map(([cat, list]) => (
               <div key={cat}>
                 <div className="we-subsec">{categoryLabel(cat, uiLang)}</div>
-                {list.map((s) => itemCard(`s:${s.id}`, s.name, lang === "bg" ? s.bg : s.en))}
+                {list.map((s) => itemCard(`s:${s.id}`, uiLang === "bg" ? s.nameBg ?? s.name : s.name, lang === "bg" ? s.bg : s.en))}
               </div>
             ))}
 

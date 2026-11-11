@@ -22,8 +22,8 @@ export default function DocViewer({
   participants?: Participant[];
   canIssue?: boolean; // issuing a certificate is a manager act (issueCertificateAction)
 }) {
-  const { t } = useLang();
-  const [lang, setLang] = useState<"en" | "bg">("en");
+  const { t, lang: uiLang } = useLang();
+  const [lang, setLang] = useState<"en" | "bg">(uiLang === "bg" ? "bg" : "en"); // opens in the screen's language (R4U-5)
   const [busy, setBusy] = useState(false);
   const [participant, setParticipant] = useState(""); // "" = blank/template
   // the answer to the last save: an error, or the number as it was stored

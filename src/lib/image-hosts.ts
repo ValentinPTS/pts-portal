@@ -15,8 +15,12 @@ export function storageOrigin(env: Env = process.env): string {
 
 const OWN_SITE = /^(?:[a-z0-9-]+\.)*ptsbg\.eu$/;
 
-/** May a picture be loaded from this absolute URL? (relative and data:image are the caller's) */
+/** May a picture be loaded from this absolute URL? (relative and data:image are the caller's)
+ *  Only «https://host/…» as written: «https:/ptsbg.eu/../x» or «https:ptsbg.eu/x» parse here with
+ *  ptsbg.eu as their host, yet a page on https reads them as RELATIVE to itself — a portal page
+ *  (the security sweep, round 4 — R4S-1). */
 export function imageUrlAllowed(url: string, env: Env = process.env): boolean {
+  if (!/^https:\/\//i.test(url)) return false;
   let u: URL;
   try { u = new URL(url); } catch { return false; }
   if (u.protocol !== "https:") return false;
@@ -30,3 +34,8 @@ export function docImgSrc(env: Env = process.env): string {
   const own = storageOrigin(env);
   return ["'self'", "data:", ...(own ? [own] : []), "https://ptsbg.eu", "https://*.ptsbg.eu"].join(" ");
 }
+
+/** A picture on the portal's own address: a file under /brand/ AS WRITTEN — no «.» or «..» segment, no
+ *  escape, no backslash. A relative path judged after resolving it against one page was another page
+ *  from a deeper one («../brand/x» from /schemes/S/build/D/print — R4S-1). */
+export const BRAND_FILE = /^\/brand\/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*\/)*[A-Za-z0-9_-][A-Za-z0-9._-]*$/;

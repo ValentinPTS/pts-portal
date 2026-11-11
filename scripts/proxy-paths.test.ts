@@ -50,5 +50,15 @@ for (const raw of ["/catalogue", "/certificate", "/certificate?no=1", "/apply", 
 t("«/registrations» is gated", gated("/registrations") && gated("/registrations/letter/x"));
 t("the lab side runs through the proxy", runs("/lab") && runs("/lab/p/1"));
 
+// round 4 (R4S-9): a later top-level route that merely STARTS like a public part still runs through the proxy
+for (const raw of ["/applications", "/brandbook", "/apiary", "/apply-later", "/fontsx", "/favicon.icox", "/feedback", "/registrations/x"]) {
+  t(`a route that only starts like a public part runs through the proxy: ${raw}`, runs(raw));
+}
+// round 4 (R4S-2): a ping, a prefetch, an attribution report — refused on a non-public path
+{
+  const prox = readFileSync(new URL("../src/proxy.ts", import.meta.url), "utf8");
+  t("the proxy refuses «empty» + «no-cors» and attribution requests before the auth switch", /request\.headers\.has\("attribution-reporting-eligible"\)/.test(prox) && /dest === "empty" && \(request\.headers\.get\("sec-fetch-mode"\)/.test(prox) && prox.indexOf("notAPage(request)") < prox.indexOf("if (!AUTH_ENABLED)"));
+}
+
 console.log(`proxy-paths.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

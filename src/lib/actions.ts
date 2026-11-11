@@ -24,7 +24,7 @@ import { readFeedback, keysOf, wordsOf, feedbackOffered, FEEDBACK_PROBLEM_TEXT }
 import { giveFeedback } from "./feedback";
 import { lookupCertificate, requestAddress } from "./cert-register";
 import { publicFormLimit } from "./public-limit";
-import { imageUrlAllowed } from "./image-hosts";
+import { BRAND_FILE, imageUrlAllowed } from "./image-hosts";
 import { COURIER_NOTICE_KINDS } from "./notice-kinds";
 import { validateEik } from "./verify-eik";
 import { REGISTER_TEXT, type RegisterAnswer } from "./cert-register-model";
@@ -282,10 +282,11 @@ export async function saveDocTemplateAction(
   docKey: string,
   type: "T" | "C",
   name: string,
-  bg: string,
-  en: string
+  body: DocBodies | string,
+  enArg?: string
 ): Promise<{ item?: SavedTemplate; error?: string }> {
   await requireDocWriter(docKey);
+  const { bg, en } = bodiesOf(body, enArg); // one object, as a document's save (R4U-1)
   if (!isDocKey(docKey)) return { error: "Unknown document." };
   // a list, F 7.2.1-6 or a certificate may carry names, and a template is shared
   // across schemes — names are per scheme (2.4)
@@ -1259,16 +1260,25 @@ const REPORT_UNDER_APPROVAL = "Обработката е прегледана и
 const MAX_DOC_HTML = 3_000_000; // 3 MB per language (images now go to storage, not base64)
 const DOC_TOO_LARGE = "Документът е твърде голям — вмъквайте снимките като снимки (качват се сами), не ги поставяйте в текста. · Document is too large. Insert images as photos (they upload automatically) rather than pasting them inline.";
 const docHtmlTooLarge = (bg: unknown, en: unknown) => String(bg ?? "").length > MAX_DOC_HTML || String(en ?? "").length > MAX_DOC_HTML;
-export async function saveDocHtmlAction(schemeId: string, docKey: string, bg: string, en: string) {
+// A document's two bodies, as the editor sends them: in ONE object. React counts every character of a server
+// action's string ARGUMENTS toward one million — a document with one large picture (an inline picture is
+// one long string) could never be saved: «Maximum array nesting exceeded», a 500 (round 4, R4U-1). Inside
+// an object they are not counted; this action's own 3 MB bound holds. Plain strings are still taken.
+type DocBodies = { bg?: unknown; en?: unknown };
+const bodiesOf = (body: unknown, enArg?: unknown): { bg: string; en: string } =>
+  body && typeof body === "object" ? { bg: String((body as DocBodies).bg ?? ""), en: String((body as DocBodies).en ?? "") } : { bg: String(body ?? ""), en: String(enArg ?? "") };
+export async function saveDocHtmlAction(schemeId: string, docKey: string, body: DocBodies | string, enArg?: string): Promise<{ ok?: true; error?: string }> {
   await requireDocWriter(docKey, schemeId);
   const scheme = await getScheme(schemeId);
   if (!scheme) throw new Error("Scheme not found");
+  const { bg, en } = bodiesOf(body, enArg);
   // the size checked BEFORE the body is read (the security sweep, round 3 — R3S-3: a 50 MB body was
-  // sanitized first and refused after); the coded lists' mark goes on after sanitizing (an HTML comment)
-  if (docHtmlTooLarge(bg, en)) throw new Error(DOC_TOO_LARGE);
+  // sanitized first and refused after); the coded lists' mark goes on after sanitizing (an HTML comment);
+  // said to the editor, never thrown — a thrown error left it «Запазване…» for good (round 4, R4U-1)
+  if (docHtmlTooLarge(bg, en)) return { error: DOC_TOO_LARGE };
   const cleanBg = markCodedList(docKey, sanitizeDocHtml(bg));
   const cleanEn = markCodedList(docKey, sanitizeDocHtml(en));
-  if (cleanBg.length > MAX_DOC_HTML || cleanEn.length > MAX_DOC_HTML) throw new Error(DOC_TOO_LARGE);
+  if (cleanBg.length > MAX_DOC_HTML || cleanEn.length > MAX_DOC_HTML) return { error: DOC_TOO_LARGE };
   const docs = { ...(scheme.docs ?? {}), [docKey]: { bg: cleanBg, en: cleanEn } };
   await updateScheme(schemeId, { docs });
   // §8.3 — snapshot a revision (skips if unchanged). Records who saved it.
@@ -1276,6 +1286,7 @@ export async function saveDocHtmlAction(schemeId: string, docKey: string, bg: st
   await addRevision({ schemeId, docKey, bg: cleanBg, en: cleanEn, savedBy: actor });
   await logActivity("doc.saved", { schemeId, summary: `Document “${docKey}” edited` });
   revalidatePath(`/schemes/${schemeId}/build/${docKey}`, "page");
+  return { ok: true };
 }
 
 // Translate a whole document's HTML BG→EN, preserving tags/images (only text runs
@@ -1289,9 +1300,11 @@ const htmlRunText = (run: string) => run
   .replace(/&#(\d+);/g, (_m, d) => { const n = Number(d); return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : ""; })
   .replace(/&nbsp;/g, "\u00a0").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, "&");
 const TRANSLATE_REFUSED = "Документ с имена на лаборатории не се изпраща за превод навън. · A document naming laboratories is never sent out for translation.";
-export async function translateDocHtmlAction(html: string, docKey?: string): Promise<{ html?: string; error?: string }> {
+export async function translateDocHtmlAction(input: { html?: unknown } | string, docKey?: string): Promise<{ html?: string; error?: string }> {
   await requireCapAnywhere("scheme.edit"); // the role model (2.4)
   if (typeof docKey === "string" && (isListDoc(docKey) || pairsNamesWithCodes(docKey))) return { error: TRANSLATE_REFUSED };
+  const html = input && typeof input === "object" ? String(input.html ?? "") : String(input ?? ""); // one object, as a save (R4U-1)
+  if (html.length > MAX_DOC_HTML) return { error: DOC_TOO_LARGE };
   if (hasCohortNames(String(html ?? ""))) return { error: TRANSLATE_REFUSED };
   const parts = String(html ?? "").split(/(<[^>]+>)/);
   // Bound the number of outbound translation calls: only the first N text runs are
@@ -1585,7 +1598,8 @@ export async function labUploadDocAction(formData: FormData): Promise<void> {
   // and a lab's file name or address would say which lab the code is (§4.2, N4).
   await addCaseEvent({
     schemeId, code, kind: slotDef.kind, docKey: slotDef.docKey, at: await roundDay(schemeId),
-    note: prev ? "replaced by the laboratory (portal upload)" : "uploaded by the laboratory (portal)",
+    // in both languages, as the rest of the timeline (round 4, R4U-5)
+    note: prev ? "заменен от лабораторията (качен в портала) · replaced by the laboratory (portal upload)" : "качен от лабораторията (портала) · uploaded by the laboratory (portal)",
     recordedBy: LAB_RECORDER, source: "auto",
   });
   await advanceStatusForEvent(schemeId, code, slotDef.kind);
@@ -3384,7 +3398,9 @@ export async function updateSchemeAction(formData: FormData) {
   const coverImage =
     // an https picture only from the portal's own places (1.12; the security sweep, SI-2/SI-3 — every
     // laboratory's browser, and the PDF renderer, fetch it)
-    coverRaw === "" || ((coverRaw.startsWith("/brand/") || imageUrlAllowed(coverRaw)) && !/["'<>\s\\]/.test(coverRaw))
+    // (/brand/ as written, and «https://» exactly: «/brand/../schemes/S/export» and «https:/ptsbg.eu/../…» put
+    // a portal page on every document's cover — round 4, R4S-1)
+    coverRaw === "" || ((BRAND_FILE.test(coverRaw) || imageUrlAllowed(coverRaw)) && !/["'<>\s\\]/.test(coverRaw))
       ? coverRaw
       : existing.coverImage ?? "";
   const cwRaw = parseInt(str("coverImageWidth", ""), 10);
