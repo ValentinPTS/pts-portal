@@ -22,6 +22,9 @@ import { buildFeed } from "./website-feed-model";
 import { publishFeed, feedDigest, feedBase, feedBaseMissing, latestPublication } from "./website-feed";
 import { readFeedback, keysOf, wordsOf, feedbackOffered, FEEDBACK_PROBLEM_TEXT } from "./feedback-model";
 import { giveFeedback } from "./feedback";
+import { lookupCertificate, requestAddress } from "./cert-register";
+import { REGISTER_TEXT, type RegisterAnswer } from "./cert-register-model";
+import { getServerT } from "./i18n-server";
 import { fixPrices } from "./scheme-prices";
 import { participantViewer } from "./participation-view";
 import { readOffer, chooseProblem, liveOffers, OFFER_PROBLEM_TEXT, type CarrierOffer, type OfferProblem, type SentNotice } from "./carrier-model";
@@ -5055,6 +5058,22 @@ export async function giveFeedbackAction(participantId: string, formData: FormDa
   if (res !== "given") return FB("failed");
   revalidatePath(`/lab/p/${p.id}`);
   return { ok: true };
+}
+
+// ── The certificate register's lookup (plan part 10.4; D20; Реш. 55, 56, 115) ─────────────────
+// The portal's page: the number AND the code, posted — never in a link; «valid» with Реш. 56's data or
+// «invalid» in the same words whichever part was wrong; 10 failed an hour from one address.
+export type CertLookupState =
+  | { state: "idle" }
+  | { state: "valid"; number: string; answer: RegisterAnswer }
+  | { state: "invalid" | "incomplete" | "limited" | "failed"; number: string; message: string };
+export async function lookupCertificateAction(_prev: CertLookupState, formData: FormData): Promise<CertLookupState> {
+  const number = Array.from(String(formData.get("number") ?? "")).slice(0, 60).join("");
+  const r = await lookupCertificate({ number: formData.get("number"), code: formData.get("code") }, requestAddress(await headers()));
+  if (r.state === "valid") return { state: "valid", number, answer: r.answer };
+  const { lang } = await getServerT();
+  const t = REGISTER_TEXT[r.state];
+  return { state: r.state, number, message: lang === "bg" ? t.bg : t.en };
 }
 
 // ── The coding act (plan part 5.3; Zadanie «Кодиране», stage 9; А2; Реш. 124; D17) ─────

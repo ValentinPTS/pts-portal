@@ -57,6 +57,7 @@ export const MIGRATIONS = [
   "0051_catalogue_wishes",
   "0052_website_feed",
   "0053_feedback",
+  "0054_certificate_register",
 ] as const;
 
 /** The expected migrations the database has not recorded, in order. */

@@ -136,6 +136,10 @@ export const ROUTES = [
   { file: "apply/[id]/invitation/route.ts", names: "never", paths: (c) => [`/apply/${c.S}/invitation`, `/apply/${c.OTHER}/invitation`] },
   { file: "catalogue/page.tsx", names: "never", paths: () => ["/catalogue"] },
   { file: "feed/schemes.json/route.ts", names: "never", paths: () => ["/feed/schemes.json"] },
+  // 10.4: the register names a laboratory only to who holds its certificate's number AND code (a POST) — what
+  // the regression opens (the empty form, a GET of the API) names none
+  { file: "certificate/page.tsx", names: "never", paths: () => ["/certificate"] },
+  { file: "api/certificate/route.ts", names: "never", paths: () => ["/api/certificate"] },
   { file: "apply/thanks/page.tsx", names: "never", paths: () => ["/apply/thanks"] },
   { file: "register/page.tsx", names: "never", paths: () => ["/register"] },
   { file: "register/thanks/page.tsx", names: "never", paths: () => ["/register/thanks"] },

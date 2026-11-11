@@ -118,6 +118,8 @@ export const NOT_ROUND_TABLES: Record<string, string> = {
   custom_skins: "visual skins; the round names its skin in scheme.json, and its documents are rendered with it",
   doc_templates: "reusable document templates, across rounds",
   folders: "PTS's grouping of schemes; the round names its folder in scheme.json",
+  register_attempts: "the certificate register's failed lookups per hour (10.4) — an address only as a keyed hash; no participant, not a round",
+  register_lookups: "how many register lookups a day ended how (10.4) — counts only; not a round",
   website_feed: "what PTS published to its website (10.2) — started schemes' public facts, across rounds, no participant; not a round",
   catalogue_wishes: "an organisation's wishes to be told when the next scheme of a subject starts (10.1, К25) — the organisation's, across rounds, not a round (erased with it)",
   lab_applications: "the registrations of organisations and the requests to join them (9.1), and the earlier account requests — an organisation's, across rounds, not a round (an erased profile's are anonymised, 4.7)",

@@ -25,7 +25,8 @@ export default function Chrome({ user, sections = [], canViewActivity, notificat
   if (
     path.startsWith("/apply") || path.startsWith("/lab") ||
     path.startsWith("/login") || path.startsWith("/register") ||
-    path === "/catalogue" || path.startsWith("/catalogue/") // the public catalogue (10.1)
+    path === "/catalogue" || path.startsWith("/catalogue/") || // the public catalogue (10.1)
+    path === "/certificate" // the certificate register's lookup (10.4)
   ) {
     return <>{children}</>;
   }

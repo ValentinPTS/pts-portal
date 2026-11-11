@@ -290,6 +290,45 @@ try {
   await go("/dev/persona?role=manager");
   const jr = await (await page.request.get(`${BASE}/activity?scheme=${S}`)).text();
   t("…journalled: the number recorded, the content typed, checked, released — never the number or a value", /Certificate number recorded for/.test(jr) && /Certificate content for .* typed from the final report R2/.test(jr) && /checked by a second person/.test(jr) && /Certificate released for .* in bg and en/.test(jr) && !jr.includes(CERT_NO) && !jr.includes(`Удовлетворително ${stamp}`));
+
+  // ── 10.4: the register's lookup — the number AND the code; «valid» or «invalid»; never the code shown ──
+  // an address of this run's own — so earlier runs' failed lookups never limit this one (10.4 review)
+  const ip = `203.0.113.${(stamp % 250) + 1}`;
+  const anon = await browser.newContext({ extraHTTPHeaders: { "x-forwarded-for": ip } });
+  const pub = await anon.newPage();
+  await pub.goto(`${BASE}/certificate?no=${encodeURIComponent(CERT_NO)}&code=${encodeURIComponent(codeL)}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  await pub.locator("[data-cert-form]").waitFor();
+  // the staff panel: looked for as one of PTS, signed in — an anonymous visitor never gets it anyway (10.4 review)
+  await go(`/certificate?no=${encodeURIComponent(CERT_NO)}`);
+  const asStaff = await page.content();
+  t("10.4: a QR link fills the number — never the code, even when a link carries one; no staff panel, even for one of PTS", (await pub.locator('input[name="number"]').inputValue()) === CERT_NO && (await pub.locator('input[name="code"]').inputValue()) === "" && !asStaff.includes("data-admin-rail") && asStaff.includes("data-cert-form"));
+  const submit = async (number, code) => {
+    await pub.locator('input[name="number"]').fill(number);
+    await pub.locator('input[name="code"]').fill(code);
+    const before = await pub.locator("[data-cert-result]").count() ? await pub.locator("[data-cert-result]").innerText() : "";
+    await pub.locator("[data-cert-submit]").click();
+    await waitFor(async () => (await pub.locator("[data-cert-result]").count()) === 1 && (await pub.locator("[data-cert-submit]").isEnabled()) && (await pub.locator("[data-cert-result]").innerText()) !== before, 40);
+    return { state: await pub.locator("[data-cert-result]").getAttribute("data-cert-result"), text: await pub.locator("[data-cert-result]").innerText() };
+  };
+  const good = await submit(CERT_NO, codeL);
+  t("10.4: valid — the laboratory, the kind, the object, the characteristics, the number, the date; never the code (Реш. 56, 115)", good.state === "valid" && good.text.includes(CERT_NO) && /Демо лаборатория|Demo lab/i.test(good.text) && !good.text.includes(codeL) && !/z = 0/.test(good.text), good.text.slice(0, 300));
+  const wrongCode = await submit(CERT_NO, codeA);
+  const wrongNo = await submit(CERT_NO.replace(/\d$/, (d) => String((Number(d) + 1) % 10)), codeL);
+  t("10.4: a wrong code, a wrong number — «invalid», in the same words (never which part)", wrongCode.state === "invalid" && wrongNo.state === "invalid" && wrongCode.text === wrongNo.text);
+  // the website's question (option A) — from an address of its own, so the limit is this run's
+  const ask = (data, origin = "https://ptsbg.eu") => anon.request.post(`${BASE}/api/certificate`, { data, headers: { "x-forwarded-for": ip, origin } });
+  const ok = await ask({ number: CERT_NO, code: codeL });
+  const okBody = await ok.json().catch(() => ({}));
+  t("10.4: the website's question — the same answer as JSON, CORS for ptsbg.eu; never the code", ok.status() === 200 && okBody.valid === true && okBody.number === CERT_NO && !JSON.stringify(okBody).includes(codeL) && ok.headers()["access-control-allow-origin"] === "https://ptsbg.eu");
+  const other = await ask({ number: CERT_NO, code: codeL }, "https://example.org");
+  t("…another site's page gets no permission to read it", !other.headers()["access-control-allow-origin"]);
+  let lastFail = null;
+  for (let i = 0; i < 8; i++) lastFail = await ask({ number: CERT_NO, code: `X${i}` }); // with the page's two: ten
+  const eleventh = await ask({ number: CERT_NO, code: codeL });
+  t("10.4: ten failed from one address (the page's two counted with them) — then refused, even with the right code («try later»); a valid lookup took nothing", lastFail.status() === 200 && (await lastFail.json()).valid === false && eleventh.status() === 429 && (await eleventh.json()).limited === true);
+  const plain = await anon.request.post(`${BASE}/api/certificate`, { data: `{"number":"${CERT_NO}","code":"${codeL}"}`, headers: { "content-type": "text/plain", origin: "https://ptsbg.eu", "x-forwarded-for": `198.51.100.${(stamp % 250) + 1}` } });
+  t("…a text/plain POST (no preflight from another page) refused — JSON only", plain.status() === 415);
+  await anon.close();
 } catch (e) {
   fail++;
   console.error("FAIL: crashed", e);
