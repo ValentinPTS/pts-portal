@@ -24,7 +24,7 @@ function fmt(iso: string): string {
   return `${p(d.getUTCDate())}.${p(d.getUTCMonth() + 1)}.${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())} UTC`;
 }
 
-export default async function NoticesPage() {
+export default async function NoticesPage({ searchParams }: { searchParams: Promise<{ refused?: string }> }) {
   // who reads the journal reads the notices — as the bell and the panel show them (2.4, 2.7);
   // deciding, editing and approving are gated by their own rights
   await requireCapAnywhere("journal.read");
@@ -44,6 +44,10 @@ export default async function NoticesPage() {
   const held = heldAll.filter((n) => inScope(n.schemeId));
   const sent = sentAll.filter((m) => inScope(m.schemeId));
   const number = new Map(schemes.map((s) => [s.id, s.number]));
+  // 10.1 review: a «the next scheme started» notice of a scheme no longer started is never released (Реш. 147)
+  const startedIds = new Set(schemes.filter((x) => x.status !== "draft").map((x) => x.id));
+  const releasable = (n: { kind: string; schemeId?: string }) => n.kind !== "catalogue.next" || (!!n.schemeId && startedIds.has(n.schemeId));
+  const refused = (await searchParams).refused === "not-started";
   const base = mailBaseUrl();
   const CLASS: Record<MessageClass, string> = {
     provider: L("известие", "notice"),
@@ -66,6 +70,7 @@ export default async function NoticesPage() {
         <Link href="/notices/texts" style={{ color: "var(--green-dark)", fontWeight: 700 }}>{L("«Текстове на напомнянията»", "«Reminder texts»")}</Link>.
       </p>
 
+      {refused && <div role="alert" data-notice-refused className="card p-3 mt-4" style={{ borderLeft: "4px solid var(--red)" }}>{L("Не е изпратено: схемата вече не е започнала (върната в чернова или архивирана) — изберете «Не изпращай».", "Not sent: the scheme is no longer started (back to draft or archived) — choose «Do not send».")}</div>}
       {held.length === 0 ? (
         <div className="card p-4 mt-5" style={{ color: "var(--muted)" }}>{L("Няма задържани известия.", "No notices are waiting.")}</div>
       ) : (
@@ -83,11 +88,13 @@ export default async function NoticesPage() {
               <pre data-exact-text className="text-sm mt-1 p-2" style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", background: "var(--green-soft)", borderRadius: 6 }}>{bodyFor(n, base)}</pre>
               {canDecide && mayDecide(n.schemeId) && (
                 <div className="flex gap-2 mt-3">
-                  <form action={decideNoticeAction}>
-                    <input type="hidden" name="id" value={n.id} />
-                    <input type="hidden" name="decision" value="release" />
-                    <button type="submit" className="btn btn-primary btn-sm">{L("Изпрати", "Send")}</button>
-                  </form>
+                  {releasable(n) ? (
+                    <form action={decideNoticeAction}>
+                      <input type="hidden" name="id" value={n.id} />
+                      <input type="hidden" name="decision" value="release" />
+                      <button type="submit" className="btn btn-primary btn-sm">{L("Изпрати", "Send")}</button>
+                    </form>
+                  ) : <span className="text-sm" data-notice-unstarted style={{ color: "var(--red)" }}>{L("схемата вече не е започнала — не се изпраща", "the scheme is no longer started — it is not sent")}</span>}
                   <form action={decideNoticeAction}>
                     <input type="hidden" name="id" value={n.id} />
                     <input type="hidden" name="decision" value="withhold" />

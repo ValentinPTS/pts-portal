@@ -80,6 +80,21 @@ export async function listSchemes(): Promise<Scheme[]> {
   }
 }
 
+// Started schemes only (Реш. 147) — for the catalogue (10.1): the drafts never leave the database.
+export async function listStartedSchemes(): Promise<Scheme[]> {
+  const db = getDb();
+  if (!db) return mem.filter((s) => s.status !== "draft" && live(s));
+  try {
+    await ensureSeed(db);
+    const { data, error } = await db.from("schemes").select("data").neq("status", "draft").order("id");
+    if (error) throw error;
+    return (data ?? []).map((r) => (r as { data: Scheme }).data).filter((s) => s.status !== "draft" && live(s));
+  } catch (e) {
+    warn(e);
+    return mem.filter((s) => s.status !== "draft" && live(s));
+  }
+}
+
 // Open schemes only — for the PUBLIC apply landing, which showed the small subset
 // of open schemes but was loading every scheme's full document payload to do it.
 // Scoping the ROWS by status at the DB keeps the closed-scheme history out of each

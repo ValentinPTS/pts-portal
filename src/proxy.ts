@@ -170,7 +170,8 @@ export const config = {
   // fonts (/fonts/ — a lab's document and the PDF renderer load them with no owner
   // session), the public application flow (/apply = scheme заявка, /register = the
   // registration, 9.1 — /register and below only: «/registrations» is PTS's section and
-  // goes through here), and API routes (which self-guard). Role checks live above
+  // goes through here), the public catalogue (/catalogue, 10.1 — started schemes only), and API
+  // routes (which self-guard). Role checks live above
   // (owner area vs lab) and in requireOwner()/requireLab() for mutations.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|brand|fonts/|apply|register(?:/|$)|api).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|brand|fonts/|apply|register(?:/|$)|catalogue(?:/|$)|api).*)"],
 };

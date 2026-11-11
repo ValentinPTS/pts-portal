@@ -54,6 +54,7 @@ export const MIGRATIONS = [
   "0048_validation_dry_run",
   "0049_registrations",
   "0050_online_applications",
+  "0051_catalogue_wishes",
 ] as const;
 
 /** The expected migrations the database has not recorded, in order. */

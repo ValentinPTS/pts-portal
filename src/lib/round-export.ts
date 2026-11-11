@@ -113,6 +113,7 @@ export const NOT_ROUND_TABLES: Record<string, string> = {
   custom_skins: "visual skins; the round names its skin in scheme.json, and its documents are rendered with it",
   doc_templates: "reusable document templates, across rounds",
   folders: "PTS's grouping of schemes; the round names its folder in scheme.json",
+  catalogue_wishes: "an organisation's wishes to be told when the next scheme of a subject starts (10.1, К25) — the organisation's, across rounds, not a round (erased with it)",
   lab_applications: "the registrations of organisations and the requests to join them (9.1), and the earlier account requests — an organisation's, across rounds, not a round (an erased profile's are anonymised, 4.7)",
   library_items: "the reusable library, across rounds",
   reminder_templates: "the reminder texts, across rounds; the words each laboratory was actually sent are in messages.csv",
@@ -461,7 +462,7 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
   // stay out of coded/ (the offers themselves are identity/carrier_offers.csv)
   const CARRIER_WORDS = "‹оферти на превозвачи — думите в identity/carrier_offer_words.csv› · ‹carriers' offers — the words in identity/carrier_offer_words.csv›";
   const offersHidden = <T extends { kind: string }>(x: T, keys: (keyof T)[]): T => (x.kind === "carrier.offers" ? { ...x, ...Object.fromEntries(keys.map((k) => [k, CARRIER_WORDS])) } : x);
-  addCoded("coded/notices.csv", notices.map((n: Notification) => ({ ...offersHidden(n, ["bg", "en"]), readBefore46: n.readAt, labId: undefined, schemeId: undefined })),
+  addCoded("coded/notices.csv", notices.map((n: Notification) => ({ ...offersHidden(n, ["bg", "en"]), readBefore46: n.readAt, labId: undefined, schemeId: undefined, entityId: undefined })),
     ["id", "createdAt", "kind", "audience", "code", "bg", "en", "href", "readBefore46", "emailedAt", "releasedAt", "releasedBy", "withheldAt", "withheldBy"]);
   addCoded("coded/messages.csv", messages.map((m: SentMessage) => ({ ...offersHidden(m, ["body"]), to: undefined, labId: undefined, entityId: undefined, schemeId: undefined })),
     ["id", "sentAt", "class", "kind", "code", "subject", "body", "approvedBy", "approvalRef", "outcome", "error"]);

@@ -15,7 +15,9 @@ import { INVITE_SUBJECT, inviteText, invitePreview, PROFILE_CONFIRMED_SUBJECT, P
   PROFILE_CREATED_KEY, PROFILE_CREATED_SUBJECT, profileCreatedText, USER_JOINED_KEY, USER_JOINED_SUBJECT, userJoinedText,
   ADMIN_CHANGED_KEY, ADMIN_CHANGED_SUBJECT, adminChangedText, officialNoticePreviews } from "./fixed-texts";
 import { JOIN_LETTER_BUCKET, keepMemLetter } from "./join-letters";
-import { waitingAtAnnouncement, admissionCheck, admissionsNow, ADMIT_PROBLEM_TEXT } from "./waitlist-model";
+import { waitingAtAnnouncement, admissionCheck, admissionsNow, ADMIT_PROBLEM_TEXT, schemeFull } from "./waitlist-model";
+import { catalogueState, subjectOf, wishProblem, wishesToTell, activeWish, SUBJECT_MAX, WISH_PROBLEM_TEXT, type CatalogueWish } from "./catalogue-model";
+import { listWishes, addWish, closeWish, eraseWishesOf } from "./catalogue-wishes";
 import { fixPrices } from "./scheme-prices";
 import { participantViewer } from "./participation-view";
 import { readOffer, chooseProblem, liveOffers, OFFER_PROBLEM_TEXT, type CarrierOffer, type OfferProblem, type SentNotice } from "./carrier-model";
@@ -84,7 +86,7 @@ import { requireParticipant, participantActor, getParticipantSession, participat
 import { inviteParticipant } from "./participant-invite";
 import { freezeParticipation, participationEntity, openParticipationSnapshots, inForce as copiesInForce } from "./participation-snapshots";
 import { readSelections, characteristicsOf, readRefusal, readSource, inRound, REFUSAL_CATEGORIES, STANDING_PROBLEM_TEXT, MAX_PER_CHARACTERISTIC, participationSets, selectionsOf, sameSelections, objectsNeeded, type Standing } from "./application-model";
-import { notifyParticipationRefused, notifyItemsDispatched, notifyReceiptProtocol, notifyDeliveryProblem, notifyMessage, notifyResultsUnlocked, notifyResultsCorrected, notifyResultsLockedNR, notifyResultsReopened, notifyCarrierOffers, notifyCarrierChosen } from "./notify-events";
+import { notifyParticipationRefused, notifyItemsDispatched, notifyReceiptProtocol, notifyDeliveryProblem, notifyMessage, notifyResultsUnlocked, notifyResultsCorrected, notifyResultsLockedNR, notifyResultsReopened, notifyCarrierOffers, notifyCarrierChosen, notifyCatalogueNext } from "./notify-events";
 import { readDocNumber, invoiceSlotProblem, INVOICE_PROBLEM_TEXT } from "./invoice-model";
 import { readShipment, readReceipt, deliveryOf, openShipment, openProblems, replacementProblem, replacementCalledFor, minDaysOf, readMinDays, chainReceiptTarget, LIMITS as DELIVERY_LIMITS, MAX_OPEN_PROBLEMS, type Shipment, type ShipmentKind, type Deliveries } from "./delivery-model";
 import { finalListOf, splitFor, invoiceProblem, currentFinalList, inFinalRound, finalSelectionsOf, ANNOUNCEMENT_PROBLEM_TEXT, type FinalList } from "./announcement-model";
@@ -3007,6 +3009,8 @@ export async function createProjectAction(formData: FormData) {
   if (!(await addScheme(scheme))) redirect(`${folderView(type, folderId)}?dupNumber=${encodeURIComponent(number)}`);
   if (scheme.status === "open") {
     await logActivity("scheme.state", { schemeId: id, subject: `scheme:${id}`, before: { status: "draft" }, after: { status: "open" }, summary: `${ACTS.open.en}: Draft → Open (created from a sample)` });
+    // 10.1 (К25): a start — those who asked for the next of its subject are told (held notices)
+    await tellCatalogueWishes(scheme);
   }
   await logActivity("scheme.created", {
     schemeId: id, after: { number, kind: scheme.kind, activity: scheme.activity, accredited: scheme.accredited },
@@ -3649,6 +3653,8 @@ export async function updateSchemeAction(formData: FormData) {
       schemeId: id, subject: `scheme:${id}`, before: { status: moved.from }, after: { status: moved.to },
       summary: `${ACTS[moved.act].en}: ${STATE_LABEL[moved.from].en} → ${STATE_LABEL[moved.to].en} (from «Edit data»)`,
     });
+    // 10.1 (К25): a scheme that starts tells those who asked for the next of its subject — held notices
+    if (moved.act === "open") { const started = await getScheme(id); if (started) await tellCatalogueWishes(started); }
   }
   // the number and what it carries are on every document — a change is on record
   const b = markersBefore as Pick<Scheme, "number" | "kind" | "activity" | "accredited"> | null;
@@ -4347,6 +4353,12 @@ export async function decideNoticeAction(formData: FormData): Promise<void> {
   const raw = formData.get("decision");
   // only an explicit decision counts — anything else changes nothing
   const decision = raw === "release" || raw === "withhold" ? raw : null;
+  // 10.1 review: a «the next scheme started» notice of a scheme taken back to draft (or archived) is
+  // never released — it would tell of an unstarted scheme (Реш. 147); only «Не изпращай»
+  if (decision === "release" && notice.kind === "catalogue.next") {
+    const sc = notice.schemeId ? await getScheme(notice.schemeId) : undefined;
+    if (!sc || !isStarted(sc)) redirect("/notices?refused=not-started");
+  }
   const by = (await getRoleContext()).email ?? "build";
   const changed = id && decision ? await decideNotice(id, decision, by) : false;
   if (changed && decision === "release") await logActivity("notice.released", { subject: `notice:${id}`, summary: "Notice to a laboratory released («Изпрати»)" });
@@ -4592,6 +4604,8 @@ export async function lifecycleActAction(schemeId: string, actRaw: string, noteR
       after: { r: r1.issue.r, edition: r1.edition.no, source: r1.issue.source, sha: r1.issue.reportSha, ilc: r1.issue.ilc, version: r1.issue.analysisVersion, check: r1.issue.transferCheckId, uxpt: r1.issue.uxpt, reached: parts.filter((p) => reachedNow.has(p.code)).map((p) => p.code) },
     });
   }
+  // 10.1 (К25): the act «open» from a draft is a start — those who asked for the next of its subject are told
+  if (act === "open" && from === "draft") { const started = await getScheme(schemeId); if (started) await tellCatalogueWishes(started); }
   // one notice per participation, by its code (never a name) — the report only to those it reaches (D7)
   for (const p of parts) {
     if (act === "announce") await notifySchemeAnnounced(labOf.get(p.code), schemeId, scheme.number, p.code);
@@ -4918,6 +4932,79 @@ export async function chooseCarrierAction(participantId: string, offerId: string
   revalidatePath(`/lab/p/${t.part.id}`);
   revalidatePath(`/schemes/${t.scheme.id}/participants`);
   return { ok: true };
+}
+
+// ── «Уведоми ме при следваща» (plan part 10.1; К25, 1.8) ─────────────────────────────
+// A signed-in user of an organisation asks to be told when the next scheme of a subject starts (the
+// same activity and object) — or cancels it. One standing wish per organisation and subject; on record.
+// At a scheme's start (the act «open» in the scheme's save) the standing wishes of its subject are told
+// — one notice per organisation, HELD for a person to release — and used.
+
+const WISH_REFUSAL = (k: keyof typeof WISH_PROBLEM_TEXT) => ({ error: `${WISH_PROBLEM_TEXT[k].bg}. · ${WISH_PROBLEM_TEXT[k].en}.` });
+
+/** Ask to be told of the next scheme of this one's subject. */
+export async function catalogueWishAction(schemeId: string): Promise<{ ok: true; wishId: string } | { error: string }> {
+  const { user, entity } = await requireParticipant(); // a participant's user, active, its entity not inactive
+  const s = await getScheme(String(schemeId));
+  // never a draft — the same refusal as one that does not exist (Реш. 147)
+  if (!s || !isStarted(s)) return WISH_REFUSAL("not-started");
+  const subject = subjectOf(s);
+  let wishes: CatalogueWish[];
+  try { wishes = await listWishes({ entityId: entity.id }); } catch { return WISH_REFUSAL("failed"); }
+  const st = catalogueState(s, schemeNowMs(s), s.status === "open" && schemeFull(s, await listParticipants(s.id)));
+  const p = wishProblem(st, subject, wishes, entity.id);
+  if (p) return WISH_REFUSAL(p);
+  const by = `entityuser:${user.id}`;
+  // the words as the scheme has them, within the record's limits (0051)
+  const r = await addWish({ entityId: entity.id, schemeId: s.id, subject: subject!, objectBg: Array.from(s.objectBg ?? "").slice(0, SUBJECT_MAX).join(""), objectEn: Array.from(s.objectEn ?? "").slice(0, SUBJECT_MAX).join(""), by });
+  if (!r.ok) return WISH_REFUSAL(r.error);
+  await logAs({ kind: "lab", userId: user.authUserId ?? "dev-persona" }, "catalogue.wish", { subject: `entity:${entity.id}`, after: { subject, on: s.id, by, wish: r.wish.id }, summary: `«Notify me of the next» asked — ${subject}, from ${s.number} (10.1)` });
+  revalidatePath("/lab/catalogue");
+  return { ok: true, wishId: r.wish.id };
+}
+
+/** Cancel a standing wish — by its id, the organisation's own (10.1 review: never by a subject the scheme
+ *  may no longer have). Nothing standing to cancel is said, never taken for done. */
+export async function cancelCatalogueWishAction(wishId: string): Promise<{ ok: true } | { error: string }> {
+  const { user, entity } = await requireParticipant();
+  let wishes: CatalogueWish[];
+  try { wishes = await listWishes({ entityId: entity.id }); } catch { return WISH_REFUSAL("failed"); }
+  const w = wishes.find((x) => x.id === String(wishId));
+  if (!w || w.entityId !== entity.id) return WISH_REFUSAL("not-yours");
+  if (!activeWish(w)) return WISH_REFUSAL("not-standing");
+  const by = `entityuser:${user.id}`;
+  if (!(await closeWish(w.id, { cancelledBy: by }))) return WISH_REFUSAL("not-standing");
+  await logAs({ kind: "lab", userId: user.authUserId ?? "dev-persona" }, "catalogue.wish", { subject: `entity:${entity.id}`, after: { subject: w.subject, cancelled: true, by, wish: w.id }, summary: `«Notify me of the next» cancelled — ${w.subject} (10.1)` });
+  revalidatePath("/lab/catalogue");
+  return { ok: true };
+}
+
+/** At a scheme's start (draft → open — the editor's save, the act «open», a creation from a sample): tell
+ *  the organisations that asked for the next scheme of its subject — a notice each, OF THAT SCHEME (its
+ *  manager releases it, 1.8), held; the wishes used only once the notice is written (one that cannot be
+ *  written leaves them standing for the next start). An organisation inactive or erased now: its wishes
+ *  wait. Never throws — the start is done already. */
+async function tellCatalogueWishes(s: Scheme): Promise<void> {
+  try {
+    const subject = subjectOf(s);
+    if (!subject) return;
+    const groups = wishesToTell(await listWishes({ subject }), s);
+    if (!groups.size) return;
+    const due = s.dates?.applicationsDue ? fmtSchemeDate(s.dates.applicationsDue) : null;
+    let told = 0;
+    for (const [entityId, ws] of groups) {
+      const [e] = await openEntities({ actor: "system:notify", purpose: "send" }, entityId).catch(() => [] as Awaited<ReturnType<typeof openEntities>>);
+      if (!e || e.id !== entityId || e.state === "inactive" || e.erasedAt) continue;
+      const n = await notifyCatalogueNext(entityId, s, due);
+      if (!n) continue;
+      let used = 0;
+      for (const w of ws) if (await closeWish(w.id, { notified: { schemeId: s.id, noticeId: n.id } })) used++;
+      if (used) told++;
+    }
+    if (told) await logActivity("catalogue.next", { schemeId: s.id, subject: `scheme:${s.id}`, after: { organisations: told, subject }, summary: `«Notify me of the next»: ${told} organisation${told === 1 ? "" : "s"} told that ${s.number} started — held for release (10.1)` });
+  } catch (e) {
+    console.error("[catalogue] telling the wishes failed:", (e as Error)?.message ?? e);
+  }
 }
 
 // ── The coding act (plan part 5.3; Zadanie «Кодиране», stage 9; А2; Реш. 124; D17) ─────
@@ -6517,7 +6604,10 @@ export async function eraseEntityAction(entityId: string, requestNo: unknown, re
       if (rm.error) documentsLeft.push(...reg.files);
     }
   } catch { noticesLeft = true; }
-  await logActivity("entity.erased", { subject: `entity:${entityId}`, after: { laboratories: r.laboratories, users: r.users, messages: r.messages, organisationMessages: notices, organisationMessagesLeft: noticesLeft, registrations, accountsDeleted: r.accounts.length - accountsLeft.length, documentsRemoved: r.proofs.length - documentsLeft.length, accountsLeft, documentsLeft }, summary: `Legal entity erased on request (no participation): ${r.laboratories} laboratories, ${r.users} users, ${r.messages} messages blanked, ${r.accounts.length - accountsLeft.length} sign-in accounts deleted, ${r.proofs.length - documentsLeft.length} documents removed (Zadanie §10)${accountsLeft.length || documentsLeft.length ? ` — LEFT: ${accountsLeft.length} accounts, ${documentsLeft.length} documents` : ""}` });
+  // its wishes for the next scheme (10.1) go with it
+  let wishes = 0;
+  try { wishes = (await listWishes({ entityId: String(entityId) })).length; await eraseWishesOf(String(entityId)); } catch { noticesLeft = true; }
+  await logActivity("entity.erased", { subject: `entity:${entityId}`, after: { laboratories: r.laboratories, users: r.users, messages: r.messages, organisationMessages: notices, organisationMessagesLeft: noticesLeft, registrations, wishes, accountsDeleted: r.accounts.length - accountsLeft.length, documentsRemoved: r.proofs.length - documentsLeft.length, accountsLeft, documentsLeft }, summary: `Legal entity erased on request (no participation): ${r.laboratories} laboratories, ${r.users} users, ${r.messages} messages blanked, ${r.accounts.length - accountsLeft.length} sign-in accounts deleted, ${r.proofs.length - documentsLeft.length} documents removed (Zadanie §10)${accountsLeft.length || documentsLeft.length ? ` — LEFT: ${accountsLeft.length} accounts, ${documentsLeft.length} documents` : ""}` });
   revalidatePath("/organizations");
   if (noticesLeft) return { error: "Профилът е изтрит, но съобщенията до организацията или регистрациите ѝ не можаха да се заличат — записано е в журнала; опитайте пак или съобщете на софтуерния администратор. · The profile is erased, but the messages to the organisation or its registrations could not be blanked — in the journal; try again or tell PTS's software administrator." };
   if (accountsLeft.length || documentsLeft.length) return { error: `Профилът е изтрит, но ${accountsLeft.length} профила за вход и ${documentsLeft.length} документа не можаха да се премахнат — записано е в журнала; софтуерният администратор ги премахва. · The profile is erased, but ${accountsLeft.length} sign-in accounts and ${documentsLeft.length} documents could not be removed — in the journal; PTS's software administrator removes them.` };

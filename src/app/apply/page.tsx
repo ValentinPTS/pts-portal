@@ -23,6 +23,8 @@ export default async function ApplyHome() {
         {tr("apply.openSchemes")}
       </p>
       <div className="mx-auto mt-3" style={{ width: 60, height: 3, background: "var(--green)" }} />
+      {/* 10.1: every started scheme — taking applications, under way, finished */}
+      <p className="text-center mt-3"><Link href="/catalogue" data-catalogue-link style={{ color: "var(--green-light)", fontWeight: 700 }}>{lang === "bg" ? "Каталог на всички схеми →" : "The catalogue of all schemes →"}</Link></p>
       {!ONLINE_APPLICATIONS_OPEN && (
         <div className="mt-6 mx-auto text-center" style={{ maxWidth: 620, color: "#f0c98a" }}>
           <p>{tr("apply.closedBody")}</p>

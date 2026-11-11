@@ -113,6 +113,7 @@ export const ROUTES = [
   { file: "lab/joins/page.tsx", names: "own", paths: () => ["/lab/joins"] },
   { file: "lab/apply/page.tsx", names: "own", paths: () => ["/lab/apply"] },
   { file: "lab/apply/[id]/page.tsx", names: "own", paths: (c) => [`/lab/apply/${c.S}`, `/lab/apply/${c.OTHER}`] },
+  { file: "lab/catalogue/page.tsx", names: "own", paths: () => ["/lab/catalogue"] },
   // its two-step sign-in, where PTS requires it (4.4 review)
   { file: "lab/two-factor/page.tsx", names: "own", paths: () => ["/lab/two-factor"] },
   // its home: the laboratory switcher, its participations and notices (4.6)
@@ -131,6 +132,8 @@ export const ROUTES = [
   { file: "apply/page.tsx", names: "never", paths: () => ["/apply"] },
   { file: "apply/[id]/page.tsx", names: "never", paths: (c) => [`/apply/${c.S}`, `/apply/${c.OTHER}`] },
   { file: "apply/[id]/plan/route.ts", names: "never", paths: (c) => [`/apply/${c.S}/plan`, `/apply/${c.OTHER}/plan`] },
+  { file: "apply/[id]/invitation/route.ts", names: "never", paths: (c) => [`/apply/${c.S}/invitation`, `/apply/${c.OTHER}/invitation`] },
+  { file: "catalogue/page.tsx", names: "never", paths: () => ["/catalogue"] },
   { file: "apply/thanks/page.tsx", names: "never", paths: () => ["/apply/thanks"] },
   { file: "register/page.tsx", names: "never", paths: () => ["/register"] },
   { file: "register/thanks/page.tsx", names: "never", paths: () => ["/register/thanks"] },

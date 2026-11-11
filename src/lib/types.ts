@@ -351,7 +351,8 @@ export type NotifyKind =
   | "results.corrected"      // → lab: PTS recorded a used value next to its submitted one (part 6.5)
   | "results.locked"         // → lab: the submission is locked (processing started) and none came from it — N/R (part 6.6)
   | "carrier.offers"         // → lab: the carriers' offers for its delivery outside the EU and the Balkans (part 9.5)
-  | "carrier.chosen";        // → provider: the laboratory chose its carrier (part 9.5)
+  | "carrier.chosen"         // → provider: the laboratory chose its carrier (part 9.5)
+  | "catalogue.next";        // → lab (an organisation): a scheme of a subject it asked about has started (part 10.1)
 
 export interface Notification {
   id: string;

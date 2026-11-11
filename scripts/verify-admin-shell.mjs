@@ -79,7 +79,7 @@ try {
   t("on a scheme, «Схеми» is the section lit", (await page.locator('[data-admin-rail] [data-section="schemes"][aria-current="page"]').count()) === 1);
 
   // no panel on the laboratory's or the public pages
-  for (const path of ["/lab/login", "/login", "/register", `/apply/${T}`]) {
+  for (const path of ["/lab/login", "/login", "/register", `/apply/${T}`, "/catalogue"]) {
     const r = await html(path);
     t(`${path}: no administrative panel`, !r.text.includes("data-admin-rail"), `status ${r.status}`);
   }

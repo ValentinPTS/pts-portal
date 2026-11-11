@@ -20,10 +20,12 @@ export default function Chrome({ user, sections = [], canViewActivity, notificat
   const { t } = useLang();
   // Public/auth flows render full-bleed with their own (non-owner) headers — no admin
   // chrome: the scheme-application flow (/apply), the lab portal (/lab, incl.
-  // /lab/login), the team sign-in (/login) and the lab-account application (/register).
+  // /lab/login), the team sign-in (/login), the lab-account application (/register) and the
+  // public catalogue (/catalogue, 10.1).
   if (
     path.startsWith("/apply") || path.startsWith("/lab") ||
-    path.startsWith("/login") || path.startsWith("/register")
+    path.startsWith("/login") || path.startsWith("/register") ||
+    path === "/catalogue" || path.startsWith("/catalogue/") // the public catalogue (10.1)
   ) {
     return <>{children}</>;
   }

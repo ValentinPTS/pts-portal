@@ -593,6 +593,8 @@ const DICT: Record<string, Entry> = {
   "act.carrier.offer_removed": { bg: "Оттеглена оферта на превозвач", en: "Carrier's offer withdrawn" },
   "act.carrier.offers_sent": { bg: "Офертите на превозвачите изпратени на лабораторията", en: "Carriers' offers sent to the laboratory" },
   "act.carrier.chosen": { bg: "Избран превозвач", en: "Carrier chosen" },
+  "act.catalogue.wish": { bg: "«Уведоми ме при следваща»", en: "«Notify me of the next»" },
+  "act.catalogue.next": { bg: "Уведомени за започнала схема", en: "Told of a scheme that started" },
   "act.carrier.choice_cancelled": { bg: "Отменен избор на превозвач", en: "Carrier's choice cancelled" },
   "act.scheme.applications": { bg: "Заявяването затворено / отворено ръчно", en: "Applications closed / opened by hand" },
   "act.registration.submitted": { bg: "Получена регистрация", en: "Registration received" },

@@ -432,11 +432,12 @@ export async function listForEntity(entityId: string, limit = 50): Promise<Notif
 /** The messages to organisations (5.10) — for «Организации»'s history, newest first: the notices
  *  that name an entity. Before migration 0041, none. */
 export async function listEntityMessages(limit = 300): Promise<Notification[]> {
-  const fromMem = () => mem.filter((n) => n.audience === "lab" && !!n.entityId).sort(newestFirst).slice(0, limit);
+  // PTS's one-way messages only — not the «next scheme started» notices (10.1 review)
+  const fromMem = () => mem.filter((n) => n.audience === "lab" && !!n.entityId && n.kind === "message").sort(newestFirst).slice(0, limit);
   const db = getDb();
   if (!db) return fromMem();
   try {
-    const { data, error } = await db.from("notifications").select("*").eq("audience", "lab").not("entity_id", "is", null).order("created_at", { ascending: false }).limit(limit);
+    const { data, error } = await db.from("notifications").select("*").eq("audience", "lab").eq("kind", "message").not("entity_id", "is", null).order("created_at", { ascending: false }).limit(limit);
     if (error) throw error;
     return (data ?? []).map((r) => fromRow(r as Row));
   } catch (e) {

@@ -548,3 +548,20 @@ export async function notifyCarrierChosen(schemeId: string, schemeNumber: string
     href: `/schemes/${schemeId}/participants`,
   });
 }
+
+/** «Уведоми ме при следваща» (part 10.1; К25): a scheme of a subject the organisation asked about has
+ *  started — to the organisation (its users who receive notices), HELD for a person to release (1.8): the
+ *  notice of THAT scheme, so its manager decides it and a release re-checks it is still started (10.1
+ *  review). The words name the scheme, never the organisation; no code (the organisation is in no round
+ *  yet) — in the round export the organisation only in identity/. */
+export async function notifyCatalogueNext(entityId: string, s: { id: string; number: string; titleBg: string; titleEn: string; objectBg: string; objectEn: string }, due: string | null): Promise<import("./types").Notification | null> {
+  return notify({
+    kind: "catalogue.next",
+    audience: "lab",
+    entityId,
+    schemeId: s.id,
+    bg: `Започна схема ${s.number} — ${s.titleBg || s.titleEn} (обект: ${s.objectBg || s.objectEn}).${due ? ` Заявки до ${due}.` : ""} Заявява се в портала, «Заявяване». Поискахте да ви уведомим, когато започне следваща схема за този обект.`,
+    en: `Scheme ${s.number} has started — ${s.titleEn || s.titleBg} (object: ${s.objectEn || s.objectBg}).${due ? ` Applications by ${due}.` : ""} Apply in the portal, «Apply». You asked to be told when the next scheme for this object starts.`,
+    href: `/lab/apply/${encodeURIComponent(s.id)}`,
+  });
+}
