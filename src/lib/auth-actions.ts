@@ -15,7 +15,7 @@ import { getLabByEmail } from "./labs";
 import { recordPending, settle, recentCount, recentCountTo } from "./sent-messages";
 import { entityUserByAuth, acceptEntityUserInvitation, entityUserForLogin } from "./entity-users";
 import { SUPABASE_TEMPLATES, fixedApproval } from "./fixed-texts";
-import { publicFormAllowed } from "./public-limit";
+import { publicFormLimit } from "./public-limit";
 import { requestAddress } from "./cert-register";
 
 export type AuthState = { error?: string; needsTotp?: boolean };
@@ -431,7 +431,10 @@ export async function requestPasswordResetAction(_prev: PasswordState, formData:
   const h = await headers();
   // the address as the platform gives it, counted in the database (the security sweep, SD-1: each
   // request opens the identity store and writes the journal — the count lived in one server's memory)
-  if (!(await publicFormAllowed("password_reset", requestAddress(h)))) return done;
+  const limit = await publicFormLimit("password_reset", requestAddress(h));
+  if (limit === "address") return done; // this address's ceiling: the same answer as any address
+  // everyone's ceiling: said — nothing about any address in it; never «sent» when nothing goes (R2S-4)
+  if (limit === "all") return { message: "Твърде много заявки в момента — опитайте след малко. · Too many requests right now — try again in a while." };
   // a shared mailbox gets no link — and the same answer as any address (Реш. 139)
   if (!allowed(`to:${email}`, 3) || !mailAllowedHere(email) || isSharedMailbox(email)) return done;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

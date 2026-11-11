@@ -17,7 +17,7 @@ t("SA-1: the journal page redacts per line by names.view", /authorize\(viewer, "
 t("SA-1: the redactor scrubs subject, before and after", /subject: staffLine \? e\.subject : scrubRef\(e\.subject\)/.test(src("lib/redact.ts")) && /after: staffLine \? e\.after : scrubIdentity\(e\.after\)/.test(src("lib/redact.ts")));
 // SC-1: an organisation's e-mail words only to who sees names or manages the organisations
 const notices = src("app/notices/page.tsx");
-t("SC-1: «Изпратени имейли» shows a message's words only by code, names.view, or labs.manage (no scheme)", /const seesWords = \(m: \{ schemeId\?: string; code\?: string \}\) => !!m\.code \|\| seesAddress\(m\.schemeId\) \|\| \(!m\.schemeId && managesLabs\);/.test(notices) && /\{seesWords\(m\) \? \(/.test(notices));
+t("SC-1: «Изпратени имейли» shows a message's words only by code, names.view, or labs.manage (no scheme)", /const seesWords = \(m: \{ schemeId\?: string; code\?: string; kind: string \}\) => \(!!m\.code && !COURIER_NOTICE_KINDS\.has\(m\.kind\)\) \|\| seesAddress\(m\.schemeId\) \|\| \(!m\.schemeId && managesLabs\);/.test(notices) && /\{seesWords\(m\) \? \(/.test(notices));
 // SC-3: the waybill
 t("SC-3: no waybill in the coded export's shipments", !/coded\/shipments\.csv[^\n]*waybill/.test(src("lib/round-export.ts")) && /carrier: _c, waybill: _w/.test(src("lib/round-export.ts")));
 // SC-5: the chain's size
@@ -28,9 +28,10 @@ t("SA-3: the layout — no panel, no bell, no people for such a session", /const
 // SA-4: a lab administrator learns nothing of whose login an e-mail is
 t("SA-4: a request to join refused by a login reason — one neutral answer to the lab, left for PTS", /if \("error" in j\) return JOIN_LOGIN_REFUSALS\.has\(j\.error\) \? \{ error: JOIN_HELD_FOR_PTS \} : j;/.test(actions));
 // SD-1 / SI-6: the public forms counted in the database
-t("SD-1: registration, application and password reset counted in the database, by the platform's address", /publicFormAllowed\("registration", requestAddress\(h\)\)/.test(actions) && /publicFormAllowed\("application", requestAddress\(h\)\)/.test(actions) && /publicFormAllowed\("password_reset", requestAddress\(h\)\)/.test(src("lib/auth-actions.ts")) && !/allowSubmission/.test(actions) && !/h\.get\("x-forwarded-for"\)/.test(actions + src("lib/auth-actions.ts")));
+t("SD-1: registration, application and password reset counted in the database, by the platform's address", /publicFormLimit\("registration", requestAddress\(h\)\)/.test(actions) && /publicFormLimit\("application", requestAddress\(h\)\)/.test(actions) && /publicFormLimit\("password_reset", requestAddress\(h\)\)/.test(src("lib/auth-actions.ts")) && /if \(limit === "all"\) redirect\("\/apply\/thanks\?later=1"\)/.test(actions) && /if \(limit === "all"\) return \{ message:/.test(src("lib/auth-actions.ts")) && !/allowSubmission/.test(actions) && !/h\.get\("x-forwarded-for"\)/.test(actions + src("lib/auth-actions.ts")));
 // SI-1 / SI-5: what becomes a document
 t("SI-1: a saved template is sanitized as a document is", /markCodedList\(docKey, sanitizeDocHtml\(String\(bg \?\? ""\)\)\)/.test(actions));
+t("R2S-9: a run is sent as the text it shows (its references decoded), escaped once on the way back", /translateAction\(htmlRunText\(part\), "bg", "en"\)/.test(actions));
 t("SI-5: a machine translation goes in as text, never markup", /String\(r\.text\)\.replace\(\/&\/g, "&amp;"\)\.replace\(\/<\/g, "&lt;"\)/.test(actions));
 // SI-3: the PDF renderer
 const pdf = src("app/api/pdf/route.ts");
@@ -73,6 +74,22 @@ t("UL-5: the participant's tabs wrap on a phone", /data-participant-nav/.test(sr
 t("UL-6: the laboratory account's ЕИК and phone checked", /if \(!eik\.ok\) redirect\("\/lab\/profile\?err=eik"\);/.test(actions) && /redirect\("\/lab\/profile\?err=phone"\)/.test(actions) && /data-profile-error/.test(src("app/lab/profile/page.tsx")));
 t("UL-7: a submission's hour with EET/EEST, never the browser's zone words", ["components/SubmitPanel.tsx", "components/ResultsRecord.tsx"].every((f) => /sofiaZoneAt\(Date\.parse\(iso\)\)/.test(src(f)) && !/timeZoneName: "short"/.test(src(f))));
 t("UL Q5: a scheme every laboratory applied to — «Заявено» on the list", /data-apply-done-already/.test(src("app/lab/apply/page.tsx")));
+
+// round 2 — the second security review's findings (R2S-*)
+t("R2S-1: the shell's markers out before the body is sanitized; never removed from what it passed", /sanitizeDocHtml\(stripBodyMarkers\(/.test(src("lib/doc-template.ts")) && /input\.replace\(BODY_MARKS, ""\)/.test(src("lib/sanitize-html.ts")));
+t("R2S-1: every document route's own policy refuses forms and <base>", ["app/schemes/[id]/doc/[doc]/print/route.ts", "app/schemes/[id]/build/[doc]/print/route.ts", "app/lab/doc/[scheme]/[doc]/route.ts", "lib/editions.ts"].every((f) => /form-action 'none'; base-uri 'none'/.test(src(f))));
+t("R2S-3: a courier's notice — read, released and exported only with names", /COURIER_NOTICE_KINDS\.has\(notice\.kind\) && !\(await mayNow\("names\.view", notice\.schemeId\)\)\) redirect\("\/notices\?refused=names"\)/.test(actions) && /const seesHeld = /.test(notices) && /x\.kind === "items\.dispatched" \? \{ \.\.\.x, \.\.\.Object\.fromEntries\(keys\.map\(\(k\) => \[k, DISPATCH_WORDS\]\)\) \}/.test(src("lib/round-export.ts")));
+t("R2S-3: a typed dispatch's waybill never in the journal's words", /summary: `Timeline: \$\{kind\} for \$\{code\}\$\{ref && !courierRef \? ` \(\$\{ref\}\)` : ""\}`/.test(actions));
+t("R2S-10: a document is never fetched as a picture or a script", /if \(NOT_A_DOCUMENT\.has\(\(req\.headers\.get\("sec-fetch-dest"\) \?\? ""\)\.toLowerCase\(\)\)\) return new Response\(null, \{ status: 403 \}\);/.test(src("app/lab/doc/[scheme]/[doc]/route.ts")) && /coverRaw\.startsWith\("\/brand\/"\) \|\| imageUrlAllowed\(coverRaw\)/.test(actions));
+
+// round 2 — the second real-user pass (R2U-*)
+t("R2U-1: brought back by «Back», the results form takes up its own latest save", /const mine = ownSaved\.get\(key\);/.test(src("components/useDraftSaver.ts")) && /ownSaved\.set\(key, \{ rev: r\.rev/.test(src("components/useDraftSaver.ts")) && /edits\.current > 0\) return;/.test(src("components/useDraftSaver.ts")));
+t("R2U-2: the scheme page's dates, file menu and the builder's start — by the right", /canEdit=\{await mayNow\("scheme\.edit", id\)\} \/>/.test(src("app/schemes/[id]/page.tsx")) && /canSend=\{await mayNow\("docs\.release", id\)\}/.test(src("app/schemes/[id]/page.tsx")) && /\{canWrite && <button style=\{menuItem\} onClick=\{\(\) => pickFile\(d\.key\)\}>⟳/.test(src("components/SchemeDocuments.tsx")) && /canEdit=\{await mayNow\("scheme\.edit", s\.id\)\}/.test(src("app/schemes/[id]/build/[doc]/page.tsx")) && /<fieldset disabled=\{!!init\.readOnly\}/.test(src("components/SchemeEditor.tsx")));
+t("R2U-3: a file larger than the portal takes is refused before sending", /maxBytes=\{15_000_000\}/.test(src("app/lab/p/[id]/page.tsx")) && /maxBytes=\{15_000_000\}/.test(src("app/lab/page.tsx")) && /f\.size > 5_000_000/.test(src("components/RegisterForm.tsx")));
+t("R2U-4: the receiver's name at least two letters, in the browser too", /name="receivedBy" required minLength=\{2\}/.test(src("app/lab/p/[id]/page.tsx")));
+t("R2U-5: the lab profile's ЕИК and phone checked before sending", /pattern: "\(BG \?\)\?\[0-9\]\{9\}/.test(src("app/lab/profile/page.tsx")));
+t("R2U-6: a register's ceiling said in its own words", /REGISTER_TEXT\[r\.why === "code" \? "limitedCode"/.test(actions));
+t("R2U-7: the staff side's downloads keep their names", ["app/schemes/[id]/uploaded/[doc]/route.ts", "app/users/declarations/[id]/route.ts"].every((f) => /filename\*=UTF-8''\$\{utf8Name\(/.test(src(f))));
 
 console.log(`security-sweep.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

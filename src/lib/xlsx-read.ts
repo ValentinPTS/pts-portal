@@ -8,6 +8,9 @@ import type { Cell } from "./xlsx";
 // its serial number, as stored). Bounded: a file that would inflate past the limit is refused.
 
 const MAX_ROWS = 1_048_576, MAX_COLS = 16_384;
+// …and a workbook's cells in all, the gaps a far reference opens included: 3 000 rows with one cell at
+// XFD filled 565 MB from a 16 KB file (the security sweep, round 2, R2S-7)
+const MAX_SLOTS = 2_000_000;
 export interface ReadSheet { name: string; rows: Cell[][] }
 export class XlsxReadError extends Error {}
 
@@ -91,6 +94,8 @@ export function readXlsx(bytes: Uint8Array): ReadSheet[] {
     const xml = text(t);
     if (xml === null) continue;
     const rows: Cell[][] = [];
+    let slots = 0;
+    const spend = (n: number) => { slots += Math.max(0, n); if (slots > MAX_SLOTS) throw new XlsxReadError("xlsx: too many cells for a workbook the portal reads"); };
     for (const r of xml.matchAll(/<row\b([^>]*)\/>|<row\b([^>]*)>([\s\S]*?)<\/row>/g)) {
       const rAttr = r[1] ?? r[2] ?? "";
       const rn = Number(attr(`<x ${rAttr}>`, "r"));
@@ -115,9 +120,11 @@ export function readXlsx(bytes: Uint8Array): ReadSheet[] {
         else if (type === "b") val = v === "1" ? "TRUE" : v === "0" ? "FALSE" : null;
         else if (v !== undefined && v.trim() !== "") { const n = Number(v); val = Number.isFinite(n) ? n : unxml(v); }
         if (val === null || val === "") continue;
+        spend(ci + 1 - row.length);
         while (row.length < ci) row.push(null);
         row[ci] = val;
       }
+      spend(ri + 1 - rows.length);
       while (rows.length < ri) rows.push([]);
       rows[ri] = row;
     }

@@ -35,6 +35,11 @@ const KIND_TEXT: Record<string, { bg: string; en: string }> = {
   "password.changed": { bg: "паролата е сменена", en: "password changed" },
 };
 
+/** The notices whose words name a participation's courier — its carrier, its waybill, the carriers'
+ *  offers: a carrier's tracking page shows where the object went (the security sweep, SC-3, round 2):
+ *  read, sent and released only by who sees names in that scheme. */
+export const COURIER_NOTICE_KINDS: ReadonlySet<string> = new Set(["items.dispatched", "carrier.offers"]);
+
 export function noticeKindText(kind: string, lang: "bg" | "en"): string {
   const t = KIND_TEXT[kind];
   if (t) return t[lang];

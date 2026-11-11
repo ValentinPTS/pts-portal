@@ -89,6 +89,10 @@ try {
   const api = await page.request.post(`${BASE}/api/certificate`, { headers: { "content-type": "application/json", "x-forwarded-for": `10.88.${stamp % 250}.${(stamp >> 3) % 250}` }, data: JSON.stringify({ number: ["PTS 26/01-T-1-12345"], code: ["01"] }) });
   t("UP-3: an array for the number and the code — «invalid», nothing more", api.status() === 200 && JSON.stringify(await api.json()) === JSON.stringify({ valid: false }));
 
+  // ── round 2 (R2S-10): a laboratory's document is never fetched as a picture ──
+  const asImage = await page.request.get(`${BASE}/lab/doc/${S}/plan`, { headers: { "sec-fetch-dest": "image" }, maxRedirects: 0 });
+  t("R2S-10: a document fetched as a picture — refused (403), nothing on record", asImage.status() === 403, String(asImage.status()));
+
   // ── the proxy's matcher: a dot-segment path is served as what it resolves to (login off: open) ──
   const dot = await page.request.get(`${BASE}/certificate/%2e%2e/dashboard`, { maxRedirects: 0 });
   t("a «..» path is what it resolves to — the proxy asked on it (login on: the sign-in)", [200, 307, 308].includes(dot.status()), String(dot.status()));

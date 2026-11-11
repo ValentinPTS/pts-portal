@@ -14,10 +14,12 @@ export default async function LabProfilePage({ searchParams }: { searchParams: P
   const review = !!sp.review;
   const err = sp.err === "eik" || sp.err === "phone" ? sp.err : null;
   const { tr } = await getServerT();
-  const field = (name: string, label: string, value: string) => (
+  // a field the browser checks before sending — a refusal by the server came back with every other change
+  // lost (round 2, R2U-5); the server checks the same
+  const field = (name: string, label: string, value: string, check?: { pattern: string; title: string }) => (
     <label style={{ display: "block", marginBottom: 14 }}>
       <span className="field-label">{label}</span>
-      <input className="input" name={name} defaultValue={value} />
+      <input className="input" name={name} defaultValue={value} {...(check ? { pattern: check.pattern, title: check.title } : {})} />
     </label>
   );
   return (
@@ -49,9 +51,9 @@ export default async function LabProfilePage({ searchParams }: { searchParams: P
           {field("name", tr("lab.field.labName"), lab.name)}
           {field("accreditationCert", tr("lab.field.accreditationCert"), lab.accreditationCert)}
           {field("contactPerson", tr("lab.field.contactPerson"), lab.contactPerson)}
-          {field("phone", tr("lab.field.phone"), lab.phone)}
+          {field("phone", tr("lab.field.phone"), lab.phone, { pattern: "[+()0-9 .\\-\\/]{5,40}( *(вътр\\.?|ext\\.?|доп\\.?) *[0-9]{1,6})?", title: "Телефон: цифри, интервали, + ( ) - . / · Phone: digits, spaces, + ( ) - . /" })}
           {field("registeredAddress", tr("lab.field.registeredAddress"), lab.registeredAddress)}
-          {field("eik", "ЕИК", lab.eik)}
+          {field("eik", "ЕИК", lab.eik, { pattern: "(BG ?)?[0-9]{9}([0-9]{4})?|[A-Za-z0-9 .\\-\\/]*[A-Za-z][A-Za-z0-9 .\\-\\/]*", title: "ЕИК: 9 или 13 цифри (или регистрационният номер в чужбина) · ЕИК: 9 or 13 digits (or the registration number abroad)" })}
           {field("vat", "ДДС №", lab.vat)}
           {field("mol", "МОЛ", lab.mol)}
           <div style={{ display: "flex", gap: 10, marginTop: 8 }}>

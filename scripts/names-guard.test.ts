@@ -50,7 +50,10 @@ t("old lab stamp: file name dropped", oldUpload.ref === undefined, String(oldUpl
 t("old lab stamp: note kept", oldUpload.note === "uploaded by the laboratory (portal)");
 
 const manual = ce({ source: "manual", ref: "Econt 1234567", recordedBy: "ana@ptsbg.eu", kind: "items_dispatched" });
-t("staff-typed entry unchanged", redactCaseEventForStaff(manual) === manual);
+// a staff-typed dispatch's reference is its waybill — masked too (the security sweep, round 2, R2S-3)
+t("a staff-typed dispatch: its waybill masked, the rest kept", redactCaseEventForStaff(manual).ref === undefined && redactCaseEventForStaff(manual).recordedBy === "ana@ptsbg.eu");
+const typedNote = ce({ source: "manual", ref: "Протокол 12", recordedBy: "ana@ptsbg.eu", kind: "other" });
+t("staff-typed entry of another kind unchanged", redactCaseEventForStaff(typedNote) === typedNote);
 const cert = ce({ kind: "report_issued", ref: "PTS 26/07-T-1-48217" });
 t("app stamp with a reference unchanged", redactCaseEventForStaff(cert) === cert);
 const newUpload = ce({ recordedBy: LAB_RECORDER });

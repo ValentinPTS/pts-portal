@@ -42,6 +42,10 @@ t("the address kept only as a keyed hash with the hour — never itself; another
 const AT = Date.parse("2026-11-11T10:05:00Z");
 const outs: string[] = [];
 for (let i = 0; i < MAX_FAILED_PER_HOUR + 1; i++) outs.push((await lookupCertificate({ number: `PTS 26/01-T-1-9${String(i).padStart(4, "0")}`, code: "X1" }, "198.51.100.7", AT)).state);
+{
+  const r = await lookupCertificate({ number: "PTS 26/01-T-1-98888", code: "X9" }, "198.51.100.7", AT);
+  t("…an address's own ceiling said as the address's (round 2, R2U-6)", r.state === "limited" && "why" in r && r.why === "address", JSON.stringify(r));
+}
 t("…invalid ten times, the eleventh limited", outs.slice(0, 10).every((o) => o === "invalid") && outs[10] === "limited", outs.join());
 t("…another address is not limited; the next hour, neither", (await lookupCertificate({ number: "PTS 26/01-T-1-90000", code: "X1" }, "198.51.100.8", AT)).state === "invalid" && (await lookupCertificate({ number: "PTS 26/01-T-1-90000", code: "X1" }, "198.51.100.7", AT + 3600_000)).state === "invalid" && (await lookupCertificate({ number: "", code: "" }, "198.51.100.9", AT)).state === "incomplete");
 t("the address: the platform's own header first, else the first forwarded one", requestAddress(new Headers({ "x-forwarded-for": "203.0.113.9, 10.0.0.1" })) === "203.0.113.9" && requestAddress(new Headers({ "x-vercel-forwarded-for": "198.51.100.1", "x-forwarded-for": "6.6.6.6" })) === "198.51.100.1" && requestAddress(new Headers({})) === "unknown");
@@ -73,6 +77,10 @@ t("the form posts — the code never in a link", /useActionState/.test(src("comp
 const perCode = [];
 for (let i = 0; i < 21; i++) perCode.push((await lookupCertificate({ number: `PTS 26/01-T-1-6${String(i).padStart(4, "0")}`, code: "C42" }, `203.0.113.${i + 1}`, AT + i * 60_000)).state);
 t("one code, a new number each time: 20 failed, then limited for the day", perCode.slice(0, 20).every((x) => x === "invalid") && perCode[20] === "limited", perCode.join());
+{
+  const r = await lookupCertificate({ number: "PTS 26/01-T-1-62222", code: "C42" }, "203.0.113.150", AT + 3600_000);
+  t("…said as the code's day, never «this address» (round 2, R2U-6)", r.state === "limited" && "why" in r && r.why === "code", JSON.stringify(r));
+}
 t("…another spelling of the scheme's number and of the code counts as it", (await lookupCertificate({ number: "РТС 26/1-Т-01 – 61111", code: "c 42" }, "203.0.113.200", AT + 2 * 3600_000)).state === "limited");
 t("…another code is not limited; the next day, neither", (await lookupCertificate({ number: "PTS 26/01-T-1-61111", code: "C43" }, "203.0.113.201", AT + 2 * 3600_000)).state === "invalid" && (await lookupCertificate({ number: "PTS 26/01-T-1-61111", code: "C42" }, "203.0.113.202", AT + 24 * 3600_000)).state === "invalid");
 t("…an array is not a number or a code (UP-3)", readQuery({ number: ["PTS 26/01-T-1-12345"], code: ["C07"] }) === null && readQuery({ number: "PTS 26/01-T-1-12345", code: 7 as unknown as string }) === null);

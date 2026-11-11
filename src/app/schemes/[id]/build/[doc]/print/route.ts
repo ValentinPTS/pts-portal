@@ -105,7 +105,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
       // Strict CSP (see /doc/[doc]/print): the owner-built body is rich HTML, so
       // block scripts while allowing the fonts/images documents legitimately use.
       "content-security-policy":
-        `default-src 'none'; img-src ${docImgSrc()}; style-src 'unsafe-inline' 'self'; font-src 'self'; frame-ancestors 'self'`,
+        `default-src 'none'; img-src ${docImgSrc()}; style-src 'unsafe-inline' 'self'; font-src 'self'; frame-ancestors 'self'; form-action 'none'; base-uri 'none'`,
       "x-content-type-options": "nosniff",
     },
   });

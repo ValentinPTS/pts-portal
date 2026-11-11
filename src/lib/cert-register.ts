@@ -59,7 +59,9 @@ export const addressKey = (address: string, hour: string, key = hashKey() ?? "")
 
 // the day's window of a code's bucket: the day's first hour, in the hours' own form
 const dayOf = (hour: string) => `${hour.slice(0, 10)}T00`;
-async function takeTicket(hour: string, a: string, n: string, c: string): Promise<boolean> {
+/** «ok», or which ceiling refused it — said in its own words (round 2, R2U-6). */
+export type Ticket = "ok" | "address" | "number" | "code" | "all";
+async function takeTicket(hour: string, a: string, n: string, c: string): Promise<Ticket> {
   const db = getDb();
   const day = dayOf(hour);
   if (!db) {
@@ -68,13 +70,16 @@ async function takeTicket(hour: string, a: string, n: string, c: string): Promis
     const key = (b: string) => `${b}|${b.startsWith("c:") ? day : hour}`;
     const get = (b: string) => mem.buckets.get(key(b)) ?? { failed: 0, tries: 0 };
     const A = get(a), N = get(n), G = get("g"), C = get(c);
-    if (A.failed >= CEILINGS.addressFailed || A.tries >= CEILINGS.addressTries || N.failed >= CEILINGS.numberFailed || G.failed >= CEILINGS.allFailed || C.failed >= CEILINGS.codeFailedPerDay) return false;
+    if (G.failed >= CEILINGS.allFailed) return "all";
+    if (C.failed >= CEILINGS.codeFailedPerDay) return "code";
+    if (N.failed >= CEILINGS.numberFailed) return "number";
+    if (A.failed >= CEILINGS.addressFailed || A.tries >= CEILINGS.addressTries) return "address";
     for (const b of [a, n, "g", c]) { const x = get(b); mem.buckets.set(key(b), { failed: x.failed + 1, tries: x.tries + 1 }); }
-    return true;
+    return "ok";
   }
   const { data, error } = await db.rpc("register_try", { p_hour: hour, p_day: day, p_address: a, p_number: n, p_code: c });
   if (error) throw error;
-  return data === true;
+  return data === "ok" || data === "address" || data === "number" || data === "code" ? data : "all";
 }
 async function refund(hour: string, a: string, n: string, c: string): Promise<void> {
   const db = getDb();
@@ -90,7 +95,7 @@ async function countOutcome(o: Outcome): Promise<void> {
   if (error) console.error("[register] count:", error.message);
 }
 
-export type LookupResult = { state: "valid"; answer: RegisterAnswer } | { state: "invalid" | "incomplete" | "limited" | "failed" };
+export type LookupResult = { state: "valid"; answer: RegisterAnswer } | { state: "limited"; why: Exclude<Ticket, "ok"> } | { state: "invalid" | "incomplete" | "failed" };
 
 /** One lookup by number AND code, from one address: «valid» with Реш. 56's data, or why not — the same
  *  «invalid» whichever part was wrong, and for a matched certificate that cannot be answered (10.4 review:
@@ -104,9 +109,9 @@ export async function lookupCertificate(input: { number?: unknown; code?: unknow
   const n = `n:${hmac(key, `${hour}|n|${numberMark(q?.number ?? String(input.number ?? ""))}`)}`;
   // (an incomplete query names no code: its own bucket, by its address)
   const c = `c:${hmac(key, q ? `${dayOf(hour)}|c|${codeMark(q.number, q.code)}` : `${dayOf(hour)}|c-none|${a}`)}`;
-  let ticket: boolean;
+  let ticket: Ticket;
   try { ticket = await takeTicket(hour, a, n, c); } catch (e) { console.error("[register] ticket:", (e as Error)?.message ?? e); return { state: "failed" }; }
-  if (!ticket) { await countOutcome("limited"); return { state: "limited" }; }
+  if (ticket !== "ok") { await countOutcome("limited"); return { state: "limited", why: ticket }; }
   if (!q) { await countOutcome("incomplete"); return { state: "incomplete" }; }
   let hit;
   try { hit = findCertificate(await listStartedSchemes(), q); } catch (e) { console.error("[register] lookup:", (e as Error)?.message ?? e); return { state: "failed" }; }

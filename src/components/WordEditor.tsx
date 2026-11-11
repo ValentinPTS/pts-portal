@@ -338,7 +338,10 @@ export default function WordEditor({
   savedTemplates = [],
   copyFrom = [],
   initialReady = false,
+  canEdit = true,
 }: {
+  /** may start and save the document — a read-only role reads it, nothing to start (round 2, R2U-2) */
+  canEdit?: boolean;
   schemeId: string;
   docKey: string;
   docNameEn: string;
@@ -1677,6 +1680,14 @@ export default function WordEditor({
             <button className="btn btn-primary mt-2" style={{ fontSize: 13 }} onClick={() => insertHtml(html)}>{L("Вмъкни ↩", "Insert ↩")}</button>
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (!started && !canEdit) {
+    return (
+      <div data-doc-not-started className="card p-5" style={{ borderLeft: "4px solid var(--line)", maxWidth: 640, color: "var(--muted)" }}>
+        {L(`„${docNameEn}“ още не е създаден — създава го който редактира схемата.`, `“${docNameEn}” is not created yet — it is made by who edits the scheme.`)}
       </div>
     );
   }

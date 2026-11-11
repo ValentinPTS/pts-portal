@@ -134,6 +134,7 @@ export default async function BuildDocPage({
         customItems={custom}
         savedTemplates={savedTemplates}
         copyFrom={copyFrom}
+        canEdit={await mayNow("scheme.edit", s.id)}
       />
     </div>
   );

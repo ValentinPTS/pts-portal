@@ -15,6 +15,15 @@ export type Values = Record<string, string>;
 export type SaveState = { kind: "idle" | "dirty" | "saving" | "saved" | "stale" | "error"; at?: string; error?: string };
 const AUTOSAVE_MS = 4000; // a few seconds after typing stops — each save is a sign-in check on record
 
+// The latest draft this browser tab saved, per participation — and the save in flight. «Back» brings the
+// form back from the router's cache with the revision and the values it was first shown with, though the
+// form saved since (on leaving, UL-2): the next save was refused as «saved elsewhere» and what was typed
+// after was lost (the security sweep, round 2, R2U-1). What this tab saved itself is taken up again.
+type Saved = { rev: number; values: Values; savedAt?: string };
+const g = globalThis as unknown as { __ptsDraftSaved?: Map<string, Saved>; __ptsDraftInFlight?: Map<string, Promise<unknown>> };
+const ownSaved: Map<string, Saved> = g.__ptsDraftSaved ?? (g.__ptsDraftSaved = new Map());
+const ownInFlight: Map<string, Promise<unknown>> = g.__ptsDraftInFlight ?? (g.__ptsDraftInFlight = new Map());
+
 export function useDraftSaver({ schemeId, participantId, initial, rev, savedAt }: { schemeId: string; participantId: string; initial: Values; rev: number; savedAt?: string }) {
   const [values, setValues] = useState<Values>(initial);
   const [state, setState] = useState<SaveState>(savedAt ? { kind: "saved", at: savedAt } : { kind: "idle" });
@@ -28,6 +37,25 @@ export function useDraftSaver({ schemeId, participantId, initial, rev, savedAt }
   const inFlight = useRef(false);   // one save at a time — a second would name the same revision
   const again = useRef(false);      // asked for while one was in flight: run once it returns
 
+  const key = `${schemeId}|${participantId}`;
+  // brought back with an older revision than this tab saved (R2U-1): its own latest taken up, once any
+  // save of its own still in flight is back — never over what was typed meanwhile
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const flying = ownInFlight.get(key);
+      if (flying) await flying.catch(() => null);
+      const mine = ownSaved.get(key);
+      if (!alive || !mine || mine.rev <= baseRev.current || edits.current > 0) return;
+      baseRev.current = mine.rev;
+      latest.current = mine.values;
+      lastSent.current = JSON.stringify(mine.values);
+      setValues(mine.values);
+      setState({ kind: "saved", at: mine.savedAt });
+    })();
+    return () => { alive = false; };
+  }, [key]);
+
   const save = async (): Promise<void> => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
     if (stopped.current) return;
@@ -38,11 +66,15 @@ export function useDraftSaver({ schemeId, participantId, initial, rev, savedAt }
     const sentAt = edits.current;
     setState((s) => ({ kind: "saving", at: s.at }));
     inFlight.current = true;
-    const r = await saveResultDraftAction(schemeId, participantId, latest.current, baseRev.current).catch(() => ({ error: "failed" as const }));
+    const sending = saveResultDraftAction(schemeId, participantId, latest.current, baseRev.current).catch(() => ({ error: "failed" as const }));
+    ownInFlight.set(key, sending);
+    const r = await sending;
+    if (ownInFlight.get(key) === sending) ownInFlight.delete(key);
     inFlight.current = false;
     if ("ok" in r) {
       baseRev.current = r.rev;
       lastSent.current = body;
+      ownSaved.set(key, { rev: r.rev, values: JSON.parse(body) as Values, savedAt: r.savedAt });
       setBad(new Set(r.notNumbers.map((x) => `${x.key}|${x.field}`)));
       setState(edits.current === sentAt ? { kind: "saved", at: r.savedAt } : { kind: "dirty", at: r.savedAt });
       // typed while it was in flight and asked to save: once more, over the revision just saved

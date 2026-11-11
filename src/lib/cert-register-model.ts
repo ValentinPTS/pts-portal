@@ -88,6 +88,9 @@ export const REGISTER_TEXT = {
   invalid: { bg: "Невалиден — няма сертификат с този номер и код.", en: "Invalid — there is no certificate with this number and code." },
   incomplete: { bg: "Въведете номера и кода на сертификата.", en: "Type the certificate's number and code." },
   limited: { bg: "Твърде много неуспешни справки от този адрес — опитайте след час.", en: "Too many failed lookups from this address — try again in an hour." },
+  // the ceiling reached is a code's for the day, or everyone's — said as such, never «this address» (round 2, R2U-6)
+  limitedCode: { bg: "Справките за този код днес са спрени след много неуспешни опити — опитайте утре или се обърнете към PTS.", en: "Lookups for this code are stopped for today after many failed attempts — try again tomorrow or contact PTS." },
+  limitedAll: { bg: "Регистърът получава твърде много справки в момента — опитайте след малко.", en: "The register is receiving too many lookups right now — try again in a while." },
   failed: { bg: "Справката не може да се направи сега — опитайте след малко.", en: "The lookup cannot be made now — try again shortly." },
   valid: { bg: "Валиден", en: "Valid" },
 };

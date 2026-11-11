@@ -32,7 +32,9 @@ export function redactActivityForStaff(e: ActivityEvent): ActivityEvent {
   // name; a courier's waybill leads to the laboratory's address (SC-3). Never shown here, in the
   // line's subject, its before/after or its text — lines about PTS's own people excepted.
   const staffLine = STAFF_ACTIONS.test(e.action);
-  if (!staffLine) summary = summary.replace(WAYBILL_TEXT, "$1 •••");
+  if (!staffLine) summary = summary.replace(WAYBILL_TEXT, "$1 •••")
+    // an older line typed by hand: «Timeline: items_dispatched for <code> (<waybill>)» (round 2, R2S-3)
+    .replace(/^(Timeline: (?:items_dispatched|receipt_confirmed) for \S+) \([^)]*\)/, "$1 (•••)");
   return {
     ...e,
     actorEmail: e.actorRole === "lab" ? LAB_ACTOR : mask(e.actorEmail) ?? "",
@@ -83,7 +85,8 @@ export const LAB_RECORDER = "laboratory";
 export function redactCaseEventForStaff(e: CaseEvent): CaseEvent {
   // a dispatch's or a receipt's reference is the courier's waybill — its tracking page shows
   // where the object went (the security sweep, SC-3): never to who does not see names
-  const waybill = e.source === "auto" && (e.kind === "items_dispatched" || e.kind === "receipt_confirmed") && !!e.ref;
+  // …typed by hand too: a calibration scheme's dispatch is recorded only so (round 2, R2S-3)
+  const waybill = (e.kind === "items_dispatched" || e.kind === "receipt_confirmed") && !!e.ref;
   if (waybill) e = { ...e, ref: undefined };
   if (e.source !== "auto" || !e.recordedBy.includes("@")) return e;
   return { ...e, recordedBy: LAB_RECORDER, ref: undefined };

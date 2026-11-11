@@ -33,6 +33,9 @@ function RegisterFields({ state, formAction, privacy }: { state: RegistrationFor
   const [otherCode, setOtherCode] = useState(typedCountry && !KNOWN.has(typedCountry) ? typedCountry : "");
   const errorCode = state.error;
   const [docNames, setDocNames] = useState<string[]>([]);
+  // a document over 5 MB (or more than 3) refused before sending: a body over the server's limit broke the
+  // whole registration with the framework's own words, and what was typed was lost (round 2, R2U-3)
+  const [docProblem, setDocProblem] = useState<string | null>(null);
   const isOther = sel === OTHER;
   const country = isOther ? otherCode.trim().toUpperCase() : sel;
   const eu = !!country && isEu(country);
@@ -159,7 +162,14 @@ function RegisterFields({ state, formAction, privacy }: { state: RegistrationFor
             </div>
             <label style={{ display: "block", marginTop: 6, cursor: "pointer", textAlign: "center", border: "2px dashed var(--green-line)", borderRadius: 12, background: "#fff", padding: "20px 16px" }}>
               <input name="documents" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp"
-                onChange={(e) => setDocNames(Array.from(e.target.files ?? []).map((f) => f.name))}
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? []);
+                  setDocNames(files.map((f) => f.name));
+                  const say = files.length > 3 ? L("Attach 3 files at most.", "Прикачете най-много 3 файла.")
+                    : files.some((f) => f.size > 5_000_000) ? L("Each document must be under 5 MB — choose a smaller file.", "Всеки документ трябва да е под 5 MB — изберете по-малък файл.") : null;
+                  e.currentTarget.setCustomValidity(say ?? "");
+                  setDocProblem(say);
+                }}
                 style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" }} />
               <div style={{ fontSize: 15, fontWeight: 700, color: "var(--green-dark)" }}>
                 {docNames.length
@@ -170,6 +180,7 @@ function RegisterFields({ state, formAction, privacy }: { state: RegistrationFor
                 {L("PDF, JPG or PNG · up to 3 files · max 5 MB each", "PDF, JPG или PNG · до 3 файла · до 5 MB всеки")}
               </div>
             </label>
+            {docProblem && <div role="alert" data-register-doc-problem style={{ marginTop: 6, fontSize: 13, color: "var(--red)" }}>{docProblem}</div>}
             {docNames.length > 0 && (
               <ul style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4, listStyle: "none", padding: 0 }}>
                 {docNames.slice(0, 3).map((n, i) => <li key={i} style={{ fontSize: 13, background: "#fff", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px" }}>{n}</li>)}

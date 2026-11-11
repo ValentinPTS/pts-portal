@@ -36,8 +36,9 @@ revoke all on public.register_attempts, public.register_lookups from anon, authe
 
 -- A ticket for one lookup: refused (false) when any ceiling is reached; else counted as failed in each
 -- bucket, and as a try for the address. The hours before this one removed (a code's: the days before).
+-- (its answer: 'ok', or which ceiling — 'all', 'code', 'number', 'address' — said in its own words, round 2)
 create or replace function public.register_try(p_hour text, p_day text, p_address text, p_number text, p_code text)
-  returns boolean language plpgsql security definer set search_path = '' as $$
+  returns text language plpgsql security definer set search_path = '' as $$
 declare
   af integer; at integer; nf integer; gf integer; cf integer;
 begin
@@ -50,13 +51,14 @@ begin
   select coalesce(max(failed), 0) into nf from public.register_attempts where bucket = p_number and hour = p_hour;
   select coalesce(max(failed), 0) into gf from public.register_attempts where bucket = 'g' and hour = p_hour;
   select coalesce(max(failed), 0) into cf from public.register_attempts where bucket = p_code and hour = p_day;
-  if af >= 10 or at >= 30 or nf >= 20 or gf >= 300 or cf >= 20 then
-    return false;
-  end if;
+  if gf >= 300 then return 'all'; end if;
+  if cf >= 20 then return 'code'; end if;
+  if nf >= 20 then return 'number'; end if;
+  if af >= 10 or at >= 30 then return 'address'; end if;
   insert into public.register_attempts (bucket, hour, failed, tries)
     select b, case when b = p_code then p_day else p_hour end, 1, 1 from unnest(array[p_address, p_number, 'g', p_code]) as b
     on conflict (bucket, hour) do update set failed = public.register_attempts.failed + 1, tries = public.register_attempts.tries + 1;
-  return true;
+  return 'ok';
 end $$;
 -- A valid answer gives its ticket back (the try stays counted).
 create or replace function public.register_refund(p_hour text, p_day text, p_address text, p_number text, p_code text)

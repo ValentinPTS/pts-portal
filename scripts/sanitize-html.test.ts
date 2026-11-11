@@ -45,7 +45,7 @@ ok("removes chained handlers (<img/onload=a/onerror=b>)",
   gone(sanitizeDocHtml(`<img/onload=a()/onerror=b()>`), "onload") &&
   gone(sanitizeDocHtml(`<img/onload=a()/onerror=b()>`), "onerror"));
 ok("slash-separated handler does not eat a real attribute's quote",
-  has(sanitizeDocHtml(`<img src="x"onerror=alert(1)>`), 'src="x"'));
+  has(sanitizeDocHtml(`<img src="/brand/x.png"onerror=alert(1)>`), 'src="/brand/x.png"'));
 
 // ── URL scheme bypasses via HTML-entity / control-char obfuscation ──────────────
 ok("neutralizes entity-encoded javascript: (&#106;avascript:)",
@@ -125,6 +125,32 @@ for (const payload of [
 ok("a document's own formatting is kept as it was",
   sanitizeDocHtml(`<!-- BODY --><h1 class="t">Заглавие</h1><p style="text-align:center">Текст <b>удебелен</b> <a href="https://ptsbg.eu">връзка</a></p><table><tr><td colspan="2">x</td></tr></table>`)
     === `<!-- BODY --><h1 class="t">Заглавие</h1><p style="text-align:center">Текст <b>удебелен</b> <a href="https://ptsbg.eu">връзка</a></p><table><tr><td colspan="2">x</td></tr></table>`);
+// round 2 (R2S-1, R2S-2, R2S-8, R2S-10): the portal's markers inside a tag, a script's scheme in any
+// attribute, SVG's animation, pictures from anywhere, and a linear pass
+for (const payload of [
+  `<scr<!--PTS:BS-->ipt>alert(1)</scr<!--PTS:BS-->ipt>`,
+  `<me<!--PTS:BE-->ta http-equiv=refresh content="0;url=https://evil.example">`,
+  `<fo<!--PTS:BS-->rm action=https://evil.example><input name=p></fo<!--PTS:BS-->rm>`,
+  `<img src=x on<!--PTS:BS-->error=alert(1)>`,
+  `<a href="java<!--PTS:BS-->script:alert(1)">x</a>`,
+  `<a x=href="a href=&#106;avascript:alert(1)//">c</a>`,
+  `<svg><a><animate attributeName=href values=&#106;avascript:alert(1) /><text>x</text></a></svg>`,
+  `<svg><a><set attributeName=href to=javascript:alert(1) /><text>x</text></a></svg>`,
+]) {
+  const once = sanitizeDocHtml(payload);
+  const shell = (once.split("<!--PTS:BS-->").join("").split("<!--PTS:BE-->").join(""));
+  ok(`round 2 — nothing live, even once the shell's markers are removed: ${payload.slice(0, 44)}`, !live(once) && !live(shell) && !/javascript:|<meta|<form|<animate|<set\b/i.test(shell), shell);
+}
+ok("round 2 — a cover's mark between tags is kept", sanitizeDocHtml(`<!--PTS:CV-->\n<p>x</p>`) === `<!--PTS:CV-->\n<p>x</p>`);
+for (const [name, html] of [["srcset", `<img srcset="https://evil.example/x.png 1x">`], ["background", `<td background="https://evil.example/x.png">x</td>`], ["poster", `<video poster="https://evil.example/p.png"></video>`], ["a style's url()", `<p style="background:url(https://evil.example/s.png)">x</p>`], ["a backslash", `<img src="\\evil.example/x.png">`], ["a portal page", `<img src="/lab/doc/S/report">`], ["a relative page", `<img src="report">`]] as const) {
+  ok(`round 2 — no picture from ${name}`, !/evil\.example|\/lab\/doc|src="report"/.test(sanitizeDocHtml(html)), sanitizeDocHtml(html));
+}
+ok("round 2 — the portal's own pictures kept", sanitizeDocHtml(`<img src="/brand/logo.png"><img src="data:image/png;base64,AAAA">`) === `<img src="/brand/logo.png"><img src="data:image/png;base64,AAAA">`);
+{
+  const t0 = Date.now(); sanitizeDocHtml("<style>".repeat(120_000)); sanitizeDocHtml("<script ".repeat(60_000));
+  ok("round 2 — a pathological body is handled in linear time", Date.now() - t0 < 2000, `${Date.now() - t0} ms`);
+}
+
 ok("text that merely mentions a form or a script is not touched", sanitizeDocHtml(`<p>The script of the form: 5 &lt; 6</p>`) === `<p>The script of the form: 5 &lt; 6</p>`);
 
 console.log(`\nsanitize-html.test: ${pass} passed, ${fail} failed`);

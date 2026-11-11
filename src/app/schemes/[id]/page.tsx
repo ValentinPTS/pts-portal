@@ -511,7 +511,7 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
       )}
 
       {/* the operational dates — separate from the Plan's printed schedule */}
-      <SchemeDates schemeId={id} lang={lang} initial={s.dates ?? {}} byAmendment={needsAmendment(s)} />
+      <SchemeDates schemeId={id} lang={lang} initial={s.dates ?? {}} byAmendment={needsAmendment(s)} canEdit={await mayNow("scheme.edit", id)} />
 
       {/* the round's movable clock — the test environment only (1.3) */}
       {isTestEnvironment() && <SchemeTestClock schemeId={id} lang={lang} offsetMs={clockOffsetMs(s)} />}
@@ -571,7 +571,7 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
           </div>
         );
       })()}
-      <SchemeDocuments schemeId={id} lang={lang} stages={stages} lists={lists} canWrite={await mayNow("scheme.edit", id)} />
+      <SchemeDocuments schemeId={id} lang={lang} stages={stages} lists={lists} canWrite={await mayNow("scheme.edit", id)} canSend={await mayNow("docs.release", id)} />
       {/* 5.9: which documents ask to be acknowledged, and how many have — counts, no code named */}
       {(() => {
         const going = isStarted(s) ? participantsNow.filter((p) => inFinalRound(s, p)) : [];

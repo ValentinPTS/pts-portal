@@ -165,6 +165,9 @@ t("the round export: the replay's field placed; its source path never in coded/"
   const refused = (sheet: string) => { const t0 = Date.now(); try { readXlsx(book(sheet)); return false; } catch (e) { return /beyond a sheet's bounds/.test(String((e as Error).message)) && Date.now() - t0 < 2000; } };
   t("a column past a sheet's bounds — refused at once", refused(`<row r="1"><c r="ZZZZZZZZ1" t="inlineStr"><is><t>x</t></is></c></row>`));
   t("a row past a sheet's bounds — refused at once", refused(`<row r="99999999"><c r="A99999999" t="inlineStr"><is><t>x</t></is></c></row>`));
+  // round 2 (R2S-7): within the bounds, many far cells — refused, never hundreds of MB
+  const far = Array.from({ length: 3000 }, (_, i) => `<row r="${i + 1}"><c r="XFD${i + 1}" t="inlineStr"><is><t>x</t></is></c></row>`).join("");
+  t("3 000 rows with a cell at XFD — refused at once (a cell budget)", (() => { const t0 = Date.now(); try { readXlsx(book(far)); return false; } catch (e) { return /too many cells/.test(String((e as Error).message)) && Date.now() - t0 < 2000; } })());
   t("the last cell of a sheet is still read", readXlsx(book(`<row r="3"><c r="XFD3" t="inlineStr"><is><t>z</t></is></c></row>`))[0].rows[2][16383] === "z");
 }
 

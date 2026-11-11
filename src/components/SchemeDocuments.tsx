@@ -30,7 +30,7 @@ export interface DocStageView { key: string; label: string; docs: DocRow[] }
 
 const ACCEPT = "application/pdf,image/png,image/jpeg";
 
-export default function SchemeDocuments({ schemeId, lang, stages, lists = [], canWrite = true }: { schemeId: string; lang: "bg" | "en"; stages: DocStageView[]; lists?: DocRow[]; /** may upload a file (UR-1) */ canWrite?: boolean }) {
+export default function SchemeDocuments({ schemeId, lang, stages, lists = [], canWrite = true, canSend = true }: { schemeId: string; lang: "bg" | "en"; stages: DocStageView[]; lists?: DocRow[]; /** may upload a file (UR-1) */ canWrite?: boolean; /** may send it to the participants (round 2, R2U-2) */ canSend?: boolean }) {
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -190,7 +190,7 @@ export default function SchemeDocuments({ schemeId, lang, stages, lists = [], ca
                         // opens exactly what the participants hold — its edition — whatever was edited since
                         ? <a href={`/schemes/${schemeId}/released/${d.key}?lang=${lang}`} target="_blank" rel="noreferrer" title={L("Отвори редакцията, която участниците получиха", "Open the edition the participants received")} style={{ color: "#3d6b47", fontWeight: 700 }}>📨 {L("изпратен", "sent")} {d.sentAt}{d.sentEdition ? ` (${L("ред.", "ed.")} № ${d.sentEdition})` : ""} ↗</a>
                         : <span style={{ color: "#3d6b47", fontWeight: 700 }}>📨 {L("изпратен", "sent")} {d.sentAt}</span>}</>)}
-                      {d.hasBuilt && d.hasUpload && (
+                      {canWrite && d.hasBuilt && d.hasUpload && (
                         <>
                           <span>·</span>
                           <button onClick={() => switchSource(d.key, d.active === "uploaded" ? "built" : "uploaded")}
@@ -217,7 +217,7 @@ export default function SchemeDocuments({ schemeId, lang, stages, lists = [], ca
                       )}
                       {/* the clear line: a document with something in it can be
                           released to the participants, and only then do they see it */}
-                      {d.sendable && d.active !== "none" && !d.sentAt && (
+                      {canSend && d.sendable && d.active !== "none" && !d.sentAt && (
                         <button className="btn" style={{ ...btnSm, borderColor: "#cbd9be", color: "#3d6b47", fontWeight: 700 }} onClick={() => setSent(d, true)}>
                           📨 {L("Изпрати", "Send")}
                         </button>
@@ -232,7 +232,7 @@ export default function SchemeDocuments({ schemeId, lang, stages, lists = [], ca
                     <>
                       <div style={{ position: "fixed", inset: 0, zIndex: 19 }} onClick={() => setMenuKey(null)} />
                       <div role="menu" style={rowMenu}>
-                        {d.sendable && (
+                        {canSend && d.sendable && (
                           <>
                             {d.sentAt ? (
                               <button style={menuItem} onClick={() => setSent(d, false)}>🚫 {L("Спри споделянето", "Stop sharing")}</button>
@@ -246,17 +246,17 @@ export default function SchemeDocuments({ schemeId, lang, stages, lists = [], ca
                           <>
                             <button style={menuItem} onClick={() => { setMenuKey(null); setViewer(d); }}>◱ {L("Виж файла", "View file")}</button>
                             <a style={menuItem} href={`/schemes/${schemeId}/uploaded/${d.key}?download=1`} target="_blank" rel="noopener" onClick={() => setMenuKey(null)}>⬇ {L("Свали", "Download")}</a>
-                            <button style={menuItem} onClick={() => pickFile(d.key)}>⟳ {L("Замени файла", "Replace file")}</button>
-                            {d.hasBuilt && <button style={menuItem} onClick={() => switchSource(d.key, "built")}>✎ {L("Използвай създадения", "Use the built version")}</button>}
+                            {canWrite && <button style={menuItem} onClick={() => pickFile(d.key)}>⟳ {L("Замени файла", "Replace file")}</button>}
+                            {canWrite && d.hasBuilt && <button style={menuItem} onClick={() => switchSource(d.key, "built")}>✎ {L("Използвай създадения", "Use the built version")}</button>}
                             <Link style={menuItem} href={d.buildHref}>✎ {L("Отвори в редактора", "Open in editor")}</Link>
-                            <div style={menuSep} />
-                            <button style={{ ...menuItem, color: "var(--red,#9e2b2b)" }} onClick={() => removeUpload(d.key)}>🗑 {L("Премахни файла", "Remove file")}</button>
+                            {canWrite && <div style={menuSep} />}
+                            {canWrite && <button style={{ ...menuItem, color: "var(--red,#9e2b2b)" }} onClick={() => removeUpload(d.key)}>🗑 {L("Премахни файла", "Remove file")}</button>}
                           </>
                         ) : (
                           <>
                             <Link style={menuItem} href={d.buildHref}>✎ {L("Отвори в редактора", "Open in editor")}</Link>
                             {canWrite && <button style={menuItem} onClick={() => pickFile(d.key)}>＋ {L("Качи готов файл", "Upload a ready file")}</button>}
-                            {d.hasUpload && <button style={menuItem} onClick={() => switchSource(d.key, "uploaded")}>◱ {L("Използвай качения", "Use the uploaded file")}</button>}
+                            {canWrite && d.hasUpload && <button style={menuItem} onClick={() => switchSource(d.key, "uploaded")}>◱ {L("Използвай качения", "Use the uploaded file")}</button>}
                           </>
                         )}
                       </div>
@@ -335,10 +335,10 @@ export default function SchemeDocuments({ schemeId, lang, stages, lists = [], ca
             </div>
             <iframe title={viewer.name} src={`/schemes/${schemeId}/uploaded/${viewer.key}`} style={{ width: "100%", flex: 1, minHeight: 420, border: 0, background: "#f5f8f2" }} />
             <div style={{ display: "flex", gap: 8, padding: "12px 16px", borderTop: "1px solid var(--line)", flexWrap: "wrap" }}>
-              <button className="btn" style={btnSm} onClick={() => pickFile(viewer.key)}>⟳ {L("Замени", "Replace")}</button>
+              {canWrite && <button className="btn" style={btnSm} onClick={() => pickFile(viewer.key)}>⟳ {L("Замени", "Replace")}</button>}
               <a className="btn" style={btnSm} href={`/schemes/${schemeId}/uploaded/${viewer.key}?download=1`} target="_blank" rel="noopener">⬇ {L("Свали", "Download")}</a>
-              {viewer.hasBuilt && <button className="btn" style={btnSm} onClick={() => { switchSource(viewer.key, "built"); setViewer(null); }}>✎ {L("Използвай създадения", "Use built version")}</button>}
-              <button className="btn" style={{ ...btnSm, borderColor: "var(--red,#9e2b2b)", color: "var(--red,#9e2b2b)" }} onClick={() => removeUpload(viewer.key)}>🗑 {L("Премахни", "Remove")}</button>
+              {canWrite && viewer.hasBuilt && <button className="btn" style={btnSm} onClick={() => { switchSource(viewer.key, "built"); setViewer(null); }}>✎ {L("Използвай създадения", "Use built version")}</button>}
+              {canWrite && <button className="btn" style={{ ...btnSm, borderColor: "var(--red,#9e2b2b)", color: "var(--red,#9e2b2b)" }} onClick={() => removeUpload(viewer.key)}>🗑 {L("Премахни", "Remove")}</button>}
               <button className="btn" style={{ ...btnSm, marginLeft: "auto" }} onClick={() => setViewer(null)}>{L("Затвори", "Close")}</button>
             </div>
           </div>

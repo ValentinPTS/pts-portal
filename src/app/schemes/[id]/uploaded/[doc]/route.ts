@@ -4,7 +4,7 @@ import { getScheme } from "@/lib/store";
 import { getDb } from "@/lib/supabase";
 import { requireStaff } from "@/lib/roles";
 import { isRestrictedDoc, showsIdentities } from "@/lib/documents";
-import { SCHEME_DOC_BUCKET } from "@/lib/scheme-uploads";
+import { SCHEME_DOC_BUCKET, utf8Name } from "@/lib/scheme-uploads";
 import { logActivity } from "@/lib/activity";
 
 // Serves an uploaded document file (PDF / image) from the PRIVATE scheme-docs bucket,
@@ -52,7 +52,8 @@ async function serve(req: NextRequest, ctx: { params: Promise<{ id: string; doc:
   return new Response(out, {
     headers: {
       "content-type": mime,
-      "content-disposition": `${download ? "attachment" : "inline"}; filename="${safeName}"`,
+      // …and its own name for browsers that read «filename*» (round 2, R2U-7)
+      "content-disposition": `${download ? "attachment" : "inline"}; filename="${safeName}"; filename*=UTF-8''${utf8Name(up.name || "document")}`,
       // confine framing to our own origin; don't let the browser sniff the type.
       "content-security-policy": "frame-ancestors 'self'",
       "x-content-type-options": "nosniff",

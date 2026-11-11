@@ -7,10 +7,15 @@
 --     check «the same»; level 2 never without the original number read.
 -- Replaces 0046's «pass» check (its constraint, by the name Postgres gave it). Safe to run more than once.
 
+begin;
+
 -- re-run guard (the security sweep, 2026-11-11): a later migration (0048_validation_dry_run) redefines what this
 -- one makes — running this file again after a later one would silently undo it. Nothing is changed then.
 do $$ begin
-  if exists (select 1 from public.app_migrations where name > '0047_validation_levels') then
+  -- only a RE-run: this file recorded already and a later one too (a first application out of order
+  -- passes — round 2, R2S-6)
+  if exists (select 1 from public.app_migrations where name = '0047_validation_levels')
+     and exists (select 1 from public.app_migrations where name > '0047_validation_levels') then
     raise exception '0047_validation_levels is superseded by a later migration — running it again would undo that. Nothing was changed.';
   end if;
 end $$;
@@ -36,3 +41,5 @@ alter table public.validation_tests add constraint validation_tests_level_kind c
 );
 
 insert into public.app_migrations (name) values ('0047_validation_levels') on conflict (name) do nothing;
+
+commit;

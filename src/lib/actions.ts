@@ -23,8 +23,9 @@ import { publishFeed, feedDigest, feedBase, feedBaseMissing, latestPublication }
 import { readFeedback, keysOf, wordsOf, feedbackOffered, FEEDBACK_PROBLEM_TEXT } from "./feedback-model";
 import { giveFeedback } from "./feedback";
 import { lookupCertificate, requestAddress } from "./cert-register";
-import { publicFormAllowed } from "./public-limit";
+import { publicFormLimit } from "./public-limit";
 import { imageUrlAllowed } from "./image-hosts";
+import { COURIER_NOTICE_KINDS } from "./notice-kinds";
 import { validateEik } from "./verify-eik";
 import { REGISTER_TEXT, type RegisterAnswer } from "./cert-register-model";
 import { getServerT } from "./i18n-server";
@@ -1279,6 +1280,11 @@ export async function saveDocHtmlAction(schemeId: string, docKey: string, bg: st
 // The translation is an outside service with no contract (MyMemory — part 1.12): a
 // document that names laboratories never goes to it — by its kind (the lists, the
 // certificate) or by what it holds (a code-and-laboratory table), whatever the caller sends.
+// A run of serialized HTML as the text it shows: its character references decoded.
+const htmlRunText = (run: string) => run
+  .replace(/&#x([0-9a-f]+);/gi, (_m, h) => { const n = parseInt(h, 16); return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : ""; })
+  .replace(/&#(\d+);/g, (_m, d) => { const n = Number(d); return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : ""; })
+  .replace(/&nbsp;/g, "\u00a0").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, "&");
 const TRANSLATE_REFUSED = "Документ с имена на лаборатории не се изпраща за превод навън. · A document naming laboratories is never sent out for translation.";
 export async function translateDocHtmlAction(html: string, docKey?: string): Promise<{ html?: string; error?: string }> {
   await requireCapAnywhere("scheme.edit"); // the role model (2.4)
@@ -1298,7 +1304,9 @@ export async function translateDocHtmlAction(html: string, docKey?: string): Pro
       continue;
     }
     runs++;
-    const r = await translateAction(part, "bg", "en");
+    // the run as TEXT — it is serialized HTML («&amp;», «&nbsp;»): sent as the words it shows, and escaped
+    // once on the way back (round 2, R2S-9: escaped twice, an English document showed «&amp;»)
+    const r = await translateAction(htmlRunText(part), "bg", "en");
     // Stop at the first refusal and report it, instead of returning a half-translated
     // document. The dominant failure is the daily quota, which will reject every
     // remaining run as well — and a silently partial translation is worse than none,
@@ -1326,7 +1334,9 @@ export async function submitApplicationAction(formData: FormData) {
   if (get("website")) redirect("/apply/thanks"); // honeypot tripped → drop quietly
   const h = await headers();
   // counted in the database, by the platform's address (the security sweep, SD-1)
-  if (!(await publicFormAllowed("application", requestAddress(h)))) redirect("/apply/thanks"); // rate-limited → drop quietly
+  const limit = await publicFormLimit("application", requestAddress(h));
+  if (limit === "address") redirect("/apply/thanks"); // this address's ceiling → drop quietly
+  if (limit === "all") redirect("/apply/thanks?later=1"); // everyone's → said: try later (round 2, R2S-4)
 
   const scheme = await getScheme(schemeId);
   // basic server-side validation (the client validates too). Only an OPEN scheme
@@ -1602,10 +1612,14 @@ export async function updateLabProfileAction(formData: FormData) {
   // checked as everywhere else: an ЕИК by its check digit, a phone that reads as one — a «123» or a word
   // was saved with no word said (the security sweep, UL-6)
   const eikTyped = get("eik");
-  const eik = eikTyped ? validateEik(eikTyped) : { ok: true, normalized: "" };
+  // a Bulgarian ЕИК (digits) by its check digit; a laboratory abroad keeps its own registration number,
+  // which has letters (round 2, R2U Q4) — a bare number of another length is a mistake
+  const foreignNo = /[A-Za-z]/.test(eikTyped.replace(/^BG\s?/i, "")) && /^[A-Za-z0-9 .\-/]{4,30}$/.test(eikTyped);
+  const eik = !eikTyped ? { ok: true, normalized: "" } : foreignNo ? { ok: true, normalized: eikTyped.replace(/\s+/g, " ").trim() } : validateEik(eikTyped);
   if (!eik.ok) redirect("/lab/profile?err=eik");
   const phone = get("phone");
-  if (phone && !/^[+()0-9 .\-/]{5,40}$/.test(phone)) redirect("/lab/profile?err=phone");
+  // (an extension may follow: «0888 123 456 вътр. 12»)
+  if (phone && !/^[+()0-9 .\-/]{5,40}(\s*(вътр\.?|ext\.?|доп\.?)\s*\d{1,6})?$/i.test(phone)) redirect("/lab/profile?err=phone");
   await updateLab(ls.lab.id, {
     name: get("name") || ls.lab.name,
     accreditationCert: get("accreditationCert"),
@@ -1837,7 +1851,7 @@ export async function submitRegistrationAction(_prev: RegistrationFormState, for
   // counted in the database, by the platform's address (an IPv6 one by its /64) — each registration is
   // kept for years: one server's memory was not a limit (the security sweep, SD-1, SI-6)
   const h = await headers();
-  if (!(await publicFormAllowed("registration", requestAddress(h)))) return mistake("later");
+  if ((await publicFormLimit("registration", requestAddress(h))) !== "ok") return mistake("later");
   // anti-spam: at most 3 pending registrations per e-mail — dropped quietly (neutral)
   if ((await countPendingByEmail(person.email)) >= 3) redirect("/register/thanks");
   const region: LabRegion = isEu(entity.country) ? "eu" : "non_eu";
@@ -2751,7 +2765,9 @@ export async function addCaseEventAction(formData: FormData): Promise<void> {
   const actor = (await getRoleContext()).email ?? "";
   await addCaseEvent({ schemeId, code, kind, at, ref, note, docKey, recordedBy: actor, source: "manual" });
   await advanceStatusForEvent(schemeId, code, kind);
-  await logActivity("case.updated", { schemeId, targetCode: code, summary: `Timeline: ${kind} for ${code}${ref ? ` (${ref})` : ""}` });
+  // a dispatch's or a receipt's reference is the courier's waybill — never in the journal's words (R2S-3)
+  const courierRef = kind === "items_dispatched" || kind === "receipt_confirmed";
+  await logActivity("case.updated", { schemeId, targetCode: code, summary: `Timeline: ${kind} for ${code}${ref && !courierRef ? ` (${ref})` : ""}` });
   revalidatePath(`/schemes/${schemeId}`, "layout");
   redirect(back);
 }
@@ -3365,7 +3381,7 @@ export async function updateSchemeAction(formData: FormData) {
   const coverImage =
     // an https picture only from the portal's own places (1.12; the security sweep, SI-2/SI-3 — every
     // laboratory's browser, and the PDF renderer, fetch it)
-    coverRaw === "" || ((coverRaw.startsWith("/") && !coverRaw.startsWith("//") || imageUrlAllowed(coverRaw)) && !/["'<>\s\\]/.test(coverRaw))
+    coverRaw === "" || ((coverRaw.startsWith("/brand/") || imageUrlAllowed(coverRaw)) && !/["'<>\s\\]/.test(coverRaw))
       ? coverRaw
       : existing.coverImage ?? "";
   const cwRaw = parseInt(str("coverImageWidth", ""), 10);
@@ -4374,6 +4390,9 @@ export async function decideNoticeAction(formData: FormData): Promise<void> {
     const sc = notice.schemeId ? await getScheme(notice.schemeId) : undefined;
     if (!sc || !isStarted(sc)) redirect("/notices?refused=not-started");
   }
+  // a notice whose words name a participation's courier is released only by who sees names in its scheme —
+  // the person who sends it sees its exact words (the security sweep, round 2, R2S-3)
+  if (decision === "release" && COURIER_NOTICE_KINDS.has(notice.kind) && !(await mayNow("names.view", notice.schemeId))) redirect("/notices?refused=names");
   const by = (await getRoleContext()).email ?? "build";
   const changed = id && decision ? await decideNotice(id, decision, by) : false;
   if (changed && decision === "release") await logActivity("notice.released", { subject: `notice:${id}`, summary: "Notice to a laboratory released («Изпрати»)" });
@@ -5081,7 +5100,8 @@ export async function lookupCertificateAction(_prev: CertLookupState, formData: 
   const r = await lookupCertificate({ number: formData.get("number"), code: formData.get("code") }, requestAddress(await headers()));
   if (r.state === "valid") return { state: "valid", number, answer: r.answer };
   const { lang } = await getServerT();
-  const t = REGISTER_TEXT[r.state];
+  // a ceiling in its own words: this address, this code for the day, or everyone (round 2, R2U-6)
+  const t = r.state === "limited" ? REGISTER_TEXT[r.why === "code" ? "limitedCode" : r.why === "address" ? "limited" : "limitedAll"] : REGISTER_TEXT[r.state];
   return { state: r.state, number, message: lang === "bg" ? t.bg : t.en };
 }
 

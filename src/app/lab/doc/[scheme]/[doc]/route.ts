@@ -153,7 +153,7 @@ function html(markup: string): Response {
     headers: {
       "content-type": "text/html; charset=utf-8",
       "content-security-policy":
-        `default-src 'none'; img-src ${docImgSrc()}; style-src 'unsafe-inline' 'self'; font-src 'self'; frame-ancestors 'self'`,
+        `default-src 'none'; img-src ${docImgSrc()}; style-src 'unsafe-inline' 'self'; font-src 'self'; frame-ancestors 'self'; form-action 'none'; base-uri 'none'`,
       "x-content-type-options": "nosniff",
     },
   });
@@ -162,7 +162,13 @@ function html(markup: string): Response {
 // Every download through this gate is in the journal (part 1.9; Реш. 50 «кой го е
 // свалил»): which edition, at which level, by which participation's code and account —
 // the laboratory is never named (§4.2).
+// A document is opened as a page, a frame or a download — never fetched as a picture, a script or a
+// style by another page: a document's «<img src="/lab/doc/…/report">» made every laboratory's browser
+// «open» the report, on record (the security sweep, round 2, R2S-10). Browsers send Sec-Fetch-Dest.
+const NOT_A_DOCUMENT = new Set(["image", "script", "style", "font", "audio", "video", "track", "worker", "sharedworker", "serviceworker", "manifest", "object", "embed", "paintworklet", "audioworklet", "xslt"]);
+
 export async function GET(req: NextRequest, ctx: { params: Promise<{ scheme: string; doc: string }> }) {
+  if (NOT_A_DOCUMENT.has((req.headers.get("sec-fetch-dest") ?? "").toLowerCase())) return new Response(null, { status: 403 });
   const { res, log } = await serve(req, ctx);
   if ((res.status === 200 || res.status === 206) && log) {
     const p = await ctx.params;

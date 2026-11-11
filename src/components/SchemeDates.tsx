@@ -13,9 +13,11 @@ import { DATE_KEYS, DATE_LABELS, deadlineDay, deadlineTime, fmtSchemeDate, type 
 // "not decided yet", and a date that has passed is shown as passed, not enforced.
 
 export default function SchemeDates({
-  schemeId, lang, initial, byAmendment = false,
+  schemeId, lang, initial, byAmendment = false, canEdit = true,
 }: {
   schemeId: string;
+  /** may save the dates — read-only roles see them, nothing to press (round 2, R2U-2) */
+  canEdit?: boolean;
   lang: "bg" | "en";
   initial: Partial<Record<SchemeDateKey, string>>;
   // once the scheme is open, the deadlines change only by an order of amendment (3.3)
@@ -54,7 +56,7 @@ export default function SchemeDates({
             {L("Определените се сменят със заповед за изменение →", "Set ones change by an order of amendment →")}
           </a>
         )}
-        {(!byAmendment || DATE_KEYS.some((k) => !initial[k])) && (
+        {canEdit && (!byAmendment || DATE_KEYS.some((k) => !initial[k])) && (
         <button className="btn btn-sm" disabled={!dirty || busy} onClick={save}
           style={{ fontSize: 12.5, opacity: !dirty || busy ? 0.5 : 1 }}>
           {busy ? L("Запазване…", "Saving…") : L("Запази", "Save")}
@@ -67,7 +69,7 @@ export default function SchemeDates({
           const v = vals[k] ?? "";
           const day = deadlineDay(v);
           const time = deadlineTime(v) ?? "";
-          const locked = byAmendment && !!initial[k];
+          const locked = !canEdit || (byAmendment && !!initial[k]);
           const put = (d: string, t: string) => { setSaved(false); setVals((x) => ({ ...x, [k]: d ? (t ? `${d}T${t}` : d) : "" })); };
           const field = { border: "1px solid var(--line)", borderRadius: 8, padding: "6px 8px", fontSize: 13, background: "#fff", fontFamily: "inherit" } as const;
           return (

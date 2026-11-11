@@ -354,6 +354,10 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
       <input type="hidden" name="id" value={init.id} />
       <input type="hidden" name="editRev" value={init.editRev ?? 0} />
       <input ref={confirmRef} type="hidden" name="calslotsConfirm" defaultValue="" />
+      {/* a read-only role: said at the top, and every field shut (round 2, R2U-2 Q2 — the note sat at the
+          bottom while every field took typing) */}
+      {init.readOnly && <div data-read-only-top role="note" className="card p-3 mb-4 text-sm" style={{ color: "var(--muted)" }}>{L("Само за четене: вашата роля не записва данните на схемата.", "Read only: your role does not save the scheme's data.")}</div>}
+      <fieldset disabled={!!init.readOnly} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
 
       {/* ── Essentials ─────────────────────────────────────────────── */}
       <SectionTitle>{L("Основни данни", "Basics")}</SectionTitle>
@@ -745,6 +749,7 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
         )}
       </details>
 
+      </fieldset>
       {init.readOnly
         ? <div data-read-only className="card p-3 mt-7 text-sm" style={{ color: "var(--muted)" }}>{L("Само за четене: вашата роля не записва данните на схемата.", "Read only: your role does not save the scheme's data.")}</div>
         : <SaveBar id={init.id} label={L("Запази промените", "Save changes")} cancel={L("Отказ", "Cancel")} />}

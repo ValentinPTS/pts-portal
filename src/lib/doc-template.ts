@@ -110,6 +110,7 @@ export function docPrintHtml(
   // …and, from Gate B, a saved invitation's or Instruction's e-mail sentences as the portal's
   // (П4, П5, П7, П12, П17 — 5.8, 5.11 review): the swap makes it a new edition
   const gated = key === "invitation" || key === "instruction" ? refreshGateSentences(refreshed) : refreshed;
-  const wrapped = `<div class="pts-docbody" style="position:relative">\n${sanitizeDocHtml(key === "instruction" ? refreshInstruction(gated, s, lang) : gated)}\n</div>`;
+  // the markers out BEFORE the body is sanitized — never removed from what the sanitizer passed (R2S-1)
+  const wrapped = `<div class="pts-docbody" style="position:relative">\n${sanitizeDocHtml(stripBodyMarkers(key === "instruction" ? refreshInstruction(gated, s, lang) : gated))}\n</div>`;
   return stripBodyMarkers(full.slice(0, start) + "\n" + wrapped + "\n" + full.slice(b.end));
 }

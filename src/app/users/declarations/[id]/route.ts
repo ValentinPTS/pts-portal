@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { requireStaff, getRoleContext, canManagePeople } from "@/lib/roles";
 import { getDeclaration, declarationFile } from "@/lib/staff-declarations";
 import { logActivity } from "@/lib/activity";
+import { utf8Name } from "@/lib/scheme-uploads";
 
 // A person's signed Ф 4.2-1 (part 2.8) — for the head of the PT provider, who keeps
 // PTS's people's papers, and for the person themselves. From the PRIVATE bucket
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   return new Response(out, {
     headers: {
       "content-type": d.fileMime,
-      "content-disposition": `${download ? "attachment" : "inline"}; filename="${name}"`,
+      "content-disposition": `${download ? "attachment" : "inline"}; filename="${name}"; filename*=UTF-8''${utf8Name(d.fileName || "declaration")}`,
       "content-security-policy": "frame-ancestors 'self'",
       "x-content-type-options": "nosniff",
       "cache-control": "private, no-store",

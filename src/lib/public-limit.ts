@@ -13,8 +13,10 @@ export const FORM_CEILINGS = {
   // a valid registration only is counted (after the form is read); an office behind one address may
   // register a few organisations — the old limit was 8 a quarter of an hour, in one server's memory
   registration: { perAddress: 10, all: 100 },
-  application: { perAddress: 8, all: 100 },
-  password_reset: { perAddress: 10, all: 200 },
+  // everyone's ceilings with room: reached, they are SAID («try later») — never a silent drop for everyone
+  // (round 2, R2S-4: about twenty addresses could shut the password reset for the whole portal, unsaid)
+  application: { perAddress: 8, all: 300 },
+  password_reset: { perAddress: 10, all: 600 },
 } as const;
 export type PublicForm = keyof typeof FORM_CEILINGS;
 
@@ -35,9 +37,14 @@ function formKey(): string {
 const hmac = (key: string, text: string) => createHmac("sha256", key).update(text).digest("hex");
 export const hourOfForm = (ms: number) => new Date(ms).toISOString().slice(0, 13);
 
-/** May this request of a public form go on? Counted whether or not it then succeeds; refused at a
- *  ceiling — of its address, or of everyone. A database that cannot count refuses (fail closed). */
+/** May this request of a public form go on? «ok», or why not: its ADDRESS reached its ceiling (the
+ *  form may then answer as if it went — nothing learned of anyone), or EVERYONE's did / the count failed
+ *  (said: «try later» — round 2, R2S-4). Counted whether or not it then succeeds; fail closed. */
+export type FormLimit = "ok" | "address" | "all";
 export async function publicFormAllowed(form: PublicForm, address: string, nowMs = Date.now()): Promise<boolean> {
+  return (await publicFormLimit(form, address, nowMs)) === "ok";
+}
+export async function publicFormLimit(form: PublicForm, address: string, nowMs = Date.now()): Promise<FormLimit> {
   const hour = hourOfForm(nowMs);
   const bucket = `a:${hmac(formKey(), `${hour}|${form}|${normAddress(address)}`)}`;
   const c = FORM_CEILINGS[form];
@@ -45,12 +52,13 @@ export async function publicFormAllowed(form: PublicForm, address: string, nowMs
   if (!db) {
     for (const k of [...mem.counts.keys()]) if (k.split("|")[1] < hour) mem.counts.delete(k);
     const a = mem.counts.get(`${bucket}|${hour}`) ?? 0, all = mem.counts.get(`g:${form}|${hour}`) ?? 0;
-    if (a >= c.perAddress || all >= c.all) return false;
+    if (all >= c.all) return "all";
+    if (a >= c.perAddress) return "address";
     mem.counts.set(`${bucket}|${hour}`, a + 1);
     mem.counts.set(`g:${form}|${hour}`, all + 1);
-    return true;
+    return "ok";
   }
   const { data, error } = await db.rpc("public_form_try", { p_form: form, p_hour: hour, p_address: bucket, p_per_address: c.perAddress, p_global: c.all });
-  if (error) { console.error(`[public-limit] ${form}:`, error.message); return false; }
-  return data === true;
+  if (error) { console.error(`[public-limit] ${form}:`, error.message); return "all"; }
+  return data === "ok" || data === "address" ? data : "all";
 }

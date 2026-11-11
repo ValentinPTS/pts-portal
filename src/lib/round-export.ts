@@ -470,7 +470,9 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
   // the carriers' offers in a notice's words (9.5) — the carriers are a participation's own: the words
   // stay out of coded/ (the offers themselves are identity/carrier_offers.csv)
   const CARRIER_WORDS = "‹оферти на превозвачи — думите в identity/carrier_offer_words.csv› · ‹carriers' offers — the words in identity/carrier_offer_words.csv›";
-  const offersHidden = <T extends { kind: string }>(x: T, keys: (keyof T)[]): T => (x.kind === "carrier.offers" ? { ...x, ...Object.fromEntries(keys.map((k) => [k, CARRIER_WORDS])) } : x);
+  // …and a dispatch notice's: it names the courier and the waybill (round 2, R2S-3 — the shipments whole are in identity/)
+  const DISPATCH_WORDS = "‹изпратен обект — превозвачът и товарителницата в identity/scheme-identity.json› · ‹object dispatched — the carrier and the waybill in identity/scheme-identity.json›";
+  const offersHidden = <T extends { kind: string }>(x: T, keys: (keyof T)[]): T => (x.kind === "carrier.offers" ? { ...x, ...Object.fromEntries(keys.map((k) => [k, CARRIER_WORDS])) } : x.kind === "items.dispatched" ? { ...x, ...Object.fromEntries(keys.map((k) => [k, DISPATCH_WORDS])) } : x);
   addCoded("coded/notices.csv", notices.map((n: Notification) => ({ ...offersHidden(n, ["bg", "en"]), readBefore46: n.readAt, labId: undefined, schemeId: undefined, entityId: undefined })),
     ["id", "createdAt", "kind", "audience", "code", "bg", "en", "href", "readBefore46", "emailedAt", "releasedAt", "releasedBy", "withheldAt", "withheldBy"]);
   addCoded("coded/messages.csv", messages.map((m: SentMessage) => ({ ...offersHidden(m, ["body"]), to: undefined, labId: undefined, entityId: undefined, schemeId: undefined })),

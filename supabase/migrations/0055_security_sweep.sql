@@ -30,10 +30,10 @@ create table if not exists public.public_form_attempts (
 alter table public.public_form_attempts enable row level security;
 revoke all on public.public_form_attempts from anon, authenticated;
 
--- One request of a public form: refused (false) at a ceiling — of the address, or of everyone
--- for that form; else counted. The hours before this one removed.
+-- One request of a public form: 'ok' (counted), or why not — 'address' (its address's ceiling) or 'all'
+-- (everyone's, said to the person: round 2, R2S-4). The hours before this one removed.
 create or replace function public.public_form_try(p_form text, p_hour text, p_address text, p_per_address integer, p_global integer)
-  returns boolean language plpgsql security definer set search_path = '' as $$
+  returns text language plpgsql security definer set search_path = '' as $$
 declare a integer; g integer;
 begin
   if coalesce(p_form, '') !~ '^[a-z_]{1,40}$' then raise exception 'public form: which form'; end if;
@@ -41,12 +41,15 @@ begin
   delete from public.public_form_attempts where hour < p_hour;
   select coalesce(max(n), 0) into a from public.public_form_attempts where bucket = p_address and hour = p_hour;
   select coalesce(max(n), 0) into g from public.public_form_attempts where bucket = 'g:' || p_form and hour = p_hour;
-  if a >= p_per_address or g >= p_global then
-    return false;
+  if g >= p_global then
+    return 'all';
+  end if;
+  if a >= p_per_address then
+    return 'address';
   end if;
   insert into public.public_form_attempts (bucket, hour, n) values (p_address, p_hour, 1), ('g:' || p_form, p_hour, 1)
     on conflict (bucket, hour) do update set n = public.public_form_attempts.n + 1;
-  return true;
+  return 'ok';
 end $$;
 revoke execute on function public.public_form_try(text, text, text, integer, integer) from public, anon, authenticated;
 grant execute on function public.public_form_try(text, text, text, integer, integer) to service_role;

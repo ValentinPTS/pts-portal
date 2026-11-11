@@ -384,7 +384,7 @@ export async function editionResponse(ed: DocEdition, lang: Lang, download: bool
       "content-type": "text/html; charset=utf-8",
       "content-disposition": `${download ? "attachment" : "inline"}; filename="${ed.docKey}-edition-${ed.no}-${lang}.html"`,
       "content-security-policy":
-        `default-src 'none'; img-src ${docImgSrc()}; style-src 'unsafe-inline' 'self'; font-src 'self'; frame-ancestors 'self'`,
+        `default-src 'none'; img-src ${docImgSrc()}; style-src 'unsafe-inline' 'self'; font-src 'self'; frame-ancestors 'self'; form-action 'none'; base-uri 'none'`,
       "x-content-type-options": "nosniff",
       "cache-control": "private, no-store",
     },

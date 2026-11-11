@@ -120,7 +120,7 @@ t("the page: the scheme's codes viewers; the form for the head while it may be a
 const form = readFileSync(new URL("../src/components/AmendmentForm.tsx", import.meta.url), "utf8");
 t("the form is not cleared by a refusal (onSubmit)", /<form onSubmit=\{submit\}/.test(form) && /e\.preventDefault\(\);/.test(form));
 const dates = readFileSync(new URL("../src/components/SchemeDates.tsx", import.meta.url), "utf8");
-t("the dates panel points to the amendments once open; only the set dates are locked", /byAmendment && \(/.test(dates) && /\/schemes\/\$\{schemeId\}\/amendments/.test(dates) && /const locked = byAmendment && !!initial\[k\];/.test(dates) && /disabled=\{locked\}/.test(dates));
+t("the dates panel points to the amendments once open; only the set dates are locked (and every one for a read-only role — round 2, R2U-2)", /byAmendment && \(/.test(dates) && /\/schemes\/\$\{schemeId\}\/amendments/.test(dates) && /const locked = !canEdit \|\| \(byAmendment && !!initial\[k\]\);/.test(dates) && /disabled=\{locked\}/.test(dates));
 
 console.log(`amendments.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

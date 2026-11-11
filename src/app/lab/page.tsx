@@ -33,6 +33,7 @@ import { getServerT } from "@/lib/i18n-server";
 import { labCertificate } from "@/lib/cert-number";
 import { legacyIssued } from "@/lib/cert-model";
 import { schemeNowMs } from "@/lib/clock";
+import SizedFileInput from "@/components/SizedFileInput";
 
 export const dynamic = "force-dynamic";
 
@@ -162,7 +163,7 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
                   <input type="hidden" name="schemeId" value={it.scheme.id} />
                   <input type="hidden" name="participantId" value={it.p.id} />
                   <input type="hidden" name="slot" value={slot} />
-                  <input type="file" name="file" required accept="application/pdf,image/png,image/jpeg" style={{ fontSize: 11.5, maxWidth: 210 }} />
+                  <SizedFileInput name="file" accept="application/pdf,image/png,image/jpeg" maxBytes={15_000_000} lang={lang === "bg" ? "bg" : "en"} style={{ fontSize: 11.5, maxWidth: 210 }} />
                   <button type="submit" className="btn btn-sm" style={{ fontSize: 11.5, padding: "3px 9px", borderStyle: up ? "solid" : "dashed" }}>
                     ↑ {up ? (lang === "bg" ? "Замени файла" : "Replace file") : (lang === "bg" ? LAB_UPLOAD_SLOTS[slot].bg : LAB_UPLOAD_SLOTS[slot].en)}
                   </button>

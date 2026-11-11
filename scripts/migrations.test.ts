@@ -114,6 +114,9 @@ for (const n of names.filter((x) => x >= "0018")) {
     const guard = s.indexOf(`select 1 from public.app_migrations where name > '${n}'`);
     const firstChange = s.search(/\b(create|alter|drop|insert|update|delete|grant|revoke)\b/);
     t(`${n} refuses to run once a later migration is recorded`, guard >= 0 && /raise exception/.test(s.slice(guard, guard + 300)) && guard < firstChange, `guard ${guard}, first change ${firstChange}`);
+    // …only a RE-run — this file recorded already — so a first application out of order passes; and inside
+    // one transaction, so the guard's exception stops the rest whatever the client (round 2, R2S-6)
+    t(`${n}: only a re-run is refused, inside one transaction`, s.includes(`select 1 from public.app_migrations where name = '${n}')`) && /^begin;/m.test(s) && s.search(/^begin;/m) < guard && /^commit;/m.test(s));
   }
 }
 

@@ -7,7 +7,7 @@ import { getServerT } from "@/lib/i18n-server";
 import { bodyFor, subjectFor, classFor, mailBaseUrl } from "@/lib/notify-deliver";
 import { testSubject } from "@/lib/environment";
 import { listSent, type MessageClass } from "@/lib/sent-messages";
-import { noticeKindText } from "@/lib/notice-kinds";
+import { noticeKindText, COURIER_NOTICE_KINDS } from "@/lib/notice-kinds";
 
 // Notices to laboratories (Реш. 138, plan parts 0.8 and 1.8). Nothing reaches a
 // participant unless a person saw the exact text and pressed «Изпрати» — or, for a
@@ -41,7 +41,10 @@ export default async function NoticesPage({ searchParams }: { searchParams: Prom
   // matches the journal's lines: only to who sees names, or manages the organisations
   // (the security sweep, SC-1)
   const managesLabs = authorizeAnywhere(viewer, "labs.manage");
-  const seesWords = (m: { schemeId?: string; code?: string }) => !!m.code || seesAddress(m.schemeId) || (!m.schemeId && managesLabs);
+  const seesWords = (m: { schemeId?: string; code?: string; kind: string }) => (!!m.code && !COURIER_NOTICE_KINDS.has(m.kind)) || seesAddress(m.schemeId) || (!m.schemeId && managesLabs);
+  // a held notice: its exact words to who decides it — but one naming a participation's courier only to
+  // who sees names in its scheme (round 2, R2S-3)
+  const seesHeld = (n: { schemeId?: string; kind: string }) => !COURIER_NOTICE_KINDS.has(n.kind) || seesAddress(n.schemeId);
   const { lang } = await getServerT();
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   // only the schemes this person works in: a notice carries a code (2.4)
@@ -57,6 +60,7 @@ export default async function NoticesPage({ searchParams }: { searchParams: Prom
   const refusedAs = (await searchParams).refused;
   const refused = refusedAs === "not-started";
   const decidedMeanwhile = refusedAs === "decided";
+  const namesNeeded = refusedAs === "names";
   const base = mailBaseUrl();
   const CLASS: Record<MessageClass, string> = {
     provider: L("известие", "notice"),
@@ -79,6 +83,7 @@ export default async function NoticesPage({ searchParams }: { searchParams: Prom
         <Link href="/notices/texts" style={{ color: "var(--green-dark)", fontWeight: 700 }}>{L("«Текстове на напомнянията»", "«Reminder texts»")}</Link>.
       </p>
 
+      {namesNeeded && <div role="alert" data-notice-names-needed className="card p-3 mt-4" style={{ borderLeft: "4px solid var(--red)" }}>{L("Не е изпратено: текстът назовава превозвача и товарителницата — изпраща го който вижда имената в схемата.", "Not sent: the text names the carrier and the waybill — it is sent by who sees the names in the scheme.")}</div>}
       {decidedMeanwhile && <div role="alert" data-notice-decided className="card p-3 mt-4" style={{ borderLeft: "4px solid var(--amber)" }}>{L("Нищо не е променено: това известие вече е решено — от друг раздел или от друг човек. Вижте «Изпратени имейли» по-долу.", "Nothing changed: this notice was already decided — from another tab or by another person. See «E-mails sent» below.")}</div>}
       {refused && <div role="alert" data-notice-refused className="card p-3 mt-4" style={{ borderLeft: "4px solid var(--red)" }}>{L("Не е изпратено: схемата вече не е започнала (върната в чернова или архивирана) — изберете «Не изпращай».", "Not sent: the scheme is no longer started (back to draft or archived) — choose «Do not send».")}</div>}
       {held.length === 0 ? (
@@ -94,9 +99,15 @@ export default async function NoticesPage({ searchParams }: { searchParams: Prom
                 <span style={{ fontSize: 11 }} data-kind={n.kind}>{CLASS[classFor(n)]} · {noticeKindText(n.kind, lang === "bg" ? "bg" : "en")}</span>
               </div>
               {/* the exact e-mail: what the transport will be handed, word for word */}
-              <div className="text-sm mt-2"><b>{L("Тема", "Subject")}:</b> {testSubject(subjectFor(n))}</div>
-              <pre data-exact-text className="text-sm mt-1 p-2" style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", background: "var(--green-soft)", borderRadius: 6 }}>{bodyFor(n, base)}</pre>
-              {canDecide && mayDecide(n.schemeId) && (
+              {seesHeld(n) ? (<>
+                <div className="text-sm mt-2"><b>{L("Тема", "Subject")}:</b> {testSubject(subjectFor(n))}</div>
+                <pre data-exact-text className="text-sm mt-1 p-2" style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", background: "var(--green-soft)", borderRadius: 6 }}>{bodyFor(n, base)}</pre>
+              </>) : (
+                // its words name the participation's courier — the person who sends it sees them (Реш. 138), so only
+                // who sees names in that scheme (the security sweep, round 2, R2S-3)
+                <div data-courier-words-hidden className="text-sm mt-2" style={{ color: "var(--muted)" }}>{L("Текстът назовава превозвача и товарителницата на участника — вижда го и го изпраща който вижда имената в схемата.", "The text names the participant's carrier and waybill — it is read and sent by who sees the names in the scheme.")}</div>
+              )}
+              {canDecide && mayDecide(n.schemeId) && seesHeld(n) && (
                 <div className="flex gap-2 mt-3">
                   {releasable(n) ? (
                     <form action={decideNoticeAction}>

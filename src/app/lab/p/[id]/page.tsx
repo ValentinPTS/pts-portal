@@ -46,6 +46,7 @@ export const dynamic = "force-dynamic";
 import CarrierChoice from "@/components/CarrierChoice";
 import { chosenOffer, offersForLab } from "@/lib/carrier-model";
 import { getNotice } from "@/lib/notifications";
+import SizedFileInput from "@/components/SizedFileInput";
 
 export default async function ParticipationPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ e?: string; ok?: string }> }) {
   const { id } = await params;
@@ -159,7 +160,7 @@ export default async function ParticipationPage({ params, searchParams }: { para
             <input type="hidden" name="participantId" value={v.participantId} />
             <input type="hidden" name="back" value={self} />
             <input type="hidden" name="slot" value={slot} />
-            <input type="file" name="file" required accept="application/pdf,image/png,image/jpeg" style={{ fontSize: 12, maxWidth: 220 }} />
+            <SizedFileInput name="file" accept="application/pdf,image/png,image/jpeg" maxBytes={15_000_000} lang={lang === "bg" ? "bg" : "en"} style={{ fontSize: 12, maxWidth: 220 }} />
             <button type="submit" className="btn btn-sm" style={{ fontSize: 12 }}>↑ {up ? L("Замени файла", "Replace file") : T(LAB_UPLOAD_SLOTS[slot])}</button>
           </form>
         ) : when && viewer.kind === "entity" && !v.finished && !((slot === "protocol" || slot === "results") && gateB()) ? (
@@ -381,7 +382,7 @@ export default async function ParticipationPage({ params, searchParams }: { para
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                       <label style={{ display: "grid", fontSize: 12, color: "var(--muted)" }}>{L("Получен на", "Received on")}<input type="date" name="day" required max={today} min={awaitingDay} defaultValue={today} style={field} /></label>
                       <label style={{ display: "grid", fontSize: 12, color: "var(--muted)" }}>{L("Час", "Time")}<input type="time" name="time" required style={field} /></label>
-                      <label style={{ display: "grid", fontSize: 12, color: "var(--muted)", flex: 1, minWidth: 180 }}>{L("Получил (име и фамилия)", "Received by (name and surname)")}<input name="receivedBy" required maxLength={120} style={field} /></label>
+                      <label style={{ display: "grid", fontSize: 12, color: "var(--muted)", flex: 1, minWidth: 180 }}>{L("Получил (име и фамилия)", "Received by (name and surname)")}<input name="receivedBy" required minLength={2} maxLength={120} style={field} /></label>
                     </div>
                     <fieldset data-check="undamaged" style={{ border: "none", padding: 0, margin: 0 }}>
                       <legend>{L("Опаковката е ненарушена", "The packaging is undamaged")}</legend>

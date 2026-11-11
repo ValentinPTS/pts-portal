@@ -3,6 +3,7 @@ import { requireCapAnywhere } from "@/lib/access";
 import { getLabApplication } from "@/lib/lab-applications";
 import { getDb } from "@/lib/supabase";
 import { logActivity } from "@/lib/activity";
+import { utf8Name } from "@/lib/scheme-uploads";
 
 // A document a laboratory attached to its account application (registration
 // papers), for a manager. Streamed through this gate from the PRIVATE «lab-docs»
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
   return new Response(bytes, {
     headers: {
       "content-type": mime,
-      "content-disposition": `${download ? "attachment" : "inline"}; filename="${name}"`,
+      "content-disposition": `${download ? "attachment" : "inline"}; filename="${name}"; filename*=UTF-8''${utf8Name(path.split("/").pop() ?? "document")}`,
       "content-security-policy": "frame-ancestors 'self'",
       "x-content-type-options": "nosniff",
       "cache-control": "private, no-store",
