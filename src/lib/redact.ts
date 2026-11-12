@@ -64,11 +64,38 @@ const IDENTITY_KEYS = new Set(["by", "entity", "entityId", "lab", "labId", "labo
 // and the reference, up to a few short words and signs («номер», «с», «No:», «(», «„», «=» — round 6, R6S-2:
 // «товарителница номер 62 555 444 333» went through). A reference: a first token with a digit in it, then the
 // next ones that start with a digit. Bounded and unambiguous — no run the engine can backtrack into.
-const WAYBILL_TEXT = /(^|[^\p{L}\p{N}_])(waybills?|way-bills?|awb|tracking|товарителниц\p{L}*|пратк\p{L}*|тов\.|speedy|спиди|econt|еконт|dhl|ups|fedex|tnt|dpd|gls)((?:[\s:№#.=„“”"'(\[\-–—]|(?:номер|номерът|с|е|no|nr|num|number|is|ad|ад|express)(?=[\s:№#.=„“”"'(\[\-–—])){0,24})(?=[\p{L}\p{N}][\p{L}\p{N}\-/]*\p{N})[\p{L}\p{N}][\p{L}\p{N}\-/]*(?:(?:\s+|\s*,\s*|\s+(?:и|and)\s+)\p{N}[\p{N}\-/]*)*/giu;
-// …and any run of ten digits or more (spaces and dashes inside), with or without its word: that is what a
-// waybill looks like, and nothing a codes-only reader needs is one (round 6, R6S-2)
-const LONG_NUMBER = /(^|[^\p{N}])(\p{N}(?:[ \-]?\p{N}){9,})(?![\p{N}])/gu;
-const maskWaybills = (v: string) => v.replace(WAYBILL_TEXT, `$1$2 \u2022\u2022\u2022`).replace(LONG_NUMBER, `$1\u2022\u2022\u2022`);
+const WAYBILL_TEXT = /(^|[^\p{L}\p{N}_])(waybills?|way-bills?|awb|tracking|товарителниц\p{L}*|пратк\p{L}*|тов\.|speedy|спиди|econt|еконт|dhl|ups|fedex|tnt|dpd|gls|европът|box\s?now|sameday|leo\s?express)((?:[\s:№#.,=„“”"'(\[\-–—]|(?:номер|номерът|с|е|no|nr|num|number|is|ad|ад|express)(?=[\s:№#.,=„“”"'(\[\-–—])){0,24})(?=[\p{L}\p{N}](?:[\p{L}\p{N}\-–—/]|\.(?=\p{N}))*\p{N})[\p{L}\p{N}](?:[\p{L}\p{N}\-–—/]|\.(?=\p{N}))*(?:(?:\s+|\s*,\s*|\s+(?:и|and)\s+)\p{N}(?:[\p{N}\-–—/]|\.(?=\p{N}))*)*/giu;
+// (a dot only between digits — «62.555.444.333»; a sentence's own full stop stays)
+// …a word any parcel goes by («куриер», «колет», «parcel», «проследяване») — only before a reference of six
+// digits or more (a «куриер 2 дни» is no waybill — round 7, R7S-5)
+const PARCEL_TEXT = /(^|[^\p{L}\p{N}_])(куриер\p{L}*|courier|колет\p{L}*|parcel|shipment|проследяван\p{L}*)((?:[\s:№#.,=„“”"'(\[\-–—]|(?:номер|номерът|с|е|no|nr|num|number|is|ref)(?=[\s:№#.,=„“”"'(\[\-–—])){0,24})(?=(?:\p{N}[\s.\-–—/]?){6})\p{N}(?:[\s.\-–—/]?\p{N})*/giu;
+// …and any run of ten digits or more (spaces — a non-breaking one too —, dots and dashes inside), with or
+// without its word: that is what a waybill looks like (round 6, R6S-2; round 7, R7S-5)
+const LONG_NUMBER = /(^|[^\p{N}])(\p{N}(?:[ \u00A0\u202F.\-–—]?\p{N}){9,})(?![\p{N}])/gu;
+// What a codes-only reader needs and is never a waybill however long its digits run: a date and its hour, a
+// standard's number («EN 1097-2 1097-3», «ISO/IEC 17043:2023») — held aside while the mask runs (R7S-5)
+// (bounded on both sides — «OPEN 625554443331» held «EN 62555» and let the rest through; a decimal with a dot
+// held whole — «10.123456789» was masked; round 7 review, RV7-4)
+const KEEP = /(?<![\p{N}])\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?(?![\p{N}])|(?<![\p{N}.])\d{1,2}\.\d{1,2}\.\d{4}(?:[ \u00A0]+\d{1,2}:\d{2})?(?![\p{N}])|(?<![\p{L}\p{N}])(?:EN|ISO|IEC|БДС|BDS|ASTM|DIN|ГОСТ)(?![\p{L}])(?:[\s/]+(?:EN|ISO|IEC)(?![\p{L}]))*[\s\u00A0]*\d{2,5}(?:-\d{1,2}){0,2}(?::\d{4})?(?![\p{N}\-])(?:[\s\u00A0]*[,;]?[\s\u00A0]+(?:и\s+)?\d{2,5}(?:-\d{1,2}){1,2}(?![\p{N}\-]))*|(?<![\p{N}.,])\p{N}{1,6}[.,]\p{N}{4,}(?![\p{N}.,])/gu;
+// …and, of a long run: an amount or a decimal («1 234 567 890,00 лв.», «0,1234567890123»), or participation
+// codes side by side («26111716 26111750», «T-17 26111716» — eight digits each)
+function keepRun(before: string, run: string, after: string): boolean {
+  if (/\d[,.]$/.test(before) || /^[,.]\d/.test(after) || /^[\s\u00A0]*(?:лв|bgn|eur|€|евро)/iu.test(after)) return true;
+  // participation codes: eight digits each — or a scheme's number's last digits right before one («T-17 26111716»)
+  const groups = run.split(/[^\p{N}]+/u).filter(Boolean);
+  if (groups.length > 1 && groups.every((g) => g.length === 8)) return true;
+  return groups.length >= 2 && groups[0].length <= 3 && /[\p{L}]-$/u.test(before) && groups.slice(1).every((g) => g.length === 8);
+}
+function maskWaybills(v: string): string {
+  const held: string[] = [];
+  const hold = v.replace(/[\uE000\uE001]/g, "").replace(KEEP, (m) => `\uE000${held.push(m) - 1}\uE001`);
+  return hold
+    .replace(WAYBILL_TEXT, `$1$2 \u2022\u2022\u2022`)
+    // (a lone eight-digit reference after such a word is a participation's code — «колет 26111716»)
+    .replace(PARCEL_TEXT, (m: string, pre: string, word: string, mid: string) => (/^\p{N}{8}$/u.test(m.slice(pre.length + word.length + mid.length)) ? m : `${pre}${word} \u2022\u2022\u2022`))
+    .replace(LONG_NUMBER, (m: string, pre: string, run: string, at: number, all: string) => (keepRun(all.slice(0, at + pre.length), run, all.slice(at + m.length)) ? m : `${pre}\u2022\u2022\u2022`))
+    .replace(/\uE000(\d+)\uE001/g, (_: string, i: string) => held[Number(i)] ?? "");
+}
 const MASK = "•••";
 function scrubRef(v: string | undefined): string | undefined {
   if (!v) return v;

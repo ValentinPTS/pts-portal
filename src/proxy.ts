@@ -114,7 +114,12 @@ function fromAnotherSite(request: NextRequest): "navigate" | "other" | null {
   if (site !== "cross-site" && site !== "same-site") return null;
   // a navigation asks first only where opening acts; anything else from another site — a fetch, an RSC
   // request — is refused on every non-public path (round 6, R6S-5: a same-site fetch wrote «names viewed»)
-  if ((request.headers.get("sec-fetch-mode") ?? "").toLowerCase() === "navigate") return ACTS_WHEN_OPENED.test(request.nextUrl.pathname) ? "navigate" : null;
+  if ((request.headers.get("sec-fetch-mode") ?? "").toLowerCase() === "navigate") {
+    // …framed by another site (or a sibling host): never — the page renders, and records, before the frame
+    // is refused for display (round 7, R7S-3)
+    if (/^(?:iframe|frame|fencedframe)$/.test((request.headers.get("sec-fetch-dest") ?? "").toLowerCase())) return "other";
+    return ACTS_WHEN_OPENED.test(request.nextUrl.pathname) ? "navigate" : null;
+  }
   return "other";
 }
 const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

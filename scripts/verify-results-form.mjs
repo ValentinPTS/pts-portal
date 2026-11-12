@@ -18,7 +18,10 @@ const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
 const page = await context.newPage();
 page.setDefaultTimeout(60000);
-const go = async (path) => { try { return await page.goto(BASE + path, { waitUntil: "domcontentloaded", timeout: 90000 }); } catch (e) { if (!/ERR_ABORTED/.test(String(e))) throw e; await page.waitForTimeout(800); return page.goto(BASE + path, { waitUntil: "domcontentloaded", timeout: 90000 }); } };
+// a form whose fields are its script's own («data-live-only»: the results forms) takes typing only once it is live
+// — as a person waits for the page (round 7, R7UL-2: typed earlier, it was shown and then lost)
+const liveForms = (pg = page) => pg.waitForFunction(() => [...document.querySelectorAll("form[data-live-only]")].every((f) => Object.keys(f).some((k) => k.startsWith("__reactProps"))), null, { timeout: 90000 }).catch(() => {});
+const go = async (path) => { let r; try { r = await page.goto(BASE + path, { waitUntil: "domcontentloaded", timeout: 90000 }); } catch (e) { if (!/ERR_ABORTED/.test(String(e))) throw e; await page.waitForTimeout(800); r = await page.goto(BASE + path, { waitUntil: "domcontentloaded", timeout: 90000 }); } await liveForms(); return r; };
 // the acts ask to confirm (and some for a note): accepted, the note left empty
 page.on("dialog", async (d) => { await d.accept(d.type() === "prompt" ? "" : undefined); });
 const attr = async (loc, a) => ((await loc.count()) ? await loc.first().getAttribute(a) : null);
@@ -134,6 +137,7 @@ try {
   // ── two tabs on one draft: the older never writes over the newer (review) ──
   const tab2 = await context.newPage();
   await tab2.goto(`${BASE}/lab/p/${pidA}/results`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  await liveForms(tab2);
   await tab2.locator(`[data-field="U_${key}"]`).fill("0,4");
   await tab2.locator("[data-save-draft]").click();
   for (let i = 0; i < 30 && (await tab2.locator("[data-draft-state]").getAttribute("data-draft-state")) !== "saved"; i++) await tab2.waitForTimeout(400);

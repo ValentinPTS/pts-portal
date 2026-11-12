@@ -146,6 +146,8 @@ export const ROUTES = [
   { file: "login/page.tsx", names: "never", paths: () => ["/login", "/login?denied=1"] },
   // one of PTS without a right — said, never the sign-in page (the security sweep, UR-1)
   { file: "denied/page.tsx", names: "never", paths: () => ["/denied"] },
+  // after sign-in, a link to a page that acts when opened — offered, never opened (round 7, Q3)
+  { file: "open/page.tsx", names: "never", paths: () => ["/open", "/open?to=%2Fregistrations"] },
   { file: "auth/confirm/page.tsx", names: "never", paths: () => ["/auth/confirm"] },
   { file: "auth/confirmed/page.tsx", names: "never", paths: () => ["/auth/confirmed"] },
   { file: "auth/forgot/page.tsx", names: "never", paths: () => ["/auth/forgot", "/auth/forgot?area=lab"] },

@@ -1,5 +1,6 @@
 import type { Scheme } from "./types";
 import { pavingBlocks } from "./seed-paving-blocks";
+import { forceCalibration } from "./seed-force";
 
 // Builds a complete, editable new scheme from the identity fields.
 // The reusable boilerplate (standard clauses, the PTS team, the scoring method)
@@ -38,7 +39,9 @@ export function blankScheme(opts: {
     minParticipants: opts.minParticipants,
 
     // reusable defaults (the team is constant; clauses & scoring are standard boilerplate)
-    team: pavingBlocks.team.map((m) => ({ ...m })),
+    // (a calibration scheme the calibration team — with its technical expert, whom its Instruction names; the
+    // testing team had none, and a blank calibration scheme's M1 Instruction could never be issued — R7UP-4)
+    team: (opts.type === "C" ? forceCalibration.team : pavingBlocks.team).map((m) => ({ ...m })),
     assignedValueMethodEn: pavingBlocks.assignedValueMethodEn,
     assignedValueMethodBg: pavingBlocks.assignedValueMethodBg,
     scoresEn: pavingBlocks.scoresEn,

@@ -44,6 +44,22 @@ export function instructionContacts(s: Pick<Scheme, "team" | "type">, lang: Lang
   </div>`;
 }
 
+/** The scheme's team as a document shows it (the plan's §2, M1's team point) — escaped. */
+export function teamBlock(s: Pick<Scheme, "team">, lang: Lang): string {
+  return `<div class="team">${(s.team ?? []).map((m) => `<div class="role"><span class="rl">${esc(pick(lang, m.roleEn, m.roleBg))}</span><span class="nm">${esc(m.name)}</span></div>`).join("")}</div>`;
+}
+/** A saved body's team as the scheme's team is NOW (round 7 verification, R7UP-4: a plan saved in the editor
+ *  kept the team it was started with; changing the team in «Редактирай данните» changed only the Instruction).
+ *  Anything a person added inside the block (not a person's row) is kept after it. */
+export function refreshTeam(html: string, s: Pick<Scheme, "team">, lang: Lang): string {
+  if (!html || !/<div\b[^>]*\bclass="team"/.test(html)) return html;
+  return replaceBlocks(html, /<div\b[^>]*\bclass="team"[^>]*>/, "div", (old) => {
+    const inner = old.replace(/^<div\b[^>]*>/, "").replace(/<\/div>\s*$/, "");
+    const rest = replaceBlocks(inner, /<div\b[^>]*\bclass="role"[^>]*>/, "div", () => "").trim();
+    return teamBlock(s, lang) + (/<(?:img|table|svg|math)\b/i.test(rest) || rest.replace(/<[^>]+>/g, "").replace(/&nbsp;|\u00A0/g, " ").trim() ? rest : "");
+  });
+}
+
 /** Реш. 150 — a text for PTS to carry into the template under П 8.3. */
 export const WRITTEN_INSTRUCTIONS = {
   testing: {
@@ -81,6 +97,11 @@ export function refreshInstruction(html: string, s: Pick<Scheme, "team" | "type"
   // anything a person added inside the block (a sentence, a picture — the caret at the document's end sat in
   // it) is kept after it: only the people and the two contact lines are the team's (round 6, R6UP-4)
   let out = replaceBlocks(html, /<div\b[^>]*\bclass="contacts"[^>]*>/, "div", (old) => instructionContacts(s, lang) + addedInContacts(old));
+  // …and put back when it is gone (a Backspace took it whole — round 7, R7UP-2): under «Контакти», or at the end
+  if (!/<div\b[^>]*\bclass="contacts"/.test(out)) {
+    const h = /<h[1-6]\b[^>]*>(?:(?!<\/h[1-6]>)[\s\S]){0,200}?(?:Контакти|Contacts)(?:(?!<\/h[1-6]>)[\s\S]){0,80}<\/h[1-6]>(?:\s*<div class="body">)?/i.exec(out);
+    out = h ? out.slice(0, h.index + h[0].length) + instructionContacts(s, lang) + out.slice(h.index + h[0].length) : out + instructionContacts(s, lang);
+  }
   if (!out.includes("data-written-instructions")) out = writtenInstructionsNote(lang, s.type === "C") + out;
   return out;
 }

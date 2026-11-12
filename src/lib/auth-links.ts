@@ -76,8 +76,9 @@ export function safeDest(role: "internal" | "lab", next: string): string {
   const n0 = safeNext(next, role === "lab" ? "/lab" : "/");
   // PTS's people never straight onto a page that acts when opened (an export, a print, names with codes): a
   // sign-in from a link someone else made must not open one in their name (round 6, Q3) — home instead. A
-  // laboratory's own document from its e-mail link is what it signs in for: kept.
-  const n = role === "internal" && ACTS_WHEN_OPENED.test(n0.split(/[?#]/)[0]) ? "/" : n0;
+  // laboratory's own document from its e-mail link is what it signs in for: kept. Not home either (round 7,
+  // Q3: the e-mail's link was lost) — a page that offers it, one press away.
+  const n = role === "internal" && ACTS_WHEN_OPENED.test(n0.split(/[?#]/)[0]) ? `/open?to=${encodeURIComponent(n0)}` : n0;
   if (role === "lab") return (n === "/lab" || n.startsWith("/lab/") || n.startsWith("/lab?")) && !n.startsWith("/lab/login") ? n : "/lab";
   return !n.startsWith("/lab") && !n.startsWith("/login") ? n : "/";
 }

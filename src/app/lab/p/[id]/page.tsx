@@ -3,6 +3,7 @@ import { feedbackOffered } from "@/lib/feedback-model";
 import { feedbackGiven } from "@/lib/feedback";
 import { COMPLAINTS_URL } from "@/lib/online-applications";
 import Link from "next/link";
+import OnceForm from "@/components/OnceForm";
 import { labReport, rLabel, reportWords, isIlc } from "@/lib/report-issue-model";
 import { labReportCard } from "@/lib/lab-report-model";
 import { inFinalRound } from "@/lib/announcement-model";
@@ -155,14 +156,14 @@ export default async function ParticipationPage({ params, searchParams }: { para
         {up && viewer.kind === "lab" && <a href={`/lab/upload/${s.id}/${slot}?p=${encodeURIComponent(v.participantId)}`} target="_blank" rel="noreferrer" className="btn btn-sm" style={{ fontSize: 12 }}>📄 {up.name}</a>}
         {up && <span style={{ fontSize: 12, color: "var(--muted)" }}>{L("качен ", "uploaded ")}{fmtPhaseDate(up.uploadedAt.slice(0, 10))}</span>}
         {when && slotOpen(slot) ? (
-          <form action={labUploadDocAction} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <OnceForm action={labUploadDocAction} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
             <input type="hidden" name="schemeId" value={s.id} />
             <input type="hidden" name="participantId" value={v.participantId} />
             <input type="hidden" name="back" value={self} />
             <input type="hidden" name="slot" value={slot} />
             <SizedFileInput name="file" accept="application/pdf,image/png,image/jpeg" maxBytes={15_000_000} lang={lang === "bg" ? "bg" : "en"} style={{ fontSize: 12, maxWidth: 220 }} />
             <button type="submit" className="btn btn-sm" style={{ fontSize: 12 }}>↑ {up ? L("Замени файла", "Replace file") : T(LAB_UPLOAD_SLOTS[slot])}</button>
-          </form>
+          </OnceForm>
         ) : when && viewer.kind === "entity" && !v.finished && !((slot === "protocol" || slot === "results") && gateB()) ? (
           // from Gate B the protocol is filed online on this page, never by e-mail (П12, П17 — 5.11)
           <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{slot === "protocol" ? L("Изпратете подписания протокол за получаване (Ф 7.3.4-1) на PTS по e-mail.", "Send the signed receipt protocol (Ф 7.3.4-1) to PTS by e-mail.") : L("Изпратете попълнения Лист за резултати на PTS по e-mail.", "Send the completed Results sheet to PTS by e-mail.")}</span>
@@ -267,14 +268,14 @@ export default async function ParticipationPage({ params, searchParams }: { para
                           // released before editions: its edition is kept on the first opening (3.0)
                           <div data-ack-open-first style={{ fontSize: 12 }}><a href={r.href} target="_blank" rel="noreferrer">{L("Отворете го — после потвърдете", "Open it — then acknowledge")}</a></div>
                         ) : r.ack.state === "asked" && s.status !== "not_held" ? (
-                          <form action={acknowledgeDocAction} data-ack-form={r.key} style={{ marginTop: 4 }}>
+                          <OnceForm action={acknowledgeDocAction} data-ack-form={r.key} style={{ marginTop: 4 }}>
                             <input type="hidden" name="schemeId" value={s.id} />
                             <input type="hidden" name="participantId" value={v.participantId} />
                             <input type="hidden" name="docKey" value={r.key} />
                             <input type="hidden" name="editionId" value={r.editionId} />
                             <input type="hidden" name="lang" value={lang} />
                             <button type="submit" className="btn btn-sm" style={{ fontSize: 12 }}>{L("Запознах се", "I have read it")}</button>
-                          </form>
+                          </OnceForm>
                         ) : null}
                       </td>
                     </tr>
@@ -300,7 +301,7 @@ export default async function ParticipationPage({ params, searchParams }: { para
                 {L(" — после презаредете страницата и я подпишете.", " — then reload this page and sign it.")}
               </p>
             ) : (
-              <form action={acknowledgeDocAction} data-declaration="asked" style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+              <OnceForm action={acknowledgeDocAction} data-declaration="asked" style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
                 <input type="hidden" name="schemeId" value={s.id} />
                 <input type="hidden" name="participantId" value={v.participantId} />
                 <input type="hidden" name="docKey" value={DECLARATION} />
@@ -313,7 +314,7 @@ export default async function ParticipationPage({ params, searchParams }: { para
                 </label>
                 <div><button type="submit" className="btn btn-primary btn-sm">{L("Подписвам", "Sign")}</button></div>
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>{L("Отметката е подписът: записват се вашият акаунт, датата, часът и текстът на тази редакция. Сканирано копие не е нужно.", "The tick is the signature: your account, the date, the hour and this edition's text are recorded. A scanned copy is not needed.")}</span>
-              </form>
+              </OnceForm>
             ), { id: "declaration" }) : null}
 
             {/* 6.1: the results form, online — a draft kept as typed, the participation's own */}
@@ -374,7 +375,7 @@ export default async function ParticipationPage({ params, searchParams }: { para
                 ))}
                 {/* the online receipt protocol (Ф 7.3.4-1) for the shipment — or, calibration, the device at this stop — awaiting it; «годен» is every listed check passed (Реш. 79) */}
                 {awaiting && (
-                  <form action={submitReceiptAction} data-receipt-form={awaiting.id} style={{ marginTop: 12, padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 10, display: "grid", gap: 8, fontSize: 13 }}>
+                  <OnceForm action={submitReceiptAction} data-receipt-form={awaiting.id} style={{ marginTop: 12, padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 10, display: "grid", gap: 8, fontSize: 13 }}>
                     <b>{L("Протокол за получаване (Ф 7.3.4-1)", "Receipt protocol (Ф 7.3.4-1)")}</b>
                     <input type="hidden" name="schemeId" value={s.id} />
                     <input type="hidden" name="participantId" value={v.participantId} />
@@ -399,18 +400,18 @@ export default async function ParticipationPage({ params, searchParams }: { para
                     <label style={{ display: "grid", fontSize: 12, color: "var(--muted)" }}>{L("Забележки, ако е необходимо", "Remarks, if necessary")}<textarea name="remarks" maxLength={1000} rows={2} style={field} /></label>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>{L("«Годен» означава само, че всички изброени проверки са минали (Реш. 79). Протоколът не се променя след подаване.", "«Fit» means only that every listed check passed (Реш. 79). The protocol is not changed once filed.")}</span>
                     <button type="submit" className="btn btn-primary btn-sm" style={{ justifySelf: "start" }}>{L("Подай протокола", "File the protocol")}</button>
-                  </form>
+                  </OnceForm>
                 )}
                 {/* «Сигнализирай проблем» — once something was sent, while it goes on */}
                 {delivery.shipments.length > 0 && !v.finished && s.type !== "C" && s.status === "running" && (
                   <details style={{ marginTop: 10 }} data-problem-box>
                     <summary style={{ cursor: "pointer", fontSize: 13, color: "#8f2f2f" }}>{L("Сигнализирай проблем", "Report a problem")}</summary>
-                    <form action={reportDeliveryProblemAction} style={{ display: "grid", gap: 6, marginTop: 6 }}>
+                    <OnceForm action={reportDeliveryProblemAction} style={{ display: "grid", gap: 6, marginTop: 6 }}>
                       <input type="hidden" name="schemeId" value={s.id} />
                       <input type="hidden" name="participantId" value={v.participantId} />
                       <textarea name="text" required minLength={3} maxLength={1000} rows={3} aria-label={L("Какво не е наред с обекта или пратката", "What is wrong with the object or the shipment")} placeholder={L("Какво не е наред с обекта или пратката", "What is wrong with the object or the shipment")} style={field} />
                       <button type="submit" className="btn btn-sm" style={{ justifySelf: "start" }}>{L("Изпрати сигнала на PTS", "Send it to PTS")}</button>
-                    </form>
+                    </OnceForm>
                   </details>
                 )}
                 {uploadBox("protocol", ["dispatched", "received", "draft", "submitted"].includes(v.state))}

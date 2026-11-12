@@ -161,8 +161,10 @@ export function sameSchemeNumber(a: string, b: string): boolean {
 const NUMBER_IN_TEXT = /(?:PTS|PTC|ПTC|ПTS|SIM|ILC)[ \u00a0-]*\d{2} ?\/ ?\d{1,2}(?: ?[-‐‑‒–—−] ?NA)? ?[-‐‑‒–—−] ?[TSCТС] ?[-‐‑‒–—−] ?\d+/g;
 export function otherSchemeNumbers(html: string, own: string): string[] {
   // tags out with nothing in their place (a number may be split by them: «25/09-<b><i>T</i></b>-1»), its
-  // character references read («&nbsp;», «&#8209;»), every run of spaces one (round 6, R6S-11)
-  const text = String(html ?? "").replace(/<[^<>]*>/g, "")
+  // character references read («&nbsp;», «&#8209;»), every run of spaces one (round 6, R6S-11). A block's
+  // edge is a space, though: «…T-4</div><div>2. …» read «T-42» — the scheme's own number and the next item
+  // made another's (round 7, R7UP-3)
+  const text = String(html ?? "").replace(/<\/?(?:p|div|li|ul|ol|td|th|tr|table|tbody|thead|h[1-6]|br|hr|section|article|header|footer|blockquote|pre|dd|dt|dl|figure|figcaption|caption)\b[^<>]*>/gi, " ").replace(/<[^<>]*>/g, "")
     .replace(/&#x([0-9a-f]{1,6});?/gi, (_m, h: string) => { const c = parseInt(h, 16); return c > 0 && c <= 0x10ffff ? String.fromCodePoint(c) : " "; })
     .replace(/&#(\d{1,7});?/g, (_m, d: string) => { const c = parseInt(d, 10); return c > 0 && c <= 0x10ffff ? String.fromCodePoint(c) : " "; })
     .replace(/&(?:nbsp|NonBreakingSpace);?/g, " ").replace(/&(?:hyphen|dash|ndash|mdash|minus);/g, "-")

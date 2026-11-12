@@ -21,7 +21,7 @@
  * fixed, not silenced; see the effects beside lockRef.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { saveDocHtmlAction, translateDocHtmlAction, translateAction, addLibraryItemAction, saveDocTemplateAction, deleteDocTemplateAction, uploadCoverImageAction, setDocReadyAction } from "@/lib/actions";
 
@@ -784,8 +784,19 @@ export default function WordEditor({
     // silently (round 6, R6UP-4): not editable here, said why, and always a line after them to write on
     for (const c of Array.from(body.querySelectorAll<HTMLElement>("[data-team-contacts]"))) {
       if (c.getAttribute("contenteditable") !== "false") {
+        // what an earlier save left inside it (before round 6 the block was editable) goes after it, where it
+        // can be corrected — as the print puts it (round 7, R7UP-6)
+        const added = Array.from(c.children).filter((k) => !k.classList.contains("person") && !k.classList.contains("cline"));
+        for (const k of added.reverse()) c.after(k);
+        // …and words typed onto the end of a 📞/✉ line — moved out as a line of their own (RV7-5)
+        for (const line of Array.from(c.querySelectorAll<HTMLElement>(".cline")).reverse()) {
+          const m = /^(\s*(?:📞\s*[0-9 ]+|✉\s*\S+@\S+))([\s\S]*)$/u.exec(line.textContent ?? "");
+          if (!m || !m[2].trim()) continue;
+          line.textContent = m[1];
+          const p = document.createElement("p"); p.textContent = m[2].trim(); c.after(p);
+        }
         c.setAttribute("contenteditable", "false");
-        c.title = L("Контактите се попълват от екипа на схемата («Редактирай данните» на схемата) — не се редактират тук.", "The contacts come from the scheme team (the scheme's «Edit data») — they are not edited here.");
+        c.title = L("Контактите се попълват от екипа на схемата («Редактирай данните» → «Екип на схемата») — не се редактират тук.", "The contacts come from the scheme team (the scheme's «Edit data» → «Scheme team») — they are not edited here.");
       }
       let top: Element = c;
       while (top.parentElement && top.parentElement !== body) top = top.parentElement;
@@ -929,11 +940,49 @@ export default function WordEditor({
     }
     scheduleAutosave();
   }
+  function takesLocked(back: boolean): boolean {
+    const body = ref.current, sel = window.getSelection();
+    if (!body || !sel?.rangeCount) return false;
+    const locked = Array.from(body.querySelectorAll("[data-team-contacts]"));
+    if (!locked.length) return false;
+    const r = sel.getRangeAt(0);
+    // the block beside the caret IS the contacts — or ends (Backspace) / begins (Delete) with them, nothing after
+    // or before them inside it (round 7 review, RV7-5: a section holding the contacts mid-way was refused whole)
+    const isLocked = (n: Node | null | undefined) => {
+      if (!n || n.nodeType !== 1) return false;
+      return locked.some((c) => {
+        if (c === n) return true;
+        if (!(n as Element).contains(c)) return false;
+        const rest = document.createRange();
+        if (back) { rest.setStartAfter(c); rest.setEnd(n, n.childNodes.length); } else { rest.setStart(n, 0); rest.setEndBefore(c); }
+        return rest.toString().replace(/[\s\u200B]/g, "") === "" && !rest.cloneContents().querySelector("img,table,svg,math");
+      });
+    };
+    // a selection is the person's own act (Ctrl+A, a few lines) — let it go; the print puts the contacts back
+    if (!r.collapsed) return false;
+    // the caret between blocks of the body itself
+    if (r.startContainer === body) return isLocked(body.childNodes[back ? r.startOffset - 1 : r.startOffset]);
+    const el = r.startContainer.nodeType === 1 ? (r.startContainer as Element) : r.startContainer.parentElement;
+    const block = el?.closest("p,h1,h2,h3,h4,h5,h6,li,div,td,blockquote,pre");
+    if (!block || !body.contains(block) || block === body) return false;
+    // at the very start (Backspace) or the very end (Delete) of its block, the block beside it the contacts
+    const edge = document.createRange();
+    edge.selectNodeContents(block);
+    if (back) edge.setEnd(r.startContainer, r.startOffset); else edge.setStart(r.startContainer, r.startOffset);
+    if (edge.toString().replace(/\u200B/g, "") !== "" || edge.cloneContents().querySelector("img,table,svg,math")) return false;
+    let side = back ? block.previousElementSibling : block.nextElementSibling;
+    while (side && side.classList.contains("we-gap")) side = back ? side.previousElementSibling : side.nextElementSibling;
+    return isLocked(side);
+  }
   function onEditorKeyDown(e: React.KeyboardEvent) {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
       e.preventDefault(); // Ctrl/⌘+S saves (Ctrl+B/I/U are native in contentEditable)
       if (!savedRef.current) void save();
     }
+    // The Instruction's contacts are one uneditable piece: a Backspace on the line after them (or a Delete on
+    // the line before, or over a selection that takes them in) took the whole block in one keystroke (round
+    // 7, R7UP-2) — held; the print puts them back anyway
+    if ((e.key === "Backspace" || e.key === "Delete") && takesLocked(e.key === "Backspace")) { e.preventDefault(); return; }
     // Enter inside a date-card row (.cals) would only add lines INSIDE the card —
     // escape below it instead: a fresh paragraph after the row, caret in it.
     // (Shift+Enter still makes a line inside the card.)
@@ -1076,7 +1125,7 @@ export default function WordEditor({
   const leaveUnsaved = useRef("");
   useEffect(() => { leaveUnsaved.current = L("Документът НЕ е записан (причината е над него). Да напусна ли страницата без да запиша последните промени?", "The document is NOT saved (the reason is above it). Leave the page without saving the latest changes?"); });
   const saveNow = useRef<() => Promise<boolean>>(async () => true);
-  useEffect(() => { saveNow.current = save; });
+  useEffect(() => { saveNow.current = saveAll; });
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
       // (a save on its way is waited for — the link went at once and the words after it were lost, R6UP-1)
@@ -1100,6 +1149,13 @@ export default function WordEditor({
     return () => document.removeEventListener("click", onClick, true);
   }, [router]);
   useEffect(() => () => { if (pgTimer.current) clearTimeout(pgTimer.current); if (autoTimer.current) clearTimeout(autoTimer.current); }, []);
+  // Left with unsaved words some way the link guard does not see — the browser's Back, a swipe, the mouse's back
+  // button (round 7, R7UP-5: the pending autosave died with the editor, no word said): the document as it is,
+  // taken while its page is still there, saved after any save on its way. A person who chose «leave without
+  // saving» is not overruled (savedRef is set then).
+  const closing = useRef<() => void>(() => {});
+  useEffect(() => { closing.current = () => { if (!savedRef.current && ref.current) void save(snapshot()); }; });
+  useLayoutEffect(() => () => closing.current(), []);
   // Warn before leaving with unsaved changes (covers the brief window before autosave
   // fires, and any save that's still in flight).
   useEffect(() => {
@@ -1499,6 +1555,12 @@ export default function WordEditor({
 
   function fold() {
     deselect();
+    const { nb, ne } = snapshot();
+    setBg(nb); setEn(ne);
+    return { nb, ne };
+  }
+  // The document as it is now, both languages — nothing set (also as the editor closes, R7UP-5)
+  function snapshot(): { nb: string; ne: string } {
     let cur = current();
     // DATA-LOSS GUARD: an empty editing surface while the state still holds a body
     // means the div was never filled (the mount-fill glitch) — folding would save
@@ -1507,10 +1569,7 @@ export default function WordEditor({
     // least an empty <p> in the div, which is not the empty string.)
     const stateBody = lang === "bg" ? bg : en;
     if (cur.trim() === "" && stateBody.trim() !== "") cur = stateBody;
-    const nb = lang === "bg" ? cur : bg;
-    const ne = lang === "en" ? cur : en;
-    setBg(nb); setEn(ne);
-    return { nb, ne };
+    return { nb: lang === "bg" ? cur : bg, ne: lang === "en" ? cur : en };
   }
   function switchLang(l: "bg" | "en") {
     if (l === lang) return;
@@ -1523,9 +1582,12 @@ export default function WordEditor({
   // owner says so. Any unsaved edits are saved first so the flag matches the content.
   async function toggleReady() {
     setBusy("ready");
-    if (!savedRef.current && !(await save())) { setBusy(""); return; }
+    if (!savedRef.current && !(await saveAll())) { setBusy(""); return; }
     const next = !ready;
-    const r = await setDocReadyAction(schemeId, docKey, next);
+    // a lost connection never leaves «…» and the autosave waiting for good (round 7 verification, as R7UP-7)
+    let r: Awaited<ReturnType<typeof setDocReadyAction>>;
+    try { r = await setDocReadyAction(schemeId, docKey, next); }
+    catch { setBusy(""); return alert(L("Не стана — проверете връзката и опитайте отново.", "It did not go through — check the connection and try again.")); }
     setBusy("");
     if (!r?.error) setReady(next);
   }
@@ -1575,12 +1637,13 @@ export default function WordEditor({
   // autosave was on its way sent the same save count and were refused as «записан междувременно», unsaid —
   // now each waits for the one before it, sends only what is new, and goes on until the latest edit is saved.
   const saveChain = useRef<Promise<unknown>>(Promise.resolve());
-  const saveOnce = useRef<() => Promise<boolean>>(async () => true);
+  const saveOnce = useRef<(snap?: { nb: string; ne: string }) => Promise<boolean>>(async () => true);
   useEffect(() => { saveOnce.current = saveOnceNow; });
-  async function saveOnceNow(): Promise<boolean> {
+  async function saveOnceNow(snap?: { nb: string; ne: string }): Promise<boolean> {
     const gen = editGen.current;
     if (gen === savedGen.current) { if (!savedRef.current) { savedRef.current = true; setSavedState(true); } return true; }
-    const { nb, ne } = fold();
+    // (a snapshot taken as the editor closed — its page is gone by now — R7UP-5)
+    const { nb, ne } = snap ?? fold();
     setBusy("save");
     try {
       const r = await saveDocHtmlAction(schemeId, docKey, { bg: nb, en: ne, rev: revRef.current });
@@ -1596,16 +1659,28 @@ export default function WordEditor({
       setBusy("");
     }
   }
-  function save(): Promise<boolean> {
-    const p = saveChain.current.then(() => saveOnce.current());
+  // Once: what is there now, after any save on its way (the autosave, Ctrl+S, «Запази»). Words typed while it
+  // was on its way go with the next pause's autosave — never at once: a save on every keystroke made a
+  // version in «История» each time (round 7, R7UP-1: 87 in 30 s on a 300 ms connection).
+  function save(snap?: { nb: string; ne: string }): Promise<boolean> {
+    const p = saveChain.current.then(() => saveOnce.current(snap));
     saveChain.current = p.catch(() => false);
-    // words typed while it was on its way: saved too before this says «saved» (R6UP-1)
-    return p.then((ok) => (ok && editGen.current !== savedGen.current ? save() : ok));
+    return p.then((ok) => { if (ok && editGen.current !== savedGen.current) scheduleAutosave(); return ok; });
+  }
+  // …until the latest edit is saved: before an act that needs the document as it is — a link, «Готов»,
+  // «Страници», «PDF», «Попълване» (R6UP-1/2)
+  // — up to the edits made when the act was asked for, not every word typed while it waits (round 7
+  // verification: «⬇ PDF» then typing on saved on every round trip again, 35 versions in 12 s)
+  function saveAll(target = editGen.current): Promise<boolean> {
+    return save().then((ok) => (ok && savedGen.current < target ? saveAll(target) : ok));
   }
   async function translate() {
     const { nb } = fold();
     setBusy("tr");
-    const r = await translateDocHtmlAction({ html: nb }, docKey);
+    // a failed call never leaves the button «Превеждане…» and the autosave waiting for good (round 7, R7UP-7)
+    let r: Awaited<ReturnType<typeof translateDocHtmlAction>>;
+    try { r = await translateDocHtmlAction({ html: nb }, docKey); }
+    catch { setBusy(""); return alert(L("Преводът не стана — проверете връзката и опитайте отново.", "Translation failed — check the connection and try again.")); }
     setBusy("");
     if (r.error) return alert(L("Превод: ", "Translation: ") + r.error);
     const clean = sanitizeDocHtml(r.html ?? "");
@@ -1623,7 +1698,7 @@ export default function WordEditor({
     return URL.createObjectURL(await res.blob());
   }
   async function downloadPdf() {
-    if (!(await save())) return;
+    if (!(await saveAll())) return;
     setBusy("pdf");
     try {
       const url = await renderPdfUrl();
@@ -1638,13 +1713,13 @@ export default function WordEditor({
   // Lock the document for filling: save the layout, then open the fields-only Fill
   // view (only the form controls stay editable there).
   async function lockToFill() {
-    if (!(await save())) return;
+    if (!(await saveAll())) return;
     window.location.href = `/schemes/${encodeURIComponent(schemeId)}/fill/${encodeURIComponent(docKey)}`;
   }
   // Inline page preview = the real PDF (true pages 1, 2 … with gaps, exactly as
   // downloaded). Editing stays in the continuous view; this is the faithful check.
   async function openPreview() {
-    if (!(await save())) return;
+    if (!(await saveAll())) return;
     setBusy("prev");
     try {
       const url = await renderPdfUrl();
@@ -1769,7 +1844,9 @@ export default function WordEditor({
     if (name === null) return;
     const { nb, ne } = fold();
     setBusy("tmpl");
-    const r = await saveDocTemplateAction(docKey, schemeType, name, { bg: nb, en: ne });
+    let r: Awaited<ReturnType<typeof saveDocTemplateAction>>;
+    try { r = await saveDocTemplateAction(docKey, schemeType, name, { bg: nb, en: ne }); }
+    catch { setBusy(""); return alert(L("Шаблонът не е запазен — проверете връзката и опитайте отново.", "The template was not saved — check the connection and try again.")); }
     setBusy("");
     if (r.error) return alert(r.error);
     if (r.item) setTmpls((t) => [...t, { id: r.item!.id, name: r.item!.name, bg: r.item!.bg, en: r.item!.en }]);
@@ -1777,8 +1854,10 @@ export default function WordEditor({
   }
   async function deleteTemplate(id: string) {
     if (!window.confirm(L("Да изтрия ли този запазен шаблон?", "Delete this saved template?"))) return;
+    const before = tmpls;
     setTmpls((t) => t.filter((x) => x.id !== id));
-    await deleteDocTemplateAction(id);
+    try { await deleteDocTemplateAction(id); }
+    catch { setTmpls(before); alert(L("Шаблонът не е изтрит — проверете връзката и опитайте отново.", "The template was not deleted — check the connection and try again.")); }
   }
 
   const escapeHtml = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -1786,14 +1865,18 @@ export default function WordEditor({
   async function translateAddForm() {
     if (!abg.trim()) return;
     setBusy("addtr");
-    const r = await translateAction(abg.trim(), "bg", "en");
+    let r: Awaited<ReturnType<typeof translateAction>>;
+    try { r = await translateAction(abg.trim(), "bg", "en"); }
+    catch { setBusy(""); return alert(L("Преводът не стана — проверете връзката и опитайте отново.", "Translation failed — check the connection and try again.")); }
     setBusy("");
     if (r.error) return alert(L("Превод: ", "Translation: ") + r.error);
     setAen(r.text ?? "");
   }
   async function saveOwnItem() {
     setBusy("additem");
-    const r = await addLibraryItemAction(naym, abg, aen);
+    let r: Awaited<ReturnType<typeof addLibraryItemAction>>;
+    try { r = await addLibraryItemAction(naym, abg, aen); }
+    catch { setBusy(""); return alert(L("Не е запазено — проверете връзката и опитайте отново.", "Not saved — check the connection and try again.")); }
     setBusy("");
     if (r.error) return alert(r.error);
     if (r.item) setCustom((c) => [...c, { id: r.item!.id, name: r.item!.name, bg: `<p>${escapeHtml(r.item!.bg)}</p>`, en: `<p>${escapeHtml(r.item!.en || r.item!.bg)}</p>` }]);
@@ -1916,7 +1999,7 @@ export default function WordEditor({
 
       {/* action bar */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <button className="btn btn-primary" onClick={save} disabled={busy === "save" || saved} title={L("Запази (Ctrl+S)", "Save (Ctrl+S)")}>{busy === "save" ? L("Запазване…", "Saving…") : saved ? L("Запазено ✓", "Saved ✓") : L("Запази", "Save")}</button>
+        <button className="btn btn-primary" onClick={() => void save()} disabled={busy === "save" || saved} title={L("Запази (Ctrl+S)", "Save (Ctrl+S)")}>{busy === "save" ? L("Запазване…", "Saving…") : saved ? L("Запазено ✓", "Saved ✓") : L("Запази", "Save")}</button>
         {/* live save status — the document autosaves a few seconds after you stop editing */}
         <span className="text-sm" style={{ color: saved ? "var(--green-dark)" : "var(--muted)", minWidth: 116, display: "inline-flex", alignItems: "center", gap: 5 }} title={L("Документът се запазва автоматично", "The document autosaves as you work")}>
           {busy === "save" ? L("Запазване…", "Saving…")

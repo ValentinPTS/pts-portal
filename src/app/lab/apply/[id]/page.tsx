@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireParticipant, participantActor, participationsOf } from "@/lib/participant-session";
 import { openLaboratories } from "@/lib/laboratories";
 import { getScheme } from "@/lib/store";
+import { isSimulation } from "@/lib/catalogue-model";
 import { listParticipants } from "@/lib/participants";
 import { getServerT } from "@/lib/i18n-server";
 import { applyOpenProblem, labAccreditationWarning, earlierProblem, APPLY_PROBLEM_TEXT } from "@/lib/lab-apply-model";
@@ -29,7 +30,8 @@ export default async function LabApplySchemePage({ params }: { params: Promise<{
   const L = (bg: string, en: string) => (lg === "bg" ? bg : en);
   const { id } = await params;
   const scheme = await getScheme(id);
-  const problem = !scheme || !isStarted(scheme) ? "not-open" : applyOpenProblem(scheme, schemeNowMs(scheme));
+  // a simulation answers as one that is not open — never a page of its own (round 7, R7UL Q1)
+  const problem = !scheme || !isStarted(scheme) || isSimulation(scheme.number) ? "not-open" : applyOpenProblem(scheme, schemeNowMs(scheme));
   const shell = (body: React.ReactNode) => (
     <div style={{ minHeight: "100dvh", background: "var(--bg)" }}>
       <ParticipantNav lang={lg} active="apply" name={user.name} role={user.role} persona={persona} />

@@ -42,12 +42,16 @@ export default async function LabApplyPage({ searchParams }: { searchParams: Pro
   const ownThere = doneScheme ? mine.filter((m) => m.schemeId === doneScheme.id) : [];
   const done = doneScheme && isStarted(doneScheme) && ownThere.length ? doneScheme : null;
   const doneRows = done ? (rowsOf.get(done.id) ?? (await listParticipants(done.id))) : [];
-  const doneCode = ownThere.map((m) => doneRows.find((x) => x.id === m.participantId)?.code).find((c) => !!c) ?? null;
+  // the application just made — the organisation's NEWEST participation in that scheme (round 7, R7UL-1: with two
+  // laboratories, the first one's «приета» and code were said for the second, which went on the waiting list)
+  const newest = ownThere.map((m) => doneRows.find((x) => x.id === m.participantId)).filter((x): x is NonNullable<typeof x> => !!x)
+    .sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")))[0] ?? null;
+  const doneCode = newest?.code ?? null;
   // a provisional reference is never shown to the laboratory (5.3)
   const code = doneCode && !isProvisional(doneCode) ? doneCode : null;
   // on the waiting list: «получена», never «приета» — the scheme is full (round 6, R6UL-4)
   const waitingThere = new Set(done ? waitingOf(done, doneRows) : []);
-  const doneWaiting = ownThere.length > 0 && ownThere.every((m) => waitingThere.has(m.participantId));
+  const doneWaiting = !!newest && waitingThere.has(newest.id);
   return (
     <div style={{ minHeight: "100dvh", background: "var(--bg)" }}>
       <ParticipantNav lang={lg} active="apply" name={user.name} role={user.role} persona={persona} />

@@ -221,6 +221,7 @@ export default async function EditSchemePage({
           planSaved: !!(s.docs?.plan?.bg || s.docs?.plan?.en),
           period: s.period ?? "",
           externalProviders: s.externalProviders ?? [],
+          team: s.team ?? [],
           designApproved: designApproved(s) ?? "",
           reportDate: reportDate(s) ?? "",
           certsIssued: Object.keys(s.certificates ?? {}).length > 0,

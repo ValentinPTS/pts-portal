@@ -73,7 +73,7 @@ function RegisterFields({ state, formAction, privacy }: { state: RegistrationFor
 
       {problem && <p role="alert" data-register-error={errorCode} className="text-sm mt-3" style={{ color: "var(--red)" }}>{problem}</p>}
 
-      <form action={formAction} className="mt-4" data-register-form>
+      <form action={formAction} className="mt-4" data-register-form data-live-only>
         {/* honeypot — real people never fill this; bots do. Hidden from view + a11y. */}
         <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true"
           style={{ position: "absolute", left: "-9999px", width: 1, height: 1, opacity: 0 }} />

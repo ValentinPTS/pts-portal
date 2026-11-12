@@ -8,7 +8,7 @@ import CoverPhotoField from "@/components/CoverPhotoField";
 import { useLang } from "@/components/LangProvider";
 import { calibrationSlotsBroken, effectiveDirections } from "@/lib/param-remap";
 import { ONLINE_APPLICATIONS_OPEN } from "@/lib/online-applications";
-import type { CalibrationData, Parameter, PriceRow, ScheduleItem, SchemeStatus } from "@/lib/types";
+import type { CalibrationData, Parameter, PriceRow, ScheduleItem, SchemeStatus, TeamMember } from "@/lib/types";
 import { markerLabels, readSchemeNumber, schemeMarkers, statedByNumber, type Activity, type SchemeKind } from "@/lib/scheme-number";
 import { STATE_LABEL } from "@/lib/lifecycle-model";
 import { ENGINE_FIELDS, characteristicLabel } from "@/lib/characteristics-model";
@@ -72,6 +72,8 @@ export interface SchemeEditorInit {
   /** the design data and the external providers (3.13) */
   period?: string;
   externalProviders?: ExternalProvider[];
+  /** the scheme's team — the plan's team section and the Instruction's contacts (round 7, R7UP-4) */
+  team?: TeamMember[];
   designApproved?: string;
   reportDate?: string;
   /** what the plan's point 3 names with no list kept (3.13 review) */
@@ -385,6 +387,8 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
         {L("Снимка (заглавна страница)", "Cover photo (title page)")}
       </SectionTitle>
       <CoverPhotoField image={init.coverImage} width={init.coverImageWidth} align={init.coverImageAlign} />
+
+      <TeamFields init={init.team ?? []} L={L} />
 
       {/* ── Open for applications ─────────────────────────────────── */}
       <SectionTitle hint={L("Статусът определя какво виждат лабораториите.", "The status controls what laboratories see.")}>
@@ -756,6 +760,51 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
         ? <div data-read-only className="card p-3 mt-7 text-sm" style={{ color: "var(--muted)" }}>{L("Само за четене: вашата роля не записва данните на схемата.", "Read only: your role does not save the scheme's data.")}</div>
         : <SaveBar id={init.id} label={L("Запази промените", "Save changes")} cancel={L("Отказ", "Cancel")} />}
     </form>
+  );
+}
+
+// The scheme's team (round 7, R7UP-4): who is named in the plan's team section and in the Instruction's
+// contacts — the scheme manager, and for calibration the technical expert. Set nowhere before; the M1
+// Instruction stayed «[за попълване]» with no way out. Each row a person and the role, in both languages.
+type TeamRow = TeamMember & { key: number };
+let teamKey = 0;
+const TEAM_ROLES: { bg: string; en: string }[] = [
+  { bg: "Ръководител на схемата за изпитване за пригодност", en: "PT Scheme Manager" },
+  { bg: "Технически експерт", en: "Technical Expert" },
+  { bg: "Експерт статистическа обработка", en: "Statistical Processing Expert" },
+  { bg: "Експерт събиране и кодиране на данни", en: "Data Collection & Coding Expert" },
+];
+function TeamFields({ init, L }: { init: TeamMember[]; L: (bg: string, en: string) => string }) {
+  const [rows, setRows] = useState<TeamRow[]>(() => init.map((m) => ({ ...m, key: ++teamKey })));
+  const set = (key: number, k: keyof TeamMember, v: string) => setRows((x) => x.map((r) => {
+    if (r.key !== key) return r;
+    const next = { ...r, [k]: v };
+    // a standard role typed in one language fills the other
+    const std = TEAM_ROLES.find((t) => (k === "roleBg" ? t.bg : t.en) === v);
+    if (std && k === "roleBg" && !r.roleEn) next.roleEn = std.en;
+    if (std && k === "roleEn" && !r.roleBg) next.roleBg = std.bg;
+    return next;
+  }));
+  return (
+    <div data-team>
+      <SectionTitle hint={L("Хората в т. «Екип» на плана и в контактите на Инструкцията (ръководителят на схемата; за калибриране и техническият експерт).", "The people in the plan's «Team» and in the Instruction's contacts (the scheme manager; for calibration also the technical expert).")}>
+        {L("Екип на схемата", "Scheme team")}
+      </SectionTitle>
+      <input type="hidden" name="teamCount" value={rows.length} />
+      <datalist id="team-roles-bg">{TEAM_ROLES.map((t) => <option key={t.bg} value={t.bg} />)}</datalist>
+      <datalist id="team-roles-en">{TEAM_ROLES.map((t) => <option key={t.en} value={t.en} />)}</datalist>
+      <div className="grid gap-2">
+        {rows.map((r, i) => (
+          <div key={r.key} className="grid gap-2 items-end" data-team-row={i} style={{ gridTemplateColumns: "1.1fr 1.4fr 1.2fr auto" }}>
+            <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Име", "Name")}</span><input name={`team_${i}_name`} value={r.name} maxLength={120} onChange={(e) => set(r.key, "name", e.target.value)} className={inputCls} style={inputStyle} /></label>
+            <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Роля (БГ)", "Role (BG)")}</span><input name={`team_${i}_roleBg`} value={r.roleBg} maxLength={160} list="team-roles-bg" onChange={(e) => set(r.key, "roleBg", e.target.value)} className={inputCls} style={inputStyle} /></label>
+            <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Роля (EN)", "Role (EN)")}</span><input name={`team_${i}_roleEn`} value={r.roleEn} maxLength={160} list="team-roles-en" onChange={(e) => set(r.key, "roleEn", e.target.value)} className={inputCls} style={inputStyle} /></label>
+            <button type="button" data-write className="btn btn-sm" aria-label={L("Премахни от екипа", "Remove from the team")} onClick={() => setRows((x) => x.filter((y) => y.key !== r.key))}>✕</button>
+          </div>
+        ))}
+      </div>
+      <button type="button" data-write className="btn btn-sm mt-2" onClick={() => setRows((x) => (x.length >= 12 ? x : [...x, { key: ++teamKey, name: "", roleBg: "", roleEn: "" }]))}>＋ {L("Добави човек", "Add a person")}</button>
+    </div>
   );
 }
 

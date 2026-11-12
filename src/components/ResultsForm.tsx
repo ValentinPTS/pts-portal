@@ -70,7 +70,7 @@ export default function ResultsForm({ schemeId, participantId, lang, rows, initi
   );
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); void save(); }} data-results-form={participantId} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <form onSubmit={(e) => { e.preventDefault(); void save(); }} data-results-form={participantId} data-live-only style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {closedNow && <p role="alert" data-results-closed-now style={{ margin: 0, padding: "10px 14px", borderRadius: 10, background: "#fbeee6", color: "#7a2e0e", fontWeight: 700 }}>{lang === "bg" ? "Срокът изтече — формулярът вече не приема промени и подаване. Презаредете страницата, за да видите записаното." : "The deadline has passed — the form takes no more changes or submission. Reload the page to see what is on record."}</p>}
       {/* the test period (6.3: inside the scheme's dates) */}
       <fieldset className="card" data-test-period style={{ padding: "10px 14px", margin: 0, border: "1px solid var(--line)" }}>

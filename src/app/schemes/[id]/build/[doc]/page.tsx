@@ -16,6 +16,7 @@ import { resolveSkinAsync } from "@/skins";
 import WordEditor from "@/components/WordEditor";
 import { requireStaff } from "@/lib/roles";
 import { logActivity } from "@/lib/activity";
+import { refreshInstruction, refreshTeam } from "@/lib/docs/instruction-common";
 import { getServerT } from "@/lib/i18n-server";
 import { isSendableDoc } from "@/lib/doc-release";
 
@@ -51,9 +52,14 @@ export default async function BuildDocPage({
   // A form-doc body saved before data-ff existed gets its control identity
   // re-attached from the template here, so the owner's next save persists it
   // and the Fill view stays fillable (fresh copy — never mutate the store's).
-  const saved = isFormDoc(doc)
+  const saved1 = isFormDoc(doc)
     ? { bg: retagFormBody(saved0.bg ?? "", dft.bg), en: retagFormBody(saved0.en ?? "", dft.en) }
     : saved0;
+  // the editor opens what the print shows: the Instruction's contacts and the team as the scheme's are now —
+  // a block deleted or with words left inside comes back whole, the words after it, editable (round 7
+  // verification: R7UP-2 within a session, R7UP-6's bare text and line ends, R7UP-4's plan team)
+  const refreshed = (body: string, l: "bg" | "en") => (body ? refreshTeam(doc === "instruction" ? refreshInstruction(body, s, l) : body, s, l) : body);
+  const saved = { ...saved1, bg: refreshed(saved1.bg ?? "", "bg"), en: refreshed(saved1.en ?? "", "en") };
   // the editable title page (cover) for this document in the scheme's skin
   const skin = await resolveSkinAsync(s);
   const cov = coverDocHtml(s, doc, participants, skin);

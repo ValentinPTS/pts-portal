@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { AUTH_ENABLED, createServerSupabase, REQUIRE_2FA, isOwnerEmail, getSessionUser } from "./auth";
@@ -15,8 +15,8 @@ import { getLabByEmail } from "./labs";
 import { recordPending, settle, recentCount, recentCountTo } from "./sent-messages";
 import { entityUserByAuth, acceptEntityUserInvitation, entityUserForLogin } from "./entity-users";
 import { SUPABASE_TEMPLATES, fixedApproval } from "./fixed-texts";
-import { publicFormLimit, attemptLimit } from "./public-limit";
-import { requestAddress } from "./cert-register";
+import { publicFormLimit, attemptLimit, knownDevice, withKnownDevice, KNOWN_DEVICE_COOKIE } from "./public-limit";
+import { requestAddress, normAddress } from "./cert-register";
 
 export type AuthState = { error?: string; needsTotp?: boolean };
 
@@ -87,18 +87,27 @@ async function journalSignIn(userId: string, email: string, role: "internal" | "
 // Attempts counted by the portal itself (round 5, R5SB-1): the sign-in service counts by the address it
 // sees — the server's, the same for everyone — so one outsider's wrong passwords could shut everyone out,
 // or go on unlimited. Per person's address and per account an hour; per user for the 6-digit code.
-const TOO_MANY_SIGN_IN = "Твърде много опити за вход — опитайте отново след час или поискайте нова парола («Забравена парола»). · Too many sign-in attempts — try again in an hour, or ask for a new password («Forgot password»).";
+// (a new password does not lift it — the message said so, round 7, R7S-2)
+const TOO_MANY_SIGN_IN = "Твърде много опити за вход към този акаунт или от този адрес — опитайте отново след час. Ако опитите не са били Ваши, съобщете на PTS (office@ptsbg.eu). · Too many sign-in attempts on this account or from this address — try again in an hour. If the attempts were not yours, tell PTS (office@ptsbg.eu).";
 const TOO_MANY_CODE = "Твърде много опити с кода — опитайте отново след час. · Too many attempts with the code — try again in an hour.";
 // …the account's tight limit per account AND address (a stranger's tries never lock the person out from their
 // own address), and a far higher one for the account from everywhere (round 6, R6S-3 / R6UL-2)
+// The address as counted: an IPv6 address by its /64, a mapped IPv4 as itself — normalised BEFORE it goes into
+// a key (round 7, R7S-1: «:» became «_» first, so every IPv6 address was its own bucket). A browser where the
+// account signed in before skips the account's ceiling from everywhere (R7S-2).
 async function signInAllowed(email: string): Promise<boolean> {
-  const addr = requestAddress(await headers());
+  const addr = normAddress(requestAddress(await headers()));
+  const known = knownDevice((await cookies()).get(KNOWN_DEVICE_COOKIE)?.value, email);
   return (await attemptLimit("sign_in", addr)) === "ok"
     && (await attemptLimit("sign_in_pair", `account-${email}-at-${addr}`)) === "ok"
-    && (await attemptLimit("sign_in_account", `account-${email}`)) === "ok";
+    && (known || (await attemptLimit("sign_in_account", `account-${email}`)) === "ok");
+}
+async function rememberDevice(email: string): Promise<void> {
+  const jar = await cookies();
+  jar.set(KNOWN_DEVICE_COOKIE, withKnownDevice(jar.get(KNOWN_DEVICE_COOKIE)?.value, email), { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 365 });
 }
 async function codeAllowed(userId: string | undefined): Promise<boolean> {
-  const addr = requestAddress(await headers());
+  const addr = normAddress(requestAddress(await headers()));
   return (await attemptLimit("sign_in", addr)) === "ok" && (await attemptLimit("second_factor", `user-${userId ?? addr}`)) === "ok";
 }
 
@@ -125,6 +134,8 @@ export async function signInAction(_prev: AuthState, formData: FormData): Promis
     await supabase.auth.signOut();
     return { error: "This e-mail address has not been confirmed yet. Open the confirmation link sent to it, then sign in." };
   }
+  // the password was right: this browser is the person's own from now on (R7S-2)
+  await rememberDevice(email);
 
   const role = await resolveLoginRole(email, data.user?.id);
   if (!role) {

@@ -1,7 +1,7 @@
 import type { Scheme, Lang, DocOptions } from "./types";
 import { refreshAccreditation } from "./accreditation-mark";
 import { refreshGateSentences } from "./gate-texts";
-import { refreshInstruction } from "./docs/instruction-common";
+import { refreshInstruction, refreshTeam } from "./docs/instruction-common";
 import type { Skin } from "../skins/types";
 import { getDoc } from "./documents";
 import { BODY_START, BODY_END, stripBodyMarkers, withSkin } from "./doc-shell";
@@ -111,6 +111,8 @@ export function docPrintHtml(
   // (П4, П5, П7, П12, П17 — 5.8, 5.11 review): the swap makes it a new edition
   const gated = key === "invitation" || key === "instruction" ? refreshGateSentences(refreshed) : refreshed;
   // the markers out BEFORE the body is sanitized — never removed from what the sanitizer passed (R2S-1)
-  const wrapped = `<div class="pts-docbody" style="position:relative">\n${sanitizeDocHtml(stripBodyMarkers(key === "instruction" ? refreshInstruction(gated, s, lang) : gated))}\n</div>`;
+  // …and the team as the scheme's team is now, wherever the body shows it (round 7 verification, R7UP-4)
+  const teamed = refreshTeam(key === "instruction" ? refreshInstruction(gated, s, lang) : gated, s, lang);
+  const wrapped = `<div class="pts-docbody" style="position:relative">\n${sanitizeDocHtml(stripBodyMarkers(teamed))}\n</div>`;
   return stripBodyMarkers(full.slice(0, start) + "\n" + wrapped + "\n" + full.slice(b.end));
 }

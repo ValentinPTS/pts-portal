@@ -99,7 +99,7 @@ t("R2U-4: the receiver's name at least two letters, in the browser too", /name="
     && [" 175074752", "175074752 ", "ЕИК: 175074752", "EIK 175074752", "BG-175074752", "BG  175074752", "HRB 12345", "1750747520001"].every((v) => eikP.test(v))
     && ["123", "abc", "BG-12", "<b>"].every((v) => !eikP.test(v))
     && ["0888 123 456 вътр. 12 ", "+359 2 123 4567"].every((v) => phoneP.test(v)) && !phoneP.test("123"));
-  t("R6UL-5: the server reads the ЕИК without its label", /\.replace\(\/\^\(\?:ЕИК\|EIK\|UIC\|БУЛСТАТ\)/.test(actions));
+  t("R6UL-5: the server reads the ЕИК without its label", /const LBL = "\(\?:ЕИК\|EIK\|UIC\|БУЛСТАТ\)";/.test(actions) && /\.replace\(new RegExp\(`\^\$\{LBL\}/.test(actions));
 }
 t("R2U-6: a register's ceiling said in its own words", /REGISTER_TEXT\[r\.why === "code" \? "limitedCode"/.test(actions));
 t("R2U-7: the staff side's downloads keep their names", ["app/schemes/[id]/uploaded/[doc]/route.ts", "app/users/declarations/[id]/route.ts"].every((f) => /filename\*=UTF-8''\$\{utf8Name\(/.test(src(f))));
@@ -223,15 +223,26 @@ t("a saved certificate or list body never reaches a role without names.view thro
   // stopped once <html> said «hydrated», while a form rendered later still had no handler on it
   const layout = src("app/layout.tsx");
   const guard = layout.match(/const PRE_HYDRATION_GUARD = `([^`]+)`;/)![1];
-  let listener: ((e: unknown) => void) | null = null; let alerts = 0; let hydrated = false;
-  const fakeDoc = { addEventListener: (_: string, fn: (e: unknown) => void) => { listener = fn; }, documentElement: { hasAttribute: () => hydrated } };
+  const listeners: Record<string, (e: unknown) => void> = {}; let alerts = 0; let hydrated = false;
+  const fakeDoc = { addEventListener: (type: string, fn: (e: unknown) => void) => { listeners[type] = fn; }, documentElement: { hasAttribute: () => hydrated } };
   new Function("document", "alert", guard)(fakeDoc, () => { alerts++; });
+  const listener = listeners.submit;
   const form = (attrs: Record<string, string>, live = false) => ({ tagName: "FORM", hasAttribute: (a: string) => a in attrs, getAttribute: (a: string) => attrs[a] ?? null, ...(live ? { __reactProps$x: {} } : {}) });
-  const send = (f: unknown) => { let prevented = false; listener!({ target: f, preventDefault: () => { prevented = true; } }); return prevented; };
+  const send = (f: unknown) => { let prevented = false; listener({ target: f, preventDefault: () => { prevented = true; } }); return prevented; };
   const before = send(form({})); hydrated = true; const after = send(form({})); const liveOne = send(form({}, true));
   const postA = form({ method: "post", action: "/x" }); hydrated = false; const p1 = send(postA), p2 = send(postA);
   t("R6S-1: a script-handled form never goes out as the browser's GET — before and after <html> says hydrated", before && after && liveOne && alerts === 1);
   t("R6S-1: a plain POST form before the scripts: the first press goes, the second is held", !p1 && p2);
+  // R7UL-2: nothing typed, chosen or ticked in a form whose script is not live — held (React would never take it)
+  const field = (f: unknown, tag = "INPUT", type = "text") => ({ tagName: tag, closest: (sel: string) => (sel === "form" ? f : (tag === "SELECT" && /select/.test(sel)) || (tag === "INPUT" && sel.includes(`type=${type}`)) ? {} : null), matches: (sel: string) => (tag === "SELECT" && /select/.test(sel)) || (tag === "INPUT" && sel.includes(`type=${type}`)) });
+  const fire = (type: string, target: unknown, key?: string) => { let prevented = false; listeners[type]({ target, key, preventDefault: () => { prevented = true; } }); return prevented; };
+  const idle = form({ "data-live-only": "" }), ready = form({ "data-live-only": "" }, true), liveOnly = form({ action: "", method: "post", "data-live-only": "" }), native = form({ action: "/x", method: "post" }), plain = form({});
+  t("R7UL-2: typing in a «data-live-only» form held until it is live; then taken", fire("beforeinput", field(idle)) && !fire("beforeinput", field(ready)) && fire("beforeinput", field(liveOnly)));
+  t("R7UL-2 (gates): a form that reads its fields when sent — script-handled or native — takes typing early", !fire("beforeinput", field(plain)) && !fire("beforeinput", field(native)) && !fire("mousedown", field(plain, "SELECT")));
+  t("R7UL-2: the results forms and the registration are «data-live-only»", /data-results-form=\{participantId\} data-live-only/.test(src("components/ResultsForm.tsx")) && /data-results-kind="C" data-live-only/.test(src("components/CalibrationResultsForm.tsx")) && /data-register-form data-live-only/.test(src("components/RegisterForm.tsx")));
+  t("R7UL-2: a select, a checkbox (click and Space) held until live; Tab never", fire("mousedown", field(idle, "SELECT")) && fire("click", field(idle, "INPUT", "checkbox")) && fire("keydown", field(idle, "INPUT", "checkbox"), " ") && !fire("keydown", field(idle, "INPUT", "checkbox"), "Tab") && !fire("click", field(ready, "INPUT", "checkbox")));
+  t("R7 verification: a date or time field held by its keys and its picker until live (no «beforeinput» there)", fire("keydown", field(idle, "INPUT", "date"), "1") && fire("mousedown", field(idle, "INPUT", "date")) && fire("keydown", field(idle, "INPUT", "time"), "1") && !fire("keydown", field(ready, "INPUT", "date"), "1") && !fire("keydown", field(idle, "INPUT", "date"), "Tab"));
+  t("R7UL-6: with scripts off, a script-handled form is not shown, said", /<noscript>\s*<style>\{"form:not\(\[action\]\):not\(\[method\]\),form\[data-live-only\]\{display:none!important\}"\}<\/style>/.test(layout) && /data-register-form data-live-only/.test(src("components/RegisterForm.tsx")));
   // R6S-2: the waybill in the words people write
   const masked = ["товарителница № 1234567890", "Speedy 6200 1234 5678", "AWB: 123-45678901", "waybill no. 12345678", "tracking number is ABC12345", "пратка с номер 1234567", "Еконт 1051234567 и 1051234568"].map((x) => String(scrubIdentity(x)));
   t("R6S-2: a waybill masked however it is written", masked.every((x) => x.endsWith("•••") && !/\d{4}/.test(x)), masked.join(" | "));
@@ -249,7 +260,7 @@ t("a saved certificate or list body never reaches a role without names.view thro
   // R6S-5: the pages that show names, opened from another site, ask first; staff never land on one after sign-in
   const { ACTS_WHEN_OPENED: acts } = await import("../src/lib/acts-when-opened.ts");
   t("R6S-5: deliveries, declarations, proofs, participants, results, traceability act when opened", ["/deliveries", "/users/declarations/x", "/users/applications/x", "/organizations/proof/x", "/schemes/S/participants", "/schemes/S/results", "/schemes/S/traceability"].every((x) => acts.test(x)));
-  t("R6S-5: after sign-in a PTS account goes home, not to such a page; a laboratory still to its document", safeDest("internal", "/schemes/S/export") === "/" && safeDest("internal", "/deliveries?x=1") === "/" && safeDest("internal", "/schemes/S") === "/schemes/S" && safeDest("lab", "/lab/doc/S/plan") === "/lab/doc/S/plan");
+  t("R6S-5: after sign-in a PTS account goes home, not to such a page; a laboratory still to its document", safeDest("internal", "/schemes/S/export") === "/open?to=%2Fschemes%2FS%2Fexport" && safeDest("internal", "/deliveries?x=1") === "/open?to=%2Fdeliveries%3Fx%3D1" && safeDest("internal", "/schemes/S") === "/schemes/S" && safeDest("lab", "/lab/doc/S/plan") === "/lab/doc/S/plan");
   // R6S-6: the PDF maker takes JSON from the portal's own pages only
   const pdf = src("app/api/pdf/route.ts");
   t("R6S-6: /api/pdf refuses another site and anything but JSON", /if \(site === "cross-site" \|\| site === "same-site"\) return new Response\("Forbidden", \{ status: 403 \}\);/.test(pdf) && /if \(!\/\^application\\\/json\\b\/i\.test/.test(pdf));
@@ -262,7 +273,7 @@ t("a saved certificate or list body never reaches a role without names.view thro
   t("R6UL Q5: a simulation is no public apply page, no download, no application — online or by a laboratory",
     /isSimulation\(s\.number\)\) notFound\(\);/.test(src("app/apply/[id]/page.tsx")) && ["plan", "invitation"].every((r) => /!isStarted\(s\) \|\| isSimulation\(s\.number\) \|\|/.test(src(`app/apply/[id]/${r}/route.ts`)))
     && /if \(!scheme \|\| isSimulation\(scheme\.number\) \|\| scheme\.status !== "open"/.test(actions) && /\|\| isSimulation\(scheme\.number\)\) return say\("not-open"\);/.test(actions) && /&& !isSimulation\(s\.number\)\)/.test(src("app/lab/apply/page.tsx")));
-  t("R6UL-4: the apply banner says waiting list when the participation waits", /const doneWaiting = ownThere\.length > 0 && ownThere\.every\(\(m\) => waitingThere\.has\(m\.participantId\)\)/.test(src("app/lab/apply/page.tsx")) && /списъка на чакащите/.test(src("app/lab/apply/page.tsx")));
+  t("R6UL-4: the apply banner says waiting list when the participation waits", /const doneWaiting = !!newest && waitingThere\.has\(newest\.id\);/.test(src("app/lab/apply/page.tsx")) && /списъка на чакащите/.test(src("app/lab/apply/page.tsx")));
 }
 
 // ── round 6, the PTS side (users) ──────────────────────────────────────────────────────────────
@@ -273,10 +284,10 @@ t("a saved certificate or list body never reaches a role without names.view thro
     /const setSaved = \(v: boolean\) => \{ if \(!v\) editGen\.current\+\+; savedRef\.current = v; setSavedState\(v\); \};/.test(we)
     && /function onBodyInput\(\) \{\n    editGen\.current\+\+;/.test(we)
     && /if \(editGen\.current === gen\) \{ savedRef\.current = true; setSavedState\(true\); \}/.test(we)
-    && /return p\.then\(\(ok\) => \(ok && editGen\.current !== savedGen\.current \? save\(\) : ok\)\);/.test(we)
+    && /return save\(\)\.then\(\(ok\) => \(ok && savedGen\.current < target \? saveAll\(target\) : ok\)\);/.test(we)
     && (we.match(/setSavedState\(true\)/g) ?? []).length === 2);
   t("R6UP-2: «Готов», «Страници», «PDF», «Попълване» wait for the save on its way (one chain), never send the same count twice",
-    /const p = saveChain\.current\.then\(\(\) => saveOnce\.current\(\)\);/.test(we) && /if \(gen === savedGen\.current\)/.test(we) && !/!busyRef\.current\) save\(\)/.test(we));
+    /const p = saveChain\.current\.then\(\(\) => saveOnce\.current\(snap\)\);/.test(we) && /if \(gen === savedGen\.current\)/.test(we) && !/!busyRef\.current\) save\(\)/.test(we));
   // R6UP-3: a save that cannot go through lets the person leave, asked
   t("R6UP-3: after a refused save a portal link asks to leave without saving — never swallowed", /if \(window\.confirm\(leaveUnsaved\.current\)\) \{ savedRef\.current = true; go\(\); \}/.test(we) && !/savedRef\.current \|\| busyRef\.current \|\| e\.defaultPrevented/.test(we));
   // R6UP-4: the Instruction's contacts — what a person added is kept; the block is not editable in the editor
@@ -289,10 +300,10 @@ t("a saved certificate or list body never reaches a role without names.view thro
   t("R6UP-4: the editor keeps the contacts out of reach and a line after them; never saves the lock", /c\.setAttribute\("contenteditable", "false"\);/.test(we) && /clone\.querySelectorAll\("\[data-team-contacts\]"\)\.forEach\(\(n\) => \{ n\.removeAttribute\("contenteditable"\); n\.removeAttribute\("title"\); \}\);/.test(we));
   // R6UP-5 / R6UP-6: a cited number confirmed; the card's own (a replay's source) never asked
   t("R6UP-5: another scheme's number refused unless confirmed as cited — and the confirmation journalled",
-    /const numbers = await numbersCheck\(scheme, docKey, now, note\?\.numbersOk\);/.test(actions) && (actions.match(/const numbers = await numbersCheck\(/g) ?? []).length === 2
-    && /await logActivity\("doc\.numbers_cited"/.test(actions) && /return \{ otherNumbers: left, error:/.test(actions)
+    /const numbers = await numbersCheck\(scheme, now, note\?\.numbersOk\);/.test(actions) && (actions.match(/const numbers = await numbersCheck\(/g) ?? []).length === 2
+    && /logActivity\("doc\.numbers_cited"/.test(actions) && /return \{ otherNumbers: left, error:/.test(actions)
     && ["components/SchemeDocuments.tsx", "components/ReleaseToOne.tsx", "components/IssueEdition.tsx"].every((f) => /citeQuestion\(r\.otherNumbers, lang\)/.test(src(f))));
-  t("R6UP-6: a number the scheme's own card names (a replay's source) is not another scheme's", /const card = otherSchemeNumbers\(\[scheme\.titleBg, scheme\.titleEn, scheme\.name\]/.test(actions) && /\.filter\(\(n\) => !card\.some\(\(c\) => sameSchemeNumber\(c, n\)\)\)/.test(actions));
+  t("R6UP-6: a number the scheme's own card names (a replay's source) is not another scheme's", /const card = isSimulation\(scheme\.number\) \? otherSchemeNumbers\(\[scheme\.titleBg, scheme\.titleEn, scheme\.name\]/.test(actions) && /\.filter\(\(n\) => !card\.some\(\(c\) => sameSchemeNumber\(c, n\)\)\)/.test(actions));
   // R6UP-7: no English-only refusal left among the ones it named
   t("R6UP-7: the named refusals and the case file's automatic steps in both languages", !/error: `Nothing has changed since edition/.test(actions) && !/error: "This e-mail is a participant's user's login \(Организации\), so/.test(actions) && !/error: `Translator (unavailable|refused)/.test(actions) && /note: `онлайн протокол за получаване/.test(actions) && /note: `онлайн резултати — версия/.test(actions)
     && /descriptionBg:/.test(src("lib/doc-shell.ts")) && /sk\.meta\.descriptionBg/.test(src("app/skins/page.tsx")));
@@ -306,6 +317,113 @@ t("a saved certificate or list body never reaches a role without names.view thro
   const team = `<div class="contacts" data-team-contacts><div class="person">${fillMark("bg", { bg: "техническият експерт (екипът на схемата)", en: "the technical expert (the scheme team)" })}</div></div>`;
   const probs = m1Problems(team, "instruction", "bg");
   t("R6UP-9: a contacts mark points to «Редактирай данните», not to the editor", probs.some((x) => x.includes("«Редактирай данните»")) && !probs.some((x) => x.includes("махнете и жълтото поле")), JSON.stringify(probs));
+}
+
+// ── round 7 (2026-11-12) ────────────────────────────────────────────────────────────────────────
+{
+  const authA7 = src("lib/auth-actions.ts");
+  const { attemptLimit, knownDevice, withKnownDevice } = await import("../src/lib/public-limit.ts");
+  const { normAddress } = await import("../src/lib/cert-register.ts");
+  // R7S-1: an IPv6 /64 is one address — normalised before it goes into any key
+  let ok6 = 0; for (let i = 0; i < 40; i++) if ((await attemptLimit("sign_in", normAddress(`2001:db8:7:7::${i + 1}`))) === "ok") ok6++;
+  t("R7S-1: forty addresses of one IPv6 /64 share the address's 30 sign-in attempts", ok6 === 30, String(ok6));
+  t("R7S-1: a mapped IPv4 address is the address itself", normAddress("::ffff:203.0.113.7") === normAddress("203.0.113.7"));
+  t("R7S-1: sign-in and the code count the normalised address", (authA7.match(/const addr = normAddress\(requestAddress\(await headers\(\)\)\);/g) ?? []).length === 2);
+  // R7S-2: the person's own browser is never shut by the account's ceiling from everywhere
+  const cookie = withKnownDevice(undefined, "Person@Example.invalid");
+  t("R7S-2: a browser where the account signed in is known to it — and only to it", knownDevice(cookie, "person@example.invalid") && !knownDevice(cookie, "other@example.invalid") && !knownDevice("0".repeat(32), "person@example.invalid"));
+  t("R7S-2: at most four accounts remembered per browser", withKnownDevice(["a", "b", "c", "d", "e"].reduce((c: string | undefined, x) => withKnownDevice(c, `${x}@example.invalid`), undefined), "f@example.invalid").split(".").length === 4);
+  t("R7S-2: the account's ceiling skipped for a known browser; remembered after a right password; the message no longer promises a new password helps",
+    /&& \(known \|\| \(await attemptLimit\("sign_in_account", `account-\$\{email\}`\)\) === "ok"\);/.test(authA7) && /await rememberDevice\(email\);/.test(authA7) && /httpOnly: true/.test(authA7.slice(authA7.indexOf("async function rememberDevice"))) && !/TOO_MANY_SIGN_IN = "[^"]*Забравена парола/.test(authA7));
+  // R7S-3: every page that opens the identity store (for anything but a laboratory's own data) asks first
+  const { ACTS_WHEN_OPENED: acts7 } = await import("../src/lib/acts-when-opened.ts");
+  const { readdirSync, statSync } = await import("node:fs");
+  const files: string[] = [];
+  const walk = (d: string) => { for (const f of readdirSync(d)) { const p = `${d}/${f}`; if (statSync(p).isDirectory()) walk(p); else if (/\/(page\.tsx|route\.ts)$/.test(p)) files.push(p); } };
+  const { fileURLToPath } = await import("node:url");
+  const appDir = fileURLToPath(new URL("../src/app", import.meta.url));
+  walk(appDir);
+  const opening = files.filter((f) => !f.includes("/dev/") && /\b(?:openEntities|openLaboratories|openEntityUsers|openParticipationSnapshots|namesFor)\(/.test(readFileSync(f, "utf8")) && /purpose: "(?!lab\.own")/.test(readFileSync(f, "utf8")) || (!f.includes("/dev/") && /\bnamesFor\(/.test(readFileSync(f, "utf8"))));
+  const pathOf = (f: string) => f.slice(appDir.length).replace(/\/(page\.tsx|route\.ts)$/, "").replace(/\/\([^)]+\)/g, "").replace(/\[[^\]]+\]/g, "x") || "/";
+  const missed = opening.map(pathOf).filter((x) => !acts7.test(x));
+  t("R7S-3: every page that opens names asks first when opened from another site", opening.length >= 12 && missed.length === 0, `${opening.length} pages; missed: ${missed.join(", ")}`);
+  t("R7S-3: …organisations, registrations, invoices, editions among them", ["/organizations", "/registrations", "/invoices", "/schemes/S/editions"].every((x) => acts7.test(x)) && !acts7.test("/lab") && !acts7.test("/lab/apply"));
+  t("R7S-3: another site never frames a portal page", /if \(\/\^\(\?:iframe\|frame\|fencedframe\)\$\/\.test\(\(request\.headers\.get\("sec-fetch-dest"\)/.test(src("proxy.ts")));
+  // Q3: the e-mail's link is offered after sign-in, never opened by itself, never lost
+  const openPage = src("app/open/page.tsx");
+  t("Q3: after sign-in such a link is offered on «/open»; only a portal path, only such a page; no prefetch", safeDest("internal", "/registrations") === "/open?to=%2Fregistrations" && /const to = safeNext\(/.test(openPage) && /ACTS_WHEN_OPENED\.test\(to\.split/.test(openPage) && /<a href=\{offered\} className="btn btn-primary" data-open-continue>/.test(openPage) && !/<Link href=\{offered\}/.test(openPage));
+  // R7S-4: the document body contains whatever is in it
+  const docCss = src("lib/doc-css.ts");
+  t("R7S-4 / RV7-2: links stay in the flow on screen; the body is NOT contained (a stamp below the text, a wide table stay visible); print untouched", !/contain:paint/.test(docCss) && /\.pts-docbody \.doc-side\{display:none!important;\}/.test(docCss) && /@media screen\{\s*\.pts-docbody a,\.pts-docbody a \*\{position:static!important;transform:none!important;translate:none!important;scale:none!important;float:none!important;margin:0!important;zoom:normal!important;max-width:100%!important;\}\s*\.pts-docbody a img\{height:auto!important;\}\s*\}/.test(docCss));
+  // R7S-5: the waybill mask — more phrasings; what a codes-only reader needs kept
+  const leaks7 = ["получено с куриер 62\u00A0555\u00A0444\u00A0333", "изпратено с куриер 62.555.444.333", "изпратено с куриер, номер 123456789", "Европът 1234567", "Box Now 98765432", "товарителница: 62–555–444–333", "колет 62555444333"].map((x) => String(scrubIdentity(x)));
+  t("R7S-5: the waybill masked however it is written", leaks7.every((x) => x.endsWith("•••") && !/\d{3}/.test(x)), leaks7.join(" | "));
+  const keep7 = ["дата 2026-11-12 10:30", "EN 1097-2 1097-3 и EN 933-1", "ISO/IEC 17043:2023, т. 7.2.1", "сума 1 234 567 890,00 лв.", "резултат 0,1234567890123 g/cm³", "кодове 26111716 26111750", "PTS 26/11-T-17 26111716", "колет 26111716", "12.11.2026 10:30", "x = 10.123456789", "0.1234567890123"];
+  const kept7 = keep7.filter((x) => scrubIdentity(x) !== x);
+  t("R7S-5: dates, standards, amounts, decimals and participation codes kept", kept7.length === 0, kept7.map((x) => `${x} → ${scrubIdentity(x)}`).join(" | "));
+  // R7S-6: the confirmation journalled once the act is done, worded for it
+  t("R7S-6: «cited on purpose» journalled after the send or the issue — never before",
+    !/async function numbersCheck[\s\S]{0,1500}logActivity/.test(actions.slice(actions.indexOf("async function numbersCheck"), actions.indexOf("async function numbersCheck") + 1600))
+    && (actions.match(/await citedLine\(scheme, docKey, cited, "sent"\);/g) ?? []).length === 2 && /await citedLine\(scheme, docKey, numbers\.cited, "issued"\);\n  return \{ ok: true, no: r\.edition\.no \};/.test(actions));
+  // Q4: OnceForm lets a send through once the action answered, whatever address it came back on
+  t("Q4: OnceForm releases when the form's action is done", /const \{ pending \} = useFormStatus\(\);/.test(src("components/OnceForm.tsx")) && /<ReleaseWhenDone onDone=\{release\} \/>/.test(src("components/OnceForm.tsx")));
+}
+
+// ── round 7, the users' findings ───────────────────────────────────────────────────────────────
+{
+  const apply7 = src("app/lab/apply/page.tsx");
+  t("R7UL-1: the banner speaks of the application just made — the organisation's newest participation", /\.sort\(\(a, b\) => String\(b\.createdAt \?\? ""\)\.localeCompare\(String\(a\.createdAt \?\? ""\)\)\)\[0\]/.test(apply7) && /const doneCode = newest\?\.code \?\? null;/.test(apply7));
+  const labP = src("app/lab/p/[id]/page.tsx");
+  t("R7UL-3: the participation page's forms are sent once (upload, acknowledgements, receipt, problem)", ["labUploadDocAction", "acknowledgeDocAction", "submitReceiptAction", "reportDeliveryProblemAction"].every((a) => new RegExp(`<OnceForm action=\\{${a}\\}`).test(labP)) && !/<form action=\{(?:labUploadDocAction|acknowledgeDocAction|submitReceiptAction|reportDeliveryProblemAction)\}/.test(labP));
+  const fresh = src("components/FreshOnReturn.tsx");
+  t("R7UL-4 / RV7-1: the results page asks again when shown from an old copy — aged on the browser's own clock, no loop", /<FreshOnReturn renderedAt=\{new Date\(\)\.toISOString\(\)\} \/>/.test(src("app/lab/p/[id]/results/page.tsx")) && /const seen = firstSeen\.get\(renderedAt\);/.test(fresh) && /if \(seen === undefined\) \{ firstSeen\.set\(renderedAt, now\);/.test(fresh) && !/Date\.parse\(renderedAt\)/.test(fresh) && /if \(e\.persisted\) router\.refresh\(\);/.test(fresh));
+  const prof = src("app/lab/profile/page.tsx");
+  const eikRe = new RegExp(`^(?:${JSON.parse([...prof.matchAll(/pattern: ("(?:[^"\\]|\\.)*")/g)][1][1])})$`, "v");
+  t("R7UL-5: the ЕИК box takes what the server takes and refuses what it refuses", ["ЕИК/БУЛСТАТ 166858335", "ЕИК 166858335 (БУЛСТАТ)", "ЕИК - 166858335", "EIK No. 166858335", "ЕИК\u00A0166\u00A0858\u00A0335", "HRB 12345"].every((v) => eikRe.test(v)) && ["123456789012", "EIK 12345", "EIK1", "UIC-12"].every((v) => !eikRe.test(v)));
+  t("R7UL-5: a refused ЕИК or phone keeps its stored value — the rest is saved", /eik: eik\.ok \? eik\.normalized : ls\.lab\.eik,/.test(actions) && /phone: phoneOk \? phone : ls\.lab\.phone,/.test(actions) && actions.indexOf("revalidatePath(\"/lab\");\n  if (!eik.ok) redirect") > 0);
+  t("R7UL-7: a simulation takes no wish and has no lab apply page", /if \(!s \|\| !isStarted\(s\) \|\| isSimulation\(s\.number\)\) return WISH_REFUSAL\("not-started"\);/.test(actions) && /isSimulation\(scheme\.number\) \? "not-open"/.test(src("app/lab/apply/[id]/page.tsx")));
+  // R7UP-2: the contacts put back on print when deleted; R7UP-3: block edges are not a number's digits
+  const { refreshInstruction: ri7 } = await import("../src/lib/docs/instruction-common.ts");
+  const back = ri7(`<h2 class="sec"><span class="n">11.</span> Контакти</h2><div class="body"><p><br></p></div>`, { type: "T", team: [] } as never, "bg");
+  t("R7UP-2: a deleted contacts block comes back under «Контакти» on print", /data-team-contacts/.test(back) && back.indexOf("data-team-contacts") > back.indexOf("Контакти") && /office@ptsbg\.eu/.test(back));
+  t("R7UP-2: the editor holds a Backspace/Delete that would take the contacts", /if \(\(e\.key === "Backspace" \|\| e\.key === "Delete"\) && takesLocked\(e\.key === "Backspace"\)\) \{ e\.preventDefault\(\); return; \}/.test(src("components/WordEditor.tsx")));
+  t("R7UP-3: «…T-4</div><div>2. …» is the scheme's own number, not «T-42»", otherSchemeNumbers("<div>№ PTS 26/11-T-4</div><div>2. Обхват</div><p>PTS 26/11-T-4<br>3 проби</p>", "PTS 26/11-T-4").length === 0 && otherSchemeNumbers("<p>PTS 25/0<b>9</b>-<i>T</i>-3</p>", "PTS 26/11-T-4").length === 1);
+  // R7UP-4: the team is set in «Редактирай данните»; a blank calibration scheme has a technical expert
+  const { blankScheme } = await import("../src/lib/new-scheme.ts");
+  const { teamMember } = await import("../src/lib/docs/instruction-common.ts");
+  const cBlank = blankScheme({ id: "x", number: "PTS 26/11-C-9", type: "C", titleEn: "x", titleBg: "x", objectEn: "", objectBg: "", distribution: "sequential", minParticipants: 1 } as never);
+  t("R7UP-4: a blank calibration scheme starts with a technical expert in its team", !!teamMember(cBlank, "technical"));
+  t("R7UP-4: the team is edited and saved with the scheme's data", /<TeamFields init=\{init\.team \?\? \[\]\} L=\{L\} \/>/.test(src("components/SchemeEditor.tsx")) && /const teamCountRaw = formData\.get\("teamCount"\);/.test(actions) && /\.\.\.\(teamNow \? \{ team: teamNow \} : \{\}\),/.test(actions) && /team: s\.team \?\? \[\],/.test(src("app/schemes/[id]/edit/page.tsx")));
+  // R7UP-1 / R7UP-5 / R7UP-7: the editor's saves
+  const we7 = src("components/WordEditor.tsx");
+  t("R7UP-1: the autosave and Ctrl+S save once; only an act saves — up to the edits made when it was asked", /function saveAll\(target = editGen\.current\): Promise<boolean> \{/.test(we7) && /useEffect\(\(\) => \{ saveNow\.current = saveAll; \}\);/.test(we7) && (we7.match(/await saveAll\(\)/g) ?? []).length === 4 && /return p\.then\(\(ok\) => \{ if \(ok && editGen\.current !== savedGen\.current\) scheduleAutosave\(\); return ok; \}\);/.test(we7));
+  t("R7UP-5: leaving the editor any way with unsaved words saves them as it closes", /useLayoutEffect\(\(\) => \(\) => closing\.current\(\), \[\]\);/.test(we7) && /if \(!savedRef\.current && ref\.current\) void save\(snapshot\(\)\);/.test(we7));
+  t("R7UP-7: a failed translation or template save never leaves the editor busy", (we7.match(/catch \{ setBusy\(""\); return alert\(/g) ?? []).length >= 4);
+}
+
+// ── round 7, the review and the verification ────────────────────────────────────────────────────
+{
+  const { scrubIdentity: scrub8 } = await import("../src/lib/redact.ts");
+  const leaks8 = ["TRACKING NUMBER GIVEN 625554443331", "OPEN 625554443331", "ISO 625554443331", "62555444 333"].filter((x) => /\d{6}/.test(String(scrub8(x))));
+  t("RV7-4: no number escapes through «EN» inside a word, a long «ISO …», or 8+3 digits", leaks8.length === 0, leaks8.map((x) => `${x} → ${scrub8(x)}`).join(" | "));
+  const { knownDevice: kd, withKnownDevice: wkd } = await import("../src/lib/public-limit.ts");
+  const a1 = wkd(undefined, "p@example.invalid"), a2 = wkd(undefined, "p@example.invalid");
+  const jan = Date.UTC(2027, 0, 15), may = Date.UTC(2027, 4, 15);
+  const old = wkd(undefined, "p@example.invalid", jan);
+  t("RV7-7: a known-device mark is per browser (two browsers, two marks) and lapses after three months", a1 !== a2 && kd(a1, "p@example.invalid") && kd(old, "p@example.invalid", Date.UTC(2027, 2, 20)) && !kd(old, "p@example.invalid", may));
+  t("RV7-6: an edition issued citing another's number is journalled as issued, at the issue", /await citedLine\(scheme, docKey, numbers\.cited, "issued"\);\n  return \{ edition: r\.edition, issued: true, cited: \[\] \};/.test(actions));
+  const we8 = src("components/WordEditor.tsx");
+  t("RV7-5: the contacts guard only for the block itself or one that ends/begins with it; a selection is the person's own act", we8.includes('return rest.toString().replace(/[\\s\\u200B]/g, "") === ""') && /if \(!r\.collapsed\) return false;/.test(we8));
+  t("R7 verification: «Готов» and a template's deletion never leave the editor stuck on a lost connection", /try \{ r = await setDocReadyAction\(schemeId, docKey, next\); \}/.test(we8) && /try \{ await deleteDocTemplateAction\(id\); \}/.test(we8));
+  // the team and the contacts as the scheme's are now — in the print AND in what the editor opens
+  const { refreshTeam, teamBlock, addedInContacts: aic, instructionContacts: icx } = await import("../src/lib/docs/instruction-common.ts");
+  const sTeam = { type: "T", team: [{ roleEn: "PT Scheme Manager", roleBg: "Ръководител на схемата", name: "Нов Ръководител" }] } as never;
+  const oldPlan = `<h2>2.</h2><div class="team"><div class="role"><span class="rl">Ръководител на схемата</span><span class="nm">Стар</span></div><p>Добавено.</p></div>`;
+  const newPlan = refreshTeam(oldPlan, sTeam, "bg");
+  t("R7UP-4 (verification): a saved plan's team follows the scheme's team; words added in it kept", newPlan.includes("Нов Ръководител") && !newPlan.includes("Стар") && newPlan.includes("Добавено.") && newPlan.includes(teamBlock(sTeam, "bg")));
+  t("R7UP-4: the print and the editor both refresh the team (and the Instruction's contacts)", /const teamed = refreshTeam\(key === "instruction" \? refreshInstruction\(gated, s, lang\) : gated, s, lang\);/.test(src("lib/doc-template.ts")) && /refreshTeam\(doc === "instruction" \? refreshInstruction\(body, s, l\) : body, s, l\)/.test(src("app/schemes/[id]/build/[doc]/page.tsx")));
+  const gen8 = icx({ type: "T", team: [] } as never, "bg");
+  t("R7UP-6 (verification): bare text and a line's end inside the contacts come out on opening", aic(gen8.replace(/<\/div>\s*$/, "Голо изречение.</div>")).includes("Голо изречение.") && aic(gen8.replace("✉ office@ptsbg.eu", "✉ office@ptsbg.eu Края.")).includes("Края."));
 }
 
 console.log(`security-sweep.test: ${pass} passed, ${fail} failed`);

@@ -48,6 +48,29 @@ function formKey(): string {
 const hmac = (key: string, text: string) => createHmac("sha256", key).update(text).digest("hex");
 export const hourOfForm = (ms: number) => new Date(ms).toISOString().slice(0, 13);
 
+/** A browser where this account has signed in before («a known device», round 7, R7S-2): a mark kept in an
+ *  httpOnly cookie, keyed by the server's secret — a stranger cannot make one. Such a browser is not shut by
+ *  the account's ceiling from everywhere (the per-address limits still hold), so another's wrong passwords
+ *  never lock the person out of their own browser. */
+// A mark is «<browser id>-<HMAC of e-mail, id and month>»: a random id per browser, so one browser's mark is
+// not another's, and a month, so it lapses three months after the last sign-in there (round 7 review, RV7-7:
+// a pure function of the e-mail was the same everywhere, for ever — a former colleague's PC kept it).
+export const KNOWN_DEVICE_COOKIE = "pts_kd";
+const monthOf = (ms: number, back = 0) => { const d = new Date(ms); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - back); return d.toISOString().slice(0, 7); };
+export const knownDeviceMark = (email: string, id: string, month: string) => hmac(formKey(), `known|${email.trim().toLowerCase()}|${id}|${month}`).slice(0, 32);
+const entries = (v: string | undefined) => (v ?? "").split(".").map((e) => /^([0-9a-f]{16})-([0-9a-f]{32})$/.exec(e)).filter((m): m is RegExpExecArray => !!m);
+export function knownDevice(cookieValue: string | undefined, email: string, nowMs = Date.now()): boolean {
+  const months = [0, 1, 2].map((b) => monthOf(nowMs, b));
+  return entries(cookieValue).some(([, id, mac]) => months.some((m) => knownDeviceMark(email, id, m) === mac));
+}
+/** The cookie's value with this account's mark renewed for this month (the last four accounts kept). */
+export function withKnownDevice(cookieValue: string | undefined, email: string, nowMs = Date.now()): string {
+  const months = [0, 1, 2].map((b) => monthOf(nowMs, b));
+  const kept = entries(cookieValue).filter(([, id, mac]) => !months.some((m) => knownDeviceMark(email, id, m) === mac)).map((m) => m[0]);
+  const id = randomBytes(8).toString("hex");
+  return [...kept, `${id}-${knownDeviceMark(email, id, months[0])}`].slice(-4).join(".");
+}
+
 /** May this request of a public form go on? «ok», or why not: its ADDRESS reached its ceiling (the
  *  form may then answer as if it went — nothing learned of anyone), or EVERYONE's did / the count failed
  *  (said: «try later» — round 2, R2S-4). Counted whether or not it then succeeds; fail closed. */

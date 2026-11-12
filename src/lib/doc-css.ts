@@ -100,6 +100,16 @@ export const DOC_CSS = `
      because every skin is DOC_CSS + overrides, so one rule covers classic, modern,
      minimal and every custom skin. */
   img.free{position:absolute;max-width:none;z-index:1;}
+  /* No link in a document's body is stretched over the screen (round 7, R7S-4): a fixed class, a huge free
+     picture, a transform, negative margins took any click anywhere elsewhere. A link and what is in it stay in
+     the flow, on screen (paper takes no clicks); the side strip is the shell's, never the body's. */
+  /* (round 7 review, RV7-2: containing the whole body clipped a stamp or a signature below the last line and a
+     wide table on every screen view — the links are held instead, on screen only; the PDF is as it was) */
+  .pts-docbody .doc-side{display:none!important;}
+  @media screen{
+    .pts-docbody a,.pts-docbody a *{position:static!important;transform:none!important;translate:none!important;scale:none!important;float:none!important;margin:0!important;zoom:normal!important;max-width:100%!important;}
+    .pts-docbody a img{height:auto!important;}
+  }
   /* lighter document header (logo + embroidery band + centred title) for utility
      forms that don't have a full title page; the wrap is a white band that bleeds
      left over the side embroidery so the side strip starts at the first section */

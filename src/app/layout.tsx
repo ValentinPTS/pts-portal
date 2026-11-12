@@ -37,7 +37,15 @@ export const metadata: Metadata = {
 // is always held, not only until the root is live (round 6, R6S-1 / R6UL-1: a page's own script arriving after
 // the root's let it through). If that form's script is not live yet, the person is told once. A form that posts
 // natively (a server action, before the scripts) is not sent twice within half a minute (R6S-10).
-const PRE_HYDRATION_GUARD = `(function(){var told=false;document.addEventListener("submit",function(e){var f=e.target;if(!f||f.tagName!=="FORM")return;if(!f.hasAttribute("action")&&!f.hasAttribute("method")){e.preventDefault();var live=false;for(var k in f){if(k.indexOf("__reactProps$")===0){live=true;break;}}if(!live&&!told){told=true;alert("Страницата още се зарежда — натиснете отново след миг. · The page is still loading — press again in a moment.");}return;}if((f.getAttribute("method")||"").toLowerCase()==="post"&&!document.documentElement.hasAttribute("data-hydrated")){if(f.__ptsSent&&Date.now()-f.__ptsSent<30000){e.preventDefault();return;}f.__ptsSent=Date.now();}},true);})();`;
+// …and nothing typed, chosen or ticked in a form marked «data-live-only» is taken before its script is live:
+// its fields are the script's own state, and React never takes into it what was typed before (round 7,
+// R7UL-2 — the results shown on screen, then lost; the registration's country shown, its button dead). Only
+// those: a form that reads its fields when sent keeps what was typed early (holding them all stopped every
+// early typist — round 7 gates: the new organisation's form). Held, said (at most every
+// 8 s). «live»: the form carries React's props — read from its own keys, kept once seen (every keystroke).
+// Date and time fields send no «beforeinput» in Chromium: held by their keys and their picker (round 7
+// verification: a period's date typed early was shown, then stored empty).
+const PRE_HYDRATION_GUARD = `(function(){var toldAt=0,seen=typeof WeakSet==="function"?new WeakSet():null;function tell(){var n=Date.now();if(n-toldAt>8000){toldAt=n;alert("Страницата още се зарежда — опитайте отново след миг. · The page is still loading — try again in a moment.");}}function live(f){if(seen&&seen.has(f))return true;var ks=Object.keys(f);for(var i=0;i<ks.length;i++){if(ks[i].indexOf("__reactProps$")===0){if(seen)seen.add(f);return true;}}return false;}function scripted(f){return !!f&&f.tagName==="FORM"&&f.hasAttribute("data-live-only");}document.addEventListener("submit",function(e){var f=e.target;if(!f||f.tagName!=="FORM")return;if(!f.hasAttribute("action")&&!f.hasAttribute("method")){e.preventDefault();if(!live(f))tell();return;}if((f.getAttribute("method")||"").toLowerCase()==="post"&&!document.documentElement.hasAttribute("data-hydrated")){if(f.__ptsSent&&Date.now()-f.__ptsSent<30000){e.preventDefault();return;}f.__ptsSent=Date.now();}},true);function hold(e){var t=e.target;var f=t&&t.closest?t.closest("form"):null;if(!scripted(f)||live(f))return;e.preventDefault();tell();}document.addEventListener("beforeinput",hold,true);document.addEventListener("mousedown",function(e){var t=e.target;if(t&&t.closest&&t.closest("select,input[type=date],input[type=time],input[type=datetime-local],input[type=month],input[type=week]"))hold(e);},true);document.addEventListener("keydown",function(e){var t=e.target;if(t&&t.matches&&t.matches("select,input[type=checkbox],input[type=radio],input[type=date],input[type=time],input[type=datetime-local],input[type=month],input[type=week]")&&e.key!=="Tab")hold(e);},true);document.addEventListener("click",function(e){var t=e.target;if(t&&t.matches&&t.matches("input[type=checkbox],input[type=radio]"))hold(e);},true);})();`;
 
 export default async function RootLayout({
   children,
@@ -83,6 +91,14 @@ export default async function RootLayout({
             anonymous feedback beside its participation's id (round 5, R5UB-1). Until they are live, such a
             submit is held; forms that post (server actions) and declared GET forms are untouched. */}
         <script id="pts-hold-early-submit" dangerouslySetInnerHTML={{ __html: PRE_HYDRATION_GUARD }} />
+        {/* With scripts switched off a script-handled form could only go as the browser's GET, every field in the
+            address (round 7, R7UL-6) — such forms are not shown then, and the page says why */}
+        <noscript>
+          <style>{"form:not([action]):not([method]),form[data-live-only]{display:none!important}"}</style>
+          <div role="alert" style={{ background: "#fbeeee", color: "#8f2f2f", padding: "8px 16px", textAlign: "center", fontSize: 14 }}>
+            {lang === "bg" ? "Порталът изисква включен JavaScript — без него повечето формуляри не се показват и не работят." : "The portal needs JavaScript switched on — without it most forms are not shown and do not work."}
+          </div>
+        </noscript>
         <Hydrated />
         <LangProvider initial={lang}>
           {isTestEnvironment() && (

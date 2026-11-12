@@ -39,8 +39,8 @@ export default async function LabProfilePage({ searchParams }: { searchParams: P
         {err && (
           <div role="alert" data-profile-error={err} className="card" style={{ padding: 14, marginBottom: 14, background: "#fbeeee", color: "#8f2f2f" }}>
             {err === "eik"
-              ? "Не е записано: ЕИК не е валиден (9 или 13 цифри, контролна цифра). · Not saved: the ЕИК is not valid (9 or 13 digits, check digit)."
-              : "Не е записано: телефонът не се разчита (цифри, интервали, + ( ) - . /). · Not saved: the phone does not read (digits, spaces, + ( ) - . /)."}
+              ? "ЕИК не е записан — не е валиден (9 или 13 цифри, с вярна контролна цифра); останалите промени са записани. · The ЕИК was not saved — it is not valid (9 or 13 digits, with a right check digit); the other changes were saved."
+              : "Телефонът не е записан — не се разчита (цифри, интервали, + ( ) - . /); останалите промени са записани. · The phone was not saved — it does not read (digits, spaces, + ( ) - . /); the other changes were saved."}
           </div>
         )}
         <form action={updateLabProfileAction} className="card" style={{ padding: 24 }}>
@@ -53,7 +53,7 @@ export default async function LabProfilePage({ searchParams }: { searchParams: P
           {field("contactPerson", tr("lab.field.contactPerson"), lab.contactPerson)}
           {field("phone", tr("lab.field.phone"), lab.phone, { pattern: "[+\\(\\)0-9 .\\-\\/]{5,40}(\\s*([Вв][Ъъ][Тт][Рр]|[Ee][Xx][Tt]|[Дд][Оо][Пп])\\.?\\s*[0-9]{1,6})?\\s*", title: "Телефон: цифри, интервали, + ( ) - . / · Phone: digits, spaces, + ( ) - . /" })}
           {field("registeredAddress", tr("lab.field.registeredAddress"), lab.registeredAddress)}
-          {field("eik", "ЕИК", lab.eik, { pattern: "\\s*(?:(?:[ЕеEe][ИиIi][КкKk]|[Uu][Ii][Cc]|[Бб][Уу][Лл][Сс][Тт][Аа][Тт])\\s*[:№]?\\s*)?(?:(?:[Bb][Gg][\\s\\-]*)?[0-9][0-9 \\-]{7,20}[0-9]|(?![Bb][Gg][\\s\\-]*[0-9 \\-]*\\s*$)(?=[A-Za-z0-9 .\\-\\/]*[A-Za-z])[A-Za-z0-9 .\\-\\/]{4,30})\\s*", title: "ЕИК: 9 или 13 цифри (или регистрационният номер в чужбина) · ЕИК: 9 or 13 digits (or the registration number abroad)" })}
+          {field("eik", "ЕИК", lab.eik, { pattern: "\\s*(?:(?:[ЕеEe][ИиIi][КкKk]|[Uu][Ii][Cc]|[Бб][Уу][Лл][Сс][Тт][Аа][Тт])(?:\\s*\\/\\s*(?:[ЕеEe][ИиIi][КкKk]|[Uu][Ii][Cc]|[Бб][Уу][Лл][Сс][Тт][Аа][Тт]))?\\s*(?:[:№\\-–—]|[Nn][Oo]\\.?|[Nn][Rr]\\.?)?\\s*)?(?:(?:[Bb][Gg][\\s\\-]*)?(?:(?:[0-9][\\s\\-]*){12}[0-9]|(?:[0-9][\\s\\-]*){8}[0-9])|(?![Bb][Gg][\\s\\-]*[0-9\\s\\-]*$)(?![Ee][Ii][Kk](?![A-Za-z])|[Uu][Ii][Cc](?![A-Za-z]))(?=[A-Za-z0-9 .\\-\\/]*[A-Za-z])[A-Za-z0-9 .\\-\\/]{4,30})(?:\\s*\\(\\s*(?:[ЕеEe][ИиIi][КкKk]|[Uu][Ii][Cc]|[Бб][Уу][Лл][Сс][Тт][Аа][Тт])\\s*\\))?\\s*", title: "ЕИК: 9 или 13 цифри (или регистрационният номер в чужбина) · ЕИК: 9 or 13 digits (or the registration number abroad)" })}
           {field("vat", "ДДС №", lab.vat)}
           {field("mol", "МОЛ", lab.mol)}
           <div style={{ display: "flex", gap: 10, marginTop: 8 }}>

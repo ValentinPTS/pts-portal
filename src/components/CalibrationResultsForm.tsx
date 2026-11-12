@@ -76,7 +76,7 @@ export default function CalibrationResultsForm({ schemeId, participantId, lang, 
   );
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); void save(); }} data-results-form={participantId} data-results-kind="C" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <form onSubmit={(e) => { e.preventDefault(); void save(); }} data-results-form={participantId} data-results-kind="C" data-live-only style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {closedNow && <p role="alert" data-results-closed-now style={{ margin: 0, padding: "10px 14px", borderRadius: 10, background: "#fbeee6", color: "#7a2e0e", fontWeight: 700 }}>{lang === "bg" ? "Срокът изтече — формулярът вече не приема промени и подаване. Презаредете страницата, за да видите записаното." : "The deadline has passed — the form takes no more changes or submission. Reload the page to see what is on record."}</p>}
       <fieldset className="card" data-general style={{ padding: "12px 14px", margin: 0, border: "1px solid var(--line)" }}>
         <legend style={{ fontWeight: 800, fontSize: 14, padding: "0 4px" }}>{L("Обща информация", "General info")}</legend>

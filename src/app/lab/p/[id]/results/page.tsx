@@ -18,6 +18,7 @@ import { listSubmissionsFor, listCorrectionsFor } from "@/lib/submissions";
 import { usedValues, FIELD_LABEL } from "@/lib/corrections-model";
 import { lockInForce, lockEntryOf, lockWord } from "@/lib/submission-lock-model";
 import { schemeNowMs, sofiaToday } from "@/lib/clock";
+import FreshOnReturn from "@/components/FreshOnReturn";
 import { fmtMoment, fmtSchemeDate } from "@/lib/scheme-dates";
 
 export const dynamic = "force-dynamic";
@@ -160,6 +161,8 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
 
   return (
     <div style={{ minHeight: "100dvh", background: "var(--bg)" }}>
+      {/* Back/Forward to a copy rendered before the deadline: asked again (round 7, R7UL-4) */}
+      <FreshOnReturn renderedAt={new Date().toISOString()} />
       {viewer.kind === "entity" && viewer.user ? (
         <ParticipantNav lang={lang} active="overview" name={viewer.user.name} role={viewer.user.role} persona={viewer.user.persona} />
       ) : (
