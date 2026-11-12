@@ -75,7 +75,7 @@ t("UL-2: what was typed and not sent is saved as the results form goes", /if \(p
 t("UL-3: the receipt's day never before its dispatch", /min=\{awaitingDay\}/.test(src("app/lab/p/[id]/page.tsx")));
 t("UL-4: a file keeps its own name (filename*)", /filename\*=UTF-8''\$\{utf8Name\(name\)\}/.test(src("lib/scheme-uploads.ts")));
 t("UL-5: the participant's tabs wrap on a phone", /data-participant-nav/.test(src("components/ParticipantNav.tsx")) && /flexWrap: "wrap", minWidth: 0/.test(src("components/ParticipantNav.tsx")));
-t("UL-6: the laboratory account's ЕИК and phone checked", /if \(!eik\.ok\) redirect\("\/lab\/profile\?err=eik"\);/.test(actions) && /redirect\("\/lab\/profile\?err=phone"\)/.test(actions) && /data-profile-error/.test(src("app/lab/profile/page.tsx")));
+t("UL-6: the laboratory account's ЕИК and phone checked (round 8: both said when both refused)", /if \(!eik\.ok \|\| !phoneOk\) redirect\(`\/lab\/profile\?err=\$\{!eik\.ok && !phoneOk \? "eik-phone" : !eik\.ok \? "eik" : "phone"\}`\);/.test(actions) && /data-profile-error/.test(src("app/lab/profile/page.tsx")) && /err === "eik-phone"/.test(src("app/lab/profile/page.tsx")));
 t("UL-7: a submission's hour with EET/EEST, never the browser's zone words", ["components/SubmitPanel.tsx", "components/ResultsRecord.tsx"].every((f) => /sofiaZoneAt\(Date\.parse\(iso\)\)/.test(src(f)) && !/timeZoneName: "short"/.test(src(f))));
 t("UL Q5: a scheme every laboratory applied to — «Заявено» on the list", /data-apply-done-already/.test(src("app/lab/apply/page.tsx")));
 
@@ -234,7 +234,7 @@ t("a saved certificate or list body never reaches a role without names.view thro
   t("R6S-1: a script-handled form never goes out as the browser's GET — before and after <html> says hydrated", before && after && liveOne && alerts === 1);
   t("R6S-1: a plain POST form before the scripts: the first press goes, the second is held", !p1 && p2);
   // R7UL-2: nothing typed, chosen or ticked in a form whose script is not live — held (React would never take it)
-  const field = (f: unknown, tag = "INPUT", type = "text") => ({ tagName: tag, closest: (sel: string) => (sel === "form" ? f : (tag === "SELECT" && /select/.test(sel)) || (tag === "INPUT" && sel.includes(`type=${type}`)) ? {} : null), matches: (sel: string) => (tag === "SELECT" && /select/.test(sel)) || (tag === "INPUT" && sel.includes(`type=${type}`)) });
+  const field = (f: { hasAttribute: (a: string) => boolean }, tag = "INPUT", type = "text") => ({ tagName: tag, closest: (sel: string) => (sel === "form" ? f : sel === "[data-live-only]" ? (f.hasAttribute("data-live-only") ? f : null) : (tag === "SELECT" && /select/.test(sel)) || (tag === "INPUT" && sel.includes(`type=${type}`)) ? {} : null), matches: (sel: string) => (tag === "SELECT" && /select/.test(sel)) || (tag === "INPUT" && sel.includes(`type=${type}`)) });
   const fire = (type: string, target: unknown, key?: string) => { let prevented = false; listeners[type]({ target, key, preventDefault: () => { prevented = true; } }); return prevented; };
   const idle = form({ "data-live-only": "" }), ready = form({ "data-live-only": "" }, true), liveOnly = form({ action: "", method: "post", "data-live-only": "" }), native = form({ action: "/x", method: "post" }), plain = form({});
   t("R7UL-2: typing in a «data-live-only» form held until it is live; then taken", fire("beforeinput", field(idle)) && !fire("beforeinput", field(ready)) && fire("beforeinput", field(liveOnly)));
@@ -281,7 +281,7 @@ t("a saved certificate or list body never reaches a role without names.view thro
   const we = src("components/WordEditor.tsx");
   // R6UP-1 / R6UP-2: every edit counted; one save at a time; «saved» only when the latest edit went
   t("R6UP-1: an edit made while a save is on its way is saved too, never shown as «Всичко е запазено» before",
-    /const setSaved = \(v: boolean\) => \{ if \(!v\) editGen\.current\+\+; savedRef\.current = v; setSavedState\(v\); \};/.test(we)
+    /const setSaved = \(v: boolean\) => \{ if \(!v\) \{ editGen\.current\+\+; scheduleAutosave\(\); \} savedRef\.current = v; setSavedState\(v\); \};/.test(we)
     && /function onBodyInput\(\) \{\n    editGen\.current\+\+;/.test(we)
     && /if \(editGen\.current === gen\) \{ savedRef\.current = true; setSavedState\(true\); \}/.test(we)
     && /return save\(\)\.then\(\(ok\) => \(ok && savedGen\.current < target \? saveAll\(target\) : ok\)\);/.test(we)
@@ -297,7 +297,7 @@ t("a saved certificate or list body never reaches a role without names.view thro
   const typed = `<h2>11.</h2>${gen.replace(/<\/div>\s*$/, '<p>Добавено изречение.</p><img src="/brand/logo.png"></div>').replace("✉ office@ptsbg.eu", "✉ office@ptsbg.eu И още.")}`;
   const printed = refreshInstruction(typed, sT, "bg");
   t("R6UP-4: words and a picture added in the contacts survive the print and the edition", printed.includes("Добавено изречение.") && printed.includes('src="/brand/logo.png"') && printed.includes("И още.") && (printed.match(/data-team-contacts/g) ?? []).length === 1 && refreshInstruction(`<h2>11.</h2>${gen}`, sT, "bg").replace(/\s+/g, "") .includes(gen.replace(/\s+/g, "")));
-  t("R6UP-4: the editor keeps the contacts out of reach and a line after them; never saves the lock", /c\.setAttribute\("contenteditable", "false"\);/.test(we) && /clone\.querySelectorAll\("\[data-team-contacts\]"\)\.forEach\(\(n\) => \{ n\.removeAttribute\("contenteditable"\); n\.removeAttribute\("title"\); \}\);/.test(we));
+  t("R6UP-4: the editor keeps the contacts out of reach and a line after them; never saves the lock", /c\.setAttribute\("contenteditable", "false"\);/.test(we) && /clone\.querySelectorAll\("\[data-team-contacts\], div\.team"\)\.forEach\(\(n\) => \{ n\.removeAttribute\("contenteditable"\); n\.removeAttribute\("title"\); \}\);/.test(we));
   // R6UP-5 / R6UP-6: a cited number confirmed; the card's own (a replay's source) never asked
   t("R6UP-5: another scheme's number refused unless confirmed as cited — and the confirmation journalled",
     /const numbers = await numbersCheck\(scheme, now, note\?\.numbersOk\);/.test(actions) && (actions.match(/const numbers = await numbersCheck\(/g) ?? []).length === 2
@@ -351,14 +351,14 @@ t("a saved certificate or list body never reaches a role without names.view thro
   t("R7S-3: another site never frames a portal page", /if \(\/\^\(\?:iframe\|frame\|fencedframe\)\$\/\.test\(\(request\.headers\.get\("sec-fetch-dest"\)/.test(src("proxy.ts")));
   // Q3: the e-mail's link is offered after sign-in, never opened by itself, never lost
   const openPage = src("app/open/page.tsx");
-  t("Q3: after sign-in such a link is offered on «/open»; only a portal path, only such a page; no prefetch", safeDest("internal", "/registrations") === "/open?to=%2Fregistrations" && /const to = safeNext\(/.test(openPage) && /ACTS_WHEN_OPENED\.test\(to\.split/.test(openPage) && /<a href=\{offered\} className="btn btn-primary" data-open-continue>/.test(openPage) && !/<Link href=\{offered\}/.test(openPage));
+  t("Q3: after sign-in such a link is offered on «/open»; only a portal path, only such a page; no prefetch", safeDest("internal", "/registrations") === "/open?to=%2Fregistrations" && /const to = safeNext\(/.test(openPage) && /const path = to\.split\(\/\[\?#\]\/\)\[0\];/.test(openPage) && /path !== "\/open" && ACTS_WHEN_OPENED\.test\(path\)/.test(openPage) && /<a href=\{offered\} className="btn btn-primary" data-open-continue>/.test(openPage) && !/<Link href=\{offered\}/.test(openPage));
   // R7S-4: the document body contains whatever is in it
   const docCss = src("lib/doc-css.ts");
-  t("R7S-4 / RV7-2: links stay in the flow on screen; the body is NOT contained (a stamp below the text, a wide table stay visible); print untouched", !/contain:paint/.test(docCss) && /\.pts-docbody \.doc-side\{display:none!important;\}/.test(docCss) && /@media screen\{\s*\.pts-docbody a,\.pts-docbody a \*\{position:static!important;transform:none!important;translate:none!important;scale:none!important;float:none!important;margin:0!important;zoom:normal!important;max-width:100%!important;\}\s*\.pts-docbody a img\{height:auto!important;\}\s*\}/.test(docCss));
+  t("R7S-4 / RV7-2: links stay in the flow on screen; the body is NOT contained (a stamp below the text, a wide table stay visible); print untouched", !/contain:paint/.test(docCss) && /\.pts-docbody \.doc-side\{display:none!important;\}/.test(docCss) && /@media screen\{\s*\.pts-docbody a,\.pts-docbody a \*\{position:static!important;transform:none!important;translate:none!important;scale:none!important;float:none!important;margin:0!important;padding:0!important;border-width:0!important;zoom:normal!important;max-width:100%!important;\}/.test(docCss) && /\.pts-docbody a img\.free\{position:absolute!important;max-width:none!important;pointer-events:none!important;\}/.test(docCss) && /\.pts-docbody :has\(a\)\{position:static!important;transform:none!important;/.test(docCss));
   // R7S-5: the waybill mask — more phrasings; what a codes-only reader needs kept
   const leaks7 = ["получено с куриер 62\u00A0555\u00A0444\u00A0333", "изпратено с куриер 62.555.444.333", "изпратено с куриер, номер 123456789", "Европът 1234567", "Box Now 98765432", "товарителница: 62–555–444–333", "колет 62555444333"].map((x) => String(scrubIdentity(x)));
   t("R7S-5: the waybill masked however it is written", leaks7.every((x) => x.endsWith("•••") && !/\d{3}/.test(x)), leaks7.join(" | "));
-  const keep7 = ["дата 2026-11-12 10:30", "EN 1097-2 1097-3 и EN 933-1", "ISO/IEC 17043:2023, т. 7.2.1", "сума 1 234 567 890,00 лв.", "резултат 0,1234567890123 g/cm³", "кодове 26111716 26111750", "PTS 26/11-T-17 26111716", "колет 26111716", "12.11.2026 10:30", "x = 10.123456789", "0.1234567890123"];
+  const keep7 = ["дата 2026-11-12 10:30", "EN 1097-2 1097-3 и EN 933-1", "ISO/IEC 17043:2023, т. 7.2.1", "сума 1 234 567 890,00 лв.", "резултат 0,123456789 g/cm³", "кодове 26111716 26111750", "PTS 26/11-T-17 26111716", "колет 26111716", "12.11.2026 10:30", "x = 10.123456789", "0.123456789", "стойности 12.5 13.1 12.9 13.0", "Пратка 26111716 е получена"];
   const kept7 = keep7.filter((x) => scrubIdentity(x) !== x);
   t("R7S-5: dates, standards, amounts, decimals and participation codes kept", kept7.length === 0, kept7.map((x) => `${x} → ${scrubIdentity(x)}`).join(" | "));
   // R7S-6: the confirmation journalled once the act is done, worded for it
@@ -380,7 +380,7 @@ t("a saved certificate or list body never reaches a role without names.view thro
   const prof = src("app/lab/profile/page.tsx");
   const eikRe = new RegExp(`^(?:${JSON.parse([...prof.matchAll(/pattern: ("(?:[^"\\]|\\.)*")/g)][1][1])})$`, "v");
   t("R7UL-5: the ЕИК box takes what the server takes and refuses what it refuses", ["ЕИК/БУЛСТАТ 166858335", "ЕИК 166858335 (БУЛСТАТ)", "ЕИК - 166858335", "EIK No. 166858335", "ЕИК\u00A0166\u00A0858\u00A0335", "HRB 12345"].every((v) => eikRe.test(v)) && ["123456789012", "EIK 12345", "EIK1", "UIC-12"].every((v) => !eikRe.test(v)));
-  t("R7UL-5: a refused ЕИК or phone keeps its stored value — the rest is saved", /eik: eik\.ok \? eik\.normalized : ls\.lab\.eik,/.test(actions) && /phone: phoneOk \? phone : ls\.lab\.phone,/.test(actions) && actions.indexOf("revalidatePath(\"/lab\");\n  if (!eik.ok) redirect") > 0);
+  t("R7UL-5: a refused ЕИК or phone keeps its stored value — the rest is saved", /eik: eik\.ok \? eik\.normalized : ls\.lab\.eik,/.test(actions) && /phone: phoneOk \? phone : ls\.lab\.phone,/.test(actions) && actions.indexOf("revalidatePath(\"/lab\");\n  if (!eik.ok || !phoneOk) redirect") > 0);
   t("R7UL-7: a simulation takes no wish and has no lab apply page", /if \(!s \|\| !isStarted\(s\) \|\| isSimulation\(s\.number\)\) return WISH_REFUSAL\("not-started"\);/.test(actions) && /isSimulation\(scheme\.number\) \? "not-open"/.test(src("app/lab/apply/[id]/page.tsx")));
   // R7UP-2: the contacts put back on print when deleted; R7UP-3: block edges are not a number's digits
   const { refreshInstruction: ri7 } = await import("../src/lib/docs/instruction-common.ts");
@@ -424,6 +424,76 @@ t("a saved certificate or list body never reaches a role without names.view thro
   t("R7UP-4: the print and the editor both refresh the team (and the Instruction's contacts)", /const teamed = refreshTeam\(key === "instruction" \? refreshInstruction\(gated, s, lang\) : gated, s, lang\);/.test(src("lib/doc-template.ts")) && /refreshTeam\(doc === "instruction" \? refreshInstruction\(body, s, l\) : body, s, l\)/.test(src("app/schemes/[id]/build/[doc]/page.tsx")));
   const gen8 = icx({ type: "T", team: [] } as never, "bg");
   t("R7UP-6 (verification): bare text and a line's end inside the contacts come out on opening", aic(gen8.replace(/<\/div>\s*$/, "Голо изречение.</div>")).includes("Голо изречение.") && aic(gen8.replace("✉ office@ptsbg.eu", "✉ office@ptsbg.eu Края.")).includes("Края."));
+}
+
+// ── round 8 (2026-11-12) ────────────────────────────────────────────────────────────────────────
+{
+  // R8S-1: the certificate's signatory by role; an empty team never breaks it; the team keeps its manager
+  const { getDoc: gd8 } = await import("../src/lib/documents.ts");
+  const { pavingBlocks: pb8 } = await import("../src/lib/seed-paving-blocks.ts");
+  const cert = gd8("certificate")!;
+  const o8 = { participant: { code: "26111716", labName: "Лаб", certNo: "C-1", certDate: "2026-11-12" } } as never;
+  let emptyOk = false; try { emptyOk = /за попълване/.test(cert.render!({ ...pb8, team: [] } as never, "bg", o8)); } catch { emptyOk = false; }
+  const rev8 = [...pb8.team].reverse();
+  const signed = cert.render!({ ...pb8, team: rev8 } as never, "bg", o8);
+  t("R8S-1: an empty team never breaks the certificate (a mark to fill)", emptyOk);
+  t("R8S-1: the certificate is signed by the scheme manager by role, whatever the order", signed.includes(pb8.team.find((m) => /Ръководител на схемата/.test(m.roleBg))!.name) && !signed.includes(rev8[0].name));
+  t("R8S-1: certificate, its calibration twin, the Order and the statistical design: never «team[0]»", ["certificate", "certificate-c", "order", "stat-project"].every((f) => !/s\.team\[0\]/.test(src(`lib/docs/${f}.ts`)) && /teamMember\(s, "manager"\)/.test(src(`lib/docs/${f}.ts`))));
+  t("R8S-1: a team without its scheme manager is refused — by the server and by the form before it is sent", /if \(teamNow && !findTeamMember\(teamNow, "manager"\)\) redirect\(`\/schemes\/\$\{id\}\/edit\?err=team-manager`\);/.test(actions) && /if \(!findTeamMember\(rows, "manager"\)\) \{ e\.preventDefault\(\);/.test(src("components/SchemeEditor.tsx")) && /err === "team-manager"/.test(src("app/schemes/[id]/edit/page.tsx")));
+  // R8S-2: whatever holds a link is held too; a large negative margin dropped, a Word table's small one kept
+  const { sanitizeDocHtml: san8 } = await import("../src/lib/sanitize-html.ts");
+  t("R8S-2: a margin pulling far back is dropped; «-5.4pt» from Word stays", !/margin/.test(san8('<div style="margin-top:-2000px">x</div>')) && !/margin/.test(san8('<div style="margin:-30em 0 0">x</div>')) && /margin-left:-5\.4pt/.test(san8('<table style="margin-left:-5.4pt"><tr><td>x</td></tr></table>')));
+  t("R8S-2: on screen a positioned or transformed box around a link is held", /\.pts-docbody :has\(a\)\{position:static!important;transform:none!important;translate:none!important;scale:none!important;rotate:none!important;zoom:normal!important;\}/.test(src("lib/doc-css.ts")));
+  // R8S-3: the waybill mask
+  const { scrubIdentity: sc8 } = await import("../src/lib/redact.ts");
+  t("R8S-3: two waybills joined by a comma are masked; nothing of a waybill beside a decimal shows", !/\d{6}/.test(String(sc8("62555444333,62555444334"))) && !/\d{5}/.test(String(sc8("0.5 62555444333"))));
+  // RV8-1: a short decimal never sits between a courier's word and its reference
+  const rv81 = ["товарителница 62.555 444 333", "товарителница 62.555 444.333", "AWB 62,555 444 333", "Speedy 1234,56", "товарителница 6255.544 4333", "тов. 1.234 5678 901", "62.555 444 333"].filter((x) => /\d{3}/.test(String(sc8(x))));
+  t("RV8-1: waybills written with a decimal point or comma are masked", rv81.length === 0, rv81.map((x) => `${x} → ${sc8(x)}`).join(" | "));
+  // R8S-4: /open asks first from another site, never offers itself
+  const { ACTS_WHEN_OPENED: acts8 } = await import("../src/lib/acts-when-opened.ts");
+  t("R8S-4: /open reached from another site asks first; it never offers itself", acts8.test("/open") && /path !== "\/open"/.test(src("app/open/page.tsx")));
+  // R8UP-1: the editor is never unmounted by «Страници»
+  const we9 = src("components/WordEditor.tsx");
+  t("R8UP-1: «⤢ Страници» hides the editor, never unmounts it (it came back empty and was saved empty)", /<div className="we-body" style=\{preview && pdfUrl \? \{ display: "none" \} : undefined\}>/.test(we9) && !/\{preview && pdfUrl \? \(/.test(we9));
+  t("R8UP-2: the plan's team is locked in the editor like the Instruction's contacts", /body\.querySelectorAll<HTMLElement>\("div\.team"\)/.test(we9) && /const locked = Array\.from\(body\.querySelectorAll\("\[data-team-contacts\], div\.team"\)\);/.test(we9));
+  t("R8UP-3: an organisation's user gets its own participation's certificate — its laboratory's name, opened as its own", /openLaboratories\(\{ actor: participantActor\(ps\.user\.id\), purpose: "lab\.own" \}, \{ entityId: ps\.entity\.id \}\)\)\.find\(\(l\) => l\.id === mine\.laboratoryId\)/.test(src("app/lab/doc/[scheme]/[doc]/route.ts")));
+  t("R8UP-5: «Заключи (попълване)» makes the editor read-only from the press, saves, then leaves", /if \(body\) body\.contentEditable = "false";\n    setBusy\("fill"\);\n    if \(!\(await saveAll\(\)\)\) \{ if \(body\) body\.contentEditable = "true"; setBusy\(""\); return; \}/.test(we9));
+  t("R8 verification: a save never deselects; a click that moved nothing is no edit", /const \{ nb, ne \} = snap \?\? \(\(\) => \{ const x = snapshot\(\); setBg\(x\.nb\); setEn\(x\.ne\); return x; \}\)\(\);/.test(we9) && /if \(dragMoved\.current\) setSaved\(false\);/.test(we9));
+  // RV8-2: no inline «!important» however spelled; a negative margin however spelled
+  const { sanitizeDocHtml: san9 } = await import("../src/lib/sanitize-html.ts");
+  t("RV8-2: «!important» never kept inline (any spelling); quoted «!» kept", !/important|!/.test(san9('<p style="color:red!/**/important;width:1px!\\69mportant">a</p>').replace(/<\/?p[^>]*>/g, (m) => (m.startsWith("<p ") ? m.replace(/style="[^"]*"/, (x) => x) : m)).match(/style="([^"]*)"/)?.[1] ?? "") && /'A!B'/.test(san9(`<p style="font-family:'A!B'">a</p>`)));
+  t("RV8-2: a negative margin as e-notation, calc(), var(), an unknown unit or -webkit- is dropped; Word's -42.55pt kept", ['margin-top:-5e3px', 'margin:calc(-1 * 5000px)', '--m:-5000px;margin-top:var(--m)', '-webkit-margin-before:-5000px', 'margin-top:-40lh'].every((c) => !/margin/.test(san9(`<div style="${c}">a</div>`))) && /margin-left:-42\.55pt/.test(san9('<table style="margin-left:-42.55pt"><tr><td>a</td></tr></table>')));
+  // RV8-4 / RV8-5: who signs
+  const { findTeamMember: ftm } = await import("../src/lib/team-roles.ts");
+  const mk = (bg: string, en: string, name = "x") => ({ roleBg: bg, roleEn: en, name });
+  t("RV8-4: never a technical, quality, laboratory or office manager, never a deputy, as the scheme manager", [mk("Технически ръководител", "Technical Manager"), mk("Ръководител по качеството", "Quality Manager"), mk("Ръководител на лабораторията", "Laboratory Manager"), mk("Офис мениджър", "Office Manager"), mk("Заместник-ръководител на схемата", "Deputy PT Scheme Manager")].every((m) => !ftm([m], "manager")) && ftm([mk("Заместник-ръководител на схемата", "Deputy PT Scheme Manager", "D"), mk("Ръководител на схемата за изпитване за пригодност", "PT Scheme Manager", "M")], "manager")?.name === "M");
+  t("RV8-4: the codes-and-results list's «Проверил» by the same rule", /const approver = findTeamMember\(s\.team \?\? \[\], "manager"\);/.test(src("lib/docs/results-coded.ts")));
+  t("RV8-5: once a certificate is released, the scheme manager's row is not changed", /redirect\(`\/schemes\/\$\{id\}\/edit\?err=team-signed`\)/.test(actions) && /err === "team-signed"/.test(src("app/schemes/[id]/edit/page.tsx")));
+  const { refreshTeam: rt9 } = await import("../src/lib/docs/instruction-common.ts");
+  t("R8 verification: the plan's team put back under «Персонал…» when a selection took it", /class="team"/.test(rt9(`<h2 class="sec"><span class="n">2.</span> Персонал, участващ в схемата за изпитване за пригодност</h2><div class="body"><p>x</p></div>`, { team: [mk("Ръководител на схемата", "PT Scheme Manager", "M")] } as never, "bg")));
+  t("R8UP-7: the empty editor's hint in the screen's language", /content:attr\(data-empty-hint\)/.test(we9) && /data-empty-hint=\{L\("Започнете да пишете/.test(we9));
+  // R8UL: the lab account's home upload sends once; early input held in any marked part of a page
+  t("R8UL-1: the lab account's home upload is sent once", /<OnceForm action=\{labUploadDocAction\}/.test(src("app/lab/page.tsx")) && !/<form action=\{labUploadDocAction\}/.test(src("app/lab/page.tsx")));
+  t("R8UL-2/4: a join refusal's reason and the feedback sheet hold early input", /data-join-decision=\{id\} data-live-only/.test(src("components/JoinDecision.tsx")) && /<form data-live-only onSubmit=/.test(src("components/FeedbackForm.tsx")) && /t\.closest\("\[data-live-only\]"\)/.test(src("app/layout.tsx")));
+}
+
+// ── round 8, the final check ────────────────────────────────────────────────────────────────────
+{
+  const { findTeamMember: f9 } = await import("../src/lib/team-roles.ts");
+  const m9 = (bg: string, en: string) => ({ roleBg: bg, roleEn: en, name: "x" });
+  t("R8 final: a combined role naming the scheme manager is accepted («…и технически експерт», «Customer Service», «Officer»)", [m9("Ръководител на схемата и технически експерт", "PT Scheme Manager and Technical Expert"), m9("Ръководител на схемата (обслужване)", "PT Scheme Manager (Customer Service)"), m9("Ръководител на схемата", "PT Scheme Manager, Officer"), m9("Ръководител на РТ схемата", ""), m9("", "PT scheme manager")].every((x) => !!f9([x], "manager")));
+  const { scrubIdentity: sc9 } = await import("../src/lib/redact.ts");
+  const leak9 = ["AWB 1234.567890", "Speedy 62555,444333", "Еконт 1051,234567", "товарителница 625554.443331", "товарителница 1.234567890", "waybill 625.5544 4333", "62555444333,5 62555444334"].filter((x) => /\d{4}/.test(String(sc9(x))));
+  t("R8 final: a courier reference with one decimal point or comma is masked; «…333,5» is no amount", leak9.length === 0, leak9.map((x) => `${x} → ${sc9(x)}`).join(" | "));
+  t("R8 final: an amount written in thousands and a long decimal fraction kept", sc9("сума 1 234 567 890,00 лв.") === "сума 1 234 567 890,00 лв." && sc9("x = 0,123456789") === "x = 0,123456789");
+  const { sanitizeDocHtml: san10 } = await import("../src/lib/sanitize-html.ts");
+  t("R8 final: «!important» hidden behind a comment holding a quote is cut too", !/important/.test(san10(`<a href="https://x.example"><img class="free" style="pointer-events:auto/*'*/!important"></a>`)) && !/important/.test(san10(`<p style='color:red/*"*/!important'>a</p>`)));
+  t("R8 final: a link and what is in it have no border on screen; an svg paints only inside its box", /border-width:0!important;/.test(src("lib/doc-css.ts")) && /\.pts-docbody svg\{overflow:hidden!important;\}/.test(src("lib/doc-css.ts")));
+  const { refreshTeam: rt10 } = await import("../src/lib/docs/instruction-common.ts");
+  const merged = `<h2 class="sec"><span class="n">2.</span> Персонал, участващ в схемата за изпитване за пригодност<span style="font-size: 13.5pt;">&nbsp;Информация за услуги, доставени от външни доставчици, свързани с тази схема</span></h2><div class="body"><p>x</p></div>`;
+  const back10 = rt10(merged, { team: [{ roleBg: "Ръководител на схемата", roleEn: "PT Scheme Manager", name: "M" }] } as never, "bg");
+  t("R8 final: the plan's team comes back under a heading with a span in it (a selection merged two headings) — once", (back10.match(/class="team"/g) ?? []).length === 1 && (rt10(back10, { team: [] } as never, "bg").match(/class="team"/g) ?? []).length === 1);
 }
 
 console.log(`security-sweep.test: ${pass} passed, ${fail} failed`);

@@ -38,7 +38,7 @@ export default function FeedbackForm({ participantId, given, lang, complaintsUrl
     <section className="card" data-feedback="open" style={{ padding: 14 }}>
       <b>{L("Обратна връзка (по желание)", "Feedback (optional)")}</b>
       <p className="text-sm" style={{ margin: "4px 0 10px", color: "var(--muted)" }}>{L("Анонимна е: не се пази кой и кога я е дал — PTS вижда отговорите на всички заедно. Дава се веднъж за участието.", "It is anonymous: who gave it and when are not kept — PTS sees everyone's answers together. Given once for the participation.")}</p>
-      <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); start(async () => { const r = await giveFeedbackAction(participantId, fd); if ("error" in r) { if (r.given) setDone(true); else setErr(r.error); } else { setErr(""); setDone(true); } }); }}>
+      <form data-live-only onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); start(async () => { const r = await giveFeedbackAction(participantId, fd); if ("error" in r) { if (r.given) setDone(true); else setErr(r.error); } else { setErr(""); setDone(true); } }); }}>
         <div>{QUESTION_TEXT.q1[lang]}</div>{scale("q1")}
         <div>{QUESTION_TEXT.q2[lang]}</div>{scale("q2")}
         <div>{QUESTION_TEXT.q3[lang]}</div>

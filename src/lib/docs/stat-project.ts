@@ -1,4 +1,5 @@
 import type { Scheme, Lang } from "../types";
+import { teamMember } from "./instruction-common";
 import { esc, pick, wrapDoc, cover, sec, footer } from "../doc-shell";
 
 const FORM = "F 7.2.2-1";
@@ -34,7 +35,7 @@ function nondiscrim(lang: Lang): string {
 
 function signature(s: Scheme, lang: Lang): string {
   const L = (en: string, bg: string) => esc(pick(lang, en, bg));
-  const mgr = s.team[0];
+  const mgr = teamMember(s, "manager"); // by role, never the first row (round 8, R8S-1)
   return `<div class="sig">
     <div class="col">${esc(s.orderDate ?? s.revisionDate)}<br>${L("Date", "Дата")}</div>
     <div class="col">${mgr ? esc(mgr.name) : "&nbsp;"}<br>${L("PT Scheme Manager", "Ръководител на схемата за изпитване за пригодност")}</div>

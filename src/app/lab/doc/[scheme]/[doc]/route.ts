@@ -3,7 +3,8 @@ import { getLabSession } from "@/lib/lab-auth";
 import { isStarted, listVisibleParticipations } from "@/lib/visibility";
 import { getScheme, updateSchemeWith } from "@/lib/store";
 import { logActivity, logAs } from "@/lib/activity";
-import { getParticipantSession, participationsOf } from "@/lib/participant-session";
+import { getParticipantSession, participationsOf, participantActor } from "@/lib/participant-session";
+import { openLaboratories } from "@/lib/laboratories";
 import { releaseFor, RELEASE_LEVEL_LABEL, type ReleaseViewer } from "@/lib/release-model";
 import { listParticipants } from "@/lib/participants";
 import { inFinalRound } from "@/lib/announcement-model";
@@ -53,9 +54,9 @@ async function serve(req: NextRequest, ctx: { params: Promise<{ scheme: string; 
 
   // its participations in THIS scheme — a started one (Реш. 147); the one asked for by ?p, else the first
   const asked = req.nextUrl.searchParams.get("p");
-  let ours: { id: string; code: string; labName?: string }[];
+  let ours: { id: string; code: string; labName?: string; laboratoryId?: string }[];
   if (ls) ours = (await listVisibleParticipations(ls.lab.id)).filter((p) => p.schemeId === schemeId).map((p) => ({ id: p.id, code: p.code, labName: p.labName }));
-  else ours = isStarted(scheme) ? (await participationsOf(ps!)).filter((p) => p.schemeId === schemeId).map((p) => ({ id: p.participantId, code: p.code })) : [];
+  else ours = isStarted(scheme) ? (await participationsOf(ps!)).filter((p) => p.schemeId === schemeId).map((p) => ({ id: p.participantId, code: p.code, laboratoryId: p.laboratoryId })) : [];
   const mine = ours.find((x) => x.id === asked) ?? ours[0];
   if (!mine) return { res: new Response("Forbidden", { status: 403 }) };
   // the release that reaches THIS participation (the one its page lists), and this user by name (5.4 review)
@@ -79,7 +80,8 @@ async function serve(req: NextRequest, ctx: { params: Promise<{ scheme: string; 
     : canLabFetchDoc(doc, {
       sent: scheme.sentToParticipants,
       reported: scheme.status === "report" || scheme.status === "closed",
-      hasCert: !!ls && !!labCertificate(scheme.certificates, mine.code, legacyIssued(scheme)), // a certificate: the laboratory account's (names, §7.4)
+      // a certificate: its own participation's — a laboratory account's, or (round 8, R8UP-3) its organisation's user's
+      hasCert: !!labCertificate(scheme.certificates, mine.code, legacyIssued(scheme)),
       // an issued R stays the official report whatever the uploads slot holds now (7.4 review)
       officialReport: !!scheme.uploads?.report || !!issueInForce(scheme.reportIssues),
     });
@@ -135,7 +137,9 @@ async function serve(req: NextRequest, ctx: { params: Promise<{ scheme: string; 
     if (!cert) return { res: new Response("Not available yet", { status: 403 }) };
     const langs = cert.released?.langs ?? (["bg", "en"] as const);
     const certLang = langs.includes(lang) ? lang : langs[0];
-    const opts: DocOptions = { participant: { code: mine.code, labName: mine.labName ?? "", certNo: cert.no, certDate: cert.date, content: cert.content?.text[certLang], scope: cert.content?.scope, fromR: cert.content?.fromR } };
+    // the laboratory's name: the account's own, or — for an organisation's user — its own laboratory's (lab.own, on record)
+    const labName = mine.labName ?? (ps && mine.laboratoryId ? (await openLaboratories({ actor: participantActor(ps.user.id), purpose: "lab.own" }, { entityId: ps.entity.id })).find((l) => l.id === mine.laboratoryId)?.name ?? "" : "");
+    const opts: DocOptions = { participant: { code: mine.code, labName, certNo: cert.no, certDate: cert.date, content: cert.content?.text[certLang], scope: cert.content?.scope, fromR: cert.content?.fromR } };
     return { res: html(stripBodyMarkers(withSkin(skin, () => def.render!(scheme, certLang, opts)))), log: { code: mine.code, actor, subject: `certificate:${mine.code}`, summary: "The laboratory's certificate opened" } };
   }
   return { res: new Response("Not found", { status: 404 }) };

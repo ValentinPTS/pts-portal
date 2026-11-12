@@ -1,4 +1,5 @@
 import Link from "next/link";
+import OnceForm from "@/components/OnceForm";
 import { labReport, isIlc } from "@/lib/report-issue-model";
 import { gateB } from "@/lib/gate-texts";
 import { isProvisional } from "@/lib/coding-model";
@@ -159,7 +160,7 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
               )}
               {up && <span style={{ fontSize: 11, color: "var(--muted)" }}>{(lang === "bg" ? "качен " : "uploaded ") + fmtPhaseDate(up.uploadedAt.slice(0, 10))}</span>}
               {open ? (
-                <form action={labUploadDocAction} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                <OnceForm action={labUploadDocAction} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                   <input type="hidden" name="schemeId" value={it.scheme.id} />
                   <input type="hidden" name="participantId" value={it.p.id} />
                   <input type="hidden" name="slot" value={slot} />
@@ -167,7 +168,7 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
                   <button type="submit" className="btn btn-sm" style={{ fontSize: 11.5, padding: "3px 9px", borderStyle: up ? "solid" : "dashed" }}>
                     ↑ {up ? (lang === "bg" ? "Замени файла" : "Replace file") : (lang === "bg" ? LAB_UPLOAD_SLOTS[slot].bg : LAB_UPLOAD_SLOTS[slot].en)}
                   </button>
-                </form>
+                </OnceForm>
               ) : (
                 <span style={{ fontSize: 11, color: "var(--muted)" }}>{lang === "bg" ? "заключен" : "locked"}</span>
               )}

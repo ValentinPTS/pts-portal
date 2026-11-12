@@ -76,23 +76,38 @@ const LONG_NUMBER = /(^|[^\p{N}])(\p{N}(?:[ \u00A0\u202F.\-–—]?\p{N}){9,})(?
 // standard's number («EN 1097-2 1097-3», «ISO/IEC 17043:2023») — held aside while the mask runs (R7S-5)
 // (bounded on both sides — «OPEN 625554443331» held «EN 62555» and let the rest through; a decimal with a dot
 // held whole — «10.123456789» was masked; round 7 review, RV7-4)
-const KEEP = /(?<![\p{N}])\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?(?![\p{N}])|(?<![\p{N}.])\d{1,2}\.\d{1,2}\.\d{4}(?:[ \u00A0]+\d{1,2}:\d{2})?(?![\p{N}])|(?<![\p{L}\p{N}])(?:EN|ISO|IEC|БДС|BDS|ASTM|DIN|ГОСТ)(?![\p{L}])(?:[\s/]+(?:EN|ISO|IEC)(?![\p{L}]))*[\s\u00A0]*\d{2,5}(?:-\d{1,2}){0,2}(?::\d{4})?(?![\p{N}\-])(?:[\s\u00A0]*[,;]?[\s\u00A0]+(?:и\s+)?\d{2,5}(?:-\d{1,2}){1,2}(?![\p{N}\-]))*|(?<![\p{N}.,])\p{N}{1,6}[.,]\p{N}{4,}(?![\p{N}.,])/gu;
-// …and, of a long run: an amount or a decimal («1 234 567 890,00 лв.», «0,1234567890123»), or participation
+const KEEP = /(?<![\p{N}])\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?(?![\p{N}])|(?<![\p{N}.])\d{1,2}\.\d{1,2}\.\d{4}(?:[ \u00A0]+\d{1,2}:\d{2})?(?![\p{N}])|(?<![\p{L}\p{N}])(?:EN|ISO|IEC|БДС|BDS|ASTM|DIN|ГОСТ)(?![\p{L}])(?:[\s/]+(?:EN|ISO|IEC)(?![\p{L}]))*[\s\u00A0]*\d{2,5}(?:-\d{1,2}){0,2}(?::\d{4})?(?![\p{N}\-])(?:[\s\u00A0]*[,;]?[\s\u00A0]+(?:и\s+)?\d{2,5}(?:-\d{1,2}){1,2}(?![\p{N}\-]))*/gu;
+// …and, against the long-run pass only, measurements: a run of short decimals with no digit group after it (round 8
+// review, RV8-1: held before the courier's word was read, «товарителница 62.555 444 333» went through whole)
+const SHORT_DECIMALS = /(?<![\p{N}.,])\p{N}{1,4}[.,]\p{N}{1,3}(?:[\s\u00A0]+\p{N}{1,4}[.,]\p{N}{1,3})*(?![\p{N}.,])(?![\s\u00A0]*\p{N})/gu;
+// …and a long decimal («0,123456789») the same way — after the courier word was read, never before it (round 8 final
+// check: «AWB 1234.567890» was held as a decimal and went through)
+const LONG_DECIMAL = /(?<![\p{N}.,])\p{N}{1,6}[.,]\p{N}{4,9}(?![\p{N}.,])/gu;
+// …and, of a long run: an amount («1 234 567 890,00 лв.» — a decimal's long fraction up to nine digits is held by
+// KEEP; a longer one reads as a number), or participation
 // codes side by side («26111716 26111750», «T-17 26111716» — eight digits each)
 function keepRun(before: string, run: string, after: string): boolean {
-  if (/\d[,.]$/.test(before) || /^[,.]\d/.test(after) || /^[\s\u00A0]*(?:лв|bgn|eur|€|евро)/iu.test(after)) return true;
-  // participation codes: eight digits each — or a scheme's number's last digits right before one («T-17 26111716»)
+  // (an amount by its cents «,00» or its currency — never a «,» before another long run: two waybills «…333,…334»
+  // read as a decimal and both went through — round 8, R8S-3)
+  // (…and written in thousands — «1 234 567 890» — «62555444333,5» is no amount, round 8 final check)
   const groups = run.split(/[^\p{N}]+/u).filter(Boolean);
+  const thousands = groups.length > 1 && groups[0].length <= 3 && groups.slice(1).every((g) => g.length === 3);
+  if (thousands && (/^[,.]\d{1,2}(?!\p{N})/u.test(after) || /^[\s\u00A0]*(?:лв|bgn|eur|€|евро)/iu.test(after))) return true;
+  // participation codes: eight digits each — or a scheme's number's last digits right before one («T-17 26111716»)
   if (groups.length > 1 && groups.every((g) => g.length === 8)) return true;
   return groups.length >= 2 && groups[0].length <= 3 && /[\p{L}]-$/u.test(before) && groups.slice(1).every((g) => g.length === 8);
 }
 function maskWaybills(v: string): string {
   const held: string[] = [];
-  const hold = v.replace(/[\uE000\uE001]/g, "").replace(KEEP, (m) => `\uE000${held.push(m) - 1}\uE001`);
+  const put = (m: string) => `\uE000${held.push(m) - 1}\uE001`;
+  const hold = v.replace(/[\uE000\uE001]/g, "").replace(KEEP, put);
   return hold
-    .replace(WAYBILL_TEXT, `$1$2 \u2022\u2022\u2022`)
+    // («пратка 26111716» — a participation's code after the word, kept as after «колет»; R8S-3)
+    .replace(WAYBILL_TEXT, (m: string, pre: string, word: string, mid: string) => (/^пратк/iu.test(word) && /^\p{N}{8}$/u.test(m.slice(pre.length + word.length + mid.length)) ? m : `${pre}${word} \u2022\u2022\u2022`))
     // (a lone eight-digit reference after such a word is a participation's code — «колет 26111716»)
     .replace(PARCEL_TEXT, (m: string, pre: string, word: string, mid: string) => (/^\p{N}{8}$/u.test(m.slice(pre.length + word.length + mid.length)) ? m : `${pre}${word} \u2022\u2022\u2022`))
+    .replace(LONG_DECIMAL, put)
+    .replace(SHORT_DECIMALS, put)
     .replace(LONG_NUMBER, (m: string, pre: string, run: string, at: number, all: string) => (keepRun(all.slice(0, at + pre.length), run, all.slice(at + m.length)) ? m : `${pre}\u2022\u2022\u2022`))
     .replace(/\uE000(\d+)\uE001/g, (_: string, i: string) => held[Number(i)] ?? "");
 }

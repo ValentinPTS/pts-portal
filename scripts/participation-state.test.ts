@@ -118,7 +118,7 @@ t("PTS: «изчаква избор на доставчик» only to who sees t
 t("…the carrier's name only to who sees names; a coded viewer reads «избран»", /reveal \? \(p\.courier \|\| /.test(parts) && /L\("избран", "chosen"\)/.test(parts));
 const labdoc = src("app/lab/labdoc/[scheme]/[slot]/route.ts");
 t("the proforma: to a laboratory's account and to every user of its entity — each its own participation, journalled by its account (review)", /const ps = ls \? null : await getParticipantSession\(\)/.test(labdoc) && /participationsOf\(ps!\)/.test(labdoc) && /logAs\(\{ kind: "lab", userId: log\.actor \}/.test(labdoc));
-t("…the certificate row only where the route serves it (a laboratory's account, until phase 7)", /const hasCert = viewer\.kind === "lab" && !!labCertificate/.test(page));
+t("…the certificate row where the route serves it — a laboratory's account and its organisation's user alike (round 8, R8UP-3)", /const hasCert = !!labCertificate\(s\.certificates, p\.code, legacyIssued\(s\)\);/.test(page) && /hasCert: !!labCertificate\(scheme\.certificates, mine\.code, legacyIssued\(scheme\)\),/.test(readFileSync(new URL("../src/app/lab/doc/[scheme]/[doc]/route.ts", import.meta.url), "utf8")));
 t("…the uploaded file opened by the participation it belongs to", /\/lab\/upload\/\$\{s\.id\}\/\$\{slot\}\?p=/.test(page) && /ours\.find\(\(p\) => p\.id === wanted\)/.test(src("app/lab/upload/[scheme]/[slot]/route.ts")));
 t("the chain's buttons: a user of the entity may press them too — its own participation, in the round, journalled as itself (review)", /const ps = ls \? null : await getParticipantSession\(\)[\s\S]{0,800}own\.has\(p\.id\) && inRound\(p\)/.test(act) && /await mine\.log\("chain\.received"/.test(act) && /await mine\.log\("chain\.handed_over"/.test(act));
 

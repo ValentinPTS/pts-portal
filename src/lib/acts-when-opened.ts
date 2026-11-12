@@ -6,4 +6,4 @@
 // organisations, the registrations, the invoices and a scheme's editions — every page that opens the
 // identity store for anything but a laboratory's own data (a test holds it so). Its own module: the
 // proxy imports it, and must not import next/headers.
-export const ACTS_WHEN_OPENED = /^\/(?:registrations(?:\/|$)|invoices(?:\/|$)|users\/(?:declarations|applications)\/|organizations(?:\/|$)|deliveries(?:\/|$)|lab\/(?:labdoc|doc|upload)\/|schemes\/[^/]+\/(?:export(?:\/|$)|audit-pack(?:\/|$)|fill\/|editions(?:\/|$)|released\/|uploaded\/|lab-uploads\/|lab-docs\/|analysis-import\/|participants(?:\/|$)|results(?:\/|$)|traceability(?:\/|$)|doc\/|build\/))/;
+export const ACTS_WHEN_OPENED = /^\/(?:open(?:\/|$)|registrations(?:\/|$)|invoices(?:\/|$)|users\/(?:declarations|applications)\/|organizations(?:\/|$)|deliveries(?:\/|$)|lab\/(?:labdoc|doc|upload)\/|schemes\/[^/]+\/(?:export(?:\/|$)|audit-pack(?:\/|$)|fill\/|editions(?:\/|$)|released\/|uploaded\/|lab-uploads\/|lab-docs\/|analysis-import\/|participants(?:\/|$)|results(?:\/|$)|traceability(?:\/|$)|doc\/|build\/))/;

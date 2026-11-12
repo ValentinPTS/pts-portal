@@ -180,7 +180,7 @@ const EDITOR_CSS = `
   .we-page table{border-collapse:collapse;width:100%;font-family:'Sofia Sans Condensed',sans-serif;font-size:10pt;margin:6px 0;}
   .we-page table td,.we-page table th{border:1px solid var(--line);padding:5px 8px;text-align:left;vertical-align:top;}
   .we-page table th{background:var(--green-soft);color:var(--green-dark);}
-  .we-docbody:empty:before{content:"${"Start typing, or insert an item from the panel →"}";color:var(--muted);}
+  .we-docbody:empty:before{content:attr(data-empty-hint);color:var(--muted);}
 
   /* page break: the gap spans the REAL inter-sheet region — the rest of the page,
      then the sheet's 18mm bottom margin (white), a neutral canyon seam, and the
@@ -442,12 +442,15 @@ export default function WordEditor({
   const editGen = useRef(0);
   const savedGen = useRef(0);
   // (the ref is set here too, not only by the effect: a keystroke in the frame before it ran was not counted)
-  const setSaved = (v: boolean) => { if (!v) editGen.current++; savedRef.current = v; setSavedState(v); };
+  // (an edit by the editor's own controls — a row deleted, a picture resized — arms the autosave too: only a
+  // keystroke did, round 8, R8UP-4)
+  const setSaved = (v: boolean) => { if (!v) { editGen.current++; scheduleAutosave(); } savedRef.current = v; setSavedState(v); };
   const busyRef = useRef(busy);
   useEffect(() => { lockRef.current = lockAspect; }, [lockAspect]);
   useEffect(() => { savedRef.current = saved; }, [saved]);
   useEffect(() => { busyRef.current = busy; }, [busy]);
   const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dragMoved = useRef(false);
   const drag = useRef<null | { mode: "resize" | "move"; handle: string; px: number; py: number; w: number; h: number; left: number; top: number; ratio: number }>(null);
 
   useEffect(() => {
@@ -473,7 +476,7 @@ export default function WordEditor({
     const el = ref.current; if (!el) return "";
     const clone = el.cloneNode(true) as HTMLElement;
     clone.querySelectorAll(".we-gap").forEach((n) => n.remove());
-    clone.querySelectorAll("[data-team-contacts]").forEach((n) => { n.removeAttribute("contenteditable"); n.removeAttribute("title"); });
+    clone.querySelectorAll("[data-team-contacts], div.team").forEach((n) => { n.removeAttribute("contenteditable"); n.removeAttribute("title"); });
     return clone.innerHTML;
   };
 
@@ -782,6 +785,13 @@ export default function WordEditor({
     }
     // The Instruction's contacts come from the scheme team on every print — typed into, they were lost
     // silently (round 6, R6UP-4): not editable here, said why, and always a line after them to write on
+    // …and the plan's team (round 8, R8UP-2: typed into, it was dropped on print — it is the scheme's team)
+    for (const t of Array.from(body.querySelectorAll<HTMLElement>("div.team"))) {
+      if (t.getAttribute("contenteditable") !== "false") {
+        t.setAttribute("contenteditable", "false");
+        t.title = L("Екипът се попълва от «Редактирай данните» → «Екип на схемата» — не се редактира тук.", "The team comes from «Edit data» → «Scheme team» — it is not edited here.");
+      }
+    }
     for (const c of Array.from(body.querySelectorAll<HTMLElement>("[data-team-contacts]"))) {
       if (c.getAttribute("contenteditable") !== "false") {
         // what an earlier save left inside it (before round 6 the block was editable) goes after it, where it
@@ -943,7 +953,7 @@ export default function WordEditor({
   function takesLocked(back: boolean): boolean {
     const body = ref.current, sel = window.getSelection();
     if (!body || !sel?.rangeCount) return false;
-    const locked = Array.from(body.querySelectorAll("[data-team-contacts]"));
+    const locked = Array.from(body.querySelectorAll("[data-team-contacts], div.team"));
     if (!locked.length) return false;
     const r = sel.getRangeAt(0);
     // the block beside the caret IS the contacts — or ends (Backspace) / begins (Delete) with them, nothing after
@@ -1474,6 +1484,7 @@ export default function WordEditor({
     const d = drag.current, img = imgSel;
     if (!d || !img) return;
     const dx = e.clientX - d.px, dy = e.clientY - d.py;
+    if (dx || dy) dragMoved.current = true;
     if (d.mode === "move") {
       img.style.left = roundMm(pxToMm(mmToPx(d.left) + dx)) + "mm";
       img.style.top = roundMm(pxToMm(mmToPx(d.top) + dy)) + "mm";
@@ -1501,7 +1512,9 @@ export default function WordEditor({
     drag.current = null;
     window.removeEventListener("pointermove", onDragMove);
     window.removeEventListener("pointerup", onDragEnd);
-    setSaved(false);
+    // a click that moved nothing is no edit (it made a version — round 8 verification)
+    if (dragMoved.current) setSaved(false);
+    dragMoved.current = false;
     refreshGuides();
   }
 
@@ -1642,8 +1655,10 @@ export default function WordEditor({
   async function saveOnceNow(snap?: { nb: string; ne: string }): Promise<boolean> {
     const gen = editGen.current;
     if (gen === savedGen.current) { if (!savedRef.current) { savedRef.current = true; setSavedState(true); } return true; }
-    // (a snapshot taken as the editor closed — its page is gone by now — R7UP-5)
-    const { nb, ne } = snap ?? fold();
+    // (a snapshot taken as the editor closed — its page is gone by now — R7UP-5). A save never deselects: the
+    // picture's or the dropdown's bar vanished 2.5 s after each change once those changes armed the autosave
+    // (round 8 verification of R8UP-4)
+    const { nb, ne } = snap ?? (() => { const x = snapshot(); setBg(x.nb); setEn(x.ne); return x; })();
     setBusy("save");
     try {
       const r = await saveDocHtmlAction(schemeId, docKey, { bg: nb, en: ne, rev: revRef.current });
@@ -1713,7 +1728,12 @@ export default function WordEditor({
   // Lock the document for filling: save the layout, then open the fields-only Fill
   // view (only the form controls stay editable there).
   async function lockToFill() {
-    if (!(await saveAll())) return;
+    // read-only from the press: the page then leaves by a full load, where no closing save runs — a word typed after
+    // the press was lost (round 8, R8UP-5; a second save only narrowed the window, round 8 verification)
+    const body = ref.current;
+    if (body) body.contentEditable = "false";
+    setBusy("fill");
+    if (!(await saveAll())) { if (body) body.contentEditable = "true"; setBusy(""); return; }
     window.location.href = `/schemes/${encodeURIComponent(schemeId)}/fill/${encodeURIComponent(docKey)}`;
   }
   // Inline page preview = the real PDF (true pages 1, 2 … with gaps, exactly as
@@ -2358,17 +2378,20 @@ export default function WordEditor({
       )}
       </div>
 
-      {preview && pdfUrl ? (
+      {/* the pages over the editor — the editor only hidden, never unmounted: it came back empty, and the next
+          keystroke saved that empty body over the document (round 8, R8UP-1) */}
+      {preview && pdfUrl && (
         <div className="we-preview">
           <iframe title={L("Преглед на страниците", "Page preview")} src={pdfUrl} />
         </div>
-      ) : (
-      <div className="we-body">
+      )}
+      <div className="we-body" style={preview && pdfUrl ? { display: "none" } : undefined}>
         <div className="we-col">
           <div ref={pageRef} className="we-page" onMouseDown={onEditorMouseDown} onDoubleClick={onEditorDoubleClick}>
             <div
               ref={ref}
               className="we-docbody"
+              data-empty-hint={L("Започнете да пишете или вмъкнете елемент от панела →", "Start typing, or insert an item from the panel →")}
               contentEditable
               suppressContentEditableWarning
               onInput={onBodyInput}
@@ -2488,7 +2511,6 @@ export default function WordEditor({
           </aside>
         )}
       </div>
-      )}
       <p className="text-xs mt-2" style={{ color: "var(--muted)" }}>
         {preview
           ? L("Това е точният PDF — страница 1, 2 … с реалните полета между тях. Натиснете „✎ Редактиране“, за да се върнете.",

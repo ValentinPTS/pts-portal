@@ -115,9 +115,9 @@ export default async function ParticipationPage({ params, searchParams }: { para
   // D7's sentence in the payment box: only while the report may still be awaited by it — on the final
   // list, the scheme held, the report not yet issued (or issued under 7.4 and not yet reached)
   const d7Line = inFinal && s.status !== "not_held" && (!reported ? true : repCard.state === "awaiting");
-  // the certificate is served to a laboratory's account (the document route); a user of the
-  // entity gets it with phase 7 — never a row whose link answers «no» (5.5 review)
-  const hasCert = viewer.kind === "lab" && !!labCertificate(s.certificates, p.code, legacyIssued(s));
+  // the released certificate — to a laboratory's account and to its organisation's user alike (round 8, R8UP-3: the
+  // user's never came, «with phase 7» left undone); never a row whose link answers «no» (5.5 review)
+  const hasCert = !!labCertificate(s.certificates, p.code, legacyIssued(s));
   // the proforma and, after the payment, the original invoice — each with its number (5.8; Реш. 35, 36)
   const invoice = s.labDocs?.[p.code]?.proforma;
   const original = s.labDocs?.[p.code]?.invoice;

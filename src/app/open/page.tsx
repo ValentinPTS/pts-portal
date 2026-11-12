@@ -12,7 +12,8 @@ export default async function OpenPage({ searchParams }: { searchParams: Promise
   const { lang } = await getServerT();
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const to = safeNext((await searchParams).to, "/");
-  const offered = to !== "/" && ACTS_WHEN_OPENED.test(to.split(/[?#]/)[0]) ? to : null;
+  const path = to.split(/[?#]/)[0];
+  const offered = to !== "/" && path !== "/open" && ACTS_WHEN_OPENED.test(path) ? to : null;
   return (
     <main style={{ maxWidth: 560, margin: "12vh auto", padding: "0 16px" }}>
       <h1 className="section-title" style={{ fontSize: 22, margin: "0 0 10px" }}>{L("Входът е успешен", "Signed in")}</h1>

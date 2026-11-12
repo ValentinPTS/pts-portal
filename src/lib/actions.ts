@@ -159,6 +159,7 @@ import { sanitizeDocHtml } from "./sanitize-html";
 import { SCHEME_DOC_BUCKET, SCHEME_DOC_EXT, MAX_SCHEME_DOC_BYTES, ensureSchemeDocsBucket, fitFileName } from "./scheme-uploads";
 import { isDocKey } from "./doc-stages";
 import type { UploadedDoc, CodedParticipant, TeamMember } from "./types";
+import { findTeamMember } from "./team-roles";
 import { logActivity } from "./activity";
 import { decideNotice, getNotice, markRead, readerKey, listForProvider, listForLab, listForParticipations, listForEntity, eraseEntityNotices } from "./notifications";
 import {
@@ -1737,8 +1738,7 @@ export async function updateLabProfileAction(formData: FormData) {
     mol: get("mol"),
   });
   revalidatePath("/lab");
-  if (!eik.ok) redirect("/lab/profile?err=eik");
-  if (!phoneOk) redirect("/lab/profile?err=phone");
+  if (!eik.ok || !phoneOk) redirect(`/lab/profile?err=${!eik.ok && !phoneOk ? "eik-phone" : !eik.ok ? "eik" : "phone"}`);
   redirect("/lab");
 }
 
@@ -3211,6 +3211,14 @@ export async function updateSchemeAction(formData: FormData) {
   const teamNow: TeamMember[] | null = teamCountRaw === null ? null : Array.from({ length: Math.min(12, Math.max(0, Number(teamCountRaw) || 0)) }, (_, i) => ({
     name: str(`team_${i}_name`, "").slice(0, 120), roleBg: str(`team_${i}_roleBg`, "").slice(0, 160), roleEn: str(`team_${i}_roleEn`, "").slice(0, 160),
   })).filter((m) => m.name); // (a name with no role yet is kept — dropped unsaid before, round 7 verification)
+  // …and a team without its scheme manager is refused: the manager signs the certificates and the Order (round 8, R8S-1)
+  if (teamNow && !findTeamMember(teamNow, "manager")) redirect(`/schemes/${id}/edit?err=team-manager`);
+  // …and once a certificate is released the manager's row stays as it signed it — the certificates are rendered
+  // fresh on each opening (round 8 review, RV8-5; as the number and the markers are locked by certificates)
+  if (teamNow && Object.values(existing.certificates ?? {}).some((c) => !!(c as { released?: unknown })?.released)) {
+    const was = findTeamMember(existing.team ?? [], "manager"), now = findTeamMember(teamNow, "manager");
+    if (JSON.stringify([was?.name, was?.roleBg, was?.roleEn]) !== JSON.stringify([now?.name, now?.roleBg, now?.roleEn])) redirect(`/schemes/${id}/edit?err=team-signed`);
+  }
   // row count posted by the SchemeEditor (variable-length lists). Bounded; null
   // when absent (an older form) → fall back to fixed-index mapping over existing.
   const cnt = (k: string): number | null => {

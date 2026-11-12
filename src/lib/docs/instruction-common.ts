@@ -10,19 +10,14 @@
 import type { Scheme, Lang } from "../types";
 import { esc, pick } from "../doc-css";
 import { fillMark, replaceBlocks } from "../fill-mark";
+import { findTeamMember } from "../team-roles";
 
 type Member = Scheme["team"][number];
 // the role by its own name first («Ръководител на схемата», «PT Scheme Manager»); the
 // looser word only when no one carries it — «Технически ръководител», «Quality
 // Manager» are not the scheme's manager (review)
-const ROLE: Record<"manager" | "technical", RegExp[]> = {
-  manager: [/ръководител на (рт )?схемата|scheme manager/i, /^(?!.*(технически|quality|data|deputy|заместник)).*(ръководител|manager)/i],
-  technical: [/технически експерт|technical expert/i],
-};
 export function teamMember(s: Pick<Scheme, "team">, which: "manager" | "technical"): Member | undefined {
-  const team = s.team ?? [];
-  for (const re of ROLE[which]) { const m = team.find((x) => re.test(x.roleBg) || re.test(x.roleEn)); if (m) return m; }
-  return undefined;
+  return findTeamMember(s.team ?? [], which);
 }
 
 const PHONE = { T: "0897 50 39 80", C: "00359 897 50 39 80" } as const;
@@ -44,6 +39,20 @@ export function instructionContacts(s: Pick<Scheme, "team" | "type">, lang: Lang
   </div>`;
 }
 
+/** Where to write after the first heading whose TEXT says `what` (tags inside it, a merged next heading — round 8
+ *  final check: a 120-character window missed «Персонал…» with a span in it): after the heading, and after the
+ *  section's «<div class="body">» opening when one follows. −1 when there is none. */
+function afterHeading(html: string, what: RegExp): number {
+  for (const m of html.matchAll(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/gi)) {
+    if (!what.test(m[1].replace(/<[^>]*>/g, "").replace(/&nbsp;|\u00A0/g, " "))) continue;
+    let at = (m.index ?? 0) + m[0].length;
+    const body = /^\s*<div class="body">/.exec(html.slice(at));
+    if (body) at += body[0].length;
+    return at;
+  }
+  return -1;
+}
+
 /** The scheme's team as a document shows it (the plan's §2, M1's team point) — escaped. */
 export function teamBlock(s: Pick<Scheme, "team">, lang: Lang): string {
   return `<div class="team">${(s.team ?? []).map((m) => `<div class="role"><span class="rl">${esc(pick(lang, m.roleEn, m.roleBg))}</span><span class="nm">${esc(m.name)}</span></div>`).join("")}</div>`;
@@ -52,7 +61,12 @@ export function teamBlock(s: Pick<Scheme, "team">, lang: Lang): string {
  *  kept the team it was started with; changing the team in «Редактирай данните» changed only the Instruction).
  *  Anything a person added inside the block (not a person's row) is kept after it. */
 export function refreshTeam(html: string, s: Pick<Scheme, "team">, lang: Lang): string {
-  if (!html || !/<div\b[^>]*\bclass="team"/.test(html)) return html;
+  if (!html) return html;
+  // gone (a selection typed over it): put back under the plan's «Персонал, участващ в схемата» (round 8 verification)
+  if (!/<div\b[^>]*\bclass="team"/.test(html)) {
+    const at = afterHeading(html, /Персонал, участващ в схемата|Personnel involved in the scheme/i);
+    return at < 0 ? html : html.slice(0, at) + teamBlock(s, lang) + html.slice(at);
+  }
   return replaceBlocks(html, /<div\b[^>]*\bclass="team"[^>]*>/, "div", (old) => {
     const inner = old.replace(/^<div\b[^>]*>/, "").replace(/<\/div>\s*$/, "");
     const rest = replaceBlocks(inner, /<div\b[^>]*\bclass="role"[^>]*>/, "div", () => "").trim();
@@ -99,8 +113,8 @@ export function refreshInstruction(html: string, s: Pick<Scheme, "team" | "type"
   let out = replaceBlocks(html, /<div\b[^>]*\bclass="contacts"[^>]*>/, "div", (old) => instructionContacts(s, lang) + addedInContacts(old));
   // …and put back when it is gone (a Backspace took it whole — round 7, R7UP-2): under «Контакти», or at the end
   if (!/<div\b[^>]*\bclass="contacts"/.test(out)) {
-    const h = /<h[1-6]\b[^>]*>(?:(?!<\/h[1-6]>)[\s\S]){0,200}?(?:Контакти|Contacts)(?:(?!<\/h[1-6]>)[\s\S]){0,80}<\/h[1-6]>(?:\s*<div class="body">)?/i.exec(out);
-    out = h ? out.slice(0, h.index + h[0].length) + instructionContacts(s, lang) + out.slice(h.index + h[0].length) : out + instructionContacts(s, lang);
+    const at = afterHeading(out, /Контакти|Contacts/i);
+    out = at >= 0 ? out.slice(0, at) + instructionContacts(s, lang) + out.slice(at) : out + instructionContacts(s, lang);
   }
   if (!out.includes("data-written-instructions")) out = writtenInstructionsNote(lang, s.type === "C") + out;
   return out;

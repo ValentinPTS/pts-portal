@@ -107,8 +107,13 @@ export const DOC_CSS = `
      wide table on every screen view — the links are held instead, on screen only; the PDF is as it was) */
   .pts-docbody .doc-side{display:none!important;}
   @media screen{
-    .pts-docbody a,.pts-docbody a *{position:static!important;transform:none!important;translate:none!important;scale:none!important;float:none!important;margin:0!important;zoom:normal!important;max-width:100%!important;}
-    .pts-docbody a img{height:auto!important;}
+    .pts-docbody a,.pts-docbody a *{position:static!important;transform:none!important;translate:none!important;scale:none!important;float:none!important;margin:0!important;padding:0!important;border-width:0!important;zoom:normal!important;max-width:100%!important;}
+    /* (a border grew a link over the page as padding did; an svg's link painted outside the svg — round 8 final check) */
+    .pts-docbody svg{overflow:hidden!important;}
+    /* a free picture inside a link stays where it was put (as in print — round 8, R8UP-6), and takes no clicks */
+    .pts-docbody a img.free{position:absolute!important;max-width:none!important;pointer-events:none!important;}
+    /* …and whatever holds a link: a positioned or transformed box around it carried it over the page (round 8, R8S-2) */
+    .pts-docbody :has(a){position:static!important;transform:none!important;translate:none!important;scale:none!important;rotate:none!important;zoom:normal!important;}
   }
   /* lighter document header (logo + embroidery band + centred title) for utility
      forms that don't have a full title page; the wrap is a white band that bleeds

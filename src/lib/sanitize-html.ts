@@ -449,7 +449,33 @@ function pinsToScreen(css: string, inLink = false): boolean {
   if (/(^|[;{\s])position\s*:\s*var\(/.test(plain) || /(^|[;{\s])--[\w-]+\s*:\s*(?:-webkit-)?(?:fixed|sticky)\b/.test(plain)) return true;
   // …and a link (or anything inside one) is never lifted out of the text: an absolute box 20 000 px wide,
   // its edge far off the page, covered the screen as surely as «fixed» (R6S-7)
-  return inLink && /(^|[;{\s])position\s*:\s*absolute/.test(plain);
+  if (inLink && /(^|[;{\s])position\s*:\s*absolute/.test(plain)) return true;
+  // …nor pulled far over what came before by a large negative margin, however spelled — «-5e3px», «-.5e4px»,
+  // «calc(…)», «var(…)», an unknown unit, «-webkit-margin-before» (round 8, R8S-2; review RV8-2). A Word table's
+  // «-5.4pt» or «-42.55pt» stays (below 150 px).
+  for (const m of plain.matchAll(/(?:^|[;{\s])(?:-[a-z]+-)?margin(?:-[a-z-]+)?\s*:([^;]*)/g)) {
+    const val = m[1];
+    if (/-/.test(val) && /(?:calc|var|env|min|max|clamp|attr)\s*\(/.test(val)) return true;
+    for (const v of val.matchAll(/-\s*(\d*\.?\d+(?:e[+-]?\d+)?)\s*([a-z%]*)/g)) {
+      const k: Record<string, number> = { "": 1, px: 1, pt: 4 / 3, pc: 16, mm: 3.78, cm: 37.8, in: 96, q: 0.945, em: 16, rem: 16, ex: 8, ch: 8, vh: 9, vw: 12, vmin: 9, vmax: 12, "%": 8 };
+      const f = k[v[2]];
+      if (f === undefined || Number(v[1]) * f > 150) return true;
+    }
+  }
+  return false;
+}
+// a declaration up to its first «!» outside quotes — in a style attribute a «!» only ever starts «!important»
+//  — comments skipped too: a quote inside one («/*'*/!important») hid the «!» (round 8 final check)
+function beforeBang(d: string): string {
+  let q = "";
+  for (let i = 0; i < d.length; i++) {
+    const c = d[i];
+    if (q) { if (c === "\\") i++; else if (c === q) q = ""; }
+    else if (c === "/" && d[i + 1] === "*") { const e = d.indexOf("*/", i + 2); if (e < 0) return d.slice(0, i); i = e + 1; }
+    else if (c === '"' || c === "'") q = c;
+    else if (c === "!") return d.slice(0, i);
+  }
+  return d;
 }
 // a decoded value written into an attribute: its «&», «"» and «<» as references
 const escAttr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -487,6 +513,12 @@ function decideAttr(tag: string, name: string, raw: string | null, inLink = fals
   if (name === "type" && tag === "input" && !/^(text|checkbox|radio|number|date|time|hidden)$/i.test(decoded.trim())) return { keep: false };
   // a style, and any other value with a function in it (SVG reads fill/filter/mask/… as CSS)
   if (name === "style") {
+    // (never «!important» inline: it beat the stylesheet's holds on screen — round 8 review, RV8-2)
+    //  — cut at the first «!» outside quotes, however «important» is then spelled («!/**/important», «!\69mportant»)
+    if (decoded.indexOf("!") >= 0) {
+      const kept0 = cssDeclarations(decoded).map(beforeBang).filter((d) => d.trim() && cssSafe(d) && !pinsToScreen(d, inLink));
+      return kept0.length ? { keep: true, value: escAttr(kept0.join(";")) } : { keep: false };
+    }
     if (cssSafe(decoded) && !pinsToScreen(decoded, inLink)) return { keep: true };
     // only the declarations that load from elsewhere go — a pasted paragraph keeps its colour and width
     // (round 4, R4U-9); what stays is written back from what the browser reads

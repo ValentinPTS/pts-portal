@@ -9,6 +9,7 @@ import { useLang } from "@/components/LangProvider";
 import { calibrationSlotsBroken, effectiveDirections } from "@/lib/param-remap";
 import { ONLINE_APPLICATIONS_OPEN } from "@/lib/online-applications";
 import type { CalibrationData, Parameter, PriceRow, ScheduleItem, SchemeStatus, TeamMember } from "@/lib/types";
+import { findTeamMember } from "@/lib/team-roles";
 import { markerLabels, readSchemeNumber, schemeMarkers, statedByNumber, type Activity, type SchemeKind } from "@/lib/scheme-number";
 import { STATE_LABEL } from "@/lib/lifecycle-model";
 import { ENGINE_FIELDS, characteristicLabel } from "@/lib/characteristics-model";
@@ -326,6 +327,13 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
   const confirmRef = useRef<HTMLInputElement>(null);
   function guardCalibrationEdit(e: React.FormEvent<HTMLFormElement>) {
     if (confirmRef.current) confirmRef.current.value = "";
+    // the team keeps its scheme manager — said here, before the other changes go and come back refused (R8S-1)
+    const fd = new FormData(e.currentTarget);
+    const n = Number(fd.get("teamCount") ?? -1);
+    if (n >= 0) {
+      const rows = Array.from({ length: n }, (_, i) => ({ name: String(fd.get(`team_${i}_name`) ?? "").trim(), roleBg: String(fd.get(`team_${i}_roleBg`) ?? ""), roleEn: String(fd.get(`team_${i}_roleEn`) ?? "") })).filter((r) => r.name);
+      if (!findTeamMember(rows, "manager")) { e.preventDefault(); alert(L("В «Екип на схемата» трябва да има ръководител на схемата (роля «Ръководител на схемата…» / «PT Scheme Manager») — той подписва сертификатите и заповедта.", "The «Scheme team» must keep its scheme manager (role «Ръководител на схемата…» / «PT Scheme Manager») — the manager signs the certificates and the Order.")); return; }
+    }
     const oldCal = init.calibration;
     if (!isCal || !oldCal || !init.calDataSlots?.length) return;
     const split = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);

@@ -12,7 +12,7 @@ export default async function LabProfilePage({ searchParams }: { searchParams: P
   // after accepting an invitation: review the data PTS entered (the step 4.4 uses)
   const sp = await searchParams;
   const review = !!sp.review;
-  const err = sp.err === "eik" || sp.err === "phone" ? sp.err : null;
+  const err = sp.err === "eik" || sp.err === "phone" || sp.err === "eik-phone" ? sp.err : null;
   const { tr } = await getServerT();
   // a field the browser checks before sending — a refusal by the server came back with every other change
   // lost (round 2, R2U-5); the server checks the same
@@ -38,7 +38,9 @@ export default async function LabProfilePage({ searchParams }: { searchParams: P
         )}
         {err && (
           <div role="alert" data-profile-error={err} className="card" style={{ padding: 14, marginBottom: 14, background: "#fbeeee", color: "#8f2f2f" }}>
-            {err === "eik"
+            {err === "eik-phone"
+              ? "Не са записани ЕИК (не е валиден — 9 или 13 цифри, с вярна контролна цифра) и телефонът (не се разчита); останалите промени са записани. · Neither the ЕИК (not valid — 9 or 13 digits, with a right check digit) nor the phone (does not read) was saved; the other changes were saved."
+              : err === "eik"
               ? "ЕИК не е записан — не е валиден (9 или 13 цифри, с вярна контролна цифра); останалите промени са записани. · The ЕИК was not saved — it is not valid (9 or 13 digits, with a right check digit); the other changes were saved."
               : "Телефонът не е записан — не се разчита (цифри, интервали, + ( ) - . /); останалите промени са записани. · The phone was not saved — it does not read (digits, spaces, + ( ) - . /); the other changes were saved."}
           </div>

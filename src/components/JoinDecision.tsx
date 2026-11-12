@@ -25,7 +25,7 @@ export default function JoinDecision({ lang, id, name, email, invite }: { lang: 
     router.refresh();
   });
   return (
-    <div className="mt-2" data-join-decision={id}>
+    <div className="mt-2" data-join-decision={id} data-live-only /* its reason is the script's own state: nothing typed before it is live (round 8, R8UL-2) */>
       <details data-join-invite={id} className="mb-2">
         <summary className="text-xs" style={{ cursor: "pointer" }}>{L("Поканата, която тръгва при «Одобри»", "The invitation that goes on «Approve»")}</summary>
         <div className="mt-1" style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", background: "var(--bg)" }}>

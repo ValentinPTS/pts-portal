@@ -2,6 +2,8 @@ import type { Scheme, Lang, DocOptions } from "../types";
 import { isIlc } from "../report-issue-model";
 import { marksHtml } from "../accreditation-mark";
 import { esc, pick, wrapDoc, footer } from "../doc-shell";
+import { teamMember } from "./instruction-common";
+import { fillMark } from "../fill-mark";
 import { looksLikeSimNumber } from "../environment";
 import { contentHtml, previewMark } from "./certificate";
 
@@ -61,7 +63,9 @@ export function renderCertificateC(s: Scheme, lang: Lang, opts?: DocOptions): st
   const ilc = isIlc(s);
 
   const c = s.calibration;
-  const mgr = s.team[0];
+  // the scheme manager by role, never the first row of the team — and a mark to fill when there is none:
+  // an empty or reordered team broke or silently changed every certificate (round 8, R8S-1)
+  const mgr = teamMember(s, "manager");
 
   // Per-participant identity (filled when a specific lab's certificate is issued).
   const part = opts?.participant;
@@ -114,7 +118,7 @@ export function renderCertificateC(s: Scheme, lang: Lang, opts?: DocOptions): st
     <img class="emb" src="/brand/embroidery-border.png" alt="">
     <div class="sigrow">
       <div class="c"><div style="margin-bottom:26px">${certDate}</div><div class="ln"></div><small>${L("Date of issue", "Дата на издаване")}</small></div>
-      <div class="c"><div style="margin-bottom:26px">&nbsp;</div><div class="ln"></div><small>${esc(mgr.name)} — ${L(mgr.roleEn, mgr.roleBg)}</small></div>
+      <div class="c"><div style="margin-bottom:26px">&nbsp;</div><div class="ln"></div><small>${mgr ? `${esc(mgr.name)} — ${L(mgr.roleEn, mgr.roleBg)}` : fillMark(lang, { bg: "ръководителят на схемата (екипът на схемата)", en: "the scheme manager (the scheme team)" })}</small></div>
     </div>
     <div class="certno">${L("Certificate No.", "Сертификат №")} ${certNo}</div>
     <div class="issued">${ilc ? L("Issued by PTS Bulgaria at Proficiency Testing Solutions Bulgaria Ltd — an interlaboratory comparison, outside the accreditation", "Издаден от PTS Bulgaria към „ПТС България“ ООД — междулабораторно сравнение, извън обхвата на акредитацията") : L("Issued by PT Provider PTS Bulgaria at Proficiency Testing Solutions Bulgaria Ltd", "Издаден от организатора на изпитване за пригодност PTS Bulgaria към „ПТС България“ ООД")}</div>

@@ -1,4 +1,5 @@
 import type { Scheme, Lang, DocOptions } from "../types";
+import { findTeamMember } from "../team-roles";
 import { esc, pick, wrapDoc, docHeader, footer } from "../doc-shell";
 import { metricsForScheme } from "../scoring";
 
@@ -89,7 +90,7 @@ export function renderCodesAndResults(s: Scheme, lang: Lang, opts?: DocOptions):
     .join("");
 
   const compiler = teamRole(s, /кодиран|coding/i);
-  const approver = teamRole(s, /ръководител|manager|head/i);
+  const approver = findTeamMember(s.team ?? [], "manager"); // the scheme manager by role (round 8 review, RV8-4)
   const date = esc(s.orderDate ?? s.revisionDate);
   const signs = `<div class="signs">
     <div>${date} &nbsp; ${L("Date", "Дата")}<br><br>${L("Compiled by", "Съставил")}: <span class="ln"></span>${

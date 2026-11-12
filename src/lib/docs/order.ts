@@ -1,5 +1,6 @@
 import type { Scheme, Lang } from "../types";
 import { esc, pick, wrapDoc, footer } from "../doc-shell";
+import { teamMember } from "./instruction-common";
 
 const FORM = "internal";
 
@@ -29,7 +30,7 @@ export function renderOrder(s: Scheme, lang: Lang): string {
   const L = (en: string, bg: string) => esc(pick(lang, en, bg));
   const isCal = s.type === "C";
   const startDate = s.schedule[0]?.date ?? "";
-  const mgr = s.team[0];
+  const mgr = teamMember(s, "manager"); // by role, never the first row (round 8, R8S-1)
 
   // numbered items, mirroring the real memo (testing carries the characteristics
   // line, calibration does not)
