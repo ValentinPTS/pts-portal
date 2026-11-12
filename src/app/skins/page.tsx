@@ -26,7 +26,7 @@ export default async function SkinsPage({ searchParams }: { searchParams: Promis
   const scope = schemesFor(await getViewer(), "codes.view");
   const sample = (await listSchemeSummaries()).find((s) => s.type === type && (scope === "all" || scope.includes(s.id)));
   const defaultCover = await getDefaultCoverImage();
-  const { tr } = await getServerT();
+  const { tr, lang } = await getServerT();
 
   const tab = (val: "T" | "C", label: string) => (
     <Link
@@ -84,11 +84,11 @@ export default async function SkinsPage({ searchParams }: { searchParams: Promis
               {/* info */}
               <div className="p-4">
                 <div className="flex items-center gap-2">
-                  <span className="font-bold" style={{ fontSize: 16 }}>{sk.meta.name}</span>
+                  <span className="font-bold" style={{ fontSize: 16 }}>{(lang === "bg" && sk.meta.nameBg) || sk.meta.name}</span>
                   {isDefault && <span className="chip" style={{ background: "var(--green-dark)" }}>{tr("skins.default")}</span>}
                   {isCustom && <span className="chip" style={{ background: "var(--muted)" }}>{tr("skins.custom")}</span>}
                 </div>
-                <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>{sk.meta.description}</p>
+                <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>{(lang === "bg" && sk.meta.descriptionBg) || sk.meta.description}</p>
                 <div className="flex gap-2 mt-3" style={{ flexWrap: "wrap" }}>
                   {canManage && !isDefault && (
                     <form action={setDefaultSkinAction}>

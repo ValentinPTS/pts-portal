@@ -32,7 +32,12 @@ export const metadata: Metadata = {
   description: "Proficiency Testing Solutions Bulgaria — provider portal",
 };
 
-const PRE_HYDRATION_GUARD = `document.addEventListener("submit",function(e){if(document.documentElement.hasAttribute("data-hydrated"))return;var f=e.target;if(f&&f.tagName==="FORM"&&!f.hasAttribute("action")&&!f.hasAttribute("method"))e.preventDefault();},true);`;
+// A form the page's scripts send (no action, no method of its own) is NEVER sent by the browser itself: its
+// own handler sends it (they all do — round 6 checked), so the browser's GET — every field in the address —
+// is always held, not only until the root is live (round 6, R6S-1 / R6UL-1: a page's own script arriving after
+// the root's let it through). If that form's script is not live yet, the person is told once. A form that posts
+// natively (a server action, before the scripts) is not sent twice within half a minute (R6S-10).
+const PRE_HYDRATION_GUARD = `(function(){var told=false;document.addEventListener("submit",function(e){var f=e.target;if(!f||f.tagName!=="FORM")return;if(!f.hasAttribute("action")&&!f.hasAttribute("method")){e.preventDefault();var live=false;for(var k in f){if(k.indexOf("__reactProps$")===0){live=true;break;}}if(!live&&!told){told=true;alert("Страницата още се зарежда — натиснете отново след миг. · The page is still loading — press again in a moment.");}return;}if((f.getAttribute("method")||"").toLowerCase()==="post"&&!document.documentElement.hasAttribute("data-hydrated")){if(f.__ptsSent&&Date.now()-f.__ptsSent<30000){e.preventDefault();return;}f.__ptsSent=Date.now();}},true);})();`;
 
 export default async function RootLayout({
   children,

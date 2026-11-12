@@ -7,7 +7,7 @@ import { calApplyItem } from "@/lib/apply-item";
 import { getServerT } from "@/lib/i18n-server";
 import { isStarted } from "@/lib/visibility";
 import { ONLINE_APPLICATIONS_OPEN, PDF_APPLICATION_URL } from "@/lib/online-applications";
-import { catalogueState, STATE_TEXT, takesApplications, wishOffered } from "@/lib/catalogue-model";
+import { catalogueState, STATE_TEXT, takesApplications, wishOffered, isSimulation } from "@/lib/catalogue-model";
 import { schemeFull } from "@/lib/waitlist-model";
 import { listParticipants } from "@/lib/participants";
 import { schemeNowMs } from "@/lib/clock";
@@ -20,7 +20,8 @@ export default async function ApplyToScheme({
   const { id } = await params;
   const s = await getScheme(id);
   // an unstarted scheme answers exactly like a missing one — no number, no title (Реш. 147)
-  if (!s || !isStarted(s)) notFound();
+  // a simulation (the test environment's replay) is never a public page (round 6, R6UL Q5 — as the catalogue, R5UA-7)
+  if (!s || !isStarted(s) || isSimulation(s.number)) notFound();
   const { lang, tr } = await getServerT();
   // the plan, readable before applying — its released edition (D15, 5.4)
   const planLink = s.sentToParticipants?.plan && s.releasedEditions?.plan ? (

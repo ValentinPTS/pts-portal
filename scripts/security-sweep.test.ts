@@ -3,6 +3,10 @@
 // lives (names-guard, auth-links, sanitize-html, cert-register, proxy-paths, migrations, replay,
 // public-limit); here, the wiring.
 import { readFileSync } from "node:fs";
+import { scrubIdentity } from "../src/lib/redact.ts";
+import { sanitizeDocHtml } from "../src/lib/sanitize-html.ts";
+import { otherSchemeNumbers } from "../src/lib/scheme-number.ts";
+import { safeDest } from "../src/lib/auth-links.ts";
 
 let pass = 0, fail = 0;
 const t = (name: string, ok: boolean, extra = "") => { if (ok) pass++; else { fail++; console.error("FAIL:", name, extra); } };
@@ -87,7 +91,16 @@ t("R2U-1: brought back by «Back», the results form takes up its own latest sav
 t("R2U-2: the scheme page's dates, file menu and the builder's start — by the right", /canEdit=\{await mayNow\("scheme\.edit", id\)\} \/>/.test(src("app/schemes/[id]/page.tsx")) && /canSend=\{await mayNow\("docs\.release", id\)\}/.test(src("app/schemes/[id]/page.tsx")) && /\{canWrite && <button style=\{menuItem\} onClick=\{\(\) => pickFile\(d\.key\)\}>⟳/.test(src("components/SchemeDocuments.tsx")) && /const canEdit = await mayNow\("scheme\.edit", s\.id\);[\s\S]*canEdit=\{canEdit\}/.test(src("app/schemes/[id]/build/[doc]/page.tsx")) && /<fieldset disabled=\{!!init\.readOnly\}/.test(src("components/SchemeEditor.tsx")));
 t("R2U-3: a file larger than the portal takes is refused before sending", /maxBytes=\{15_000_000\}/.test(src("app/lab/p/[id]/page.tsx")) && /maxBytes=\{15_000_000\}/.test(src("app/lab/page.tsx")) && /f\.size > 5_000_000/.test(src("components/RegisterForm.tsx")));
 t("R2U-4: the receiver's name at least two letters, in the browser too", /name="receivedBy" required minLength=\{2\}/.test(src("app/lab/p/[id]/page.tsx")));
-t("R2U-5: the lab profile's ЕИК and phone checked before sending (round 5: as the server reads them)", /pattern: "\(\[Bb\]\[Gg\] \?\)\?\[0-9\]/.test(src("app/lab/profile/page.tsx")) && /\[Вв\]\[Ъъ\]\[Тт\]\[Рр\]/.test(src("app/lab/profile/page.tsx")));
+{
+  // round 6 (R6UL-5): the browser's check passes what the server takes — spaces round it, a label, «BG-»
+  const pats = [...src("app/lab/profile/page.tsx").matchAll(/pattern: ("(?:[^"\\]|\\.)*")/g)].map((m) => new RegExp(`^(?:${JSON.parse(m[1])})$`, "v"));
+  const [phoneP, eikP] = pats;
+  t("R2U-5: the lab profile's ЕИК and phone checked before sending (round 6: as the server reads them)", pats.length === 2
+    && [" 175074752", "175074752 ", "ЕИК: 175074752", "EIK 175074752", "BG-175074752", "BG  175074752", "HRB 12345", "1750747520001"].every((v) => eikP.test(v))
+    && ["123", "abc", "BG-12", "<b>"].every((v) => !eikP.test(v))
+    && ["0888 123 456 вътр. 12 ", "+359 2 123 4567"].every((v) => phoneP.test(v)) && !phoneP.test("123"));
+  t("R6UL-5: the server reads the ЕИК without its label", /\.replace\(\/\^\(\?:ЕИК\|EIK\|UIC\|БУЛСТАТ\)/.test(actions));
+}
 t("R2U-6: a register's ceiling said in its own words", /REGISTER_TEXT\[r\.why === "code" \? "limitedCode"/.test(actions));
 t("R2U-7: the staff side's downloads keep their names", ["app/schemes/[id]/uploaded/[doc]/route.ts", "app/users/declarations/[id]/route.ts"].every((f) => /filename\*=UTF-8''\$\{utf8Name\(/.test(src(f))));
 
@@ -147,8 +160,8 @@ t("a saved certificate or list body never reaches a role without names.view thro
 {
   const proxySrc5 = src("proxy.ts");
   t("R5SB-3: a page that acts when opened, opened from another site — a page to confirm, or refused",
-    /const ACTS_WHEN_OPENED = /.test(proxySrc5) && /if \(foreign === "navigate"\) return confirmOpening\(request\);/.test(proxySrc5) && /if \(foreign === "other"\) return new NextResponse\(null, \{ status: 403 \}\);/.test(proxySrc5));
-  const acts = new RegExp(proxySrc5.match(/const ACTS_WHEN_OPENED = \/(.+)\/;/)![1]);
+    /import \{ ACTS_WHEN_OPENED \} from "\.\/lib\/acts-when-opened";/.test(proxySrc5) && /if \(foreign === "navigate"\) return confirmOpening\(request\);/.test(proxySrc5) && /if \(foreign === "other"\) return new NextResponse\(null, \{ status: 403 \}\);/.test(proxySrc5));
+  const { ACTS_WHEN_OPENED: acts } = await import("../src/lib/acts-when-opened.ts");
   t("R5SB-3: …the exports, the audit pack, prints, files and lab documents — not the pages a link in an e-mail opens",
     ["/schemes/S/export", "/schemes/S/export/analysis", "/schemes/S/audit-pack", "/invoices/export", "/lab/doc/S/plan", "/lab/labdoc/S/proforma", "/schemes/S/build/plan/print", "/schemes/S/fill/feedback", "/registrations/letter/x"].every((p) => acts.test(p))
     && ["/lab", "/lab/p/1", "/schemes/S", "/notices", "/dashboard"].every((p) => !acts.test(p)));
@@ -173,10 +186,10 @@ t("a saved certificate or list body never reaches a role without names.view thro
   t("R5SA-4: the read-only view's frame is sandboxed", /sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"/.test(src("components/WordEditor.tsx")));
   t("Q2: the PDF's internal token only to the portal's own origin", /ownOrigins\.includes\(asked\) \? asked : ownOrigins\[0\]/.test(src("app/api/pdf/route.ts")));
   const we5 = src("components/WordEditor.tsx");
-  t("R5UA-2: a link inside the portal, unsaved words — saved first, then followed", /document\.addEventListener\("click", onClick, true\)/.test(we5) && /void saveNow\.current\(\)\.then\(\(ok\) => \{ if \(ok\) router\.push/.test(we5));
-  t("R5UA-3: a document saved over a newer one is refused, said", /if \(loaded !== null && loaded !== kept\) return \{ error: DOC_STALE, stale: true \};/.test(actions) && /rev: revRef\.current/.test(we5) && /initialRev=\{s\.docs\?\.\[doc\]\?\.rev \?\? 0\}/.test(src("app/schemes/[id]/build/[doc]/page.tsx")));
+  t("R5UA-2: a link inside the portal, unsaved words — saved first, then followed", /document\.addEventListener\("click", onClick, true\)/.test(we5) && /void saveNow\.current\(\)\.then\(\(ok\) => \{\n\s*if \(ok\) return go\(\);/.test(we5) && /const go = \(\) => router\.push\(/.test(we5));
+  t("R5UA-3: a document saved over a newer one is refused, said", /if \(loaded !== null && loaded !== kept\) \{ stale = true; return \{\}; \}/.test(actions) && /if \(stale\) return \{ error: DOC_STALE, stale: true \};/.test(actions) && /rev: revRef\.current/.test(we5) && /initialRev=\{s\.docs\?\.\[doc\]\?\.rev \?\? 0\}/.test(src("app/schemes/[id]/build/[doc]/page.tsx")));
   t("R5UB-1: a form the page's scripts send is held until they are live — never the browser's own GET",
-    /<script id="pts-hold-early-submit" dangerouslySetInnerHTML=\{\{ __html: PRE_HYDRATION_GUARD \}\} \/>/.test(src("app/layout.tsx")) && /!f\.hasAttribute\("action"\)&&!f\.hasAttribute\("method"\)\)e\.preventDefault\(\)/.test(src("app/layout.tsx")) && /setAttribute\("data-hydrated", ""\)/.test(src("components/Hydrated.tsx")));
+    /<script id="pts-hold-early-submit" dangerouslySetInnerHTML=\{\{ __html: PRE_HYDRATION_GUARD \}\} \/>/.test(src("app/layout.tsx")) && /!f\.hasAttribute\("action"\)&&!f\.hasAttribute\("method"\)\)\{e\.preventDefault\(\)/.test(src("app/layout.tsx")) && /setAttribute\("data-hydrated", ""\)/.test(src("components/Hydrated.tsx")));
   t("R5UB-2: a register number that is no text never throws", /typeof input\.number === "string" \? input\.number : ""/.test(src("lib/cert-register.ts")));
   t("R5UB-3: «received» only for the organisation's own participation, its code from the server", /const ownThere = doneScheme \? mine\.filter/.test(src("app/lab/apply/page.tsx")) && !/sp\.code &&/.test(src("app/lab/apply/page.tsx")));
   t("R5UB-4: a results form past its deadline says so and shuts", ["components/ResultsForm.tsx", "components/CalibrationResultsForm.tsx"].every((f) => /const editable = editableProp && !closedNow;/.test(src(f)) && /data-results-closed-now/.test(src(f))));
@@ -195,8 +208,104 @@ t("a saved certificate or list body never reaches a role without names.view thro
   const rows = catalogueRows([{ id: "SIM-26-11-T-1", number: "SIM 26/11-T-1", status: "running" }, { id: "26-11-T-1", number: "PTS 26/11-T-1", status: "running" }] as never, () => Date.now(), () => false);
   t("R5UA-7: a simulation is never in the catalogue", isSimulation("SIM 26/11-T-1") && !isSimulation("PTS 26/11-T-1") && !JSON.stringify(rows).includes("SIM 26/11-T-1"));
   const { attemptLimit } = await import("../src/lib/public-limit.ts");
-  let n = 0; for (let i = 0; i < 25; i++) if ((await attemptLimit("sign_in_account", "account-made.up@example.invalid")) === "ok") n++;
-  t("R5SB-1: one account's sign-in attempts stop at its ceiling an hour", n === 20, String(n));
+  // round 6 (R6S-3): one address on one account stops at 15; the account itself only at 200 — a stranger
+  // guessing can no longer shut the real user out for the hour
+  let n = 0; for (let i = 0; i < 25; i++) if ((await attemptLimit("sign_in_pair", "account-made.up@example.invalid-at-192.0.2.1")) === "ok") n++;
+  t("R5SB-1/R6S-3: one address's sign-in attempts on one account stop at 15 an hour", n === 15, String(n));
+  let m = 0; for (let i = 0; i < 205; i++) if ((await attemptLimit("sign_in_account", "account-made.up@example.invalid")) === "ok") m++;
+  t("R6S-3: the account's own ceiling is far above one address's", m === 200, String(m));
+  t("R6S-3: sign-in counts the address, the address on the account, and the account", /attemptLimit\("sign_in_pair", `account-\$\{[^}]+\}-at-\$\{[^}]+\}`\)/.test(authA) || /sign_in_pair/.test(authA));
+}
+
+// ── round 6 (2026-11-12) ────────────────────────────────────────────────────────────────────────
+{
+  // R6S-1 / R6UL-1: the guard always holds the browser's own GET of a form the page's scripts send — it
+  // stopped once <html> said «hydrated», while a form rendered later still had no handler on it
+  const layout = src("app/layout.tsx");
+  const guard = layout.match(/const PRE_HYDRATION_GUARD = `([^`]+)`;/)![1];
+  let listener: ((e: unknown) => void) | null = null; let alerts = 0; let hydrated = false;
+  const fakeDoc = { addEventListener: (_: string, fn: (e: unknown) => void) => { listener = fn; }, documentElement: { hasAttribute: () => hydrated } };
+  new Function("document", "alert", guard)(fakeDoc, () => { alerts++; });
+  const form = (attrs: Record<string, string>, live = false) => ({ tagName: "FORM", hasAttribute: (a: string) => a in attrs, getAttribute: (a: string) => attrs[a] ?? null, ...(live ? { __reactProps$x: {} } : {}) });
+  const send = (f: unknown) => { let prevented = false; listener!({ target: f, preventDefault: () => { prevented = true; } }); return prevented; };
+  const before = send(form({})); hydrated = true; const after = send(form({})); const liveOne = send(form({}, true));
+  const postA = form({ method: "post", action: "/x" }); hydrated = false; const p1 = send(postA), p2 = send(postA);
+  t("R6S-1: a script-handled form never goes out as the browser's GET — before and after <html> says hydrated", before && after && liveOne && alerts === 1);
+  t("R6S-1: a plain POST form before the scripts: the first press goes, the second is held", !p1 && p2);
+  // R6S-2: the waybill in the words people write
+  const masked = ["товарителница № 1234567890", "Speedy 6200 1234 5678", "AWB: 123-45678901", "waybill no. 12345678", "tracking number is ABC12345", "пратка с номер 1234567", "Еконт 1051234567 и 1051234568"].map((x) => String(scrubIdentity(x)));
+  t("R6S-2: a waybill masked however it is written", masked.every((x) => x.endsWith("•••") && !/\d{4}/.test(x)), masked.join(" | "));
+  t("R6S-2: …and an ordinary line about a round left as it is", scrubIdentity("Схема PTS 26/11-T-1, проба 3, 2026-11-12, 12.5 mg/L") === "Схема PTS 26/11-T-1, проба 3, 2026-11-12, 12.5 mg/L");
+  // R6S-4: a hidden field stays hidden (it became a stray text box in the Fill views)
+  t("R6S-4: an <input type=hidden> keeps its type; a file input loses it", sanitizeDocHtml('<input type="hidden" name="x" value="1">') === '<input type="hidden" name="x" value="1">' && !/file/.test(sanitizeDocHtml('<input type="file" name="f">')));
+  // R6S-7: nothing pinned over the page through a variable, nor a link stretched over it
+  t("R6S-7: position through var() or a custom property is dropped", sanitizeDocHtml('<div style="position:var(--p);color:red">a</div>') === '<div style="color:red">a</div>' && !/position|fixed/.test(sanitizeDocHtml('<div style="--x:fixed;position:var(--x)">a</div>')));
+  t("R6S-7: absolute inside a link is dropped; outside one it stays", !/position/.test(sanitizeDocHtml('<a href="https://ptsbg.eu"><span style="position:absolute;top:0;left:0;width:100vw">x</span></a>')) && /position:absolute/.test(sanitizeDocHtml('<span style="position:absolute;top:0">x</span>')));
+  // R6S-8: only the keyword itself opens a new tab without its opener
+  t("R6S-8: target=« _blank» (a named window that keeps the opener) is dropped; «_blank» kept", !/target/.test(sanitizeDocHtml('<a href="https://ptsbg.eu" target=" _blank">a</a>')) && /target="_blank"/.test(sanitizeDocHtml('<a href="https://ptsbg.eu" target="_blank">a</a>')));
+  // R6S-11: another round's number found however the editor spelled it
+  const others = otherSchemeNumbers("<p>PTS 26/<b></b>11-T-2 and PTS&nbsp;26/11&#8209;T&#x2D;3 and PTS 26/11-T-1</p>", "PTS 26/11-T-1");
+  t("R6S-11: another round's number through tags and entities", others.length === 2, JSON.stringify(others));
+  // R6S-5: the pages that show names, opened from another site, ask first; staff never land on one after sign-in
+  const { ACTS_WHEN_OPENED: acts } = await import("../src/lib/acts-when-opened.ts");
+  t("R6S-5: deliveries, declarations, proofs, participants, results, traceability act when opened", ["/deliveries", "/users/declarations/x", "/users/applications/x", "/organizations/proof/x", "/schemes/S/participants", "/schemes/S/results", "/schemes/S/traceability"].every((x) => acts.test(x)));
+  t("R6S-5: after sign-in a PTS account goes home, not to such a page; a laboratory still to its document", safeDest("internal", "/schemes/S/export") === "/" && safeDest("internal", "/deliveries?x=1") === "/" && safeDest("internal", "/schemes/S") === "/schemes/S" && safeDest("lab", "/lab/doc/S/plan") === "/lab/doc/S/plan");
+  // R6S-6: the PDF maker takes JSON from the portal's own pages only
+  const pdf = src("app/api/pdf/route.ts");
+  t("R6S-6: /api/pdf refuses another site and anything but JSON", /if \(site === "cross-site" \|\| site === "same-site"\) return new Response\("Forbidden", \{ status: 403 \}\);/.test(pdf) && /if \(!\/\^application\\\/json\\b\/i\.test/.test(pdf));
+  // R6S-10: a corrected file is sent at once after the page answered
+  t("R6S-10: OnceForm lets a send through once the page came back on another address", /if \(sent\.current && window\.location\.href !== sentAt\.current\) sent\.current = 0;/.test(src("components/OnceForm.tsx")));
+  // R6UL-3: a submission refused as closed shuts the form, as a refused save does
+  t("R6UL-3: «closed» from the submission shuts both results forms", /if \(r\.error === "closed"\) \{ setStage\("idle"\); onClosed\?\.\(\); return; \}/.test(src("components/SubmitPanel.tsx"))
+    && ["components/ResultsForm.tsx", "components/CalibrationResultsForm.tsx"].every((f) => /onClosed=\{\(\) => setRefusedClosed\(true\)\}/.test(src(f)) && /const closedNow = refusedClosed \|\|/.test(src(f))));
+  // R6UL-4: an application on the waiting list is «получена», never «приета»
+  t("R6UL Q5: a simulation is no public apply page, no download, no application — online or by a laboratory",
+    /isSimulation\(s\.number\)\) notFound\(\);/.test(src("app/apply/[id]/page.tsx")) && ["plan", "invitation"].every((r) => /!isStarted\(s\) \|\| isSimulation\(s\.number\) \|\|/.test(src(`app/apply/[id]/${r}/route.ts`)))
+    && /if \(!scheme \|\| isSimulation\(scheme\.number\) \|\| scheme\.status !== "open"/.test(actions) && /\|\| isSimulation\(scheme\.number\)\) return say\("not-open"\);/.test(actions) && /&& !isSimulation\(s\.number\)\)/.test(src("app/lab/apply/page.tsx")));
+  t("R6UL-4: the apply banner says waiting list when the participation waits", /const doneWaiting = ownThere\.length > 0 && ownThere\.every\(\(m\) => waitingThere\.has\(m\.participantId\)\)/.test(src("app/lab/apply/page.tsx")) && /списъка на чакащите/.test(src("app/lab/apply/page.tsx")));
+}
+
+// ── round 6, the PTS side (users) ──────────────────────────────────────────────────────────────
+{
+  const we = src("components/WordEditor.tsx");
+  // R6UP-1 / R6UP-2: every edit counted; one save at a time; «saved» only when the latest edit went
+  t("R6UP-1: an edit made while a save is on its way is saved too, never shown as «Всичко е запазено» before",
+    /const setSaved = \(v: boolean\) => \{ if \(!v\) editGen\.current\+\+; savedRef\.current = v; setSavedState\(v\); \};/.test(we)
+    && /function onBodyInput\(\) \{\n    editGen\.current\+\+;/.test(we)
+    && /if \(editGen\.current === gen\) \{ savedRef\.current = true; setSavedState\(true\); \}/.test(we)
+    && /return p\.then\(\(ok\) => \(ok && editGen\.current !== savedGen\.current \? save\(\) : ok\)\);/.test(we)
+    && (we.match(/setSavedState\(true\)/g) ?? []).length === 2);
+  t("R6UP-2: «Готов», «Страници», «PDF», «Попълване» wait for the save on its way (one chain), never send the same count twice",
+    /const p = saveChain\.current\.then\(\(\) => saveOnce\.current\(\)\);/.test(we) && /if \(gen === savedGen\.current\)/.test(we) && !/!busyRef\.current\) save\(\)/.test(we));
+  // R6UP-3: a save that cannot go through lets the person leave, asked
+  t("R6UP-3: after a refused save a portal link asks to leave without saving — never swallowed", /if \(window\.confirm\(leaveUnsaved\.current\)\) \{ savedRef\.current = true; go\(\); \}/.test(we) && !/savedRef\.current \|\| busyRef\.current \|\| e\.defaultPrevented/.test(we));
+  // R6UP-4: the Instruction's contacts — what a person added is kept; the block is not editable in the editor
+  const { refreshInstruction, instructionContacts } = await import("../src/lib/docs/instruction-common.ts");
+  const sT = { type: "T", team: [] } as never;
+  const gen = instructionContacts(sT, "bg");
+  const typed = `<h2>11.</h2>${gen.replace(/<\/div>\s*$/, '<p>Добавено изречение.</p><img src="/brand/logo.png"></div>').replace("✉ office@ptsbg.eu", "✉ office@ptsbg.eu И още.")}`;
+  const printed = refreshInstruction(typed, sT, "bg");
+  t("R6UP-4: words and a picture added in the contacts survive the print and the edition", printed.includes("Добавено изречение.") && printed.includes('src="/brand/logo.png"') && printed.includes("И още.") && (printed.match(/data-team-contacts/g) ?? []).length === 1 && refreshInstruction(`<h2>11.</h2>${gen}`, sT, "bg").replace(/\s+/g, "") .includes(gen.replace(/\s+/g, "")));
+  t("R6UP-4: the editor keeps the contacts out of reach and a line after them; never saves the lock", /c\.setAttribute\("contenteditable", "false"\);/.test(we) && /clone\.querySelectorAll\("\[data-team-contacts\]"\)\.forEach\(\(n\) => \{ n\.removeAttribute\("contenteditable"\); n\.removeAttribute\("title"\); \}\);/.test(we));
+  // R6UP-5 / R6UP-6: a cited number confirmed; the card's own (a replay's source) never asked
+  t("R6UP-5: another scheme's number refused unless confirmed as cited — and the confirmation journalled",
+    /const numbers = await numbersCheck\(scheme, docKey, now, note\?\.numbersOk\);/.test(actions) && (actions.match(/const numbers = await numbersCheck\(/g) ?? []).length === 2
+    && /await logActivity\("doc\.numbers_cited"/.test(actions) && /return \{ otherNumbers: left, error:/.test(actions)
+    && ["components/SchemeDocuments.tsx", "components/ReleaseToOne.tsx", "components/IssueEdition.tsx"].every((f) => /citeQuestion\(r\.otherNumbers, lang\)/.test(src(f))));
+  t("R6UP-6: a number the scheme's own card names (a replay's source) is not another scheme's", /const card = otherSchemeNumbers\(\[scheme\.titleBg, scheme\.titleEn, scheme\.name\]/.test(actions) && /\.filter\(\(n\) => !card\.some\(\(c\) => sameSchemeNumber\(c, n\)\)\)/.test(actions));
+  // R6UP-7: no English-only refusal left among the ones it named
+  t("R6UP-7: the named refusals and the case file's automatic steps in both languages", !/error: `Nothing has changed since edition/.test(actions) && !/error: "This e-mail is a participant's user's login \(Организации\), so/.test(actions) && !/error: `Translator (unavailable|refused)/.test(actions) && /note: `онлайн протокол за получаване/.test(actions) && /note: `онлайн резултати — версия/.test(actions)
+    && /descriptionBg:/.test(src("lib/doc-shell.ts")) && /sk\.meta\.descriptionBg/.test(src("app/skins/page.tsx")));
+  // R6UP-8: the days as the card shows them
+  const { datesOrderRefusal } = await import("../src/lib/scheme-dates.ts");
+  const said = datesOrderRefusal(["dispatch", "resultsDue"], { dispatch: "2026-12-12", resultsDue: "2026-11-22T09:00" });
+  t("R6UP-8: the dates' refusal gives 22.11.2026, not 2026-11-22", said.includes("22.11.2026") && said.includes("12.12.2026") && !said.includes("2026-11-22"), said.slice(0, 120));
+  // R6UP-9: a mark in the contacts says where it is filled
+  const { m1Problems } = await import("../src/lib/m1-render.ts");
+  const { fillMark } = await import("../src/lib/fill-mark.ts");
+  const team = `<div class="contacts" data-team-contacts><div class="person">${fillMark("bg", { bg: "техническият експерт (екипът на схемата)", en: "the technical expert (the scheme team)" })}</div></div>`;
+  const probs = m1Problems(team, "instruction", "bg");
+  t("R6UP-9: a contacts mark points to «Редактирай данните», not to the editor", probs.some((x) => x.includes("«Редактирай данните»")) && !probs.some((x) => x.includes("махнете и жълтото поле")), JSON.stringify(probs));
 }
 
 console.log(`security-sweep.test: ${pass} passed, ${fail} failed`);

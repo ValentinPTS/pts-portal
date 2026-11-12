@@ -439,18 +439,22 @@ function cssDeclarations(css: string): string[] {
 /** Does this CSS pin something over the whole screen — «position: fixed» or «sticky» (escapes and comments
  *  read as CSS reads them)? A document's own layout uses «absolute» inside its body; a fixed link covered
  *  the whole page, and one click anywhere took the tab (round 5, R5SA-4). */
-function pinsToScreen(css: string): boolean {
-  if (!/p|\\/i.test(css)) return false;
+function pinsToScreen(css: string, inLink = false): boolean {
   // comments out by a scan (a lazy pattern would run to the end for each «/*» never closed)
   let bare = "", p = 0;
   for (;;) { const c = css.indexOf("/*", p); if (c < 0) { bare += css.slice(p); break; } bare += css.slice(p, c); const e = css.indexOf("*/", c + 2); if (e < 0) break; p = e + 2; }
   const plain = bare.replace(/\\([0-9a-fA-F]{1,6})\s?/g, (_m, h: string) => { const cp = parseInt(h, 16); return cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : ""; }).replace(/\\(.)/g, "$1").toLowerCase();
-  return /(^|[;{\s])position\s*:\s*(?:-webkit-)?(?:fixed|sticky)/.test(plain);
+  if (/(^|[;{\s])position\s*:\s*(?:-webkit-)?(?:fixed|sticky)/.test(plain)) return true;
+  // …nor through a variable («--p:fixed; position:var(--p)» — round 6, R6S-7)
+  if (/(^|[;{\s])position\s*:\s*var\(/.test(plain) || /(^|[;{\s])--[\w-]+\s*:\s*(?:-webkit-)?(?:fixed|sticky)\b/.test(plain)) return true;
+  // …and a link (or anything inside one) is never lifted out of the text: an absolute box 20 000 px wide,
+  // its edge far off the page, covered the screen as surely as «fixed» (R6S-7)
+  return inLink && /(^|[;{\s])position\s*:\s*absolute/.test(plain);
 }
 // a decoded value written into an attribute: its «&», «"» and «<» as references
 const escAttr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
-function decideAttr(tag: string, name: string, raw: string | null): Verdict {
+function decideAttr(tag: string, name: string, raw: string | null, inLink = false): Verdict {
   if (!ATTR_NAME_OK.test(name)) return { keep: false };
   const allowed = name.startsWith("data-") || name.startsWith("aria-") || ALLOWED_ATTR.has(name) || !!ALLOWED_ON[name]?.has(tag);
   if (!allowed) return { keep: false };
@@ -476,15 +480,17 @@ function decideAttr(tag: string, name: string, raw: string | null): Verdict {
   // a link never hands the page it opens a hold on this one («rel=opener» — round 4, R4S-8)
   if (name === "rel" && /(^|\s)opener(\s|$)/i.test(decoded)) return { keep: false };
   // …nor does a named window: only «_blank» opens without one (round 5, R5SA-3 — «target=w1» kept the opener)
-  if (name === "target" && decoded.trim().toLowerCase() !== "_blank") return { keep: false };
+  // exactly «_blank» — the browser does not trim it: « _blank» named a window that kept the opener (round 6, R6S-8)
+  if (name === "target" && decoded.toLowerCase() !== "_blank") return { keep: false };
   // a field of the builder's kinds only — never a password field a browser would fill (round 5, R5SA-9)
-  if (name === "type" && tag === "input" && !/^(text|checkbox|radio|number|date|time)$/i.test(decoded.trim())) return { keep: false };
+  // («hidden» too: the Fill view's tick-box groups carry one each — never filled by a browser; round 6, R6S-4)
+  if (name === "type" && tag === "input" && !/^(text|checkbox|radio|number|date|time|hidden)$/i.test(decoded.trim())) return { keep: false };
   // a style, and any other value with a function in it (SVG reads fill/filter/mask/… as CSS)
   if (name === "style") {
-    if (cssSafe(decoded) && !pinsToScreen(decoded)) return { keep: true };
+    if (cssSafe(decoded) && !pinsToScreen(decoded, inLink)) return { keep: true };
     // only the declarations that load from elsewhere go — a pasted paragraph keeps its colour and width
     // (round 4, R4U-9); what stays is written back from what the browser reads
-    const kept = cssDeclarations(decoded).filter((d) => d.trim() && cssSafe(d) && !pinsToScreen(d));
+    const kept = cssDeclarations(decoded).filter((d) => d.trim() && cssSafe(d) && !pinsToScreen(d, inLink));
     return kept.length ? { keep: true, value: escAttr(kept.join(";")) } : { keep: false };
   }
   if (!isText && decoded.indexOf("(") >= 0) return cssSafe(decoded) ? { keep: true } : { keep: false };
@@ -511,6 +517,7 @@ function sanitizePass(s: string): string {
   let i = 0;
   // text keeps a «<» that starts nothing («ΔM < 0.1 %»); one that could start a tag or a comment —
   // or that ends the run, where what follows is joined to it once a token between is dropped — is escaped
+  let linkDepth = 0; // inside a link: nothing in it lifted out of the text (R6S-7)
   const flush = (to: number) => { if (to > text) out += s.slice(text, to).replace(/<(?=[A-Za-z/!?]|$)/g, "&lt;"); };
   while (i < n) {
     const lt = s.indexOf("<", i);
@@ -542,7 +549,7 @@ function sanitizePass(s: string): string {
           // the tag rebuilt from what passed, its text as text — every «<» escaped, so nothing in it ends it
           const first = new Set<string>();
           const kept = tag.attrs.filter((a) => (first.has(a.name) ? false : (first.add(a.name), true))) // the browser keeps the first
-            .map((a) => ({ a, v: decideAttr(tag.name, a.name, a.raw) })).filter((x) => x.v.keep)
+            .map((a) => ({ a, v: decideAttr(tag.name, a.name, a.raw, linkDepth > 0) })).filter((x) => x.v.keep)
             .map(({ a, v }) => ("value" in v ? ` ${a.name}="${quoteAttr(v.value)}"` : a.raw === null ? ` ${a.name}` : ` ${a.name}="${quoteAttr(a.raw)}"`));
           out += `<${tag.name}${kept.join("")}>${s.slice(tag.end, closeAt).replace(/</g, "&lt;")}</${tag.name}>`;
         }
@@ -557,7 +564,7 @@ function sanitizePass(s: string): string {
       for (const a of tag.attrs) {
         if (seen.has(a.name)) { changed = true; continue; } // the browser keeps the first
         seen.add(a.name);
-        const v = decideAttr(tag.name, a.name, a.raw);
+        const v = decideAttr(tag.name, a.name, a.raw, tag.name === "a" || linkDepth > 0);
         if (!v.keep) { changed = true; if (a.name === "src") pictureRefused = true; continue; }
         if ("value" in v) { changed = true; kept.push(` ${a.name}="${quoteAttr(v.value)}"`); continue; }
         kept.push(a.raw === null ? ` ${a.name}` : ` ${a.name}="${quoteAttr(a.raw)}"`);
@@ -565,6 +572,7 @@ function sanitizePass(s: string): string {
       // a picture from where none may come is no picture at all — never an empty sized box (R4U-3)
       if (pictureRefused && (tag.name === "img" || tag.name === "image")) continue;
       out += changed ? `<${tag.name}${kept.join("")}${tag.selfClosing ? "/" : ""}>` : s.slice(lt, tag.end);
+      if (tag.name === "a" && !tag.selfClosing) linkDepth++;
       continue;
     }
     if (c1 === 47 /* / */) {
@@ -575,6 +583,7 @@ function sanitizePass(s: string): string {
         if (!tag.complete) return out;
         i = text = tag.end;
         if (!tag.nameOk || DROP_WITH_CONTENT.has(tag.name) || DROP_TAG.has(tag.name)) continue;
+        if (tag.name === "a" && linkDepth > 0) linkDepth--;
         const src = s.slice(lt, tag.end);
         out += /^<\/[A-Za-z][A-Za-z0-9-]*>$/.test(src) ? src : `</${tag.name}>`;
         continue;

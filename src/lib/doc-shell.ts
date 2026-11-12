@@ -62,7 +62,7 @@ export function coverImgTag(s: Scheme): string {
 // The built-in skin = the current strict brand. (classicCover/classicFooter are
 // function declarations defined below and hoisted, so this reference is valid.)
 export const classicSkin: Skin = {
-  meta: { id: "classic", name: "Classic", description: "The current PTS brand — green cover band, red rules, PT Serif body.", types: ["T", "C"] },
+  meta: { id: "classic", name: "Classic", description: "The current PTS brand — green cover band, red rules, PT Serif body.", nameBg: "Класически", descriptionBg: "Сегашната марка на PTS — зелена лента на корицата, червени линии, текст PT Serif.", types: ["T", "C"] },
   css: DOC_CSS,
   fonts: BRAND_FONTS,
   cover: classicCover,

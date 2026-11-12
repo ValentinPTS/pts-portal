@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { citeQuestion } from "@/lib/cite-confirm";
 import { releaseDocToAction, releaseUsersAction, withdrawReleaseAction } from "@/lib/actions";
 
 // A document to ONE participation or ONE user (plan part 5.4; Zadanie «Три нива на
@@ -41,12 +42,19 @@ export default function ReleaseToOne({ lang, schemeId, docKey, participations, u
     start(async () => {
       setMsg(null);
       const t = level === "participation" ? { level, participantId: target } : { level, userId: target };
-      let r = await releaseDocToAction(schemeId, docKey, t).catch(() => ({ error: L("Не стана — опитайте отново.", "It did not go through — try again.") }));
+      let r: Awaited<ReturnType<typeof releaseDocToAction>> = await releaseDocToAction(schemeId, docKey, t).catch(() => ({ error: L("Не стана — опитайте отново.", "It did not go through — try again.") }));
+      // another scheme's number, cited on purpose (R6UP-5)
+      let numbersOk: string[] | undefined;
+      if (r.otherNumbers?.length) {
+        if (!window.confirm(citeQuestion(r.otherNumbers, lang))) { setMsg(r.error ?? null); return; }
+        numbersOk = r.otherNumbers;
+        r = await releaseDocToAction(schemeId, docKey, t, { numbersOk }).catch(() => ({ error: L("Не стана — опитайте отново.", "It did not go through — try again.") }));
+      }
       if ("needsNote" in r && r.needsNote) {
         const reason = window.prompt(L(`Редакция № ${r.needsNote.no}: какво и защо е променено (задължително)`, `Edition No. ${r.needsNote.no}: what changed and why (required)`), "");
         if (!reason?.trim()) { setMsg(L("Не е изпратено — нужна е бележка какво и защо е променено.", "Not sent — a note of what changed and why is needed.")); return; }
         const scope = window.prompt(L("Обхват (по желание)", "Scope (optional)"), "") ?? "";
-        r = await releaseDocToAction(schemeId, docKey, t, { reason, scope }).catch(() => ({ error: L("Не стана — опитайте отново.", "It did not go through — try again.") }));
+        r = await releaseDocToAction(schemeId, docKey, t, { reason, scope, numbersOk }).catch(() => ({ error: L("Не стана — опитайте отново.", "It did not go through — try again.") }));
       }
       if ("error" in r && r.error) { setMsg(r.error); return; }
       if ("needsNote" in r && r.needsNote) { setMsg(L("Не е изпратено — нужна е бележка какво и защо е променено.", "Not sent — a note of what changed and why is needed.")); return; }

@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { citeQuestion } from "@/lib/cite-confirm";
 import { uploadSchemeDocAction, removeSchemeDocUploadAction, setDocSourceAction, saveDocHtmlAction, setDocSentAction } from "@/lib/actions";
 
 export type DocSource = "built" | "uploaded" | "none";
@@ -98,6 +99,13 @@ export default function SchemeDocuments({ schemeId, lang, stages, lists = [], ca
     setBusyKey(d.key);
     startTransition(async () => {
       let r = await setDocSentAction(schemeId, d.key, sent);
+      // another scheme's number, cited on purpose: said so, and sent (R6UP-5)
+      let numbersOk: string[] | undefined;
+      if (r?.otherNumbers?.length) {
+        if (!window.confirm(citeQuestion(r.otherNumbers, lang))) { setBusyKey(null); return; }
+        numbersOk = r.otherNumbers;
+        r = await setDocSentAction(schemeId, d.key, sent, { numbersOk });
+      }
       // changed since its latest edition: it goes out as the next one, with what
       // changed and why (part 3.0 — a change is never silent)
       if (r?.needsNote) {
@@ -107,7 +115,7 @@ export default function SchemeDocuments({ schemeId, lang, stages, lists = [], ca
         ));
         if (!reason?.trim()) { setBusyKey(null); return; }
         const scope = window.prompt(L("Обхват — кои части (по желание):", "Scope — which parts (optional):")) ?? "";
-        r = await setDocSentAction(schemeId, d.key, sent, { reason, scope });
+        r = await setDocSentAction(schemeId, d.key, sent, { reason, scope, numbersOk });
       }
       setBusyKey(null);
       if (r?.error) { alert(r.error); return; }

@@ -57,7 +57,7 @@ export const M1_DECIDED: { doc: M1DocKey; no: number; match: string; bg: string;
   },
 ];
 
-import { FILL_BG, FILL_EN, fillMark } from "./fill-mark";
+import { FILL_BG, FILL_EN, fillMark, replaceBlocks } from "./fill-mark";
 export { fillMark };
 
 /** The fields M1's constant text names, filled from the scheme (HTML, escaped). What
@@ -145,7 +145,11 @@ export function m1Problems(html: string, doc: M1DocKey, lang: Lang, s?: Scheme):
   const out: string[] = [];
   const plain = textOf(html);
   const marks = Math.max((html.match(/class="m1-fill"/g) ?? []).length, plain.split(FILL_BG).length - 1 + plain.split(FILL_EN).length - 1);
-  if (marks) out.push(lang === "bg" ? `${marks} място(а) «за попълване» (махнете и жълтото поле)` : `${marks} place(s) «to be filled in» (remove the yellow field too)`);
+  // a mark in the contacts is the team's, not the editor's: it goes when the person is set (round 6, R6UP-9)
+  let teamMarks = 0;
+  replaceBlocks(html, /<div\b[^>]*\bdata-team-contacts\b[^>]*>/, "div", (b) => { teamMarks += (b.match(/class="m1-fill"/g) ?? []).length; return b; });
+  if (marks > teamMarks) out.push(lang === "bg" ? `${marks - teamMarks} място(а) «за попълване» (махнете и жълтото поле)` : `${marks - teamMarks} place(s) «to be filled in» (remove the yellow field too)`);
+  if (teamMarks) out.push(lang === "bg" ? `в контактите липсва ${teamMarks === 1 ? "човек" : "хора"} от екипа на схемата — посочете ги в «Редактирай данните» на схемата (контактите не се редактират в документа)` : `the contacts lack ${teamMarks === 1 ? "a person" : "people"} of the scheme team — set them in the scheme's «Edit data» (the contacts are not edited in the document)`);
   const headings = new Set([...html.matchAll(/<h2\b[^>]*>([\s\S]*?)<\/h2>/g)].map((m) => textOf(m[1])));
   const missing = M1_DOCS[doc].filter((p) => !headings.has(norm(`${p.no}. ${pick(lang, p.titleEn, p.titleBg)}`))).map((p) => p.no);
   if (missing.length) out.push(lang === "bg" ? `липсват заглавия на т. ${missing.join(", ")}` : `headings missing: points ${missing.join(", ")}`);

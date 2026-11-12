@@ -37,7 +37,7 @@ function footer(s: Scheme, formNumber: string): string {
 }
 
 export const minimalSkin: Skin = {
-  meta: { id: "minimal", name: "Minimal", description: "Black-on-white, a single hairline rule, maximum content space.", types: ["T", "C"] },
+  meta: { id: "minimal", name: "Minimal", description: "Black-on-white, a single hairline rule, maximum content space.", nameBg: "Минимален", descriptionBg: "Черно на бяло, една тънка линия, максимум място за съдържанието.", types: ["T", "C"] },
   css: DOC_CSS + OVERRIDES,
   fonts: BRAND_FONTS,
   cover,

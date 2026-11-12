@@ -160,7 +160,13 @@ export function sameSchemeNumber(a: string, b: string): boolean {
  *  (round 5, R5UA-1). Read as the module reads a number; tags out (a scan that stops at the next «<»). */
 const NUMBER_IN_TEXT = /(?:PTS|PTC|ПTC|ПTS|SIM|ILC)[ \u00a0-]*\d{2} ?\/ ?\d{1,2}(?: ?[-‐‑‒–—−] ?NA)? ?[-‐‑‒–—−] ?[TSCТС] ?[-‐‑‒–—−] ?\d+/g;
 export function otherSchemeNumbers(html: string, own: string): string[] {
-  const text = String(html ?? "").replace(/<[^<>]*>/g, " ").replace(/&nbsp;|&#160;|\u00a0/g, " ");
+  // tags out with nothing in their place (a number may be split by them: «25/09-<b><i>T</i></b>-1»), its
+  // character references read («&nbsp;», «&#8209;»), every run of spaces one (round 6, R6S-11)
+  const text = String(html ?? "").replace(/<[^<>]*>/g, "")
+    .replace(/&#x([0-9a-f]{1,6});?/gi, (_m, h: string) => { const c = parseInt(h, 16); return c > 0 && c <= 0x10ffff ? String.fromCodePoint(c) : " "; })
+    .replace(/&#(\d{1,7});?/g, (_m, d: string) => { const c = parseInt(d, 10); return c > 0 && c <= 0x10ffff ? String.fromCodePoint(c) : " "; })
+    .replace(/&(?:nbsp|NonBreakingSpace);?/g, " ").replace(/&(?:hyphen|dash|ndash|mdash|minus);/g, "-")
+    .replace(/[\s\u00a0]+/g, " ");
   const found = new Set<string>();
   for (const m of text.matchAll(NUMBER_IN_TEXT)) {
     const n = m[0].replace(/\s+/g, " ").trim();

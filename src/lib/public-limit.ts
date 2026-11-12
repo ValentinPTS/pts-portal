@@ -20,10 +20,14 @@ export const FORM_CEILINGS = {
   // sign-in and its second factor (round 5, R5SB-1): the sign-in service counts by the address it sees —
   // the server's, the same for everyone. Counted here per person's address, per account (its e-mail,
   // keyed), and per user for the 6-digit code and the current password; everyone's ceilings far above use
-  sign_in: { perAddress: 30, all: 6000 },
-  sign_in_account: { perAddress: 20, all: 6000 },
-  second_factor: { perAddress: 10, all: 6000 },
-  password_check: { perAddress: 10, all: 6000 },
+  // — never an everyone-ceiling: one outsider must not shut sign-in for all (round 6, R6S-3); an account's
+  // tight limit is per account AND address (a stranger's tries never lock the person out from their own),
+  // with a far higher ceiling for the account from everywhere
+  sign_in: { perAddress: 30, all: 1_000_000_000 },
+  sign_in_pair: { perAddress: 15, all: 1_000_000_000 },
+  sign_in_account: { perAddress: 200, all: 1_000_000_000 },
+  second_factor: { perAddress: 10, all: 1_000_000_000 },
+  password_check: { perAddress: 10, all: 1_000_000_000 },
 } as const;
 export type PublicForm = keyof typeof FORM_CEILINGS;
 
@@ -54,7 +58,7 @@ export async function publicFormAllowed(form: PublicForm, address: string, nowMs
 /** An attempt to sign in (or to give the 6-digit code, the current password): «ok», or why not. Unlike the
  *  forms, a count that FAILS lets it through (said in the server's log) — signing in must not depend on the
  *  counter; a ceiling reached does not. `key`: an address, or «account-…»/«user-…» (never with «:»). */
-export async function attemptLimit(kind: "sign_in" | "sign_in_account" | "second_factor" | "password_check", key: string, nowMs = Date.now()): Promise<FormLimit> {
+export async function attemptLimit(kind: "sign_in" | "sign_in_pair" | "sign_in_account" | "second_factor" | "password_check", key: string, nowMs = Date.now()): Promise<FormLimit> {
   const r = await publicFormLimit(kind, key.replace(/:/g, "_"), nowMs, true);
   return r === "error" ? "ok" : r;
 }

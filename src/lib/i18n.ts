@@ -577,6 +577,7 @@ const DICT: Record<string, Entry> = {
   "act.doc.sent": { bg: "Изпратен на участниците", en: "Sent to the participants" },
   "act.doc.unsent": { bg: "Спряно споделяне", en: "Withdrawn from the participants" },
   "act.doc.edition": { bg: "Издадена редакция на документ", en: "Document edition issued" },
+  "act.doc.numbers_cited": { bg: "Изпратен документ, цитиращ номер на друга схема (потвърдено)", en: "Document sent citing another scheme's number (confirmed)" },
   "act.notice.released": { bg: "Освободено известие към лаборатория", en: "Notice to a laboratory released" },
   "act.notice.withheld": { bg: "Задържано известие към лаборатория", en: "Notice to a laboratory withheld" },
   "act.labdoc.uploaded": { bg: "Изпратена проформа", en: "Proforma sent" },

@@ -385,7 +385,7 @@ export default function WordEditor({
   const [en, setEn] = useState(() => sanitizeDocHtml(initialEn));
   const [started, setStarted] = useState(initialBg !== "" || initialEn !== "");
   const [coverIn, setCoverIn] = useState(hasCover(initialBg) || hasCover(initialEn));
-  const [saved, setSaved] = useState(true);
+  const [saved, setSavedState] = useState(true);
   const [busy, setBusy] = useState("");
   const [ready, setReady] = useState(initialReady); // "Готов" — the owner's explicit call
   const [panel, setPanel] = useState(true);
@@ -437,6 +437,12 @@ export default function WordEditor({
   // correct after commit — a render React throws away must not leave a value behind.
   const lockRef = useRef(lockAspect);
   const savedRef = useRef(saved);
+  // Every edit counts; the document is «saved» only when the last save carried the latest edit — words typed
+  // while a save was on its way were shown as «Всичко е запазено» and never saved (round 6, R6UP-1)
+  const editGen = useRef(0);
+  const savedGen = useRef(0);
+  // (the ref is set here too, not only by the effect: a keystroke in the frame before it ran was not counted)
+  const setSaved = (v: boolean) => { if (!v) editGen.current++; savedRef.current = v; setSavedState(v); };
   const busyRef = useRef(busy);
   useEffect(() => { lockRef.current = lockAspect; }, [lockAspect]);
   useEffect(() => { savedRef.current = saved; }, [saved]);
@@ -467,6 +473,7 @@ export default function WordEditor({
     const el = ref.current; if (!el) return "";
     const clone = el.cloneNode(true) as HTMLElement;
     clone.querySelectorAll(".we-gap").forEach((n) => n.remove());
+    clone.querySelectorAll("[data-team-contacts]").forEach((n) => { n.removeAttribute("contenteditable"); n.removeAttribute("title"); });
     return clone.innerHTML;
   };
 
@@ -773,6 +780,19 @@ export default function WordEditor({
         c.replaceWith(...Array.from(c.childNodes));
       }
     }
+    // The Instruction's contacts come from the scheme team on every print — typed into, they were lost
+    // silently (round 6, R6UP-4): not editable here, said why, and always a line after them to write on
+    for (const c of Array.from(body.querySelectorAll<HTMLElement>("[data-team-contacts]"))) {
+      if (c.getAttribute("contenteditable") !== "false") {
+        c.setAttribute("contenteditable", "false");
+        c.title = L("Контактите се попълват от екипа на схемата («Редактирай данните» на схемата) — не се редактират тук.", "The contacts come from the scheme team (the scheme's «Edit data») — they are not edited here.");
+      }
+      let top: Element = c;
+      while (top.parentElement && top.parentElement !== body) top = top.parentElement;
+      let next = top.nextElementSibling;
+      while (next && next.classList.contains("we-gap")) next = next.nextElementSibling;
+      if (top.parentElement === body && !next) { const p = document.createElement("p"); p.appendChild(document.createElement("br")); body.appendChild(p); }
+    }
     const sig = pgSigOf(body);
     if (sig === pgSig.current) return;
     // READ: measure with the existing gaps LEFT IN PLACE (no strip-and-rebuild —
@@ -885,7 +905,8 @@ export default function WordEditor({
   function scheduleAutosave() {
     if (autoTimer.current) clearTimeout(autoTimer.current);
     autoTimer.current = setTimeout(() => {
-      if (!savedRef.current && !busyRef.current) save();
+      // another act running (a picture, the PDF): tried again later, never dropped (R6UP-1)
+      if (!savedRef.current) { if (busyRef.current && busyRef.current !== "save") scheduleAutosave(); else void save(); }
     }, 2500);
   }
   // The editable body's input handler: mark unsaved (only when it flips), reflow the
@@ -893,6 +914,7 @@ export default function WordEditor({
   // every keystroke after the first.
   const lastKidCount = useRef(-1);
   function onBodyInput() {
+    editGen.current++;
     if (savedRef.current) setSaved(false);
     // STRUCTURAL edits (Enter made a block, a paste, a deleted paragraph) change
     // the block count → repaginate on the very next frame so the new line lands
@@ -910,7 +932,7 @@ export default function WordEditor({
   function onEditorKeyDown(e: React.KeyboardEvent) {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
       e.preventDefault(); // Ctrl/⌘+S saves (Ctrl+B/I/U are native in contentEditable)
-      if (!savedRef.current && !busyRef.current) save();
+      if (!savedRef.current) void save();
     }
     // Enter inside a date-card row (.cals) would only add lines INSIDE the card —
     // escape below it instead: a fresh paragraph after the row, caret in it.
@@ -1051,11 +1073,14 @@ export default function WordEditor({
   // died with the page, and the words typed in its last seconds with it (round 5, R5UA-2). A save that
   // fails keeps the person here, its reason said.
   const router = useRouter();
+  const leaveUnsaved = useRef("");
+  useEffect(() => { leaveUnsaved.current = L("Документът НЕ е записан (причината е над него). Да напусна ли страницата без да запиша последните промени?", "The document is NOT saved (the reason is above it). Leave the page without saving the latest changes?"); });
   const saveNow = useRef<() => Promise<boolean>>(async () => true);
   useEffect(() => { saveNow.current = save; });
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
-      if (savedRef.current || busyRef.current || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      // (a save on its way is waited for — the link went at once and the words after it were lost, R6UP-1)
+      if (savedRef.current || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
       if (!a || (a.target && a.target !== "_self") || a.hasAttribute("download") || ref.current?.contains(a)) return;
       let url: URL;
@@ -1063,7 +1088,13 @@ export default function WordEditor({
       if (url.origin !== window.location.origin || (url.pathname === window.location.pathname && url.search === window.location.search)) return;
       e.preventDefault();
       e.stopPropagation();
-      void saveNow.current().then((ok) => { if (ok) router.push(url.pathname + url.search + url.hash); });
+      const go = () => router.push(url.pathname + url.search + url.hash);
+      // a save that cannot go through (another tab saved first, too large, no connection): the reason is on the
+      // bar, and the person may still leave — every link was swallowed before, silently (round 6, R6UP-3)
+      void saveNow.current().then((ok) => {
+        if (ok) return go();
+        if (window.confirm(leaveUnsaved.current)) { savedRef.current = true; go(); }
+      });
     };
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
@@ -1540,14 +1571,23 @@ export default function WordEditor({
 
   // Saves, and says so when it could not — never left «Запазване…» (round 4, R4U-1: a refused save threw,
   // and every later edit was lost without a word). The bodies go as one object (see saveDocHtmlAction).
-  async function save(): Promise<boolean> {
+  // One save at a time (round 6, R6UP-2): «Готов», «Страници», «PDF» and «Попълване» pressed while the
+  // autosave was on its way sent the same save count and were refused as «записан междувременно», unsaid —
+  // now each waits for the one before it, sends only what is new, and goes on until the latest edit is saved.
+  const saveChain = useRef<Promise<unknown>>(Promise.resolve());
+  const saveOnce = useRef<() => Promise<boolean>>(async () => true);
+  useEffect(() => { saveOnce.current = saveOnceNow; });
+  async function saveOnceNow(): Promise<boolean> {
+    const gen = editGen.current;
+    if (gen === savedGen.current) { if (!savedRef.current) { savedRef.current = true; setSavedState(true); } return true; }
     const { nb, ne } = fold();
     setBusy("save");
     try {
       const r = await saveDocHtmlAction(schemeId, docKey, { bg: nb, en: ne, rev: revRef.current });
       if (r?.error) { setSaveErr(r.error); return false; }
       if (typeof r?.rev === "number") revRef.current = r.rev;
-      setSaved(true); setSaveErr("");
+      savedGen.current = gen; setSaveErr("");
+      if (editGen.current === gen) { savedRef.current = true; setSavedState(true); }
       return true;
     } catch {
       setSaveErr(L("Не е записано — проверете връзката и натиснете «Запази» (Ctrl+S) отново.", "Not saved — check the connection and press «Save» (Ctrl+S) again."));
@@ -1555,6 +1595,12 @@ export default function WordEditor({
     } finally {
       setBusy("");
     }
+  }
+  function save(): Promise<boolean> {
+    const p = saveChain.current.then(() => saveOnce.current());
+    saveChain.current = p.catch(() => false);
+    // words typed while it was on its way: saved too before this says «saved» (R6UP-1)
+    return p.then((ok) => (ok && editGen.current !== savedGen.current ? save() : ok));
   }
   async function translate() {
     const { nb } = fold();

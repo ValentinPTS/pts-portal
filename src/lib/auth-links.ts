@@ -1,3 +1,4 @@
+import { ACTS_WHEN_OPENED } from "./acts-when-opened";
 // Account e-mail links (plan part 1.5, finding P4.b). Pure, so the route, the
 // actions and the tests share one set of rules.
 //
@@ -72,7 +73,11 @@ export function safeNext(next: string | null | undefined, fallback: string): str
 // or a control character («/<TAB>/evil.example») is read by a browser as another site (the
 // security sweep, SA-2: the sign-in's own check had only refused «//»).
 export function safeDest(role: "internal" | "lab", next: string): string {
-  const n = safeNext(next, role === "lab" ? "/lab" : "/");
+  const n0 = safeNext(next, role === "lab" ? "/lab" : "/");
+  // PTS's people never straight onto a page that acts when opened (an export, a print, names with codes): a
+  // sign-in from a link someone else made must not open one in their name (round 6, Q3) — home instead. A
+  // laboratory's own document from its e-mail link is what it signs in for: kept.
+  const n = role === "internal" && ACTS_WHEN_OPENED.test(n0.split(/[?#]/)[0]) ? "/" : n0;
   if (role === "lab") return (n === "/lab" || n.startsWith("/lab/") || n.startsWith("/lab?")) && !n.startsWith("/lab/login") ? n : "/lab";
   return !n.startsWith("/lab") && !n.startsWith("/login") ? n : "/";
 }

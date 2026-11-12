@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, type FormEvent, type ReactNode } from "react";
 
 // A form sent ONCE: a second submit while the first is on its way is ignored (round 5, R5UA-5 — a
 // double click on «Внеси» recorded the same report twice, «Запиши» the same transfer check). The
@@ -12,6 +12,11 @@ export default function OnceForm({ action, children, onSubmit, ...rest }: {
   onSubmit?: (e: FormEvent<HTMLFormElement>) => void;
 } & Omit<React.FormHTMLAttributes<HTMLFormElement>, "action" | "onSubmit">) {
   const sent = useRef(0);
+  // the page answered (a refusal brings it back, re-rendered): sending is allowed again at once — a corrected
+  // file was held for half a minute otherwise (round 6, R6S-10)
+  // — known by the address it came back on («?err=…», «?ok=…»), never by a mere re-render mid-flight
+  const sentAt = useRef("");
+  useEffect(() => { if (sent.current && window.location.href !== sentAt.current) sent.current = 0; });
   return (
     <form
       {...rest}
@@ -21,6 +26,7 @@ export default function OnceForm({ action, children, onSubmit, ...rest }: {
         if (e.defaultPrevented) return;
         if (Date.now() - sent.current < 30_000) { e.preventDefault(); return; }
         sent.current = Date.now();
+        sentAt.current = window.location.href;
       }}
     >
       {children}

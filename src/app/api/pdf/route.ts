@@ -65,6 +65,11 @@ async function getBrowser(): Promise<Browser> {
 
 export async function POST(req: NextRequest) {
   await requireStaff(); // any internal role may render/print (read); writes blocked elsewhere
+  // only the portal's own pages ask: JSON (a plain-text body needs no preflight, so another site could send
+  // one), and never from another site — a PDF is made, and its opening written, in the viewer's name (round 6, R6S-6)
+  const site = (req.headers.get("sec-fetch-site") ?? "").toLowerCase();
+  if (site === "cross-site" || site === "same-site") return new Response("Forbidden", { status: 403 });
+  if (!/^application\/json\b/i.test(req.headers.get("content-type") ?? "")) return new Response("JSON only", { status: 415 });
   let body: { id?: string; doc?: string; lang?: string; participant?: string; composed?: boolean };
   try {
     body = await req.json();

@@ -4,9 +4,10 @@ import { openLaboratories } from "@/lib/laboratories";
 import { listOpenSchemes, getScheme } from "@/lib/store";
 import { isStarted } from "@/lib/visibility";
 import { isProvisional } from "@/lib/coding-model";
+import { isSimulation } from "@/lib/catalogue-model";
 import { getServerT } from "@/lib/i18n-server";
 import { applyOpenProblem, earlierProblem } from "@/lib/lab-apply-model";
-import { schemeFull } from "@/lib/waitlist-model";
+import { schemeFull, waitingOf } from "@/lib/waitlist-model";
 import { listParticipants } from "@/lib/participants";
 import { schemeNowMs } from "@/lib/clock";
 import { fmtSchemeDate } from "@/lib/scheme-dates";
@@ -24,7 +25,7 @@ export default async function LabApplyPage({ searchParams }: { searchParams: Pro
   const lg: "bg" | "en" = lang === "bg" ? "bg" : "en";
   const L = (bg: string, en: string) => (lg === "bg" ? bg : en);
   const sp = await searchParams;
-  const open = (await listOpenSchemes()).filter((s) => !applyOpenProblem(s, schemeNowMs(s)))
+  const open = (await listOpenSchemes()).filter((s) => !applyOpenProblem(s, schemeNowMs(s)) && !isSimulation(s.number))
     .sort((a, b) => (a.dates?.applicationsDue ?? "9999").localeCompare(b.dates?.applicationsDue ?? "9999") || a.number.localeCompare(b.number));
   const approved = entity.state === "active";
   // «Запълнена» (9.3, Реш. 120): a label — an application goes on the waiting list; never the maximum (3.7)
@@ -44,14 +45,19 @@ export default async function LabApplyPage({ searchParams }: { searchParams: Pro
   const doneCode = ownThere.map((m) => doneRows.find((x) => x.id === m.participantId)?.code).find((c) => !!c) ?? null;
   // a provisional reference is never shown to the laboratory (5.3)
   const code = doneCode && !isProvisional(doneCode) ? doneCode : null;
+  // on the waiting list: «получена», never «приета» — the scheme is full (round 6, R6UL-4)
+  const waitingThere = new Set(done ? waitingOf(done, doneRows) : []);
+  const doneWaiting = ownThere.length > 0 && ownThere.every((m) => waitingThere.has(m.participantId));
   return (
     <div style={{ minHeight: "100dvh", background: "var(--bg)" }}>
       <ParticipantNav lang={lg} active="apply" name={user.name} role={user.role} persona={persona} />
       <main style={{ maxWidth: 820, margin: "0 auto", padding: "32px 24px" }}>
         <h1 className="section-title" style={{ fontSize: 26, margin: "0 0 8px" }}>{L("Заявяване на участие", "Apply to take part")}</h1>
         {done && (
-          <div role="status" data-apply-done className="card" style={{ padding: 14, marginBottom: 14, background: "var(--green-soft)" }}>
-            {L(`Заявката за ${done.number} е приета${code ? ` — код ${code}` : ""}. Участието е в «Начало».`, `The application for ${done.number} is received${code ? ` — code ${code}` : ""}. The participation is under «Home».`)}
+          <div role="status" data-apply-done data-apply-done-waiting={doneWaiting ? "" : undefined} className="card" style={{ padding: 14, marginBottom: 14, background: doneWaiting ? "#fff8e6" : "var(--green-soft)" }}>
+            {doneWaiting
+              ? L(`Заявката за ${done.number} е получена — схемата е запълнена и лабораторията е в списъка на чакащите${code ? ` (код ${code})` : ""}. Участието е в «Начало».`, `The application for ${done.number} is received — the scheme is full and the laboratory is on the waiting list${code ? ` (code ${code})` : ""}. The participation is under «Home».`)
+              : L(`Заявката за ${done.number} е приета${code ? ` — код ${code}` : ""}. Участието е в «Начало».`, `The application for ${done.number} is received${code ? ` — code ${code}` : ""}. The participation is under «Home».`)}
             {sp.warn === "1" && <div data-apply-done-warning style={{ marginTop: 6, color: "#7a2e0e" }}>{L("Схемата изисква акредитация, а лабораторията няма въведен номер на акредитация — това не спира участието (Реш. 108).", "The scheme asks for accreditation and the laboratory has no accreditation number — this does not stop the participation (Decision 108).")}</div>}
           </div>
         )}

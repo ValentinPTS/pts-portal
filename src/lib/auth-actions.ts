@@ -87,11 +87,15 @@ async function journalSignIn(userId: string, email: string, role: "internal" | "
 // Attempts counted by the portal itself (round 5, R5SB-1): the sign-in service counts by the address it
 // sees — the server's, the same for everyone — so one outsider's wrong passwords could shut everyone out,
 // or go on unlimited. Per person's address and per account an hour; per user for the 6-digit code.
-const TOO_MANY_SIGN_IN = "Твърде много опити за вход — опитайте отново след час. · Too many sign-in attempts — try again in an hour.";
+const TOO_MANY_SIGN_IN = "Твърде много опити за вход — опитайте отново след час или поискайте нова парола («Забравена парола»). · Too many sign-in attempts — try again in an hour, or ask for a new password («Forgot password»).";
 const TOO_MANY_CODE = "Твърде много опити с кода — опитайте отново след час. · Too many attempts with the code — try again in an hour.";
+// …the account's tight limit per account AND address (a stranger's tries never lock the person out from their
+// own address), and a far higher one for the account from everywhere (round 6, R6S-3 / R6UL-2)
 async function signInAllowed(email: string): Promise<boolean> {
   const addr = requestAddress(await headers());
-  return (await attemptLimit("sign_in", addr)) === "ok" && (await attemptLimit("sign_in_account", `account-${email}`)) === "ok";
+  return (await attemptLimit("sign_in", addr)) === "ok"
+    && (await attemptLimit("sign_in_pair", `account-${email}-at-${addr}`)) === "ok"
+    && (await attemptLimit("sign_in_account", `account-${email}`)) === "ok";
 }
 async function codeAllowed(userId: string | undefined): Promise<boolean> {
   const addr = requestAddress(await headers());

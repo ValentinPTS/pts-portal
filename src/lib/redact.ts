@@ -60,12 +60,15 @@ const IDENTITY_KEYS = new Set(["by", "entity", "entityId", "lab", "labId", "labo
 // a waybill typed with spaces («62 123 456 789») is masked whole, to the next «,», «;», «)» or the end;
 // «товарителница» too («\b» is ASCII-only in a JS pattern — it never matched; round 3, R3S-4)
 // A courier's reference after its word — «товарителница», «пратка», «тов. №», «waybill», «AWB», «tracking»,
-// a courier's name — masked; only the reference, never the words after it («…товарителница •••. Пакетът
-// беше повреден» — round 5, R5SA-6: the mask ran to the next comma and hid the damage note). A reference:
-// a first token with a digit in it, then the next ones that start with a digit («62 555 444 333»,
-// «JD0146 0000 1234», «1Z999AA1…», «62123456789 и 62987654321»).
-const WAYBILL_TEXT = /(^|[^\p{L}\p{N}_])(waybills?|way-bills?|awb|tracking|товарителниц\p{L}*|пратк\p{L}*|тов\.|speedy|спиди|econt|еконт|dhl|ups|fedex|tnt|dpd|gls)[\s:№#.\-–—]*(?=[\p{L}\p{N}\-/]*\p{N})[\p{L}\p{N}][\p{L}\p{N}\-/]*(?:(?:\s+|\s*,\s*|\s+(?:и|and)\s+)\p{N}[\p{N}\-/]*)*/giu;
-const maskWaybills = (v: string) => v.replace(WAYBILL_TEXT, `$1$2 \u2022\u2022\u2022`);
+// a courier's name — masked; only the reference, never the words after it (round 5, R5SA-6). Between the word
+// and the reference, up to a few short words and signs («номер», «с», «No:», «(», «„», «=» — round 6, R6S-2:
+// «товарителница номер 62 555 444 333» went through). A reference: a first token with a digit in it, then the
+// next ones that start with a digit. Bounded and unambiguous — no run the engine can backtrack into.
+const WAYBILL_TEXT = /(^|[^\p{L}\p{N}_])(waybills?|way-bills?|awb|tracking|товарителниц\p{L}*|пратк\p{L}*|тов\.|speedy|спиди|econt|еконт|dhl|ups|fedex|tnt|dpd|gls)((?:[\s:№#.=„“”"'(\[\-–—]|(?:номер|номерът|с|е|no|nr|num|number|is|ad|ад|express)(?=[\s:№#.=„“”"'(\[\-–—])){0,24})(?=[\p{L}\p{N}][\p{L}\p{N}\-/]*\p{N})[\p{L}\p{N}][\p{L}\p{N}\-/]*(?:(?:\s+|\s*,\s*|\s+(?:и|and)\s+)\p{N}[\p{N}\-/]*)*/giu;
+// …and any run of ten digits or more (spaces and dashes inside), with or without its word: that is what a
+// waybill looks like, and nothing a codes-only reader needs is one (round 6, R6S-2)
+const LONG_NUMBER = /(^|[^\p{N}])(\p{N}(?:[ \-]?\p{N}){9,})(?![\p{N}])/gu;
+const maskWaybills = (v: string) => v.replace(WAYBILL_TEXT, `$1$2 \u2022\u2022\u2022`).replace(LONG_NUMBER, `$1\u2022\u2022\u2022`);
 const MASK = "•••";
 function scrubRef(v: string | undefined): string | undefined {
   if (!v) return v;

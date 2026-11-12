@@ -45,7 +45,9 @@ export default function CalibrationResultsForm({ schemeId, participantId, lang, 
   const { values, change, save, state, bad: notNum, flush } = useDraftSaver({ schemeId, participantId, initial, rev, savedAt });
   // the deadline passed while this tab was open: the server said the form is closed — the form says so too,
   // and shuts (round 5, R5UB-4: the fields stayed editable, «Прегледай и подай» did nothing visible)
-  const closedNow = state.kind === "error" && state.error === "state";
+  // — or refused the submission as closed (round 6, R6UL-3: a tab that went straight to «Прегледай и подай»)
+  const [refusedClosed, setRefusedClosed] = useState(false);
+  const closedNow = refusedClosed || (state.kind === "error" && state.error === "state");
   const editable = editableProp && !closedNow;
   const status = saveStatus(state, L);
   // 6.3: the checks before submission, on request — completeness and format only
@@ -142,7 +144,7 @@ export default function CalibrationResultsForm({ schemeId, participantId, lang, 
 
       <CheckReport problems={checked} lang={lang} labelOf={labelOf} />
       {/* 6.4: review → confirmations (the computed errors confirmed — D1) → receipt */}
-      <SubmitPanel schemeId={schemeId} participantId={participantId} lang={lang} kind="C" flush={flush} open={submitOpen && editable} labelOf={labelOf}
+      <SubmitPanel schemeId={schemeId} participantId={participantId} lang={lang} kind="C" flush={flush} open={submitOpen && editable} labelOf={labelOf} onClosed={() => setRefusedClosed(true)}
         problems={() => checkCalibration(readCalDraft((n) => values[n], asRows), asRows, windows ?? [])}
         summary={() => (
           <ul style={{ margin: 0, paddingLeft: 18 }}>

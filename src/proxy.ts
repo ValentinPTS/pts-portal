@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { getDb } from "./lib/supabase";
 import { SESSION_COOKIE } from "./lib/session-cookie";
+import { ACTS_WHEN_OPENED } from "./lib/acts-when-opened";
 import { isSharedMailbox } from "./lib/provider-people";
 import { entityUserByAuth } from "./lib/entity-users";
 
@@ -108,12 +109,13 @@ function notAPage(request: NextRequest): boolean {
 // sends a fetch to), they act in the viewer's name: refused there — a navigation gets a page with the
 // same link to follow by hand, from the portal itself (round 5, R5SB-3; a link in an e-mail still works,
 // one click more).
-const ACTS_WHEN_OPENED = /^\/(?:registrations\/letter\/|invoices\/export(?:\/|$)|users\/(?:declarations|applications)\/|organizations\/proof\/|lab\/(?:labdoc|doc|upload)\/|schemes\/[^/]+\/(?:export(?:\/|$)|audit-pack(?:\/|$)|fill\/|editions\/|released\/|uploaded\/|lab-uploads\/|lab-docs\/|analysis-import\/|doc\/[^/]+\/print|build\/[^/]+\/print))/;
 function fromAnotherSite(request: NextRequest): "navigate" | "other" | null {
   const site = (request.headers.get("sec-fetch-site") ?? "").toLowerCase();
   if (site !== "cross-site" && site !== "same-site") return null;
-  if (!ACTS_WHEN_OPENED.test(request.nextUrl.pathname)) return null;
-  return (request.headers.get("sec-fetch-mode") ?? "").toLowerCase() === "navigate" ? "navigate" : "other";
+  // a navigation asks first only where opening acts; anything else from another site — a fetch, an RSC
+  // request — is refused on every non-public path (round 6, R6S-5: a same-site fetch wrote «names viewed»)
+  if ((request.headers.get("sec-fetch-mode") ?? "").toLowerCase() === "navigate") return ACTS_WHEN_OPENED.test(request.nextUrl.pathname) ? "navigate" : null;
+  return "other";
 }
 const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 function confirmOpening(request: NextRequest): NextResponse {
@@ -122,6 +124,7 @@ function confirmOpening(request: NextRequest): NextResponse {
     + `<body style="font-family:system-ui,sans-serif;max-width:560px;margin:12vh auto;padding:0 16px;color:#1f2a1f">`
     + `<h1 style="font-size:20px">Отваряне от друг сайт · Opened from another site</h1>`
     + `<p>Този файл или страница от портала на PTS се записва, когато се отвори. Отворете го само ако сте го поискали. · This file or page of the PTS portal is recorded when opened. Open it only if you asked for it.</p>`
+    + `<p style="font-family:ui-monospace,monospace;font-size:13px;word-break:break-all;color:#4a5a4a">${href}</p>`
     + `<p><a href="${href}" style="display:inline-block;padding:10px 16px;background:#2f5d2f;color:#fff;border-radius:8px;text-decoration:none">Продължи · Continue</a></p></body></html>`;
   return new NextResponse(html, { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; form-action 'none'; base-uri 'none'", "referrer-policy": "no-referrer" } });
 }

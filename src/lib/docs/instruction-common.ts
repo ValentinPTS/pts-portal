@@ -61,11 +61,26 @@ export function writtenInstructionsNote(lang: Lang, calibration: boolean): strin
   return `<div class="body"><div class="note" data-written-instructions><b>${esc(pick(lang, t.en, t.bg))}</b></div></div>`;
 }
 
+/** What a person added inside a saved contacts block — everything but its people and its 📞/✉ lines. */
+export function addedInContacts(block: string): string {
+  const inner = block.replace(/^<div\b[^>]*>/, "").replace(/<\/div>\s*$/, "");
+  let kept = replaceBlocks(inner, /<div\b[^>]*\bclass="person"[^>]*>/, "div", () => "");
+  kept = replaceBlocks(kept, /<div\b[^>]*\bclass="cline"[^>]*>/, "div", (line) => {
+    const words = line.replace(/<[^>]+>/g, "").replace(/&nbsp;|\u00A0/g, " ").trim();
+    // the generated line itself is dropped; words typed onto its end are kept, as a paragraph
+    const extra = words.replace(/^(?:📞\s*[0-9 ]+|✉\s*\S+@\S+)/u, "").trim();
+    return extra ? `<p>${line.replace(/^<div\b[^>]*>/, "").replace(/<\/div>$/, "").replace(/^\s*(?:📞\s*[0-9 ]+|✉\s*[^\s<]+@[^\s<]+)/u, "")}</p>` : "";
+  });
+  return /<(?:img|table|svg|math)\b/i.test(kept) || kept.replace(/<[^>]+>/g, "").replace(/&nbsp;|\u00A0/g, " ").trim() ? kept.trim() : "";
+}
+
 /** A saved Instruction printed: its contacts from the team as it is now, and the
  *  Реш. 150 sentence where the body has none (3.11 review). */
 export function refreshInstruction(html: string, s: Pick<Scheme, "team" | "type">, lang: Lang): string {
   if (!html) return html;
-  let out = replaceBlocks(html, /<div\b[^>]*\bclass="contacts"[^>]*>/, "div", () => instructionContacts(s, lang));
+  // anything a person added inside the block (a sentence, a picture — the caret at the document's end sat in
+  // it) is kept after it: only the people and the two contact lines are the team's (round 6, R6UP-4)
+  let out = replaceBlocks(html, /<div\b[^>]*\bclass="contacts"[^>]*>/, "div", (old) => instructionContacts(s, lang) + addedInContacts(old));
   if (!out.includes("data-written-instructions")) out = writtenInstructionsNote(lang, s.type === "C") + out;
   return out;
 }

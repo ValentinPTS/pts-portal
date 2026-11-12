@@ -14,7 +14,7 @@ import { sofiaZoneAt } from "@/lib/scheme-dates";
 // computed errors confirmed); «Подай» → the receipt: the version, the date and hour, the account,
 // the receipt's number, the configuration's version.
 
-export default function SubmitPanel({ schemeId, participantId, lang, kind, flush, problems, summary, labelOf, open }: {
+export default function SubmitPanel({ schemeId, participantId, lang, kind, flush, problems, summary, labelOf, open, onClosed }: {
   schemeId: string; participantId: string; lang: "bg" | "en"; kind: "T" | "C";
   /** save the draft now — its revision, or null when it could not be saved */
   flush: () => Promise<number | null>;
@@ -24,6 +24,9 @@ export default function SubmitPanel({ schemeId, participantId, lang, kind, flush
   labelOf: (p: CheckProblem) => string;
   /** the form takes a submission now (before the deadline, or under PTS's unlock) */
   open: boolean;
+  /** the server refused the submission because the form is closed (the deadline passed while the tab was open)
+   *  — the form shuts too, as after a refused save (round 6, R6UL-3) */
+  onClosed?: () => void;
 }) {
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const router = useRouter();
@@ -61,6 +64,7 @@ export default function SubmitPanel({ schemeId, participantId, lang, kind, flush
     catch { setStage("review"); setError(L(SUBMIT_PROBLEM_TEXT.unknown.bg, SUBMIT_PROBLEM_TEXT.unknown.en)); router.refresh(); return; }
     if ("ok" in r) { setReceipt(r.receipt); setStage("done"); router.refresh(); return; }
     setStage("review");
+    if (r.error === "closed") { setStage("idle"); onClosed?.(); return; }
     if (r.error === "checks" && "problems" in r && r.problems) setChecked(r.problems);
     const t = SUBMIT_PROBLEM_TEXT[r.error];
     setError(t ? L(t.bg, t.en) : L("Подаването НЕ е записано.", "The submission was NOT recorded."));

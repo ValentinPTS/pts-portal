@@ -11,6 +11,9 @@ export interface SkinMeta {
   id: string;
   name: string;
   description: string;
+  /** its name and description on Bulgarian screens (round 6, R6UP-7) */
+  nameBg?: string;
+  descriptionBg?: string;
   types: SchemeType[]; // which scheme types this skin is offered for
 }
 

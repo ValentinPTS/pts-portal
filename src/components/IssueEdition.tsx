@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useLang } from "@/components/LangProvider";
 import { issueEditionAction } from "@/lib/actions";
+import { citeQuestion } from "@/lib/cite-confirm";
 import { MIN_REASON, MAX_NOTE } from "@/lib/editions-model";
 
 // «Издай редакция» (plan part 3.0): the document as it is now becomes its next
@@ -27,7 +28,9 @@ export default function IssueEdition({ schemeId, docs, initial }: { schemeId: st
     e.preventDefault();
     setMsg(null);
     start(async () => {
-      const r = await issueEditionAction(schemeId, doc, { reason, scope });
+      let r = await issueEditionAction(schemeId, doc, { reason, scope });
+      // another scheme's number, cited on purpose (R6UP-5)
+      if (r.otherNumbers?.length && window.confirm(citeQuestion(r.otherNumbers, lang))) r = await issueEditionAction(schemeId, doc, { reason, scope, numbersOk: r.otherNumbers });
       if (r.error) { setMsg({ ok: false, text: r.error }); return; }
       setMsg({ ok: true, text: L(`Издадена е редакция № ${r.no}.`, `Edition No. ${r.no} issued.`) });
       setReason("");

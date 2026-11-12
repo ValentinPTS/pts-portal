@@ -16,7 +16,7 @@ import { INVITE_SUBJECT, inviteText, invitePreview, PROFILE_CONFIRMED_SUBJECT, P
   ADMIN_CHANGED_KEY, ADMIN_CHANGED_SUBJECT, adminChangedText, officialNoticePreviews } from "./fixed-texts";
 import { JOIN_LETTER_BUCKET, keepMemLetter } from "./join-letters";
 import { waitingAtAnnouncement, admissionCheck, admissionsNow, ADMIT_PROBLEM_TEXT, schemeFull } from "./waitlist-model";
-import { catalogueState, subjectOf, wishProblem, wishesToTell, activeWish, SUBJECT_MAX, WISH_PROBLEM_TEXT, type CatalogueWish } from "./catalogue-model";
+import { catalogueState, subjectOf, wishProblem, wishesToTell, activeWish, SUBJECT_MAX, WISH_PROBLEM_TEXT, isSimulation, type CatalogueWish } from "./catalogue-model";
 import { listWishes, addWish, closeWish, eraseWishesOf } from "./catalogue-wishes";
 import { buildFeed } from "./website-feed-model";
 import { publishFeed, feedDigest, feedBase, feedBaseMissing, latestPublication } from "./website-feed";
@@ -248,7 +248,7 @@ export async function translateAction(
       // Hard timeout so a slow/hung translator can never block the action (same
       // pattern as checkVies). Fails soft to an "unavailable" error the UI shows.
       const res = await fetch(url, { headers: { "User-Agent": "PTS-Portal" }, signal: AbortSignal.timeout(8000) });
-      if (!res.ok) return { error: `Translator unavailable (${res.status}).` };
+      if (!res.ok) return { error: `Преводачът не е достъпен (${res.status}). · Translator unavailable (${res.status}).` };
       const data = await res.json();
       // MyMemory answers HTTP 200 even when it REFUSES the request — the real status
       // lives in the JSON body, and when the free daily quota runs out the warning
@@ -260,7 +260,7 @@ export async function translateAction(
       const status = Number(data?.responseStatus);
       if (Number.isFinite(status) && status !== 200) {
         const detail = String(data?.responseDetails ?? "").slice(0, 120);
-        return { error: `Translator refused (${status})${detail ? `: ${detail}` : "."}` };
+        return { error: `Преводачът отказа (${status})${detail ? `: ${detail}` : "."} · Translator refused (${status})${detail ? `: ${detail}` : "."}` };
       }
       const piece = data?.responseData?.translatedText;
       if (typeof piece !== "string" || !piece) return { error: "Преводът не върна текст. · No translation returned." };
@@ -606,8 +606,8 @@ export async function setDocSentAction(
   schemeId: string,
   docKey: string,
   sent: boolean,
-  note?: { reason?: string; scope?: string },
-): Promise<{ ok?: boolean; error?: string; told?: number; namesWithheld?: boolean; scoresWithheld?: boolean; needsNote?: { no: number; since: number }; edition?: number; issued?: boolean; stillTargeted?: number }> {
+  note?: SendNote,
+): Promise<{ ok?: boolean; error?: string; otherNumbers?: string[]; told?: number; namesWithheld?: boolean; scoresWithheld?: boolean; needsNote?: { no: number; since: number }; edition?: number; issued?: boolean; stillTargeted?: number }> {
   await requireCap("docs.release", schemeId); // in THIS scheme, by the role model (2.4)
   const scheme = await getScheme(schemeId);
   if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
@@ -655,7 +655,7 @@ export async function setDocSentAction(
   // sent — the lookup below failing — is simply the latest edition, sent next time.)
   const got = await editionToSend(scheme, docKey, note, await actorNow());
   if ("needsNote" in got) return { needsNote: got.needsNote };
-  if ("error" in got) return { error: got.error };
+  if ("error" in got) return { error: got.error, otherNumbers: got.otherNumbers };
   const { edition, issued } = got;
 
   // Who to tell, before the release is recorded (2.3) — those in the round: a refused,
@@ -726,8 +726,8 @@ export async function releaseDocToAction(
   schemeId: string,
   docKey: string,
   targetIn: { level?: unknown; participantId?: unknown; userId?: unknown },
-  note?: { reason?: string; scope?: string },
-): Promise<{ ok?: boolean; error?: string; told?: number; needsNote?: { no: number; since: number }; edition?: number; issued?: boolean; namesWithheld?: boolean; scoresWithheld?: boolean }> {
+  note?: SendNote,
+): Promise<{ ok?: boolean; error?: string; otherNumbers?: string[]; told?: number; needsNote?: { no: number; since: number }; edition?: number; issued?: boolean; namesWithheld?: boolean; scoresWithheld?: boolean }> {
   await requireCap("docs.release", schemeId); // in THIS scheme, by the role model (2.4)
   const scheme = await getScheme(schemeId);
   if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
@@ -768,7 +768,7 @@ export async function releaseDocToAction(
   // the edition that goes out — the same rules as «Изпрати» (3.0, 3.3)
   const got = await editionToSend(scheme, docKey, note, by);
   if ("needsNote" in got) return { needsNote: got.needsNote };
-  if ("error" in got) return { error: got.error };
+  if ("error" in got) return { error: got.error, otherNumbers: got.otherNumbers };
   const { edition, issued } = got;
 
   const release: TargetRelease = {
@@ -852,6 +852,28 @@ const EDITION_REFUSAL: Record<string, string> = {
 const amendmentOnly = (scheme: Scheme, docKey: string, latest: DocEdition | null) =>
   !!latest && isAmendedDoc(docKey) && needsAmendment(scheme);
 
+/** What the person adds to a send or an issue: the note of an edition (3.0), and the other schemes' numbers
+ *  they confirmed as cited on purpose (R6UP-5). */
+type SendNote = { reason?: string; scope?: string; numbersOk?: string[] };
+
+/** Another scheme's number in a document about to go out (R5UA-1) — refused, unless the person confirmed
+ *  each one as cited on purpose (an earlier round — round 6, R6UP-5), or the scheme's own card names it
+ *  (a replay «Възпроизвеждане на PTS 26/03-T-1» — R6UP-6). A confirmation is journalled. */
+async function numbersCheck(scheme: Scheme, docKey: string, now: Frozen, confirmed: unknown): Promise<{ error: string; otherNumbers: string[] } | null> {
+  if (now.source !== "rendered") return null;
+  const card = otherSchemeNumbers([scheme.titleBg, scheme.titleEn, scheme.name].filter(Boolean).join(" · ").replace(/</g, " "), scheme.number);
+  const found = [...new Set([...otherSchemeNumbers(now.bg, scheme.number), ...otherSchemeNumbers(now.en, scheme.number)])]
+    .filter((n) => !card.some((c) => sameSchemeNumber(c, n)));
+  if (!found.length) return null;
+  const ok = Array.isArray(confirmed) ? confirmed.filter((c): c is string => typeof c === "string").slice(0, 50) : [];
+  const left = found.filter((n) => !ok.some((c) => sameSchemeNumber(c, n)));
+  if (!left.length) {
+    await logActivity("doc.numbers_cited", { schemeId: scheme.id, subject: `doc:${docKey}`, summary: `“${docKey}” goes out citing ${found.join(", ")} — confirmed as cited on purpose` });
+    return null;
+  }
+  return { otherNumbers: left, error: `Документът носи номера на друга схема: ${left.join(", ")} — вероятно е копиран от нея или започнат от неин шаблон. Поправете номера (в текста или на корицата), после го издайте — или, ако го цитирате нарочно (напр. предходен кръг), потвърдете това при изпращането. · The document carries another scheme's number: ${left.join(", ")} — probably copied from it or started from its template. Correct the number (in the text or on the cover), then issue it — or, if you cite it on purpose (an earlier round, say), confirm that when sending.` };
+}
+
 /** The edition a release sends: the latest one if the document is still what it froze,
  *  else the next one, issued now — which, from edition 2 on, needs the person's note. */
 /** A calibration document on M1 is issued whole — no «[за попълване]» left, every M1
@@ -863,8 +885,8 @@ function m1Refusal(scheme: Scheme, docKey: string, now: Frozen): string | null {
   return `Документът не е готов за издаване: ${(bg.length ? bg : en).join("; ")}. · The document is not ready to issue: ${(en.length ? en : bg).join("; ")}.`;
 }
 
-async function editionToSend(scheme: Scheme, docKey: string, note: { reason?: string; scope?: string } | undefined, by: string):
-  Promise<{ edition: DocEdition; issued: boolean } | { needsNote: { no: number; since: number } } | { error: string }> {
+async function editionToSend(scheme: Scheme, docKey: string, note: SendNote | undefined, by: string):
+  Promise<{ edition: DocEdition; issued: boolean } | { needsNote: { no: number; since: number } } | { error: string; otherNumbers?: string[] }> {
   let now: Frozen | null;
   let latest: DocEdition | null;
   try {
@@ -877,10 +899,8 @@ async function editionToSend(scheme: Scheme, docKey: string, note: { reason?: st
   const notWhole = m1Refusal(scheme, docKey, now);
   if (notWhole) return { error: notWhole };
   // another scheme's number in what is to be sent — a copy, or a start from another's template (R5UA-1)
-  if (now.source === "rendered") {
-    const other = [...new Set([...otherSchemeNumbers(now.bg, scheme.number), ...otherSchemeNumbers(now.en, scheme.number)])];
-    if (other.length) return { error: `Документът носи номера на друга схема: ${other.join(", ")} — вероятно е копиран от нея или започнат от неин шаблон. Поправете номера (в текста или на корицата), после го издайте. · The document carries another scheme's number: ${other.join(", ")} — probably copied from it or started from its template. Correct the number (in the text or on the cover), then issue it.` };
-  }
+  const numbers = await numbersCheck(scheme, docKey, now, note?.numbersOk);
+  if (numbers) return numbers;
   // An opened scheme's plan or invitation sent again: the edition the participants last
   // held — not a later one issued meanwhile, unless an amendment issued it (3.3)
   const keptRec = isAmendedDoc(docKey) && needsAmendment(scheme) ? scheme.releasedEditions?.[docKey] : undefined;
@@ -917,8 +937,8 @@ async function editionToSend(scheme: Scheme, docKey: string, note: { reason?: st
 export async function issueEditionAction(
   schemeId: string,
   docKey: string,
-  note: { reason?: string; scope?: string },
-): Promise<{ ok?: boolean; error?: string; no?: number }> {
+  note: SendNote,
+): Promise<{ ok?: boolean; error?: string; otherNumbers?: string[]; no?: number }> {
   await requireCap("scheme.edit", schemeId); // in THIS scheme, by the role model (2.4)
   // the Order only by the staff it is for (Реш. 149), a names list never (none has editions)
   if (!(await mayViewDoc(docKey, schemeId))) return { error: "Нямате право да отворите този документ. · This document is not one you may open." };
@@ -934,19 +954,17 @@ export async function issueEditionAction(
   } catch {
     return { error: EDITION_REFUSAL.failed };
   }
-  if (!now) return { error: docKey === "report" ? "The final report is issued as PTS's own file — upload it first." : EDITION_REFUSAL.empty };
+  if (!now) return { error: docKey === "report" ? "Окончателният доклад се издава като собствен файл на PTS — първо го качете. · The final report is issued as PTS's own file — upload it first." : EDITION_REFUSAL.empty };
   const notWhole = m1Refusal(scheme, docKey, now);
   if (notWhole) return { error: notWhole };
   // another scheme's number in what is to be sent — a copy, or a start from another's template (R5UA-1)
-  if (now.source === "rendered") {
-    const other = [...new Set([...otherSchemeNumbers(now.bg, scheme.number), ...otherSchemeNumbers(now.en, scheme.number)])];
-    if (other.length) return { error: `Документът носи номера на друга схема: ${other.join(", ")} — вероятно е копиран от нея или започнат от неин шаблон. Поправете номера (в текста или на корицата), после го издайте. · The document carries another scheme's number: ${other.join(", ")} — probably copied from it or started from its template. Correct the number (in the text or on the cover), then issue it.` };
-  }
+  const numbers = await numbersCheck(scheme, docKey, now, note?.numbersOk);
+  if (numbers) return numbers;
   let reason = note?.reason;
   const stamp = amendmentStampFor(scheme, latest);
   const same = !!latest && sameAs(now, latest, stamp);
   if (latest && same) {
-    if (await servable(latest)) return { error: `Nothing has changed since edition ${latest.no} — there is nothing to issue.` };
+    if (await servable(latest)) return { error: `Нищо не е променено след редакция № ${latest.no} — няма какво да се издаде. · Nothing has changed since edition ${latest.no} — there is nothing to issue.` };
     if (!String(reason ?? "").trim()) reason = reissueReason(latest.no); // its file is gone or altered
   } else if (amendmentOnly(scheme, docKey, latest)) return { error: EDITION_REFUSAL.amendment };
   const r = await issueEdition({ scheme, docKey, frozen: now, reason, scope: note?.scope, by: await actorNow(), amendment: same ? stamp : undefined });
@@ -1307,13 +1325,18 @@ export async function saveDocHtmlAction(schemeId: string, docKey: string, body: 
   const cleanBg = markCodedList(docKey, sanitizeDocHtml(bg));
   const cleanEn = markCodedList(docKey, sanitizeDocHtml(en));
   if (cleanBg.length > MAX_DOC_HTML || cleanEn.length > MAX_DOC_HTML) return { error: DOC_TOO_LARGE };
-  // the version the editor loaded, when it says one (the editor always does): an older one is refused
-  const kept = scheme.docs?.[docKey]?.rev ?? 0;
+  // the version the editor loaded, when it says one (the editor always does): an older one is refused — checked
+  // and written INSIDE the scheme's lock, and only this document merged into the scheme's documents as they
+  // are then (round 6, R6S-9: read before, written after, a save of another document could undo this one's)
   const loaded = body && typeof body === "object" && typeof (body as DocBodies).rev === "number" ? ((body as DocBodies).rev as number) : null;
-  if (loaded !== null && loaded !== kept) return { error: DOC_STALE, stale: true };
-  const rev = kept + 1;
-  const docs = { ...(scheme.docs ?? {}), [docKey]: { bg: cleanBg, en: cleanEn, rev } };
-  await updateScheme(schemeId, { docs });
+  let rev = 0, stale = false;
+  await updateSchemeWith(schemeId, (cur) => {
+    const kept = cur.docs?.[docKey]?.rev ?? 0;
+    if (loaded !== null && loaded !== kept) { stale = true; return {}; }
+    rev = kept + 1;
+    return { docs: { ...(cur.docs ?? {}), [docKey]: { bg: cleanBg, en: cleanEn, rev } } };
+  });
+  if (stale) return { error: DOC_STALE, stale: true };
   // §8.3 — snapshot a revision (skips if unchanged). Records who saved it.
   const actor = (await getRoleContext()).email ?? "";
   await addRevision({ schemeId, docKey, bg: cleanBg, en: cleanEn, savedBy: actor });
@@ -1408,7 +1431,7 @@ export async function submitApplicationAction(formData: FormData) {
   const scheme = await getScheme(schemeId);
   // basic server-side validation (the client validates too). Only an OPEN scheme
   // takes applications — a draft or a running one never did (part 0.3/0.4).
-  if (!scheme || scheme.status !== "open" || scheme.applicationsClosed || !get("labName") || !get("email")) redirect(schemeId ? `/apply/${schemeId}` : "/apply");
+  if (!scheme || isSimulation(scheme.number) || scheme.status !== "open" || scheme.applicationsClosed || !get("labName") || !get("email")) redirect(schemeId ? `/apply/${schemeId}` : "/apply");
 
   // The sel_i answers are POSITIONAL against the standards list the wizard
   // rendered. If the owner restructured the standards while this form was open,
@@ -1679,10 +1702,12 @@ export async function updateLabProfileAction(formData: FormData) {
   const get = (k: string) => String(formData.get(k) ?? "").trim().slice(0, 200);
   // checked as everywhere else: an ЕИК by its check digit, a phone that reads as one — a «123» or a word
   // was saved with no word said (the security sweep, UL-6)
-  const eikTyped = get("eik");
+  // a label typed with it («ЕИК: …», «EIK …», «БУЛСТАТ …») is not part of the number — the Latin «EIK» was
+  // read as a registration number abroad and stored with its label (round 6, R6UL-5)
+  const eikTyped = get("eik").replace(/^(?:ЕИК|EIK|UIC|БУЛСТАТ)\s*[:№]?\s*/iu, "").replace(/\s+/g, " ").trim();
   // a Bulgarian ЕИК (digits) by its check digit; a laboratory abroad keeps its own registration number,
   // which has letters (round 2, R2U Q4) — a bare number of another length is a mistake
-  const foreignNo = /[A-Za-z]/.test(eikTyped.replace(/^BG\s?/i, "")) && /^[A-Za-z0-9 .\-/]{4,30}$/.test(eikTyped);
+  const foreignNo = /[A-Za-z]/.test(eikTyped.replace(/^BG[\s-]*/i, "")) && /^[A-Za-z0-9 .\-/]{4,30}$/.test(eikTyped);
   const eik = !eikTyped ? { ok: true, normalized: "" } : foreignNo ? { ok: true, normalized: eikTyped.replace(/\s+/g, " ").trim() } : validateEik(eikTyped);
   if (!eik.ok) redirect("/lab/profile?err=eik");
   const phone = get("phone");
@@ -1761,7 +1786,7 @@ async function sendAuthInvite(email: string, lab?: { labId: string; approval: Ap
         // the record keeps the words, not the live sign-in link
         ? await sendToLab({ class: "provider", kind: "invite", labId: lab.labId, to: email, subject, body: text, secrets: [link] }, lab.approval)
         : await sendEmail({ to: email, subject, text });
-      if (!sent.ok) return { ok: false, userId: data.user?.id, error: `The invitation could not be e-mailed: ${sent.error}` };
+      if (!sent.ok) return { ok: false, userId: data.user?.id, error: `Поканата не можа да се изпрати по имейл: ${sent.error} · The invitation could not be e-mailed: ${sent.error}` };
       return { ok: true, userId: data.user?.id };
     }
     const { data, error } = await db.auth.admin.inviteUserByEmail(email, origin ? { redirectTo: `${origin}${INVITE_RETURN}` } : undefined);
@@ -1841,7 +1866,7 @@ export async function addLabAction(formData: FormData): Promise<{ ok?: boolean; 
   try {
     if (isOwnerEmail(email) || (await staffEmailInUse(email))) return { error: "Този имейл е на член на екипа на PTS и не може да стане лабораторен акаунт. · This e-mail belongs to a PTS team member, so it cannot become a laboratory account." };
     // a participant's user of the legal entities (4.3) has its own login (4.3 review)
-    if (await participantLogin(email)) return { error: "This e-mail is a participant's user's login (Организации), so it cannot become a laboratory account." };
+    if (await participantLogin(email)) return { error: "Този имейл е вход на потребител на участник («Организации») и не може да стане акаунт на лаборатория. · This e-mail is a participant's user's login (Организации), so it cannot become a laboratory account." };
   } catch {
     return { error: "Не можа да се провери дали този имейл вече се използва. Нищо не е променено — опитайте отново след малко. · Could not check whether this e-mail is already in use. Nothing was changed — try again in a moment." };
   }
@@ -2010,7 +2035,7 @@ export async function approveLabApplicationAction(
       return { error: "Лабораторен акаунт с този имейл вече има, затова заявката не е одобрена — одобряването би предало този акаунт. Отхвърлете заявката; лабораторията влиза със съществуващия си акаунт. · A laboratory account with this e-mail already exists, so this request is not approved — approving would hand that account over. Reject the request; the laboratory signs in with its existing account." };
     }
     if (await participantLogin(app.email)) {
-      return { error: "This e-mail is a participant's user's login (Организации), so this request is not approved. Reject the request." };
+      return { error: "Този имейл е вход на потребител на участник («Организации») — заявката не се одобрява; отхвърлете я. · This e-mail is a participant's user's login (Организации), so this request is not approved. Reject the request." };
     }
   } catch (e) {
     console.warn("[lab-approve] account check failed:", (e as Error)?.message ?? e);
@@ -6589,7 +6614,7 @@ export async function labApplyAction(formData: FormData): Promise<{ ok: true; co
   const schemeId = String(formData.get("schemeId") ?? "");
   const scheme = schemeId ? await getScheme(schemeId) : null;
   // never a draft — the same refusal as one that does not exist (Реш. 147)
-  if (!scheme || !isStarted(scheme)) return say("not-open");
+  if (!scheme || !isStarted(scheme) || isSimulation(scheme.number)) return say("not-open");
   // its deadline as an instant — a day, or a day and an hour — on the round's own clock (9.2 review)
   const open = applyOpenProblem(scheme, schemeNowMs(scheme));
   if (open) return say(open);
@@ -7024,7 +7049,7 @@ export async function submitReceiptAction(formData: FormData): Promise<void> {
   if (refused) redirect(ownBack(pid, "e=receipt-twice"));
   await addCaseEvent({
     schemeId, code: part.code, kind: "receipt_confirmed", at: fields.day, ref: (open!.waybill ?? "").slice(0, 120),
-    note: `online receipt protocol ${fields.time}: ${fields.suitable ? "fit" : "NOT fit"}${fields.undamaged ? "" : " (packaging damaged)"}`,
+    note: `онлайн протокол за получаване ${fields.time}: ${fields.suitable ? "годен" : "НЕгоден"}${fields.undamaged ? "" : " (повредена опаковка)"} · online receipt protocol ${fields.time}: ${fields.suitable ? "fit" : "NOT fit"}${fields.undamaged ? "" : " (packaging damaged)"}`,
     recordedBy: LAB_RECORDER, source: "auto",
   });
   await advanceStatusForEvent(schemeId, part.code, "receipt_confirmed");
@@ -7496,7 +7521,7 @@ export async function submitResultsAction(schemeId: unknown, participantId: unkn
   const late = lateBy ? " (under PTS's unlock after the deadline)" : "";
   const step = async (what: string, f: () => Promise<unknown>) => { try { await f(); } catch (e) { console.error(`[submit] version ${version} of ${part.code} recorded; ${what} failed:`, (e as Error)?.message ?? e); } };
   await step("the journal", () => log("results.submitted", { targetCode: part.code, subject: `submission:${sub.id}`, summary: `${part.code} submitted its results online — version ${version}${lateBy ? " (unlocked by PTS)" : ""}`, after: { version, configVersion: configVersion ?? null, unlock: lateBy?.id ?? null, notices: problems.length - blocking(problems).length } }));
-  await step("the case file", () => addCaseEvent({ schemeId: sid, code: part.code, kind: "results_returned", at: sofiaToday(nowMs), ref: `v${version}`, note: `online results — version ${version}${late}`, recordedBy: LAB_RECORDER, source: "auto" }));
+  await step("the case file", () => addCaseEvent({ schemeId: sid, code: part.code, kind: "results_returned", at: sofiaToday(nowMs), ref: `v${version}`, note: `онлайн резултати — версия ${version}${lateBy ? " (отключено от PTS след срока)" : ""} · online results — version ${version}${late}`, recordedBy: LAB_RECORDER, source: "auto" }));
   if (version === 1) await step("the status", () => advanceStatusForEvent(sid, part.code, "results_returned"));
   await step("PTS's notice", () => notifyResultsReturned(sid, scheme.number, part.code, { version }));
   try { revalidatePath(`/lab/p/${pid}`); revalidatePath(`/schemes/${sid}/participants/${part.code}`); } catch { /* the pages refresh on their next load */ }

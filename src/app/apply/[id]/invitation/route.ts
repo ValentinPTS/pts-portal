@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { getScheme } from "@/lib/store";
 import { isStarted } from "@/lib/visibility";
+import { isSimulation } from "@/lib/catalogue-model";
 import { editionResponse, getEdition } from "@/lib/editions";
 
 // The scheme's invitation, public (plan part 10.1; D15: «plan, invitation and application are public
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   const s = await getScheme(id);
-  if (!s || !isStarted(s) || !s.sentToParticipants?.invitation) return new Response("Not found", { status: 404 });
+  if (!s || !isStarted(s) || isSimulation(s.number) || !s.sentToParticipants?.invitation) return new Response("Not found", { status: 404 });
   const rec = s.releasedEditions?.invitation;
   const ed = rec ? await getEdition(rec.id).catch(() => null) : null;
   if (!ed || ed.schemeId !== s.id || ed.docKey !== "invitation") return new Response("The invitation cannot be opened right now. Try again in a moment.", { status: 503 });

@@ -41,8 +41,10 @@ export function datesOutOfOrder(dates: Partial<Record<SchemeDateKey, string>>): 
   }
   return null;
 }
+// the days as the card shows them — «22.11.2026», never «2026-11-22» (round 6, R6UP-8)
+const dayOf = (v: string | undefined) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v ?? "")); return m ? `${m[3]}.${m[2]}.${m[1]}` : String(v ?? "").slice(0, 10); };
 export const datesOrderRefusal = ([a, b]: [SchemeDateKey, SchemeDateKey], dates: Partial<Record<SchemeDateKey, string>>) =>
-  `«${DATE_LABELS[b].bg}» (${String(dates[b]).slice(0, 10)}) е преди «${DATE_LABELS[a].bg}» (${String(dates[a]).slice(0, 10)}) — сроковете вървят в ред: заявки, изпращане, резултати, доклад. · «${DATE_LABELS[b].en}» (${String(dates[b]).slice(0, 10)}) is before «${DATE_LABELS[a].en}» (${String(dates[a]).slice(0, 10)}) — the dates run in order: applications, dispatch, results, report.`;
+  `«${DATE_LABELS[b].bg}» (${dayOf(dates[b])}) е преди «${DATE_LABELS[a].bg}» (${dayOf(dates[a])}) — сроковете вървят в ред: заявки, изпращане, резултати, доклад. · «${DATE_LABELS[b].en}» (${dayOf(dates[b])}) is before «${DATE_LABELS[a].en}» (${dayOf(dates[a])}) — the dates run in order: applications, dispatch, results, report.`;
 
 /** yyyy-mm-dd, and a real day — "2026-02-31" is rejected, not silently rolled over. */
 export function isIsoDate(v: string): boolean {

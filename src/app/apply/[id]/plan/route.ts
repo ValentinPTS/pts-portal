@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { getScheme } from "@/lib/store";
 import { isStarted } from "@/lib/visibility";
+import { isSimulation } from "@/lib/catalogue-model";
 import { editionResponse, getEdition } from "@/lib/editions";
 
 // The scheme's plan, public — readable BEFORE applying (plan part 5.4; D15: «plan,
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   const s = await getScheme(id);
-  if (!s || !isStarted(s) || !s.sentToParticipants?.plan) return new Response("Not found", { status: 404 });
+  if (!s || !isStarted(s) || isSimulation(s.number) || !s.sentToParticipants?.plan) return new Response("Not found", { status: 404 });
   const rec = s.releasedEditions?.plan;
   const ed = rec ? await getEdition(rec.id).catch(() => null) : null;
   if (!ed || ed.schemeId !== s.id || ed.docKey !== "plan") return new Response("The plan cannot be opened right now. Try again in a moment.", { status: 503 });

@@ -42,7 +42,7 @@ function footer(s: Scheme, formNumber: string): string {
 }
 
 export const modernSkin: Skin = {
-  meta: { id: "modern", name: "Modern", description: "Cleaner sans layout with a side accent and airy spacing.", types: ["T", "C"] },
+  meta: { id: "modern", name: "Modern", description: "Cleaner sans layout with a side accent and airy spacing.", nameBg: "Модерен", descriptionBg: "По-изчистен безсерифен вид, страничен акцент и просторни отстояния.", types: ["T", "C"] },
   css: DOC_CSS + OVERRIDES,
   fonts: BRAND_FONTS,
   cover,
