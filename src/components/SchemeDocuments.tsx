@@ -212,7 +212,9 @@ export default function SchemeDocuments({ schemeId, lang, stages, lists = [], ca
                       ) : (
                         <>
                           {canWrite && <button className="btn" style={btnSm} onClick={() => pickFile(d.key)}>＋ {L("Качи", "Upload")}</button>}
-                          <Link className="btn btn-primary" style={btnSm} href={d.buildHref}>{L("Създай", "Create")}</Link>
+                          {/* only who may write is offered «Създай» (round 5, R5UA-9) */}
+                          {canWrite ? <Link className="btn btn-primary" style={btnSm} href={d.buildHref}>{L("Създай", "Create")}</Link>
+                            : <span className="text-xs" data-doc-not-created style={{ color: "var(--muted)" }}>{L("не е създаден", "not created")}</span>}
                         </>
                       )}
                       {/* the clear line: a document with something in it can be

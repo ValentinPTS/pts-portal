@@ -32,7 +32,8 @@ export default async function NoticesPage({ searchParams }: { searchParams: Prom
   const viewer = await getViewer();
   // deciding a held notice: who releases documents (2.4) — per notice, in its scheme
   const canDecide = authorizeAnywhere(viewer, "docs.release");
-  const mayDecide = (schemeId?: string) => authorize(viewer, "docs.release", schemeId);
+  // …and a notice of no scheme (to an organisation) by who also manages the organisations (round 5, Q4)
+  const mayDecide = (schemeId?: string) => (schemeId ? authorize(viewer, "docs.release", schemeId) : canDecide && authorizeAnywhere(viewer, "labs.manage"));
   // a laboratory's address is an identity: per message, in its scheme (Реш. 93)
   const isManager = authorizeAnywhere(viewer, "names.view");
   const seesAddress = (schemeId?: string) => authorize(viewer, "names.view", schemeId);
@@ -51,7 +52,8 @@ export default async function NoticesPage({ searchParams }: { searchParams: Prom
   const scope = schemesFor(viewer, "codes.view");
   const inScope = (schemeId?: string | null) => scope === "all" || (!!schemeId && scope.includes(schemeId));
   const [heldAll, schemes, sentAll] = await Promise.all([listHeld(), listSchemeSummaries(), listSent(50)]);
-  const held = heldAll.filter((n) => inScope(n.schemeId));
+  // a notice of no scheme is seen by who manages the organisations it is written to (round 5, Q4)
+  const held = heldAll.filter((n) => inScope(n.schemeId) || (!n.schemeId && managesLabs));
   const sent = sentAll.filter((m) => inScope(m.schemeId));
   const number = new Map(schemes.map((s) => [s.id, s.number]));
   // 10.1 review: a «the next scheme started» notice of a scheme no longer started is never released (Реш. 147)

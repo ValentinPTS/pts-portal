@@ -1,3 +1,5 @@
+import { fmtStamp, sofiaDay } from "@/lib/chain";
+import { sofiaZone } from "@/lib/scheme-dates";
 import Link from "next/link";
 import { requireCapAnywhere, getViewer, authorize, schemesFor } from "@/lib/access";
 import { listActivity, listActivityActions, journalHealth } from "@/lib/activity";
@@ -30,8 +32,8 @@ function changes(before: unknown, after: unknown): string {
 function fmt(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getUTCDate())}.${p(d.getUTCMonth() + 1)}.${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())} UTC`;
+  // Bulgarian time, its zone said (round 5, R5UA-10: «23:16 UTC» on a step the record dates the next day)
+  return `${fmtStamp(iso)} ${sofiaZone(sofiaDay(iso))}`;
 }
 
 export default async function ActivityPage({
@@ -91,7 +93,8 @@ export default async function ActivityPage({
         {(schemeId || action) && <Link href="/activity" className="btn">{tr("activity.clear")}</Link>}
       </form>
 
-      <div className="card mt-4 overflow-hidden">
+      {/* the table wider than the card scrolls inside it — never cut off (round 5, R5UA-11) */}
+      <div className="card mt-4" style={{ overflowX: "auto" }}>
         <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "var(--green-soft)", color: "var(--green-dark)" }}>

@@ -1,3 +1,4 @@
+import Hydrated from "@/components/Hydrated";
 import type { Metadata } from "next";
 import { mayAnywhereNow, getViewer, schemesFor } from "@/lib/access";
 import { Open_Sans, PT_Serif } from "next/font/google";
@@ -30,6 +31,8 @@ export const metadata: Metadata = {
   title: "PTS Bulgaria — Portal",
   description: "Proficiency Testing Solutions Bulgaria — provider portal",
 };
+
+const PRE_HYDRATION_GUARD = `document.addEventListener("submit",function(e){if(document.documentElement.hasAttribute("data-hydrated"))return;var f=e.target;if(f&&f.tagName==="FORM"&&!f.hasAttribute("action")&&!f.hasAttribute("method"))e.preventDefault();},true);`;
 
 export default async function RootLayout({
   children,
@@ -70,6 +73,12 @@ export default async function RootLayout({
   return (
     <html lang={lang} className={`${openSans.variable} ${ptSerif.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
+        {/* A form the page's scripts send (no action, no method of its own), submitted before they are live,
+            went as the browser's own GET — every field in the address, the application never made, a lab's
+            anonymous feedback beside its participation's id (round 5, R5UB-1). Until they are live, such a
+            submit is held; forms that post (server actions) and declared GET forms are untouched. */}
+        <script id="pts-hold-early-submit" dangerouslySetInnerHTML={{ __html: PRE_HYDRATION_GUARD }} />
+        <Hydrated />
         <LangProvider initial={lang}>
           {isTestEnvironment() && (
             // the test environment says so on every page, staff and laboratory alike (1.2)

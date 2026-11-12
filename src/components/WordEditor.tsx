@@ -22,6 +22,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { saveDocHtmlAction, translateDocHtmlAction, translateAction, addLibraryItemAction, saveDocTemplateAction, deleteDocTemplateAction, uploadCoverImageAction, setDocReadyAction } from "@/lib/actions";
 
 // the documents that name laboratories (lib/documents: LIST_DOCS with names + NAME_CODE_DOCS)
@@ -37,7 +38,7 @@ type Snippet = { id: string; name: string; nameBg?: string; category?: string; b
 type Field = { key: string; label: string; labelBg?: string; bg: string; en: string };
 type FormEl = { id: string; nameBg: string; nameEn: string; category?: string; bg: string; en: string };
 type Tmpl = { id: string; name: string; bg: string; en: string };
-type CopyItem = { id: string; number: string; title: string; bg: string; en: string };
+type CopyItem = { id: string; number: string; title: string; titleBg?: string; bg: string; en: string };
 
 // Print geometry (must match the PDF route + DOC_CSS @page): the editor sheet IS
 // a real A4 — 210×297mm. The printed margins (/api/pdf: 16/14/18/14mm) plus the
@@ -338,6 +339,8 @@ export default function WordEditor({
   customItems = [],
   savedTemplates = [],
   copyFrom = [],
+  schemeNumber,
+  initialRev = 0,
   initialReady = false,
   canEdit = true,
 }: {
@@ -365,6 +368,8 @@ export default function WordEditor({
   customItems?: Snippet[];
   savedTemplates?: Tmpl[];
   copyFrom?: CopyItem[];
+  schemeNumber?: string; // this scheme's number — a copy takes it in place of its source's (round 5, R5UA-1)
+  initialRev?: number; // the saved version this editor loaded (round 5, R5UA-3)
 }) {
   const { lang: uiLang } = useLang();
   const L = (bg: string, en: string) => (uiLang === "bg" ? bg : en);
@@ -408,6 +413,7 @@ export default function WordEditor({
   const [selOpts, setSelOpts] = useState(0); // its option count (for the bar)
   const [preview, setPreview] = useState(false);              // inline PDF preview open
   const [saveErr, setSaveErr] = useState(""); // why the last save did not go through (R4U-1)
+  const revRef = useRef(initialRev); // the version this editor holds — sent with each save (R5UA-3)
   const [pasteNote, setPasteNote] = useState(""); // pictures a paste could not bring (R4U-3)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);  // object URL of the rendered PDF
   const pgTimer = useRef<ReturnType<typeof setTimeout> | null>(null); // debounce page-gap reflow
@@ -1041,6 +1047,27 @@ export default function WordEditor({
   }, []);
   // free the preview object URL when it changes / on unmount
   useEffect(() => () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl); }, [pdfUrl]);
+  // A link inside the portal followed with unsaved words: saved first, then followed — the autosave's timer
+  // died with the page, and the words typed in its last seconds with it (round 5, R5UA-2). A save that
+  // fails keeps the person here, its reason said.
+  const router = useRouter();
+  const saveNow = useRef<() => Promise<boolean>>(async () => true);
+  useEffect(() => { saveNow.current = save; });
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (savedRef.current || busyRef.current || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a || (a.target && a.target !== "_self") || a.hasAttribute("download") || ref.current?.contains(a)) return;
+      let url: URL;
+      try { url = new URL(a.href, window.location.href); } catch { return; }
+      if (url.origin !== window.location.origin || (url.pathname === window.location.pathname && url.search === window.location.search)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      void saveNow.current().then((ok) => { if (ok) router.push(url.pathname + url.search + url.hash); });
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, [router]);
   useEffect(() => () => { if (pgTimer.current) clearTimeout(pgTimer.current); if (autoTimer.current) clearTimeout(autoTimer.current); }, []);
   // Warn before leaving with unsaved changes (covers the brief window before autosave
   // fires, and any save that's still in flight).
@@ -1517,8 +1544,9 @@ export default function WordEditor({
     const { nb, ne } = fold();
     setBusy("save");
     try {
-      const r = await saveDocHtmlAction(schemeId, docKey, { bg: nb, en: ne });
+      const r = await saveDocHtmlAction(schemeId, docKey, { bg: nb, en: ne, rev: revRef.current });
       if (r?.error) { setSaveErr(r.error); return false; }
+      if (typeof r?.rev === "number") revRef.current = r.rev;
       setSaved(true); setSaveErr("");
       return true;
     } catch {
@@ -1761,7 +1789,8 @@ export default function WordEditor({
           <a className="btn btn-sm" href={roPrint} target="_blank" rel="noopener">{L("Отвори за печат и PDF →", "Open to print or PDF →")}</a>
         </div>
         {/* the document AS SAVED and printed — never the generated template (round 4, R4S-4 / R4U-2) */}
-        <iframe title={L(docNameBg ?? docNameEn, docNameEn)} src={roPrint} style={{ width: "100%", minHeight: "80vh", border: "1px solid var(--line)", borderRadius: 8, background: "#fff" }} />
+        {/* sandboxed: a link in the document never takes the portal's own tab (round 5, R5SA-4) */}
+        <iframe title={L(docNameBg ?? docNameEn, docNameEn)} src={roPrint} sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" style={{ width: "100%", minHeight: "80vh", border: "1px solid var(--line)", borderRadius: 8, background: "#fff" }} />
       </div>
     );
   }
@@ -1802,9 +1831,13 @@ export default function WordEditor({
                   <div key={c.id} style={startRow}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 700, color: "var(--green-dark)" }}>{c.number}</div>
-                      <div className="text-xs" style={{ color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.title}</div>
+                      <div className="text-xs" style={{ color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{L(c.titleBg ?? c.title, c.title)}</div>
                     </div>
-                    <button className="btn" style={{ fontSize: 13, padding: "6px 12px" }} onClick={() => startWith(c.bg, c.en)}>{L("Копирай", "Copy")}</button>
+                    {/* the copy carries THIS scheme's number where its source's stood (round 5, R5UA-1) */}
+                    <button className="btn" style={{ fontSize: 13, padding: "6px 12px" }} onClick={() => {
+                      const own = (h: string) => (schemeNumber && c.number && c.number !== schemeNumber ? h.split(c.number).join(schemeNumber) : h);
+                      startWith(own(c.bg), own(c.en));
+                    }}>{L("Копирай", "Copy")}</button>
                   </div>
                 ))}
               </div>

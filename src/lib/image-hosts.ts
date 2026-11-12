@@ -13,7 +13,10 @@ export function storageOrigin(env: Env = process.env): string {
   try { return env.NEXT_PUBLIC_SUPABASE_URL ? new URL(env.NEXT_PUBLIC_SUPABASE_URL).origin : ""; } catch { return ""; }
 }
 
-const OWN_SITE = /^(?:[a-z0-9-]+\.)*ptsbg\.eu$/;
+// the website's own addresses — ptsbg.eu and www — never any «*.ptsbg.eu»: the portal itself is to live on
+// portal.ptsbg.eu, and a picture there is one of its pages (round 5, R5SA-8); its /brand/ only
+const OWN_SITE = /^(?:www\.)?ptsbg\.eu$/;
+const PORTAL_HOSTS = ["portal.ptsbg.eu"];
 
 /** May a picture be loaded from this absolute URL? (relative and data:image are the caller's)
  *  Only «https://host/…» as written: «https:/ptsbg.eu/../x» or «https:ptsbg.eu/x» parse here with
@@ -24,6 +27,8 @@ export function imageUrlAllowed(url: string, env: Env = process.env): boolean {
   let u: URL;
   try { u = new URL(url); } catch { return false; }
   if (u.protocol !== "https:") return false;
+  const site = (() => { try { return env.NEXT_PUBLIC_SITE_URL ? new URL(env.NEXT_PUBLIC_SITE_URL).host : ""; } catch { return ""; } })();
+  if (PORTAL_HOSTS.includes(u.hostname) || (site && u.host === site)) return BRAND_FILE.test(u.pathname);
   if (OWN_SITE.test(u.hostname)) return true;
   const own = storageOrigin(env);
   return !!own && u.origin === own && u.pathname.startsWith("/storage/v1/object/public/");
@@ -32,7 +37,7 @@ export function imageUrlAllowed(url: string, env: Env = process.env): boolean {
 /** The img-src of a document's Content-Security-Policy. */
 export function docImgSrc(env: Env = process.env): string {
   const own = storageOrigin(env);
-  return ["'self'", "data:", ...(own ? [own] : []), "https://ptsbg.eu", "https://*.ptsbg.eu"].join(" ");
+  return ["'self'", "data:", ...(own ? [own] : []), "https://ptsbg.eu", "https://www.ptsbg.eu"].join(" ");
 }
 
 /** A picture on the portal's own address: a file under /brand/ AS WRITTEN — no «.» or «..» segment, no

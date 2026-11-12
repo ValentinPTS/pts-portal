@@ -55,6 +55,16 @@ export async function uploadedDocResponse(up: UploadedDoc, download: boolean): P
 
 /** A file's own name for «filename*» (RFC 5987): control characters, quotes and slashes out; every byte
  *  outside the attribute characters percent-encoded. */
+/** A file's name as kept: at most `max` characters, never cut inside one, its extension kept — names were
+ *  cut at 160 code units when stored, and a long one lost its «.pdf» before it was ever served (round 5,
+ *  R4U-6 again). */
+export function fitFileName(name: string, max = 160): string {
+  const chars = Array.from(String(name ?? ""));
+  if (chars.length <= max) return chars.join("");
+  const ext = /\.[A-Za-z0-9]{1,8}$/.exec(chars.slice(-9).join(""))?.[0] ?? "";
+  return chars.slice(0, max - ext.length).join("") + ext;
+}
+
 // cut at 150 CHARACTERS, never inside one: «.slice(0, 150)» halved an emoji and encodeURIComponent threw on
 // the lone half — a 500 for the download (the security sweep, round 3 — R3S-6); a lone half typed as
 // such becomes «_»

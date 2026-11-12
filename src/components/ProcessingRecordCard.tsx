@@ -1,4 +1,5 @@
 import { recordTransferCheckAction } from "@/lib/actions";
+import OnceForm from "@/components/OnceForm";
 import { CHECK_PROBLEM_TEXT, type RecordEvent, type transferState } from "@/lib/transfer-check-model";
 import { IMPORT_LABEL, type AnalysisImport } from "@/lib/analysis-import-model";
 import { fmtMoment } from "@/lib/scheme-dates";
@@ -61,7 +62,7 @@ export default function ProcessingRecordCard({ schemeId, lang, record, ticksFrom
             : !why && <p style={{ margin: "6px 0 0", color: "#7a5416" }}>{L("Не е проверено за това изнасяне и този доклад. Издаването на доклада (7.4) ще изисква «същите».", "Not checked for this export and this report. Issuing the report (7.4) will require «the same».")}</p>}
           {answer && <p role={answer === "ok" ? "status" : "alert"} data-transfer-answer={answer} style={{ margin: "4px 0 0", color: answer === "ok" ? "var(--green-dark)" : "#8f2f2f" }}>{answer === "ok" ? L("Записано.", "Recorded.") : said ? L(said.bg, said.en) : L("Не е записано.", "Not recorded.")}</p>}
           {canCheck && (transfer.state === "none" || transfer.state === "ok") && im && (
-            <form action={recordTransferCheckAction} className="mt-2" data-transfer-form style={{ display: "grid", gap: 6, maxWidth: 640 }}>
+            <OnceForm action={recordTransferCheckAction} className="mt-2" data-transfer-form style={{ display: "grid", gap: 6, maxWidth: 640 }}>
               <input type="hidden" name="schemeId" value={schemeId} />
               <input type="hidden" name="exportId" value={ex.id} />
               <input type="hidden" name="importId" value={im.id} />
@@ -70,7 +71,7 @@ export default function ProcessingRecordCard({ schemeId, lang, record, ticksFrom
               <label style={{ display: "flex", gap: 6 }}><input type="radio" name="same" value="no" />{L("Не са същите", "They are not the same")}</label>
               <input name="note" maxLength={1000} placeholder={L("Какво се различава (задължително при «не»)", "What differs (required for «no»)")} aria-label={L("Какво се различава", "What differs")} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px" }} />
               <div><button type="submit" className="btn btn-sm" data-transfer-submit>{L("Запиши проверката", "Record the check")}</button></div>
-            </form>
+            </OnceForm>
           )}
         </div>
       )}

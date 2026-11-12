@@ -141,7 +141,7 @@ export default function SkinEditor({
             </Field>
             <Field label={L("Започни от", "Start from")}>
               <select value={data.base} onChange={(e) => applyBase(e.target.value as SkinBase)} style={inputStyle}>
-                {BASES.map((b) => <option key={b.id} value={b.id}>{b.label} — {b.description}</option>)}
+                {BASES.map((b) => <option key={b.id} value={b.id}>{L(b.labelBg, b.label)} — {L(b.descriptionBg, b.description)}</option>)}
               </select>
             </Field>
           </section>

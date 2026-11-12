@@ -15,7 +15,7 @@ import { getLabByEmail } from "./labs";
 import { recordPending, settle, recentCount, recentCountTo } from "./sent-messages";
 import { entityUserByAuth, acceptEntityUserInvitation, entityUserForLogin } from "./entity-users";
 import { SUPABASE_TEMPLATES, fixedApproval } from "./fixed-texts";
-import { publicFormLimit } from "./public-limit";
+import { publicFormLimit, attemptLimit } from "./public-limit";
 import { requestAddress } from "./cert-register";
 
 export type AuthState = { error?: string; needsTotp?: boolean };
@@ -84,6 +84,20 @@ async function journalSignIn(userId: string, email: string, role: "internal" | "
   await logAs({ kind: "person", userId, email, role: staffRole }, "auth.login", { summary: `Signed in (${how})` });
 }
 
+// Attempts counted by the portal itself (round 5, R5SB-1): the sign-in service counts by the address it
+// sees — the server's, the same for everyone — so one outsider's wrong passwords could shut everyone out,
+// or go on unlimited. Per person's address and per account an hour; per user for the 6-digit code.
+const TOO_MANY_SIGN_IN = "Твърде много опити за вход — опитайте отново след час. · Too many sign-in attempts — try again in an hour.";
+const TOO_MANY_CODE = "Твърде много опити с кода — опитайте отново след час. · Too many attempts with the code — try again in an hour.";
+async function signInAllowed(email: string): Promise<boolean> {
+  const addr = requestAddress(await headers());
+  return (await attemptLimit("sign_in", addr)) === "ok" && (await attemptLimit("sign_in_account", `account-${email}`)) === "ok";
+}
+async function codeAllowed(userId: string | undefined): Promise<boolean> {
+  const addr = requestAddress(await headers());
+  return (await attemptLimit("sign_in", addr)) === "ok" && (await attemptLimit("second_factor", `user-${userId ?? addr}`)) === "ok";
+}
+
 export async function signInAction(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
@@ -95,6 +109,7 @@ export async function signInAction(_prev: AuthState, formData: FormData): Promis
     return { error: "Влизането не е включено тук. · Sign-in is not available here." };
   }
 
+  if (!(await signInAllowed(email))) return { error: TOO_MANY_SIGN_IN };
   const supabase = await createServerSupabase();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   // Supabase returns one generic message whether the e-mail is unknown or the
@@ -143,6 +158,8 @@ export async function verifyTotpAction(_prev: AuthState, formData: FormData): Pr
   if (!/^\d{6}$/.test(code)) return { needsTotp: true, error: "Enter the 6-digit code." };
 
   const supabase = await createServerSupabase();
+  const { data: { user: who } } = await supabase.auth.getUser();
+  if (!(await codeAllowed(who?.id))) return { needsTotp: true, error: TOO_MANY_CODE };
   const { data: factors } = await supabase.auth.mfa.listFactors();
   const totp = factors?.totp?.[0];
   if (!totp) return { error: "No authenticator enrolled — please sign in again." };
@@ -181,6 +198,11 @@ export async function startTotpEnrollAction(): Promise<{
   secret?: string;
   error?: string;
 }> {
+  // only a signed-in session that owes no second factor enrols one — a password alone never adds a new
+  // authenticator beside the one it has not passed (round 5, R5SB-7; Supabase refuses it too, today)
+  const session = await getSessionUser();
+  if (!session) return { error: "Влезте отново. · Sign in again." };
+  if (session.needsAal2) return { error: authErrorText("insufficient_aal") };
   const supabase = await createServerSupabase();
   const { data: existing } = await supabase.auth.mfa.listFactors();
   for (const f of existing?.all ?? []) {
@@ -198,7 +220,11 @@ export async function startTotpEnrollAction(): Promise<{
 export async function verifyTotpEnrollAction(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const factorId = String(formData.get("factorId") ?? "");
   const code = String(formData.get("code") ?? "").replace(/\s/g, "");
-  if (!factorId || !/^\d{6}$/.test(code)) return { error: "Enter the 6-digit code from your authenticator app." };
+  if (!factorId || !/^\d{6}$/.test(code)) return { error: "Въведете 6-цифрения код от приложението. · Enter the 6-digit code from your authenticator app." };
+  const session = await getSessionUser();
+  if (!session) return { error: "Влезте отново. · Sign in again." };
+  if (session.needsAal2) return { error: authErrorText("insufficient_aal") };
+  if (!(await codeAllowed(session.userId))) return { error: TOO_MANY_CODE };
   const supabase = await createServerSupabase();
   const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId, code });
   if (error) return { error: error.message };
@@ -340,6 +366,8 @@ export async function verifyTotpForPasswordAction(_prev: PasswordState, formData
   const code = String(formData.get("code") ?? "").replace(/\s/g, "");
   if (!/^\d{6}$/.test(code)) return { error: "totp", message: "Въведете 6-цифрения код. · Enter the 6-digit code." };
   const supabase = await createServerSupabase();
+  const { data: { user: who } } = await supabase.auth.getUser();
+  if (!(await codeAllowed(who?.id))) return { error: "totp", message: TOO_MANY_CODE };
   const { data: factors } = await supabase.auth.mfa.listFactors();
   const totp = factors?.totp?.[0];
   if (!totp) return { error: "totp", message: authErrorText(undefined) };
@@ -385,7 +413,9 @@ export async function changePasswordAction(_prev: PasswordState, formData: FormD
   const session = await getSessionUser();
   if (!session) return { error: "session", message: "Влезте отново. · Sign in again." };
   if (session.needsAal2) return { error: "totp", message: authErrorText("insufficient_aal") };
-  // the current password first: a session left open is not enough to take the account
+  // the current password first: a session left open is not enough to take the account — and tried a few
+  // times an hour, not without end (round 5, R5SB-1)
+  if ((await attemptLimit("password_check", `user-${session.userId}`)) !== "ok") return { error: "current", message: TOO_MANY_SIGN_IN };
   if (!(await currentPasswordIsRight(session.email, String(formData.get("current") ?? "")))) {
     return { error: "current", message: authErrorText("invalid_credentials") };
   }

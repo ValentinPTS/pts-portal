@@ -55,7 +55,7 @@ t("…a laboratory row never resets a founder's or team member's login", /if \(!
 t("…a founder only by an address in OWNER_EMAILS", /kind === "founder"\s*\? \(isOwnerEmail\(id\)/.test(reset));
 t("…an authenticator that could not be removed is an error, journalled as such", /if \(removed < all\.length\)[\s\S]{0,200}FAILED IN PART[\s\S]{0,160}return \{ error:/.test(reset));
 t("a laboratory account is never made with a team member's address, nor a team member with a laboratory's",
-  /addLabAction[\s\S]{0,700}isOwnerEmail\(email\) \|\| \(await staffEmailInUse\(email\)\)/.test(actions) && /addStaffAction[\s\S]{0,900}await labEmailInUse\(email\)/.test(actions));
+  /addLabAction[\s\S]{0,1400}isOwnerEmail\(email\) \|\| \(await staffEmailInUse\(email\)\)/.test(actions) && /addStaffAction[\s\S]{0,1800}await labEmailInUse\(email\)/.test(actions));
 // no session at all for a shared mailbox, however it was made (review 1.6)
 t("a shared mailbox has no session (every role and lab check reads it)", /if \(isSharedMailbox\(user\.email\)\) return null;/.test(src("lib/auth.ts")));
 const proxy = src("proxy.ts");

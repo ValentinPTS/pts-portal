@@ -6,7 +6,7 @@
     "node": "22.x"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H 127.0.0.1",
     "prebuild": "node scripts/prebuild.mjs",
     "build": "next build",
     "start": "next start",

@@ -1,3 +1,5 @@
+import { fmtStamp, sofiaDay } from "@/lib/chain";
+import { sofiaZone } from "@/lib/scheme-dates";
 import Link from "next/link";
 import { requireCap, mayNow, requireDocView } from "@/lib/access";
 import { notFound } from "next/navigation";
@@ -18,8 +20,8 @@ export const dynamic = "force-dynamic";
 function fmt(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getUTCDate())}.${p(d.getUTCMonth() + 1)}.${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())} UTC`;
+  // Bulgarian time, its zone said (round 5, R5UA-10: «23:16 UTC» on a step the record dates the next day)
+  return `${fmtStamp(iso)} ${sofiaZone(sofiaDay(iso))}`;
 }
 
 export default async function DocHistoryPage({

@@ -57,6 +57,10 @@ t("staff-typed entry of another kind unchanged", redactCaseEventForStaff(typedNo
 // round 4 (R4U-4, R4S-7): a waybill typed into ANY step's note or reference — masked
 const noted = redactCaseEventForStaff(ce({ source: "manual", kind: "receipt_confirmed", ref: "x", note: "получено с куриер, товарителница 62 555 444 333", recordedBy: "ana@ptsbg.eu" }));
 const otherKind = redactCaseEventForStaff(ce({ source: "manual", kind: "other", ref: "товарителница 62123456789", note: "waybill:62123456789", recordedBy: "ana@ptsbg.eu" }));
+// round 5 (R5SA-5): a cancellation's reason; «documents sent» drops its reference as a dispatch does
+const voided = redactCaseEventForStaff(ce({ source: "manual", kind: "other", recordedBy: "ana@ptsbg.eu", voidReason: "грешна товарителница 62 555 444 333 — сменена" }));
+t("round 5 — a cancellation's reason masked", !/555 444/.test(voided.voidReason ?? "") && /сменена/.test(voided.voidReason ?? ""), voided.voidReason);
+t("round 5 — «documents sent»: its reference never to who has no names", redactCaseEventForStaff(ce({ source: "manual", kind: "docs_sent", ref: "ЕКОНТ 5544332211", recordedBy: "ana@ptsbg.eu" })).ref === undefined);
 t("round 4 — a waybill in a step's note, or a step of any kind, masked", !/555 444|62123456789/.test(`${noted.note} ${otherKind.ref} ${otherKind.note}`) && /получено с куриер/.test(noted.note ?? ""), `${noted.note} | ${otherKind.ref} | ${otherKind.note}`);
 const cert = ce({ kind: "report_issued", ref: "PTS 26/07-T-1-48217" });
 t("app stamp with a reference unchanged", redactCaseEventForStaff(cert) === cert);
@@ -91,6 +95,14 @@ t("new lab stamp unchanged", redactCaseEventForStaff(newUpload) === newUpload);
     t(`round 4 — «${txt}» masked`, !/6212345/.test(r.summary), r.summary);
   }
   t("round 4 — the dispatch line's «with a waybill» stays as it is", redactActivityForStaff(ev({ action: "delivery.dispatched", schemeId: "S", summary: "The object for 26111677 — 2026-11-11, with a waybill" })).summary === "The object for 26111677 — 2026-11-11, with a waybill");
+  // round 5 (R5SA-6): more spellings — and only the reference masked, never the words after it
+  for (const txt of ["Пратка 62 555 444 333 по Еконт", "тов. № 1056789123", "Speedy 62555444333", "tracking 1Z999AA10123456784", "way-bill 1234567", "ЕКОНТ 5544332211"]) {
+    const r = redactActivityForStaff(ev({ action: "case.updated", schemeId: "S", summary: txt }));
+    t(`round 5 — «${txt}» masked`, !/\d{5}/.test(r.summary), r.summary);
+  }
+  const keep = redactActivityForStaff(ev({ action: "case.updated", schemeId: "S", summary: "товарителница 62 555 444 333. Пакетът беше повреден, една бутилка счупена" }));
+  t("round 5 — the damage note after a waybill stays readable", keep.summary === "товарителница •••. Пакетът беше повреден, една бутилка счупена", keep.summary);
+  t("round 5 — a word with no number is no waybill", redactActivityForStaff(ev({ action: "case.updated", schemeId: "S", summary: "waybill required by the carrier" })).summary === "waybill required by the carrier");
   const staff = redactActivityForStaff(ev({ action: "staff.updated", subject: `user:${UID}`, after: { by: "head@ptsbg.eu" } }));
   t("a line about PTS's own people — as it is", staff.subject === `user:${UID}` && JSON.stringify(staff.after) === JSON.stringify({ by: "head@ptsbg.eu" }));
   const plain = redactActivityForStaff(ev({ action: "lifecycle.act", schemeId: "S", before: { status: "open" }, after: { status: "running" } }));

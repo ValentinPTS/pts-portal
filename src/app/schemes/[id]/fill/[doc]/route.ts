@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { requireCap, mayNow, mayViewDoc, requireDocView } from "@/lib/access";
 import { getScheme, updateScheme } from "@/lib/store";
-import { getDoc, isListDoc, isRestrictedDoc, savedDocBody } from "@/lib/documents";
+import { getDoc, isListDoc, isRestrictedDoc, savedDocBody, showsIdentities } from "@/lib/documents";
 import { withSkin, stripBodyMarkers, esc } from "@/lib/doc-shell";
 import { withFormCtx } from "@/lib/form-fields";
 import { docPrintHtml, docDefaultBody } from "@/lib/doc-template";
@@ -49,7 +49,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
   // re-hydrated into live inputs via the data-ff identity they carry
   // (lib/form-hydrate). Only when nothing was built does it fall back to the
   // auto template rendered directly in fill mode.
-  const savedBody = isListDoc(doc) && !reveal ? "" : savedDocBody(scheme, doc)?.[lang] ?? "";
+  // a document that shows identities — the lists AND the certificate — gives no saved body without names.view,
+  // as the build page and the print route (round 5, R5SA-1: the certificate's reached quality and auditors here)
+  const savedBody = (isListDoc(doc) || showsIdentities(doc)) && !reveal ? "" : savedDocBody(scheme, doc)?.[lang] ?? "";
   const composed = !!savedBody.trim();
   // Bodies saved before data-ff existed get their control identity re-attached
   // from the template (retagFormBody) so they hydrate into live inputs too.

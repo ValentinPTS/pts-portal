@@ -44,7 +44,7 @@ t("the local build: everything", seesOrder(viewer(NONE, { build: true }), "A", n
 t("the Order is not among the documents that can be sent to participants", !SENDABLE_DOCS.includes(ORDER_DOC) && !isSendableDoc(ORDER_DOC));
 t("…a laboratory cannot fetch it, whatever the round's state", !canLabFetchDoc(ORDER_DOC, { sent: { order: "2026-11-04" }, reported: true, hasCert: true, officialReport: true }));
 const release = read("../src/lib/actions.ts");
-t("…and sending to participants refuses anything not sendable", /if \(!def \|\| !isSendableDoc\(docKey\)\) return \{ error: "This document is not one the participants receive\." \}/.test(release));
+t("…and sending to participants refuses anything not sendable", /if \(!def \|\| !isSendableDoc\(docKey\)\) return \{ error: "Този документ не се изпраща на участниците\. · This document is not one the participants receive\." \}/.test(release));
 
 // ── every way into a document asks ──────────────────────────────────────────
 const at = (p: string) => read(`../src/app/${p}`);

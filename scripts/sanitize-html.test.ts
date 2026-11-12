@@ -243,6 +243,22 @@ ok("round 2 — the portal's own pictures kept", sanitizeDocHtml(`<img src="/bra
   ok("round 4 — many comments in linear time", Date.now() - t0 < 1500, `${Date.now() - t0} ms`);
 }
 
+// round 5 (R5SA-2/3/4/9/10): a form's text field kept as the browser reads it; a named window, a pinned
+// overlay, a password field never; a rebuilt style keeps its characters
+{
+  ok("round 5 — a form's text field kept, its text as text", sanitizeDocHtml(`<p>q6</p><textarea name="q6" rows="3">made-up remark &amp; more</textarea>`) === `<p>q6</p><textarea name="q6" rows="3">made-up remark &amp; more</textarea>`);
+  const tx = sanitizeDocHtml(`<textarea><p title="</textarea><img src=x onerror=alert(1)>">`);
+  ok("round 5 — …nothing hidden in it comes alive", !tagsOf(tx).some((t) => /onerror|<img/i.test(t)) && tx.startsWith("<textarea>&lt;p"), tx);
+  ok("round 5 — …inside SVG too", !/<b>/.test(sanitizeDocHtml(`<svg><textarea>a<b>b</b></textarea></svg>`)));
+  ok("round 5 — a link opens only a new tab (never a named window that keeps its opener)", sanitizeDocHtml(`<a href="https://x.example" target="w1">a</a><a href="https://x.example" target="_blank">b</a>`) === `<a href="https://x.example">a</a><a href="https://x.example" target="_blank">b</a>`);
+  for (const css of ["position:fixed;top:0;width:100vw", "posit\\69 on: fixed", "position:/**/sticky", "position: -webkit-sticky"]) {
+    ok(`round 5 — nothing pinned over the screen: ${css}`, !/fixed|sticky/i.test(sanitizeDocHtml(`<a href="https://x.example" style="${css};color:red">x</a>`).replace(/<[^>]*href[^>]*>/, (t) => t.replace(/href="[^"]*"/, ""))), sanitizeDocHtml(`<a href="https://x.example" style="${css};color:red">x</a>`));
+  }
+  ok("round 5 — the document's own «position:absolute» kept", sanitizeDocHtml(`<p style="position:absolute;left:3mm">y</p>`) === `<p style="position:absolute;left:3mm">y</p>`);
+  ok("round 5 — no password field; the builder's fields kept", sanitizeDocHtml(`<input type="password" name="pwd"><input type="checkbox" name="a" checked>`) === `<input name="pwd"><input type="checkbox" name="a" checked>`);
+  ok("round 5 — a rebuilt style keeps «é» and «€»", sanitizeDocHtml(`<p style="font-family:Caf&eacute;;background:url(//e)">x</p><p style="color:red;background:url(//e);content:&#x80;">y</p>`) === `<p style="font-family:Café">x</p><p style="color:red;content:€">y</p>`);
+}
+
 ok("text that merely mentions a form or a script is not touched", sanitizeDocHtml(`<p>The script of the form: 5 &lt; 6</p>`) === `<p>The script of the form: 5 &lt; 6</p>`);
 
 console.log(`\nsanitize-html.test: ${pass} passed, ${fail} failed`);

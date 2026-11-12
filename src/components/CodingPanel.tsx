@@ -70,7 +70,7 @@ export default function CodingPanel({ lang, schemeId, canCode, waiting, blocked,
       {error && <div role="alert" data-coding-error style={{ marginTop: 8, color: "#8f2f2f", fontSize: 13 }}>{error}</div>}
       {done.map((d, k) => (
         <details key={k} data-coding-done open={k === done.length - 1} style={{ marginTop: 10 }}>
-          <summary style={{ cursor: "pointer", fontSize: 13, fontWeight: 700 }}>{L(`Кодирано ${d.day} · ${d.by} · ${d.rows.length} участия`, `Coded ${d.day} · ${d.by} · ${d.rows.length} participations`)}</summary>
+          <summary style={{ cursor: "pointer", fontSize: 13, fontWeight: 700 }}>{L(`Кодирано ${d.day} · ${d.by} · ${d.rows.length} ${d.rows.length === 1 ? "участие" : "участия"}`, `Coded ${d.day} · ${d.by} · ${d.rows.length} ${d.rows.length === 1 ? "participation" : "participations"}`)}</summary>
           <div style={{ overflowX: "auto" }}>
             <table style={{ borderCollapse: "collapse", fontSize: 13, marginTop: 6 }}>
               <thead><tr style={{ color: "var(--muted)", fontSize: 12, textAlign: "left" }}><th style={{ padding: "3px 8px" }}>{L("Заявка", "Application")}</th><th style={{ padding: "3px 8px" }}>{L("Код", "Code")}</th><th style={{ padding: "3px 8px" }}>{L("Обекти", "Objects")}</th></tr></thead>

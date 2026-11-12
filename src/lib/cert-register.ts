@@ -106,7 +106,9 @@ export async function lookupCertificate(input: { number?: unknown; code?: unknow
   if (!key) { console.error("[register] REGISTER_HASH_KEY is not set — the register answers nothing until it is"); return { state: "failed" }; }
   const q = readQuery(input);
   const a = `a:${addressKey(address, hour, key)}`;
-  const n = `n:${hmac(key, `${hour}|n|${numberMark(q?.number ?? String(input.number ?? ""))}`)}`;
+  // a number that is no text counts as none — «String()» of an object whose toString is no function threw a 500,
+  // before any ceiling counted it (round 5, R5UB-2)
+  const n = `n:${hmac(key, `${hour}|n|${numberMark(q?.number ?? (typeof input.number === "string" ? input.number : ""))}`)}`;
   // (an incomplete query names no code: its own bucket, by its address)
   const c = `c:${hmac(key, q ? `${dayOf(hour)}|c|${codeMark(q.number, q.code)}` : `${dayOf(hour)}|c-none|${a}`)}`;
   let ticket: Ticket;

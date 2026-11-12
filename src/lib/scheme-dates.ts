@@ -28,6 +28,22 @@ export const DATE_LABELS: Record<SchemeDateKey, { bg: string; en: string }> = {
   reportDue: { bg: "Доклад до", en: "Report due" },
 };
 
+/** The first two set dates that run backwards — applications, dispatch, results, report, in that order (the
+ *  same day is fine) — or null. «Results due 22.11» was saved before «dispatch 12.12», shown to the
+ *  laboratories, and then locked (round 5, R5UA-4). */
+export function datesOutOfOrder(dates: Partial<Record<SchemeDateKey, string>>): [SchemeDateKey, SchemeDateKey] | null {
+  let prev: SchemeDateKey | null = null;
+  for (const k of DATE_KEYS) {
+    const v = dates[k];
+    if (!v) continue;
+    if (prev && String(v).slice(0, 10) < String(dates[prev]).slice(0, 10)) return [prev, k];
+    prev = k;
+  }
+  return null;
+}
+export const datesOrderRefusal = ([a, b]: [SchemeDateKey, SchemeDateKey], dates: Partial<Record<SchemeDateKey, string>>) =>
+  `«${DATE_LABELS[b].bg}» (${String(dates[b]).slice(0, 10)}) е преди «${DATE_LABELS[a].bg}» (${String(dates[a]).slice(0, 10)}) — сроковете вървят в ред: заявки, изпращане, резултати, доклад. · «${DATE_LABELS[b].en}» (${String(dates[b]).slice(0, 10)}) is before «${DATE_LABELS[a].en}» (${String(dates[a]).slice(0, 10)}) — the dates run in order: applications, dispatch, results, report.`;
+
 /** yyyy-mm-dd, and a real day — "2026-02-31" is rejected, not silently rolled over. */
 export function isIsoDate(v: string): boolean {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v ?? "");

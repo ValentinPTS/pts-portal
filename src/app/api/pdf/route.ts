@@ -81,7 +81,13 @@ export async function POST(req: NextRequest) {
   if (!(await mayViewDoc(def.key, id))) return new Response("Forbidden — the Order is for the staff it assigns roles to (Реш. 149).", { status: 403 }); // Реш. 149, 2.6
   const lang = body.lang === "bg" ? "bg" : "en"; // whitelist
 
-  const origin = req.nextUrl.origin;
+  // the internal token goes to the portal itself only: the request's origin when it IS one of the portal's
+  // addresses (or this machine), else the fixed one — a Host header passed through by a proxy never decides
+  // where the token goes (round 5, security Q2)
+  const ownOrigins = [process.env.NEXT_PUBLIC_SITE_URL, process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : ""]
+    .map((u) => { try { return u ? new URL(u).origin : ""; } catch { return ""; } }).filter(Boolean);
+  const asked = req.nextUrl.origin;
+  const origin = /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(asked) || !ownOrigins.length || ownOrigins.includes(asked) ? asked : ownOrigins[0];
   // forward the participant code (if any) — the print route validates it against
   // this scheme before using it.
   const part = typeof body.participant === "string" && body.participant ? `&p=${encodeURIComponent(body.participant)}` : "";

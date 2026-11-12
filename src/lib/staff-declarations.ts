@@ -4,6 +4,7 @@ import { getDb, noMemoryFallback } from "./supabase";
 import { getStaffByEmail } from "./staff";
 import { isProviderHead, isFounder } from "./provider-people";
 import { sofiaDay } from "./chain";
+import { fitFileName } from "./scheme-uploads";
 
 // The staff confidentiality declaration Ф 4.2-1, per provider person (plan part 2.8;
 // E17; ISO/IEC 17043 §4.2; migration 0028). PTS's own form, signed on paper: the
@@ -126,7 +127,7 @@ export async function recordDeclaration(p: { personEmail: string; signedOn: stri
   if (p.file.bytes.byteLength > MAX_DECLARATION_BYTES) return { ok: false, error: "size" };
   const id = randomUUID();
   const entry: StaffDeclaration = {
-    id, personEmail: email, signedOn: day, filePath: "", fileName: String(p.file.name || `Ф 4.2-1.${ext}`).slice(0, 160),
+    id, personEmail: email, signedOn: day, filePath: "", fileName: fitFileName(String(p.file.name || `Ф 4.2-1.${ext}`)),
     fileMime: p.file.mime, fileSize: p.file.bytes.byteLength, recordedBy: p.by, recordedAt: new Date().toISOString(),
   };
   const db = getDb();

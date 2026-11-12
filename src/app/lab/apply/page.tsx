@@ -35,10 +35,15 @@ export default async function LabApplyPage({ searchParams }: { searchParams: Pro
   const labs = approved ? (await openLaboratories({ actor: participantActor(user.id), purpose: "lab.own" }, { entityId: entity.id })).filter((l) => l.state === "active") : [];
   const mine = approved ? await participationsOf(ps) : [];
   const appliedAll = new Set(open.filter((s) => labs.length > 0 && labs.every((l) => !!earlierProblem(mine.filter((m) => m.schemeId === s.id && m.laboratoryId === l.id).map((m) => (rowsOf.get(s.id) ?? []).find((x) => x.id === m.participantId) ?? { standing: null })))).map((s) => s.id));
+  // «received» only for the organisation's OWN participation in that scheme, its code read here — never the
+  // link's words (round 5, R5UB-3: «?done=<any scheme>&code=<any text>» showed a confirmation never earned)
   const doneScheme = sp.done ? await getScheme(sp.done) : null;
-  const done = doneScheme && isStarted(doneScheme) ? doneScheme : null;
+  const ownThere = doneScheme ? mine.filter((m) => m.schemeId === doneScheme.id) : [];
+  const done = doneScheme && isStarted(doneScheme) && ownThere.length ? doneScheme : null;
+  const doneRows = done ? (rowsOf.get(done.id) ?? (await listParticipants(done.id))) : [];
+  const doneCode = ownThere.map((m) => doneRows.find((x) => x.id === m.participantId)?.code).find((c) => !!c) ?? null;
   // a provisional reference is never shown to the laboratory (5.3)
-  const code = sp.code && !isProvisional(sp.code) ? sp.code : null;
+  const code = doneCode && !isProvisional(doneCode) ? doneCode : null;
   return (
     <div style={{ minHeight: "100dvh", background: "var(--bg)" }}>
       <ParticipantNav lang={lg} active="apply" name={user.name} role={user.role} persona={persona} />

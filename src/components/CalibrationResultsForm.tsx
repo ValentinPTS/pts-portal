@@ -30,7 +30,7 @@ const GENERAL: { f: GeneralField; bg: string; en: string; wide?: boolean; type?:
   { f: "signedBy", bg: "Име и фамилия", en: "Name and surname" },
 ];
 
-export default function CalibrationResultsForm({ schemeId, participantId, lang, rows, unit, quantity, code, initial, editable, savedAt, rev, windows, submitOpen = false }: {
+export default function CalibrationResultsForm({ schemeId, participantId, lang, rows, unit, quantity, code, initial, editable: editableProp, savedAt, rev, windows, submitOpen = false }: {
   schemeId: string; participantId: string; lang: "bg" | "en"; rows: CalFormRow[]; unit: string; quantity: string;
   /** the laboratory's code — filled by PTS (M2), shown, never typed; absent while provisional */
   code?: string;
@@ -43,6 +43,10 @@ export default function CalibrationResultsForm({ schemeId, participantId, lang, 
 }) {
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const { values, change, save, state, bad: notNum, flush } = useDraftSaver({ schemeId, participantId, initial, rev, savedAt });
+  // the deadline passed while this tab was open: the server said the form is closed — the form says so too,
+  // and shuts (round 5, R5UB-4: the fields stayed editable, «Прегледай и подай» did nothing visible)
+  const closedNow = state.kind === "error" && state.error === "state";
+  const editable = editableProp && !closedNow;
   const status = saveStatus(state, L);
   // 6.3: the checks before submission, on request — completeness and format only
   // once run, the report follows the form as it is typed (the checks are pure — review)
@@ -71,6 +75,7 @@ export default function CalibrationResultsForm({ schemeId, participantId, lang, 
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); void save(); }} data-results-form={participantId} data-results-kind="C" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {closedNow && <p role="alert" data-results-closed-now style={{ margin: 0, padding: "10px 14px", borderRadius: 10, background: "#fbeee6", color: "#7a2e0e", fontWeight: 700 }}>{lang === "bg" ? "Срокът изтече — формулярът вече не приема промени и подаване. Презаредете страницата, за да видите записаното." : "The deadline has passed — the form takes no more changes or submission. Reload the page to see what is on record."}</p>}
       <fieldset className="card" data-general style={{ padding: "12px 14px", margin: 0, border: "1px solid var(--line)" }}>
         <legend style={{ fontWeight: 800, fontSize: 14, padding: "0 4px" }}>{L("Обща информация", "General info")}</legend>
         <p data-lab-code style={{ margin: "0 0 8px", fontSize: 12.5 }}><span style={{ color: "var(--muted)" }}>{L("Код на лабораторията (попълва се от PTS): ", "Laboratory code (filled by the PT provider): ")}</span><b>{code ?? L("още не е даден", "not given yet")}</b></p>

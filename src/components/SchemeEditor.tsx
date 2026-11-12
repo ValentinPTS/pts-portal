@@ -207,7 +207,7 @@ function RowCtl({ onUp, onDown, onDel, canUp, canDown, canDel, delTitle, lastTit
 }) {
   const b = { width: 30, height: 30, borderRadius: 8, border: "1px solid var(--line)", background: "#fff", cursor: "pointer", fontSize: 13, lineHeight: 1 } as const;
   return (
-    <div className="flex gap-1" style={{ flex: "0 0 auto" }}>
+    <div className="flex gap-1" data-write style={{ flex: "0 0 auto" }}>
       <button type="button" onClick={onUp} disabled={!canUp} style={{ ...b, opacity: canUp ? 1 : 0.35 }} aria-label="Move up">↑</button>
       <button type="button" onClick={onDown} disabled={!canDown} style={{ ...b, opacity: canDown ? 1 : 0.35 }} aria-label="Move down">↓</button>
       <button type="button" onClick={onDel} disabled={!canDel} title={canDel ? delTitle : lastTitle}
@@ -357,7 +357,9 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
       {/* a read-only role: said at the top, and every field shut (round 2, R2U-2 Q2 — the note sat at the
           bottom while every field took typing) */}
       {init.readOnly && <div data-read-only-top role="note" className="card p-3 mb-4 text-sm" style={{ color: "var(--muted)" }}>{L("Само за четене: вашата роля не записва данните на схемата.", "Read only: your role does not save the scheme's data.")}</div>}
-      <fieldset disabled={!!init.readOnly} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+      {/* …and no control that writes even shown (round 5, R5UA-9: the photo's upload, ↑ ↓ ✕, «＋ Добави») */}
+      {init.readOnly && <style>{"[data-scheme-read-only] [data-write]{display:none!important}"}</style>}
+      <fieldset disabled={!!init.readOnly} {...(init.readOnly ? { "data-scheme-read-only": "" } : {})} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
 
       {/* ── Essentials ─────────────────────────────────────────────── */}
       <SectionTitle>{L("Основни данни", "Basics")}</SectionTitle>
@@ -483,7 +485,7 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
           </div>
         ))}
       </div>
-      <button type="button" className="btn mt-2" onClick={addDate} style={{ borderColor: "var(--green-line)", color: "var(--green-dark)" }}>
+      <button type="button" data-write className="btn mt-2" onClick={addDate} style={{ borderColor: "var(--green-line)", color: "var(--green-dark)" }}>
         ＋ {L("Добави дата", "Add date")}
       </button>
 
@@ -700,7 +702,7 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
               </div>
             ))}
           </div>
-          <button type="button" className="btn mt-3" onClick={addParam} style={{ borderColor: "var(--green-line)", color: "var(--green-dark)" }}>
+          <button type="button" data-write className="btn mt-3" onClick={addParam} style={{ borderColor: "var(--green-line)", color: "var(--green-dark)" }}>
             ＋ {L("Добави стандарт", "Add standard")}
           </button>
         </>
@@ -797,7 +799,7 @@ function MetaFields({ init, L }: { init: SchemeEditorInit; L: (bg: string, en: s
             <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Адрес", "Address")}</span><input name={`prov_${i}_address`} value={r.address} maxLength={300} onChange={(e) => set(r.key, "address", e.target.value)} className={inputCls} style={inputStyle} /></label>
             <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Услуги (БГ)", "Services (BG)")}</span><input name={`prov_${i}_svcBg`} value={r.servicesBg} maxLength={500} onChange={(e) => set(r.key, "servicesBg", e.target.value)} className={inputCls} style={inputStyle} /></label>
             <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Услуги (EN)", "Services (EN)")}</span><input name={`prov_${i}_svcEn`} value={r.servicesEn} maxLength={500} onChange={(e) => set(r.key, "servicesEn", e.target.value)} className={inputCls} style={inputStyle} /></label>
-            <button type="button" className="btn btn-sm" aria-label={L("Премахни доставчика", "Remove the provider")} onClick={() => setRows((x) => x.filter((y) => y.key !== r.key))}>✕</button>
+            <button type="button" data-write className="btn btn-sm" aria-label={L("Премахни доставчика", "Remove the provider")} onClick={() => setRows((x) => x.filter((y) => y.key !== r.key))}>✕</button>
           </div>
         ))}
       </div>
@@ -868,7 +870,7 @@ function ListEditor({ pfx, title, hint, rows, setRows, suggestions, L }: {
               <input name={`${pfx}_${i}_bg`} value={r.bg} maxLength={200} onChange={(e) => { const v = e.target.value; setRows((x) => x.map((y) => (y.key === r.key ? { ...y, bg: v } : y))); }} className={inputCls} style={inputStyle} /></label>
             <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>EN</span>
               <input name={`${pfx}_${i}_en`} value={r.en} maxLength={200} onChange={(e) => { const v = e.target.value; setRows((x) => x.map((y) => (y.key === r.key ? { ...y, en: v } : y))); }} className={inputCls} style={inputStyle} /></label>
-            <button type="button" className="btn btn-sm" aria-label={L("Премахни реда", "Remove the row")} onClick={() => setRows((x) => x.filter((y) => y.key !== r.key))}>✕</button>
+            <button type="button" data-write className="btn btn-sm" aria-label={L("Премахни реда", "Remove the row")} onClick={() => setRows((x) => x.filter((y) => y.key !== r.key))}>✕</button>
           </div>
         ))}
       </div>

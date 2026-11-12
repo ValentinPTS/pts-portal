@@ -87,7 +87,7 @@ t("R2U-1: brought back by «Back», the results form takes up its own latest sav
 t("R2U-2: the scheme page's dates, file menu and the builder's start — by the right", /canEdit=\{await mayNow\("scheme\.edit", id\)\} \/>/.test(src("app/schemes/[id]/page.tsx")) && /canSend=\{await mayNow\("docs\.release", id\)\}/.test(src("app/schemes/[id]/page.tsx")) && /\{canWrite && <button style=\{menuItem\} onClick=\{\(\) => pickFile\(d\.key\)\}>⟳/.test(src("components/SchemeDocuments.tsx")) && /const canEdit = await mayNow\("scheme\.edit", s\.id\);[\s\S]*canEdit=\{canEdit\}/.test(src("app/schemes/[id]/build/[doc]/page.tsx")) && /<fieldset disabled=\{!!init\.readOnly\}/.test(src("components/SchemeEditor.tsx")));
 t("R2U-3: a file larger than the portal takes is refused before sending", /maxBytes=\{15_000_000\}/.test(src("app/lab/p/[id]/page.tsx")) && /maxBytes=\{15_000_000\}/.test(src("app/lab/page.tsx")) && /f\.size > 5_000_000/.test(src("components/RegisterForm.tsx")));
 t("R2U-4: the receiver's name at least two letters, in the browser too", /name="receivedBy" required minLength=\{2\}/.test(src("app/lab/p/[id]/page.tsx")));
-t("R2U-5: the lab profile's ЕИК and phone checked before sending", /pattern: "\(BG \?\)\?\[0-9\]\{9\}/.test(src("app/lab/profile/page.tsx")));
+t("R2U-5: the lab profile's ЕИК and phone checked before sending (round 5: as the server reads them)", /pattern: "\(\[Bb\]\[Gg\] \?\)\?\[0-9\]/.test(src("app/lab/profile/page.tsx")) && /\[Вв\]\[Ъъ\]\[Тт\]\[Рр\]/.test(src("app/lab/profile/page.tsx")));
 t("R2U-6: a register's ceiling said in its own words", /REGISTER_TEXT\[r\.why === "code" \? "limitedCode"/.test(actions));
 t("R2U-7: the staff side's downloads keep their names", ["app/schemes/[id]/uploaded/[doc]/route.ts", "app/users/declarations/[id]/route.ts"].every((f) => /filename\*=UTF-8''\$\{utf8Name\(/.test(src(f))));
 
@@ -139,7 +139,65 @@ t("Q4: a read-only role sees the document as it prints, not the editor — the S
 // identities — the lists AND the certificate — no saved body without names.view, as the build page does
 t("a saved certificate or list body never reaches a role without names.view through the print route",
   /if \(\(isList \|\| showsIdentities\(doc\)\) && !reveal\) saved = "";/.test(src("app/schemes/[id]/build/[doc]/print/route.ts"))
-  && /\(isList \|\| showsIdentities\(doc\)\) && !reveal \? \{ bg: "", en: "" \}/.test(src("app/schemes/[id]/build/[doc]/page.tsx")));
+  && /\(isList \|\| showsIdentities\(doc\)\) && !reveal \? \{ bg: "", en: "" \}/.test(src("app/schemes/[id]/build/[doc]/page.tsx"))
+  // round 5 (R5SA-1): …and the Fill view
+  && /\(isListDoc\(doc\) \|\| showsIdentities\(doc\)\) && !reveal \? "" : savedDocBody/.test(src("app/schemes/[id]/fill/[doc]/route.ts")));
+
+// ── round 5 (2026-11-12) ────────────────────────────────────────────────────────────────────────
+{
+  const proxySrc5 = src("proxy.ts");
+  t("R5SB-3: a page that acts when opened, opened from another site — a page to confirm, or refused",
+    /const ACTS_WHEN_OPENED = /.test(proxySrc5) && /if \(foreign === "navigate"\) return confirmOpening\(request\);/.test(proxySrc5) && /if \(foreign === "other"\) return new NextResponse\(null, \{ status: 403 \}\);/.test(proxySrc5));
+  const acts = new RegExp(proxySrc5.match(/const ACTS_WHEN_OPENED = \/(.+)\/;/)![1]);
+  t("R5SB-3: …the exports, the audit pack, prints, files and lab documents — not the pages a link in an e-mail opens",
+    ["/schemes/S/export", "/schemes/S/export/analysis", "/schemes/S/audit-pack", "/invoices/export", "/lab/doc/S/plan", "/lab/labdoc/S/proforma", "/schemes/S/build/plan/print", "/schemes/S/fill/feedback", "/registrations/letter/x"].every((p) => acts.test(p))
+    && ["/lab", "/lab/p/1", "/schemes/S", "/notices", "/dashboard"].every((p) => !acts.test(p)));
+  t("Q1: a request from the browser's own controls (Sec-Fetch-Site: none) is a person's own", /sec-fetch-site"\) \?\? ""\)\.toLowerCase\(\) === "none"\) return false;/.test(proxySrc5));
+  t("R5SB-4: the session's cookies unreadable by script, in the server and the proxy",
+    /httpOnly: true/.test(src("lib/session-cookie.ts")) && /cookieOptions: SESSION_COOKIE/.test(src("lib/auth.ts")) && /cookieOptions: SESSION_COOKIE/.test(proxySrc5) && !/from "\.\/lib\/auth"/.test(proxySrc5));
+  const authA = src("lib/auth-actions.ts");
+  t("R5SB-1: sign-in, the 6-digit code and the current password counted by the portal itself",
+    /if \(!\(await signInAllowed\(email\)\)\) return \{ error: TOO_MANY_SIGN_IN \};/.test(authA) && (authA.match(/await codeAllowed\(/g) ?? []).length >= 3 && /attemptLimit\("password_check"/.test(authA));
+  t("R5SB-7: no authenticator enrolled by a session that owes its second factor", (authA.match(/if \(session\.needsAal2\) return \{ error: authErrorText\("insufficient_aal"\) \};/g) ?? []).length >= 2);
+  t("R5SB-2: the development server only on this machine", /"dev": "next dev -H 127\.0\.0\.1"/.test(readFileSync(new URL("../package.json", import.meta.url), "utf8")));
+  t("R5SB-6: new functions, tables and sequences never granted to the browser's roles (0018)",
+    ["tables", "sequences"].every((k) => new RegExp(`alter default privileges in schema public revoke all on ${k} from anon, authenticated;`).test(readFileSync(new URL("../supabase/migrations/0018_app_migrations.sql", import.meta.url), "utf8")))
+    && /alter default privileges in schema public revoke execute on functions from anon, authenticated;/.test(readFileSync(new URL("../supabase/migrations/0018_app_migrations.sql", import.meta.url), "utf8")));
+  t("Q4: a notice of no scheme is seen and released by who releases documents and manages the organisations",
+    /: \(await mayAnywhereNow\("docs\.release"\)\) && \(await mayAnywhereNow\("labs\.manage"\)\);/.test(actions) && /\(!n\.schemeId && managesLabs\)/.test(src("app/notices/page.tsx")));
+  t("R5SA-7/13: a document saved only under a key the portal knows, its bodies text only", /if \(!isDocKey\(docKey\)\) return \{ error: "Непознат документ\. · Unknown document\." \};\n  const bodies = bodiesOf\(body, enArg\);/.test(actions));
+  t("R5UA-1: a document carrying another scheme's number is not sent", /otherSchemeNumbers\(now\.bg, scheme\.number\)/.test(actions));
+  t("R5UA-5: the analysis import and the transfer check sent once", /<OnceForm action=\{importAnalysisAction\}/.test(src("components/AnalysisImportForm.tsx")) && /<OnceForm action=\{recordTransferCheckAction\}/.test(src("components/ProcessingRecordCard.tsx")));
+  t("R5UA-9: read-only roles are offered no «Създай», no «Добави стъпка», no write control in the scheme's card",
+    /canWrite \? <Link className="btn btn-primary" style=\{btnSm\} href=\{d\.buildHref\}>/.test(src("components/SchemeDocuments.tsx")) && /\{canAddStep && \(<>/.test(src("app/schemes/[id]/participants/[code]/page.tsx")) && /\[data-scheme-read-only\] \[data-write\]\{display:none!important\}/.test(src("components/SchemeEditor.tsx")));
+  t("R5SA-4: the read-only view's frame is sandboxed", /sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"/.test(src("components/WordEditor.tsx")));
+  t("Q2: the PDF's internal token only to the portal's own origin", /ownOrigins\.includes\(asked\) \? asked : ownOrigins\[0\]/.test(src("app/api/pdf/route.ts")));
+  const we5 = src("components/WordEditor.tsx");
+  t("R5UA-2: a link inside the portal, unsaved words — saved first, then followed", /document\.addEventListener\("click", onClick, true\)/.test(we5) && /void saveNow\.current\(\)\.then\(\(ok\) => \{ if \(ok\) router\.push/.test(we5));
+  t("R5UA-3: a document saved over a newer one is refused, said", /if \(loaded !== null && loaded !== kept\) return \{ error: DOC_STALE, stale: true \};/.test(actions) && /rev: revRef\.current/.test(we5) && /initialRev=\{s\.docs\?\.\[doc\]\?\.rev \?\? 0\}/.test(src("app/schemes/[id]/build/[doc]/page.tsx")));
+  t("R5UB-1: a form the page's scripts send is held until they are live — never the browser's own GET",
+    /<script id="pts-hold-early-submit" dangerouslySetInnerHTML=\{\{ __html: PRE_HYDRATION_GUARD \}\} \/>/.test(src("app/layout.tsx")) && /!f\.hasAttribute\("action"\)&&!f\.hasAttribute\("method"\)\)e\.preventDefault\(\)/.test(src("app/layout.tsx")) && /setAttribute\("data-hydrated", ""\)/.test(src("components/Hydrated.tsx")));
+  t("R5UB-2: a register number that is no text never throws", /typeof input\.number === "string" \? input\.number : ""/.test(src("lib/cert-register.ts")));
+  t("R5UB-3: «received» only for the organisation's own participation, its code from the server", /const ownThere = doneScheme \? mine\.filter/.test(src("app/lab/apply/page.tsx")) && !/sp\.code &&/.test(src("app/lab/apply/page.tsx")));
+  t("R5UB-4: a results form past its deadline says so and shuts", ["components/ResultsForm.tsx", "components/CalibrationResultsForm.tsx"].every((f) => /const editable = editableProp && !closedNow;/.test(src(f)) && /data-results-closed-now/.test(src(f))));
+  const { otherSchemeNumbers } = await import("../src/lib/scheme-number.ts");
+  t("R5UA-1: another scheme's number found; this scheme's own (any spelling) not",
+    JSON.stringify(otherSchemeNumbers(`<p>№ PTS 26/11-T-15</p><p>PTS 26/11-T-16 · ПTC 26/11-Т-16</p>`, "PTS 26/11-T-16")) === JSON.stringify(["PTS 26/11-T-15"]));
+  const { datesOutOfOrder } = await import("../src/lib/scheme-dates.ts");
+  t("R5UA-4: dates out of order found; in order (or the same day) fine",
+    JSON.stringify(datesOutOfOrder({ dispatch: "2026-12-12", resultsDue: "2026-11-22" })) === JSON.stringify(["dispatch", "resultsDue"]) && datesOutOfOrder({ applicationsDue: "2026-11-01", dispatch: "2026-11-01T10:00", resultsDue: "2026-12-01", reportDue: "2027-01-10" }) === null);
+  const { fitFileName } = await import("../src/lib/scheme-uploads.ts");
+  t("R4U-6: a long name kept with its extension, never cut inside a character", fitFileName("П".repeat(200) + "🧪.pdf").endsWith(".pdf") && [...fitFileName("П".repeat(200) + "🧪.pdf")].length === 160 && fitFileName("кратко.pdf") === "кратко.pdf");
+  const { imageUrlAllowed, docImgSrc } = await import("../src/lib/image-hosts.ts");
+  t("R5SA-8: a picture from the website, never a page of the portal's own address (portal.ptsbg.eu: /brand/ only)",
+    imageUrlAllowed("https://ptsbg.eu/x.jpg", {}) && imageUrlAllowed("https://www.ptsbg.eu/x.jpg", {}) && !imageUrlAllowed("https://portal.ptsbg.eu/schemes/S/export", {}) && imageUrlAllowed("https://portal.ptsbg.eu/brand/logo.png", {}) && !imageUrlAllowed("https://cdn.ptsbg.eu/x.png", {}) && !/\*\.ptsbg/.test(docImgSrc({})));
+  const { catalogueRows, isSimulation } = await import("../src/lib/catalogue-model.ts");
+  const rows = catalogueRows([{ id: "SIM-26-11-T-1", number: "SIM 26/11-T-1", status: "running" }, { id: "26-11-T-1", number: "PTS 26/11-T-1", status: "running" }] as never, () => Date.now(), () => false);
+  t("R5UA-7: a simulation is never in the catalogue", isSimulation("SIM 26/11-T-1") && !isSimulation("PTS 26/11-T-1") && !JSON.stringify(rows).includes("SIM 26/11-T-1"));
+  const { attemptLimit } = await import("../src/lib/public-limit.ts");
+  let n = 0; for (let i = 0; i < 25; i++) if ((await attemptLimit("sign_in_account", "account-made.up@example.invalid")) === "ok") n++;
+  t("R5SB-1: one account's sign-in attempts stop at its ceiling an hour", n === 20, String(n));
+}
 
 console.log(`security-sweep.test: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

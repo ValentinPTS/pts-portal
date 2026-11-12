@@ -44,8 +44,11 @@ import { BRAND_FILE, imageUrlAllowed } from "./image-hosts";
 // everything up to their end tag — the content is never read as markup by us, so the
 // «<p title="</xmp><img onerror=…>">» class has nothing to hide behind.
 const DROP_WITH_CONTENT = new Set([
-  "script", "style", "iframe", "textarea", "title", "xmp", "noembed", "noframes", "noscript", "plaintext", "template",
+  "script", "style", "iframe", "title", "xmp", "noembed", "noframes", "noscript", "plaintext", "template",
 ]);
+// …except a form's text field: kept, its text read as the browser reads it (round 5, R5SA-2 — dropped, a
+// built form's Fill view lost its multi-line fields, and one Save erased their answers)
+const RCDATA_KEPT = new Set(["textarea"]);
 // Elements dropped as tags (their children, sanitized, stay).
 const DROP_TAG = new Set([
   "object", "embed", "link", "meta", "base", "form", "frame", "frameset", "applet", "portal", "fencedframe",
@@ -66,7 +69,7 @@ const ALLOWED_ATTR = new Set((
   // pictures, links, maps, media (each checked as what it is)
   "src alt href target rel hreflang cite datetime usemap ismap shape coords background poster controls muted loop playsinline " +
   // the builder's form fields
-  "name checked disabled readonly selected multiple placeholder label for min max step maxlength minlength " +
+  "name checked disabled readonly selected multiple placeholder label for min max step maxlength minlength rows cols wrap " +
   // SVG
   "xmlns xmlns:xlink xlink:href xml:space version viewbox preserveaspectratio x y x1 y1 x2 y2 cx cy r rx ry fx fy dx dy " +
   "d points pathlength transform fill fill-opacity fill-rule stroke stroke-width stroke-opacity stroke-linecap " +
@@ -105,15 +108,18 @@ const NAMED: Record<string, string> = {
   lcub: "{", lbrace: "{", verbar: "|", vert: "|", VerticalLine: "|", rcub: "}", rbrace: "}", fjlig: "fj",
   nvlt: "<\u20d2", nvgt: ">\u20d2", bne: "=\u20e5", nbsp: "\u00a0", NonBreakingSpace: "\u00a0", shy: "\u00ad",
 };
-// The references a browser also reads WITHOUT a «;» (the legacy ones): those yielding ASCII,
-// and the rest as one opaque non-ASCII character (inert for every check here).
+// The references a browser also reads WITHOUT a «;» (the legacy ones): those yielding ASCII, and the
+// Latin-1 ones — each to its own character (round 5: a placeholder lost «é» from a rebuilt style).
 const LEGACY_ASCII: Record<string, string> = { amp: "&", AMP: "&", lt: "<", LT: "<", gt: ">", GT: ">", quot: '"', QUOT: '"' };
-const LEGACY_OTHER = new Set(("AElig Aacute Acirc Agrave Aring Atilde Auml COPY Ccedil ETH Eacute Ecirc Egrave Euml Iacute " +
-  "Icirc Igrave Iuml Ntilde Oacute Ocirc Ograve Oslash Otilde Ouml REG THORN Uacute Ucirc Ugrave Uuml Yacute aacute acirc " +
-  "acute aelig agrave aring atilde auml brvbar ccedil cedil cent copy curren deg divide eacute ecirc egrave eth euml frac12 " +
-  "frac14 frac34 iacute icirc iexcl igrave iquest iuml laquo macr micro middot nbsp not ntilde oacute ocirc ograve ordf ordm " +
-  "oslash otilde ouml para plusmn pound raquo reg sect shy sup1 sup2 sup3 szlig thorn times uacute ucirc ugrave uml uuml " +
-  "yacute yen yuml").split(" "));
+const LATIN1_NAMES = ("nbsp iexcl cent pound curren yen brvbar sect uml copy ordf laquo not shy reg macr deg plusmn sup2 sup3 acute micro para middot cedil sup1 ordm raquo frac14 frac12 frac34 iquest Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute Ecirc Euml Igrave Iacute Icirc Iuml" +
+  " ETH Ntilde Ograve Oacute Ocirc Otilde Ouml times Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig agrave aacute acirc atilde auml aring aelig ccedil egrave eacute ecirc euml igrave iacute icirc iuml eth ntilde ograve oacute ocirc otilde ouml divide oslash ugrave uacute ucirc uuml yacute thorn yuml").split(" ");
+const LEGACY_OTHER: Record<string, string> = Object.fromEntries([
+  ...LATIN1_NAMES.map((n, i) => [n, String.fromCharCode(0xa0 + i)]),
+  ["COPY", "\u00a9"], ["REG", "\u00ae"],
+]);
+// the C1 range of a numeric reference, read as Windows-1252 (as the browser does)
+const C1 = "\u20ac\u0081\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u008d\u017d\u008f" +
+  "\u0090\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u009d\u017e\u0178";
 
 const isAlpha = (c: number) => (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
 const isDigit = (c: number) => c >= 48 && c <= 57;
@@ -125,7 +131,7 @@ const isWs = (c: number) => c === 32 || c === 9 || c === 10 || c === 12 || c ===
 function numericRef(cp: number): string {
   if (cp === 0 || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) return "\ufffd";
   // the C1 range is read as Windows-1252 — none of those is ASCII
-  if (cp >= 0x80 && cp <= 0x9f) return "\ufffd";
+  if (cp >= 0x80 && cp <= 0x9f) return C1[cp - 0x80];
   return String.fromCodePoint(cp);
 }
 
@@ -157,15 +163,15 @@ function decodeAttr(raw: string): string | null {
     const name = raw.slice(amp + 1, k);
     if (!name) { out += "&"; i = amp + 1; continue; }
     if (raw.charCodeAt(k) === 59 /* ; */) {
-      const ch = NAMED[name] ?? LEGACY_ASCII[name] ?? (LEGACY_OTHER.has(name) ? "\ufffd" : undefined);
+      const ch = NAMED[name] ?? LEGACY_ASCII[name] ?? LEGACY_OTHER[name];
       if (ch === undefined) return null;
       out += ch;
       i = k + 1;
       continue;
     }
     // no «;»: only a legacy name, and in an attribute not when «=» follows
-    if (raw.charCodeAt(k) !== 61 /* = */ && (name in LEGACY_ASCII || LEGACY_OTHER.has(name))) {
-      out += LEGACY_ASCII[name] ?? "\ufffd";
+    if (raw.charCodeAt(k) !== 61 /* = */ && (name in LEGACY_ASCII || name in LEGACY_OTHER)) {
+      out += LEGACY_ASCII[name] ?? LEGACY_OTHER[name];
     } else out += raw.slice(amp, k);
     i = k;
   }
@@ -430,6 +436,17 @@ function cssDeclarations(css: string): string[] {
   out.push(css.slice(from));
   return out;
 }
+/** Does this CSS pin something over the whole screen — «position: fixed» or «sticky» (escapes and comments
+ *  read as CSS reads them)? A document's own layout uses «absolute» inside its body; a fixed link covered
+ *  the whole page, and one click anywhere took the tab (round 5, R5SA-4). */
+function pinsToScreen(css: string): boolean {
+  if (!/p|\\/i.test(css)) return false;
+  // comments out by a scan (a lazy pattern would run to the end for each «/*» never closed)
+  let bare = "", p = 0;
+  for (;;) { const c = css.indexOf("/*", p); if (c < 0) { bare += css.slice(p); break; } bare += css.slice(p, c); const e = css.indexOf("*/", c + 2); if (e < 0) break; p = e + 2; }
+  const plain = bare.replace(/\\([0-9a-fA-F]{1,6})\s?/g, (_m, h: string) => { const cp = parseInt(h, 16); return cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : ""; }).replace(/\\(.)/g, "$1").toLowerCase();
+  return /(^|[;{\s])position\s*:\s*(?:-webkit-)?(?:fixed|sticky)/.test(plain);
+}
 // a decoded value written into an attribute: its «&», «"» and «<» as references
 const escAttr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
@@ -458,12 +475,16 @@ function decideAttr(tag: string, name: string, raw: string | null): Verdict {
   if (SCRIPTISH.test(decoded.replace(/[\u0000-\u0020\u007f-\u009f]/g, "").toLowerCase())) return { keep: false };
   // a link never hands the page it opens a hold on this one («rel=opener» — round 4, R4S-8)
   if (name === "rel" && /(^|\s)opener(\s|$)/i.test(decoded)) return { keep: false };
+  // …nor does a named window: only «_blank» opens without one (round 5, R5SA-3 — «target=w1» kept the opener)
+  if (name === "target" && decoded.trim().toLowerCase() !== "_blank") return { keep: false };
+  // a field of the builder's kinds only — never a password field a browser would fill (round 5, R5SA-9)
+  if (name === "type" && tag === "input" && !/^(text|checkbox|radio|number|date|time)$/i.test(decoded.trim())) return { keep: false };
   // a style, and any other value with a function in it (SVG reads fill/filter/mask/… as CSS)
   if (name === "style") {
-    if (cssSafe(decoded)) return { keep: true };
+    if (cssSafe(decoded) && !pinsToScreen(decoded)) return { keep: true };
     // only the declarations that load from elsewhere go — a pasted paragraph keeps its colour and width
     // (round 4, R4U-9); what stays is written back from what the browser reads
-    const kept = cssDeclarations(decoded).filter((d) => d.trim() && cssSafe(d));
+    const kept = cssDeclarations(decoded).filter((d) => d.trim() && cssSafe(d) && !pinsToScreen(d));
     return kept.length ? { keep: true, value: escAttr(kept.join(";")) } : { keep: false };
   }
   if (!isText && decoded.indexOf("(") >= 0) return cssSafe(decoded) ? { keep: true } : { keep: false };
@@ -501,9 +522,9 @@ function sanitizePass(s: string): string {
       if (!tag.complete) return out; // cut off at the end: the browser drops it, and so does this
       i = text = tag.end;
       if (!tag.nameOk) continue;
-      if (DROP_WITH_CONTENT.has(tag.name)) {
+      if (DROP_WITH_CONTENT.has(tag.name) || RCDATA_KEPT.has(tag.name)) {
         // up to its end tag («</name» then whitespace, «/» or «>»), never read as markup
-        let from = tag.end;
+        let from = tag.end, closeAt = -1, closeEnd = -1;
         for (;;) {
           const e = lower.indexOf("</" + tag.name, from);
           if (e < 0) return out;
@@ -512,11 +533,20 @@ function sanitizePass(s: string): string {
           if (isWs(after) || after === 47 || after === 62) {
             const close = readTag(s, e + 2);
             if (!close.complete) return out;
-            i = text = close.end;
+            closeAt = e; closeEnd = close.end;
             break;
           }
           from = e + 2;
         }
+        if (RCDATA_KEPT.has(tag.name)) {
+          // the tag rebuilt from what passed, its text as text — every «<» escaped, so nothing in it ends it
+          const first = new Set<string>();
+          const kept = tag.attrs.filter((a) => (first.has(a.name) ? false : (first.add(a.name), true))) // the browser keeps the first
+            .map((a) => ({ a, v: decideAttr(tag.name, a.name, a.raw) })).filter((x) => x.v.keep)
+            .map(({ a, v }) => ("value" in v ? ` ${a.name}="${quoteAttr(v.value)}"` : a.raw === null ? ` ${a.name}` : ` ${a.name}="${quoteAttr(a.raw)}"`));
+          out += `<${tag.name}${kept.join("")}>${s.slice(tag.end, closeAt).replace(/</g, "&lt;")}</${tag.name}>`;
+        }
+        i = text = closeEnd;
         continue;
       }
       if (DROP_TAG.has(tag.name)) continue;

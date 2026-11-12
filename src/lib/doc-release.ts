@@ -169,8 +169,20 @@ export function hasCohortNames(html: string): boolean {
 // score header cell — ζ for testing, Eₙ for calibration — which no form a lab fills
 // in carries; the charts by the engine's own class; the note by its class.
 const SCORE_HEADER = /<th[^>]*>\s*(?:ζ|E<sub>n<\/sub>|Eₙ)\s*<\/th>/i;
-const SCORE_CHART = /<svg class="chart"[\s\S]*?<\/svg>/gi;
-const UNOFFICIAL_NOTE = /<p class="unofficial"[^>]*>[\s\S]*?<\/p>/gi;
+/** Everything from each «open» to the first «close» after it, out — one forward scan, case-insensitive (ASCII:
+ *  the indexes stay the text's); an opener never closed stays, as a pattern left it. */
+function dropBlocks(html: string, open: string, close: string): string {
+  const lower = html.replace(/[A-Z]+/g, (m) => m.toLowerCase());
+  let out = "", p = 0;
+  for (;;) {
+    const i = lower.indexOf(open, p);
+    if (i < 0) return out + html.slice(p);
+    const e = lower.indexOf(close, i + open.length);
+    if (e < 0) return out + html.slice(p);
+    out += html.slice(p, i);
+    p = e + close.length;
+  }
+}
 
 /** Does this saved body carry portal-computed scores? Used to warn at release time. */
 export function hasPortalScores(html: string): boolean {
@@ -187,7 +199,8 @@ export function stripPortalScores(html: string, lang: "bg" | "en"): string {
   const note = lang === "bg"
     ? "[Оценките, изчислени от портала, не се предоставят на участниците. Официалните оценки са в окончателния доклад.]"
     : "[Scores computed by the portal are not provided to participants. The official scores are in the final report.]";
-  const out = html.replace(SCORE_CHART, "").replace(UNOFFICIAL_NOTE, "");
+  // found by a scan — the lazy patterns ran to the end for every opener left open (round 5, R5SA-7)
+  const out = dropBlocks(dropBlocks(html, '<svg class="chart"', "</svg>"), '<p class="unofficial"', "</p>");
   return /<table/i.test(out) ? mapTables(out, (t) => (SCORE_HEADER.test(t) ? `<p class="muted">${note}</p>` : t)) : out;
 }
 

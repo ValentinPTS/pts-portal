@@ -94,7 +94,8 @@ export default async function BuildDocPage({
     .filter(({ d }) => d?.bg || d?.en)
     .slice(0, 25)
     .map(({ o, d }) => ({
-      id: o.id, number: o.number, title: o.titleEn || o.titleBg || o.number,
+      // each title in its language — the list showed the English one on a Bulgarian screen (round 5, R5UA-8)
+      id: o.id, number: o.number, title: o.titleEn || o.titleBg || o.number, titleBg: o.titleBg || o.titleEn || o.number,
       bg: d?.bg ?? "", en: d?.en ?? "",
     }));
 
@@ -137,6 +138,8 @@ export default async function BuildDocPage({
         customItems={custom}
         savedTemplates={savedTemplates}
         copyFrom={copyFrom}
+        schemeNumber={s.number}
+        initialRev={s.docs?.[doc]?.rev ?? 0}
         canEdit={canEdit}
       />
     </div>

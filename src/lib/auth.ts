@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { cache } from "react";
 import { createServerClient } from "@supabase/ssr";
 import { isSharedMailbox } from "./provider-people";
+import { SESSION_COOKIE } from "./session-cookie";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Owner authentication & authorization (Phase 2).
@@ -48,6 +49,7 @@ export async function createServerSupabase() {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
     "";
   return createServerClient(url, key, {
+    cookieOptions: SESSION_COOKIE,
     cookies: {
       getAll() {
         return cookieStore.getAll();

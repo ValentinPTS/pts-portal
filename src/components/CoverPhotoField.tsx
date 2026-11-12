@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { uploadCoverImageAction } from "@/lib/actions";
+import { useLang } from "@/components/LangProvider";
 
 // Cover-photo control on the scheme Edit page: upload (→ Supabase Storage), choose
 // size (% of page width) and placement (left/centre/right), with a live preview.
@@ -18,6 +19,9 @@ export default function CoverPhotoField({
   const [al, setAl] = useState<"left" | "center" | "right">(align ?? "center");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // in both languages, as the rest of the scheme's card (round 5, R5UA-8)
+  const { lang } = useLang();
+  const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -47,30 +51,30 @@ export default function CoverPhotoField({
       <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 280px", minWidth: 260, display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <label className="btn" style={{ cursor: "pointer" }}>
-              {busy ? "Uploading…" : img ? "Replace photo" : "Upload photo"}
+            <label className="btn" data-write style={{ cursor: "pointer" }}>
+              {busy ? L("Качване…", "Uploading…") : img ? L("Смени снимката", "Replace photo") : L("Качи снимка", "Upload photo")}
               <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={onFile} disabled={busy} />
             </label>
-            {img && <button type="button" className="btn" style={{ ...small, color: "var(--red)" }} onClick={() => setImg("")}>Remove</button>}
+            {img && <button type="button" className="btn" data-write style={{ ...small, color: "var(--red)" }} onClick={() => setImg("")}>{L("Премахни", "Remove")}</button>}
           </div>
           {err && <div style={{ color: "var(--red)", fontSize: 13 }}>{err}</div>}
-          <div style={{ fontSize: 12, color: "var(--muted)" }}>PNG, JPG or WEBP, up to 2 MB. A white background works best.</div>
+          <div data-write style={{ fontSize: 12, color: "var(--muted)" }}>{L("PNG, JPG или WEBP, до 2 MB. Най-добре на бял фон.", "PNG, JPG or WEBP, up to 2 MB. A white background works best.")}</div>
 
           <label className="block">
-            <span className="block text-xs mb-1" style={{ color: "var(--muted)" }}>Size — {w}% of the page width</span>
+            <span className="block text-xs mb-1" style={{ color: "var(--muted)" }}>{L(`Размер — ${w}% от ширината на страницата`, `Size — ${w}% of the page width`)}</span>
             <input type="range" min={15} max={90} value={w} onChange={(e) => setW(parseInt(e.target.value, 10))} style={{ width: "100%" }} />
           </label>
 
           <div>
-            <span className="block text-xs mb-1" style={{ color: "var(--muted)" }}>Placement</span>
+            <span className="block text-xs mb-1" style={{ color: "var(--muted)" }}>{L("Разположение", "Placement")}</span>
             <div style={{ display: "flex", gap: 6 }}>
-              {alignBtn("left", "Left")}{alignBtn("center", "Centre")}{alignBtn("right", "Right")}
+              {alignBtn("left", L("Вляво", "Left"))}{alignBtn("center", L("В средата", "Centre"))}{alignBtn("right", L("Вдясно", "Right"))}
             </div>
           </div>
         </div>
 
         <div style={{ flex: "1 1 280px", minWidth: 260 }}>
-          <span className="block text-xs mb-1" style={{ color: "var(--muted)" }}>Preview (on the white page)</span>
+          <span className="block text-xs mb-1" style={{ color: "var(--muted)" }}>{L("Преглед (на бялата страница)", "Preview (on the white page)")}</span>
           <div style={{ border: "1px solid var(--line)", borderRadius: 8, background: "#fff", padding: 14, minHeight: 150 }}>
             {img ? (
               /* eslint-disable-next-line @next/next/no-img-element --
@@ -80,7 +84,7 @@ export default function CoverPhotoField({
                  URL at all — configuration burden for no gain on a preview. */
               <img src={img} alt="" style={{ maxWidth: w + "%", display: "block", margin, borderRadius: 6 }} />
             ) : (
-              <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: "48px 0" }}>No cover photo yet.</div>
+              <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: "48px 0" }}>{L("Още няма снимка за корицата.", "No cover photo yet.")}</div>
             )}
           </div>
         </div>

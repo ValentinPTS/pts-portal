@@ -77,6 +77,7 @@ export default async function CaseFilePage({
 
   const { lang, tr } = await getServerT();
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
+  const canAddStep = await mayNow("dispatch", id);
   const canReveal = await mayNow("names.view", id); // the scheme manager and the coding expert, here (Реш. 93, 2.4)
   // 6.4: the submitted versions — to who reads or enters the results here; the unlock by who enters them
   const canSeeResults = (await mayNow("results.read", id)) || (await mayNow("results.enter", id));
@@ -379,7 +380,8 @@ export default async function CaseFilePage({
         </table>
       </div>
 
-      {/* add a step */}
+      {/* add a step — offered only to who may record one (the dispatch right, as the action asks; round 5, R5UA-9) */}
+      {canAddStep && (<>
       <h3 id="add" className="font-bold mt-6 mb-1" style={{ color: "var(--green-dark)" }}>{tr("case.addStep")}</h3>
       <p className="text-xs mb-2" style={{ color: "var(--muted)" }}>{tr("case.addHint")}</p>
       {/* a testing scheme's object goes out through «Доставки» — the shipment on record and the participation told (5.6) */}
@@ -410,6 +412,7 @@ export default async function CaseFilePage({
         <label className="block" style={{ gridColumn: "3 / -1" }}><span className="block mb-0.5" style={labelStyle}>{tr("case.note")}</span>
           <input name="note" className={inputCls} style={inputStyle} /></label>
       </form>
+      </>)}
 
       {/* files the lab uploaded from its portal (signed protocol / results sheet) */}
       <h2 className="text-lg font-bold mt-7 mb-2 pb-1" style={{ color: "var(--green-dark)", borderBottom: "2px solid var(--red)" }}>

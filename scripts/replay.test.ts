@@ -188,6 +188,20 @@ t("the round export: the replay's field placed; its source path never in coded/"
     const r = why(book(sheet));
     t(`round 4 — ${label} never closed: refused at once`, /broken part/.test(r) && Date.now() - t0 < 1500, `${r} ${Date.now() - t0} ms`);
   }
+  // round 5 (R5SA-12): a «>» inside quotes is the attribute's; a prefixed workbook refused, said
+  const quoted = zip([
+    { name: "xl/workbook.xml", data: enc(`<workbook><sheets><sheet name="A>B" r:id="rId1"/></sheets></workbook>`) },
+    { name: "xl/_rels/workbook.xml.rels", data: enc(`<Relationships><Relationship Id="rId1" Target="worksheets/s.xml"/></Relationships>`) },
+    { name: "xl/worksheets/s.xml", data: enc(`<worksheet><sheetData><row r="1"><c foo="x>y" r="B1"><v>2</v></c></row></sheetData></worksheet>`) },
+  ], new Date());
+  t("round 5 — «>» inside a quoted attribute: the sheet and its cell read", JSON.stringify(readXlsx(quoted)) === JSON.stringify([{ name: "A>B", rows: [[null, 2]] }]), why(quoted));
+  const prefixedBook = zip([
+    { name: "xl/workbook.xml", data: enc(`<workbook><sheets><sheet name="S" r:id="rId1"/></sheets></workbook>`) },
+    { name: "xl/_rels/workbook.xml.rels", data: enc(`<Relationships><Relationship Id="rId1" Target="worksheets/s.xml"/></Relationships>`) },
+    { name: "xl/worksheets/s.xml", data: enc(`<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row></sheetData></worksheet>`) },
+    { name: "xl/sharedStrings.xml", data: enc(`<x:sst><x:si><x:t>hi</x:t></x:si></x:sst>`) },
+  ], new Date());
+  t("round 5 — a workbook with namespace prefixes refused, said (never read as empty)", /namespace prefixes/.test(why(prefixedBook)));
   t("round 4 — a reference past Unicode is no crash", why(book(`<row r="1"><c r="A1" t="inlineStr"><is><t>&#x110000;</t></is></c></row>`)) === "read");
 }
 

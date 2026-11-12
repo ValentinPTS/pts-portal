@@ -107,14 +107,15 @@ export const COVER_LABEL: Record<CoverElKey, string> =
 const BAND_KEYS = new Set<CoverElKey>(["logo", "title"]);
 
 // ── Base presets (the editor's "Start from") ─────────────────────────────────
-export const BASES: { id: SkinBase; label: string; description: string }[] = [
-  { id: "classic", label: "Classic", description: "The PTS brand — embroidery cover, green & red, PT Serif." },
-  { id: "modern", label: "Modern", description: "Left-aligned, deep green, airy." },
-  { id: "banded", label: "Banded", description: "Logo + title on a coloured header panel." },
-  { id: "editorial", label: "Editorial", description: "Playfair headings + Garamond body, centred." },
-  { id: "bold", label: "Bold", description: "Big condensed headings, strong accent." },
-  { id: "minimal", label: "Minimal", description: "Black-on-white, one rule, maximum content." },
-  { id: "blank", label: "Blank", description: "A bare canvas — logo, title, number. Build it up yourself." },
+// each in both languages (round 5, R5UA-8 — the skins page showed only the English words)
+export const BASES: { id: SkinBase; label: string; description: string; labelBg: string; descriptionBg: string }[] = [
+  { id: "classic", label: "Classic", description: "The PTS brand — embroidery cover, green & red, PT Serif.", labelBg: "Класически", descriptionBg: "Марката на PTS — корица с шевица, зелено и червено, PT Serif." },
+  { id: "modern", label: "Modern", description: "Left-aligned, deep green, airy.", labelBg: "Модерен", descriptionBg: "Подравнен вляво, тъмнозелен, просторен." },
+  { id: "banded", label: "Banded", description: "Logo + title on a coloured header panel.", labelBg: "С лента", descriptionBg: "Лого и заглавие върху цветна заглавна лента." },
+  { id: "editorial", label: "Editorial", description: "Playfair headings + Garamond body, centred.", labelBg: "Издателски", descriptionBg: "Заглавия Playfair и текст Garamond, центрирани." },
+  { id: "bold", label: "Bold", description: "Big condensed headings, strong accent.", labelBg: "Плътен", descriptionBg: "Големи сбити заглавия, силен акцент." },
+  { id: "minimal", label: "Minimal", description: "Black-on-white, one rule, maximum content.", labelBg: "Минимален", descriptionBg: "Черно на бяло, една линия, максимум съдържание." },
+  { id: "blank", label: "Blank", description: "A bare canvas — logo, title, number. Build it up yourself.", labelBg: "Празен", descriptionBg: "Празно платно — лого, заглавие, номер. Изградете го сами." },
 ];
 
 type Preset = Omit<CustomSkinData, "id" | "name" | "scope">;

@@ -1,3 +1,4 @@
+import { sofiaDay } from "@/lib/chain";
 import SchemeFeedbackPanel from "@/components/SchemeFeedbackPanel";
 import Link from "next/link";
 import { markState } from "@/lib/accreditation-mark";
@@ -299,7 +300,9 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
       return {
         act: a,
         label: a === "back" && back ? `${L("Върни към", "Back to")} «${STATE_LABEL[back][lg]}»` : ACTS[a][lg],
-        note: ACTS[a].note,
+        // locking while the form is still open for some needs its reason — asked as required, never «optional»
+        // and then refused (round 5, R5UA-12)
+        note: a === "process" && lockStillOpen.length ? "required" : ACTS[a].note,
         confirm: a === "back" && finalList
           ? L(`Схемата се връща към «Отворена». Окончателният списък отпада — участниците не се уведомяват автоматично${proformasSent ? `, а ${proformasSent} изпратени проформи остават при лабораториите` : ""}. Основанието се записва. Продължаваме?`, `The scheme steps back to «Open». The final list is undone — the participants are not told automatically${proformasSent ? `, and ${proformasSent} proformas sent stay with the laboratories` : ""}. The reason is recorded. Go ahead?`)
           : a === "announce" && belowMin
@@ -353,7 +356,8 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
       uploadName: s.uploads?.[key]?.name,
       // may this one go out to the participants, and has it? (lib/doc-release)
       sendable: isSendableDoc(key),
-      sentAt: s.sentToParticipants?.[key] ? fmtPhaseDate(s.sentToParticipants[key].slice(0, 10)) : undefined,
+      // the day in Bulgaria — the UTC date read «изпратен 11.11» on a send made after midnight (round 5, R5UA-10)
+      sentAt: s.sentToParticipants?.[key] ? fmtPhaseDate(sofiaDay(s.sentToParticipants[key]) || s.sentToParticipants[key].slice(0, 10)) : undefined,
       sentCopy: !!s.sentToParticipants?.[key] && !!s.releasedEditions?.[key],
       // its editions (3.0): the latest one, and the one the participants hold
       edition: hasEditions(key) && latestOf(key) ? { no: latestOf(key)!.no, date: fmtDay(latestOf(key)!.issuedOn) } : undefined,

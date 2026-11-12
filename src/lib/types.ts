@@ -690,7 +690,8 @@ export interface Scheme {
   composed?: Record<string, Block[]>;
   // documents authored in the Word-like editor — rich HTML per language, keyed by
   // document key. This is the current builder's storage.
-  docs?: Record<string, { bg: string; en: string }>;
+  // `rev`: a save count — an editor that loaded an older one is told, never written over (round 5, R5UA-3)
+  docs?: Record<string, { bg: string; en: string; rev?: number }>;
   // owner-filled values for fillable document form fields (checkboxes, options,
   // ratings, blanks). Keyed by document key → field id → value. JSONB, no migration.
   formData?: Record<string, Record<string, string>>;

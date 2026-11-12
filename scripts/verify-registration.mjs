@@ -22,7 +22,13 @@ await ctx.setExtraHTTPHeaders({ "x-forwarded-for": `10.91.${Math.floor(stamp / 2
 const page = await ctx.newPage();
 page.setDefaultTimeout(60000);
 page.on("dialog", (d) => d.accept());
-const go = (path) => page.goto(BASE + path, { waitUntil: "domcontentloaded", timeout: 90000 });
+// …and its scripts live before anything is pressed: a form they send is held until then (round 5, R5UB-1) —
+// a click on a page not yet live did nothing here, and the check timed out on the refusal it waited for
+const go = async (path) => {
+  const r = await page.goto(BASE + path, { waitUntil: "domcontentloaded", timeout: 90000 });
+  await page.waitForSelector("html[data-hydrated]", { state: "attached", timeout: 90000 }).catch(() => {});
+  return r;
+};
 const waitFor = async (fn, tries = 50) => { for (let i = 0; i < tries; i++) { if (await fn().catch(() => false)) return true; await page.waitForTimeout(400); } return false; };
 const text = async (loc) => ((await loc.count()) ? (await loc.first().textContent()) ?? "" : "");
 const w1 = [1, 2, 3, 4, 5, 6, 7, 8], w2 = [3, 4, 5, 6, 7, 8, 9, 10];

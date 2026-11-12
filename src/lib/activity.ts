@@ -12,6 +12,8 @@ export * from "./activity-store";
 
 // Convenience used across server actions: resolves the actor from the request's
 // role context and appends. Never throws.
+const clip = (v: string, max: number) => { const c = Array.from(String(v)); return c.length > max ? c.slice(0, max - 1).join("") + "…" : String(v); };
+
 export async function logActivity(action: string, opts?: JournalOpts): Promise<boolean> {
   try {
     const ctx = await getRoleContext();
@@ -31,8 +33,10 @@ export async function logActivity(action: string, opts?: JournalOpts): Promise<b
       actorName: isTeam && ctx.email ? await nameOf(ctx.email) : who,
       schemeId: opts?.schemeId,
       targetCode: opts?.targetCode,
-      summary: opts?.summary ?? action,
-      subject: opts?.subject,
+      // a line's words bounded — a 20 000-character document key went whole into every reading of the
+      // journal (round 5, R5SA-7); the facts are in before/after
+      summary: clip(opts?.summary ?? action, 2000),
+      subject: opts?.subject === undefined ? undefined : clip(opts.subject, 400),
       before: opts?.before,
       after: opts?.after,
     });

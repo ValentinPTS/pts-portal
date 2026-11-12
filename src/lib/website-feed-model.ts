@@ -10,7 +10,7 @@
 // PUBLISHED version, never the live data; when served, a scheme no longer started drops out at once.
 
 import type { Scheme } from "./types";
-import { catalogueState, STATE_TEXT, type CatalogueState } from "./catalogue-model";
+import { catalogueState, STATE_TEXT, isSimulation, type CatalogueState } from "./catalogue-model";
 import { schemeMarkers } from "./scheme-number";
 
 export const FEED_SCHEMA_VERSION = 1;
@@ -62,5 +62,6 @@ export function buildFeed(schemes: readonly Scheme[], nowMs: (s: Scheme) => numb
 
 /** As served: the published version, less any scheme no longer started (taken back to draft, archived). */
 export function servedFeed(p: PublishedFeed, startedIds: ReadonlySet<string>): PublishedFeed {
-  return { ...p, schemes: p.schemes.filter((x) => startedIds.has(x.id)) };
+  // …and never a simulation, whatever was published (round 5, R5UA-7)
+  return { ...p, schemes: p.schemes.filter((x) => startedIds.has(x.id) && !isSimulation(x.number)) };
 }

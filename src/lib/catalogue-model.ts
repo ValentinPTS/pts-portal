@@ -14,6 +14,7 @@
 
 import type { Scheme } from "./types";
 import { applyOpenProblem } from "./lab-apply-model";
+import { readSchemeNumber } from "./scheme-number";
 import { fmtEur, shareOf } from "./commercial-model";
 
 export type CatalogueState = "accepting" | "full" | "deadline" | "closed" | "running" | "processing" | "report" | "finished" | "not_held";
@@ -71,10 +72,15 @@ export const activityText = (s: Pick<Scheme, "type" | "activity">, lang: "bg" | 
 
 /** The catalogue's rows: started schemes with their states, grouped — taking applications by their
  *  deadline (the nearest first), the rest the newest first. */
+/** A simulation's number («SIM 26/11-T-1») — the validation's replay of a past round, never public. */
+export const isSimulation = (number: string): boolean => !!readSchemeNumber(number)?.simulation || /^\s*SIM\b/i.test(number);
+
 export function catalogueRows<S extends StateLike & Pick<Scheme, "id" | "number">>(schemes: readonly S[], nowMs: (s: S) => number, full: (s: S) => boolean):
   Record<CatalogueGroup, { scheme: S; state: CatalogueState }[]> {
   const out: Record<CatalogueGroup, { scheme: S; state: CatalogueState }[]> = { taking: [], current: [], finished: [] };
   for (const s of schemes) {
+    // a simulation (the validation's replay of a past round) is never public (round 5, R5UA-7)
+    if (isSimulation(s.number)) continue;
     const st = catalogueState(s, nowMs(s), s.status === "open" && full(s));
     if (st) out[groupOf(st)].push({ scheme: s, state: st });
   }

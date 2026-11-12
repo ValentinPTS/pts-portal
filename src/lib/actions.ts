@@ -7,7 +7,7 @@ import { headers } from "next/headers";
 import { getScheme, updateScheme, updateSchemeWith, addScheme, archiveScheme, listSchemeSummaries, listSchemesInFolder, schemeIdTaken, schemeNumberExists, listSchemes, listStartedSchemes } from "./store";
 import { blankScheme } from "./new-scheme";
 import { nextProject } from "./folders";
-import { sameSchemeNumber, schemeIdFromNumber, sofiaYearMonth, readSchemeNumber, markersFor, schemeMarkers, isKind, isActivity, type SchemeKind, type Activity } from "./scheme-number";
+import { sameSchemeNumber, schemeIdFromNumber, sofiaYearMonth, readSchemeNumber, markersFor, schemeMarkers, isKind, isActivity, otherSchemeNumbers, type SchemeKind, type Activity } from "./scheme-number";
 import { isTestEnvironment, mailAllowedHere, looksLikeSimNumber, testSubject } from "./environment";
 import { isMailConfigured, sendEmail } from "./mail";
 import { inviteLink, INVITE_RETURN, safeNext, siteOrigin } from "./auth-links";
@@ -76,7 +76,7 @@ import { hasEditions, editionLabel } from "./editions-model";
 import { addApplication, setApplicationStatus } from "./applications";
 import { getDoc, hasDocContent, isRestrictedDoc, markCodedList, usableForDoc, isListDoc, pairsNamesWithCodes, showsIdentities, ORDER_DOC } from "./documents";
 import { isSendableDoc, isLabDocSlot, hasCohortNames, hasPortalScores, LAB_DOC_SLOTS, type LabDocSlot } from "./doc-release";
-import { DATE_KEYS, DATE_LABELS, isDeadline, fmtSchemeDate, type SchemeDateKey } from "./scheme-dates";
+import { DATE_KEYS, DATE_LABELS, isDeadline, fmtSchemeDate, datesOutOfOrder, datesOrderRefusal, type SchemeDateKey } from "./scheme-dates";
 import { checkExtension, extensionKey, resultsDeadline, chainWindow, freezeWindow, EXTENSION_PROBLEM_TEXT, type Extension, type ExtensionInput } from "./deadlines-model";
 import { holidayProblem, officialHolidays } from "./holidays-model";
 import { uniformBelow } from "./random";
@@ -156,7 +156,7 @@ import { requireCap, requireCapAnywhere, requireOneOf, mayNow, mayViewDoc, getVi
 import { isAmendedDoc, needsAmendment, checkAmendment, nextAmendmentNo, amendmentLine, amendmentNote, AMENDMENT_PROBLEM_TEXT, type Amendment, type AmendmentInput } from "./amendments-model";
 import { ACTS, ACT_PROBLEM_TEXT, TICK_PROBLEM_TEXT, STATE_LABEL, MIN_NOTE, currentSecondAnnouncement, actProblem, actTarget, isActKey, stageDef, tickProblem, untickProblem, type ActKey, type ActProblem, type LifecycleAct, type StageTick } from "./lifecycle-model";
 import { sanitizeDocHtml } from "./sanitize-html";
-import { SCHEME_DOC_BUCKET, SCHEME_DOC_EXT, MAX_SCHEME_DOC_BYTES, ensureSchemeDocsBucket } from "./scheme-uploads";
+import { SCHEME_DOC_BUCKET, SCHEME_DOC_EXT, MAX_SCHEME_DOC_BYTES, ensureSchemeDocsBucket, fitFileName } from "./scheme-uploads";
 import { isDocKey } from "./doc-stages";
 import type { UploadedDoc, CodedParticipant } from "./types";
 import { logActivity } from "./activity";
@@ -186,7 +186,7 @@ const STAFF_ROLES: StaffRole[] = ["manager", "staff", "auditor"];
 // Returns the created item so the editor can show it immediately.
 export async function addLibraryItemAction(name: string, bg: string, en: string, category?: string): Promise<{ item?: LibraryItem; error?: string }> {
   await requireCapAnywhere("library.manage"); // the role model (2.4)
-  if (!name.trim() || !bg.trim()) return { error: "A name and Bulgarian text are required." };
+  if (!name.trim() || !bg.trim()) return { error: "Нужни са име и текст на български. · A name and Bulgarian text are required." };
   const item = await addLibraryItem({ name: name.trim(), bg: bg.trim(), en: en.trim(), category: (category ?? "").trim() || undefined });
   revalidatePath("/items", "page");
   return { item };
@@ -195,19 +195,19 @@ export async function addLibraryItemAction(name: string, bg: string, en: string,
 // Edit an existing library item (the "My items" management page).
 export async function updateLibraryItemAction(id: string, name: string, bg: string, en: string, category?: string): Promise<{ item?: LibraryItem; error?: string }> {
   await requireCapAnywhere("library.manage"); // the role model (2.4)
-  if (!id) return { error: "Missing id." };
-  if (!name.trim() || !bg.trim()) return { error: "A name and Bulgarian text are required." };
+  if (!id) return { error: "Липсва идентификатор. · Missing id." };
+  if (!name.trim() || !bg.trim()) return { error: "Нужни са име и текст на български. · A name and Bulgarian text are required." };
   const item = await updateLibraryItem(id, {
     name: name.trim(), bg: bg.trim(), en: en.trim(), category: (category ?? "").trim() || "My items",
   });
-  if (!item) return { error: "Item not found." };
+  if (!item) return { error: "Елементът не е намерен. · Item not found." };
   revalidatePath("/items", "page");
   return { item };
 }
 
 export async function deleteLibraryItemAction(id: string): Promise<{ ok?: boolean; error?: string }> {
   await requireCapAnywhere("library.manage"); // the role model (2.4)
-  if (!id) return { error: "Missing id." };
+  if (!id) return { error: "Липсва идентификатор. · Missing id." };
   await deleteLibraryItem(id);
   revalidatePath("/items", "page");
   return { ok: true };
@@ -263,9 +263,9 @@ export async function translateAction(
         return { error: `Translator refused (${status})${detail ? `: ${detail}` : "."}` };
       }
       const piece = data?.responseData?.translatedText;
-      if (typeof piece !== "string" || !piece) return { error: "No translation returned." };
+      if (typeof piece !== "string" || !piece) return { error: "Преводът не върна текст. · No translation returned." };
       if (/^\s*(MYMEMORY WARNING|QUERY LENGTH LIMIT|PLEASE SELECT|INVALID LANGUAGE|'?AUTO'? IS AN INVALID)/i.test(piece)) {
-        return { error: "Daily free-translation limit reached — the document was left unchanged. Try again tomorrow, or translate this text by hand." };
+        return { error: "Дневният лимит на безплатния превод е достигнат — документът не е променен. Опитайте утре или преведете текста ръчно. · Daily free-translation limit reached — the document was left unchanged. Try again tomorrow, or translate this text by hand." };
       }
       out.push(piece);
     }
@@ -286,15 +286,17 @@ export async function saveDocTemplateAction(
   enArg?: string
 ): Promise<{ item?: SavedTemplate; error?: string }> {
   await requireDocWriter(docKey);
-  const { bg, en } = bodiesOf(body, enArg); // one object, as a document's save (R4U-1)
-  if (!isDocKey(docKey)) return { error: "Unknown document." };
+  const bodies = bodiesOf(body, enArg); // one object, as a document's save (R4U-1)
+  if (!bodies) return { error: NOT_A_BODY };
+  const { bg, en } = bodies;
+  if (!isDocKey(docKey)) return { error: "Непознат документ. · Unknown document." };
   // a list, F 7.2.1-6 or a certificate may carry names, and a template is shared
   // across schemes — names are per scheme (2.4)
   if (isListDoc(docKey) || showsIdentities(docKey)) return { error: "Документ с имена не се пази като шаблон — имената са на една схема. · A document with names is not kept as a template — names belong to one scheme." };
   // the Order is one scheme's, read by the staff it assigns (Реш. 149, 2.6)
   if (docKey === ORDER_DOC) return { error: "Заповедта не се пази като шаблон — тя е на една схема (Реш. 149). · The Order is not kept as a template — it belongs to one scheme." };
-  if (!name.trim()) return { error: "A template name is required." };
-  if (!bg.trim() && !en.trim()) return { error: "Nothing to save — the document is empty." };
+  if (!name.trim()) return { error: "Нужно е име на шаблона. · A template name is required." };
+  if (!bg.trim() && !en.trim()) return { error: "Няма какво да се запази — документът е празен. · Nothing to save — the document is empty." };
   if (docHtmlTooLarge(bg, en)) return { error: DOC_TOO_LARGE }; // before it is read (R3S-3)
   const item = await addSavedTemplate({
     docKey, type: type === "C" ? "C" : "T", name: name.trim(),
@@ -308,10 +310,10 @@ export async function saveDocTemplateAction(
 
 export async function deleteDocTemplateAction(id: string): Promise<{ ok?: boolean; error?: string }> {
   await requireCapAnywhere("library.manage"); // the role model (2.4)
-  if (!id) return { error: "Missing id." };
+  if (!id) return { error: "Липсва идентификатор. · Missing id." };
   // deleting a template is an act on its document — F 7.2.1-6's are a manager's
   const docKey = await getSavedTemplateDocKey(id);
-  if (!docKey) return { error: "Template not found." };
+  if (!docKey) return { error: "Шаблонът не е намерен. · Template not found." };
   await requireDocWriter(docKey);
   await deleteSavedTemplate(id);
   await settingChanged(`Шаблон на документ (${docKey}) изтрит`, `A reusable template for ${docKey} deleted.`, `doc-template:${id}`);
@@ -347,7 +349,7 @@ export async function setDefaultSkinAction(formData: FormData) {
 // logo). Owners only. Never trusts the client shape.
 export async function createCustomSkinAction(input: unknown): Promise<{ id?: string; error?: string }> {
   await requireCapAnywhere("library.manage"); // the role model (2.4)
-  if (!String((input as { name?: unknown })?.name ?? "").trim()) return { error: "A skin name is required." };
+  if (!String((input as { name?: unknown })?.name ?? "").trim()) return { error: "Нужно е име на облика. · A skin name is required." };
   const id = randomUUID();
   await upsertCustomSkin(sanitizeSkinData(input, id));
   await settingChanged(`Облик «${String((input as { name?: unknown }).name).trim().slice(0, 80)}» създаден`, "A custom skin created.", `skin:${id}`);
@@ -357,8 +359,8 @@ export async function createCustomSkinAction(input: unknown): Promise<{ id?: str
 
 export async function updateCustomSkinAction(id: string, input: unknown): Promise<{ id?: string; error?: string }> {
   await requireCapAnywhere("library.manage"); // the role model (2.4)
-  if (!id || !(await getCustomSkin(id))) return { error: "Skin not found." };
-  if (!String((input as { name?: unknown })?.name ?? "").trim()) return { error: "A skin name is required." };
+  if (!id || !(await getCustomSkin(id))) return { error: "Обликът не е намерен. · Skin not found." };
+  if (!String((input as { name?: unknown })?.name ?? "").trim()) return { error: "Нужно е име на облика. · A skin name is required." };
   await upsertCustomSkin(sanitizeSkinData(input, id));
   await settingChanged(`Облик «${String((input as { name?: unknown }).name).trim().slice(0, 80)}» променен`, "A custom skin changed.", `skin:${id}`);
   revalidatePath("/skins", "page");
@@ -368,7 +370,7 @@ export async function updateCustomSkinAction(id: string, input: unknown): Promis
 
 export async function deleteCustomSkinAction(id: string): Promise<{ ok?: boolean; error?: string }> {
   await requireCapAnywhere("library.manage"); // the role model (2.4)
-  if (!id) return { error: "Missing id." };
+  if (!id) return { error: "Липсва идентификатор. · Missing id." };
   await deleteCustomSkin(id);
   await settingChanged("Облик изтрит", "A custom skin deleted.", `skin:${id}`);
   // If a per-type default pointed at the deleted skin, reset it to Classic.
@@ -409,12 +411,12 @@ function magicMatches(bytes: Uint8Array, mime: string): boolean {
 export async function uploadSkinLogoAction(formData: FormData): Promise<{ url?: string; error?: string }> {
   await requireCapAnywhere("library.manage"); // the role model (2.4)
   const file = formData.get("file");
-  if (!(file instanceof File)) return { error: "No file received." };
+  if (!(file instanceof File)) return { error: "Не е получен файл. · No file received." };
   const ext = LOGO_EXT[file.type];
-  if (!ext) return { error: "Use a PNG, JPG or WEBP image." };
-  if (file.size > 1_500_000) return { error: "Image too large (max 1.5 MB)." };
+  if (!ext) return { error: "Използвайте изображение PNG, JPG или WEBP. · Use a PNG, JPG or WEBP image." };
+  if (file.size > 1_500_000) return { error: "Изображението е твърде голямо (най-много 1,5 MB). · Image too large (max 1.5 MB)." };
   const db = getDb();
-  if (!db) return { error: "Uploads need Supabase configured." };
+  if (!db) return { error: "Качването изисква настроена база данни. · Uploads need Supabase configured." };
   try {
     const { data: bucket } = await db.storage.getBucket(LOGO_BUCKET);
     if (!bucket) {
@@ -425,7 +427,7 @@ export async function uploadSkinLogoAction(formData: FormData): Promise<{ url?: 
     }
     const path = `logos/${randomUUID()}.${ext}`;
     const bytes = new Uint8Array(await file.arrayBuffer());
-    if (!magicMatches(bytes, file.type)) return { error: "That file isn't a real PNG, JPG or WEBP image." };
+    if (!magicMatches(bytes, file.type)) return { error: "Това не е истинско изображение PNG, JPG или WEBP. · That file isn't a real PNG, JPG or WEBP image." };
     const { error } = await db.storage.from(LOGO_BUCKET).upload(path, bytes, { contentType: file.type, upsert: false });
     if (error) throw error;
     return { url: db.storage.from(LOGO_BUCKET).getPublicUrl(path).data.publicUrl };
@@ -445,12 +447,12 @@ export async function uploadCoverImageAction(formData: FormData): Promise<{ url?
 // default one, which is the shared library's)
 async function storeCoverImage(formData: FormData): Promise<{ url?: string; error?: string }> {
   const file = formData.get("file");
-  if (!(file instanceof File)) return { error: "No file received." };
+  if (!(file instanceof File)) return { error: "Не е получен файл. · No file received." };
   const ext = LOGO_EXT[file.type];
-  if (!ext) return { error: "Use a PNG, JPG or WEBP image." };
-  if (file.size > 2_000_000) return { error: "Image too large (max 2 MB)." };
+  if (!ext) return { error: "Използвайте изображение PNG, JPG или WEBP. · Use a PNG, JPG or WEBP image." };
+  if (file.size > 2_000_000) return { error: "Изображението е твърде голямо (най-много 2 MB). · Image too large (max 2 MB)." };
   const db = getDb();
-  if (!db) return { error: "Uploads need Supabase configured." };
+  if (!db) return { error: "Качването изисква настроена база данни. · Uploads need Supabase configured." };
   try {
     const { data: bucket } = await db.storage.getBucket(LOGO_BUCKET);
     if (!bucket) {
@@ -461,7 +463,7 @@ async function storeCoverImage(formData: FormData): Promise<{ url?: string; erro
     }
     const path = `covers/${randomUUID()}.${ext}`;
     const bytes = new Uint8Array(await file.arrayBuffer());
-    if (!magicMatches(bytes, file.type)) return { error: "That file isn't a real PNG, JPG or WEBP image." };
+    if (!magicMatches(bytes, file.type)) return { error: "Това не е истинско изображение PNG, JPG или WEBP. · That file isn't a real PNG, JPG or WEBP image." };
     const { error } = await db.storage.from(LOGO_BUCKET).upload(path, bytes, { contentType: file.type, upsert: false });
     if (error) throw error;
     return { url: db.storage.from(LOGO_BUCKET).getPublicUrl(path).data.publicUrl };
@@ -528,20 +530,20 @@ export async function uploadSchemeDocAction(formData: FormData): Promise<{ ok?: 
   await requireCap("scheme.edit", schemeId); // in THIS scheme, by the role model (2.4)
   const docKey = String(formData.get("docKey") ?? "");
   await requireDocWriter(docKey, schemeId);
-  if (!isDocKey(docKey)) return { error: "Unknown document." };
+  if (!isDocKey(docKey)) return { error: "Непознат документ. · Unknown document." };
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
 
   const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) return { error: "No file received." };
+  if (!(file instanceof File) || file.size === 0) return { error: "Не е получен файл. · No file received." };
   const ext = SCHEME_DOC_EXT[file.type];
-  if (!ext) return { error: "Use a PDF, JPG or PNG file." };
-  if (file.size > MAX_SCHEME_DOC_BYTES) return { error: "File too large (max 15 MB)." };
+  if (!ext) return { error: "Използвайте файл PDF, JPG или PNG. · Use a PDF, JPG or PNG file." };
+  if (file.size > MAX_SCHEME_DOC_BYTES) return { error: "Файлът е твърде голям (най-много 15 MB). · File too large (max 15 MB)." };
   const bytes = new Uint8Array(await file.arrayBuffer());
-  if (!magicMatches(bytes, file.type)) return { error: "That file isn't a real PDF/JPG/PNG." };
+  if (!magicMatches(bytes, file.type)) return { error: "Това не е истински PDF, JPG или PNG. · That file isn't a real PDF/JPG/PNG." };
 
   const actor = (await getRoleContext()).email ?? "";
-  const name = String(file.name || `document.${ext}`).slice(0, 160);
+  const name = fitFileName(String(file.name || `document.${ext}`));
 
   let path: string;
   const db = getDb();
@@ -608,11 +610,11 @@ export async function setDocSentAction(
 ): Promise<{ ok?: boolean; error?: string; told?: number; namesWithheld?: boolean; scoresWithheld?: boolean; needsNote?: { no: number; since: number }; edition?: number; issued?: boolean; stillTargeted?: number }> {
   await requireCap("docs.release", schemeId); // in THIS scheme, by the role model (2.4)
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
   const def = getDoc(docKey);
   // The allow-list is the security boundary, not the UI: the registers and the
   // provider's planning papers can never be released, whatever gets posted here.
-  if (!def || !isSendableDoc(docKey)) return { error: "This document is not one the participants receive." };
+  if (!def || !isSendableDoc(docKey)) return { error: "Този документ не се изпраща на участниците. · This document is not one the participants receive." };
 
   // Rebuilt from the fresh scheme inside the per-scheme lock: releasing one
   // document must never drop another that went out at the same moment.
@@ -644,7 +646,7 @@ export async function setDocSentAction(
   // must not swap what they hold behind their back. A new edition goes out as a
   // withdrawal and a fresh release.
   if (scheme.sentToParticipants?.[docKey]) {
-    return { error: "This document is already with the participants. To send a new edition, stop sharing it first, then send it again." };
+    return { error: "Документът вече е при участниците. За да изпратите нова редакция, първо спрете споделянето, после го изпратете отново. · This document is already with the participants. To send a new edition, stop sharing it first, then send it again." };
   }
 
   // The edition that goes out (part 3.0) — decided first, so that a send that asks
@@ -680,7 +682,7 @@ export async function setDocSentAction(
       releasedEditions: { ...(s.releasedEditions ?? {}), [docKey]: { id: edition.id, no: edition.no, at: sentAt } },
     };
   });
-  if (already) return { error: "This document is already with the participants." };
+  if (already) return { error: "Документът вече е при участниците. · This document is already with the participants." };
   if (amendedMeanwhile) return { error: "Междувременно е записано изменение — презаредете страницата и изпратете отново. · An amendment was recorded meanwhile — reload the page and send again." };
 
   // One notice per PARTICIPATION, each carrying the code that participation works
@@ -874,6 +876,11 @@ async function editionToSend(scheme: Scheme, docKey: string, note: { reason?: st
   if (!now) return { error: EDITION_REFUSAL.empty };
   const notWhole = m1Refusal(scheme, docKey, now);
   if (notWhole) return { error: notWhole };
+  // another scheme's number in what is to be sent — a copy, or a start from another's template (R5UA-1)
+  if (now.source === "rendered") {
+    const other = [...new Set([...otherSchemeNumbers(now.bg, scheme.number), ...otherSchemeNumbers(now.en, scheme.number)])];
+    if (other.length) return { error: `Документът носи номера на друга схема: ${other.join(", ")} — вероятно е копиран от нея или започнат от неин шаблон. Поправете номера (в текста или на корицата), после го издайте. · The document carries another scheme's number: ${other.join(", ")} — probably copied from it or started from its template. Correct the number (in the text or on the cover), then issue it.` };
+  }
   // An opened scheme's plan or invitation sent again: the edition the participants last
   // held — not a later one issued meanwhile, unless an amendment issued it (3.3)
   const keptRec = isAmendedDoc(docKey) && needsAmendment(scheme) ? scheme.releasedEditions?.[docKey] : undefined;
@@ -914,9 +921,9 @@ export async function issueEditionAction(
 ): Promise<{ ok?: boolean; error?: string; no?: number }> {
   await requireCap("scheme.edit", schemeId); // in THIS scheme, by the role model (2.4)
   // the Order only by the staff it is for (Реш. 149), a names list never (none has editions)
-  if (!(await mayViewDoc(docKey, schemeId))) return { error: "This document is not one you may open." };
+  if (!(await mayViewDoc(docKey, schemeId))) return { error: "Нямате право да отворите този документ. · This document is not one you may open." };
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
   if (!getDoc(docKey) || !hasEditions(docKey)) return { error: EDITION_REFUSAL.editionless };
   // once issued (R1, 7.4) the report goes out only by its acts — a correction R2… with its reason and scope
   if (docKey === "report" && scheme.reportIssues?.length) return { error: "Издаденият доклад се поправя с «Издай поправка» (R2…) в «Издаване на доклада» — с причината и обхвата. · The issued report is corrected with «Issue a correction» (R2…) under «Issuing the report» — with its reason and scope." };
@@ -930,6 +937,11 @@ export async function issueEditionAction(
   if (!now) return { error: docKey === "report" ? "The final report is issued as PTS's own file — upload it first." : EDITION_REFUSAL.empty };
   const notWhole = m1Refusal(scheme, docKey, now);
   if (notWhole) return { error: notWhole };
+  // another scheme's number in what is to be sent — a copy, or a start from another's template (R5UA-1)
+  if (now.source === "rendered") {
+    const other = [...new Set([...otherSchemeNumbers(now.bg, scheme.number), ...otherSchemeNumbers(now.en, scheme.number)])];
+    if (other.length) return { error: `Документът носи номера на друга схема: ${other.join(", ")} — вероятно е копиран от нея или започнат от неин шаблон. Поправете номера (в текста или на корицата), после го издайте. · The document carries another scheme's number: ${other.join(", ")} — probably copied from it or started from its template. Correct the number (in the text or on the cover), then issue it.` };
+  }
   let reason = note?.reason;
   const stamp = amendmentStampFor(scheme, latest);
   const same = !!latest && sameAs(now, latest, stamp);
@@ -959,7 +971,7 @@ export async function setSchemeDatesAction(
 ): Promise<{ ok?: boolean; error?: string }> {
   await requireCap("scheme.edit", schemeId); // in THIS scheme, by the role model (2.4)
   const prior = await getScheme(schemeId);
-  if (!prior) return { error: "Scheme not found." };
+  if (!prior) return { error: "Схемата не е намерена. · Scheme not found." };
   // the published deadlines change only by an order of amendment (3.3; Zadanie §3,
   // Реш. 154) — or, for one laboratory, an individual extension (3.4)
 
@@ -968,9 +980,12 @@ export async function setSchemeDatesAction(
     const v = String(input?.[key] ?? "").trim();
     if (!v) continue; // blank = not set
     // a day, or a day and its hour in Bulgaria (3.4)
-    if (!isDeadline(v)) return { error: `“${DATE_LABELS[key].en}” is not a valid date (and hour).` };
+    if (!isDeadline(v)) return { error: `«${DATE_LABELS[key].bg}» не е валидна дата (и час). · “${DATE_LABELS[key].en}” is not a valid date (and hour).` };
     dates[key] = v;
   }
+  // in their order — a typo once saved is locked from the opening (round 5, R5UA-4)
+  const backwards = datesOutOfOrder(dates);
+  if (backwards) return { error: datesOrderRefusal(backwards, dates) };
   // From the opening, a deadline already set is CHANGED only by an amendment — and
   // never cleared here; one not yet set may still be set (it changes nothing published)
   const changesSet = (s: Scheme) => needsAmendment(s) && DATE_KEYS.some((k) => !!s.dates?.[k] && dates[k] !== s.dates[k]);
@@ -1005,14 +1020,14 @@ export async function uploadLabDocAction(formData: FormData): Promise<{ ok?: boo
   await requireCap("participants.manage", schemeId); // in THIS scheme, by the role model (2.4)
   const code = String(formData.get("code") ?? "").trim();
   const slot = String(formData.get("slot") ?? "");
-  if (!isLabDocSlot(slot)) return { error: "Unknown document." };
+  if (!isLabDocSlot(slot)) return { error: "Непознат документ. · Unknown document." };
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
   // a scheme that is not held invoices nothing — neither document (О9, Реш. 129)
   if (scheme.status === "not_held") return { error: "Схемата не се състои — нищо не се фактурира. · The scheme is not held — nothing is invoiced." };
   // the code must be a real participation in THIS scheme — never trust the form
   const participant = (await listParticipants(schemeId)).find((p) => p.code === code);
-  if (!participant) return { error: "No such participant in this scheme." };
+  if (!participant) return { error: "Няма такъв участник в тази схема. · No such participant in this scheme." };
   // a proforma or an invoice only after the second announcement, to a participation on its
   // final list (5.2; Реш. 65)
   const invoiceNo = invoiceProblem(scheme, participant);
@@ -1027,15 +1042,15 @@ export async function uploadLabDocAction(formData: FormData): Promise<{ ok?: boo
   if (!invoiceTell) return { error: NOT_REACHED };
 
   const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) return { error: "No file received." };
+  if (!(file instanceof File) || file.size === 0) return { error: "Не е получен файл. · No file received." };
   const ext = SCHEME_DOC_EXT[file.type];
-  if (!ext) return { error: "Use a PDF, JPG or PNG file." };
-  if (file.size > MAX_SCHEME_DOC_BYTES) return { error: "File too large (max 15 MB)." };
+  if (!ext) return { error: "Използвайте файл PDF, JPG или PNG. · Use a PDF, JPG or PNG file." };
+  if (file.size > MAX_SCHEME_DOC_BYTES) return { error: "Файлът е твърде голям (най-много 15 MB). · File too large (max 15 MB)." };
   const bytes = new Uint8Array(await file.arrayBuffer());
-  if (!magicMatches(bytes, file.type)) return { error: "That file isn't a real PDF/JPG/PNG." };
+  if (!magicMatches(bytes, file.type)) return { error: "Това не е истински PDF, JPG или PNG. · That file isn't a real PDF/JPG/PNG." };
 
   const actor = (await getRoleContext()).email ?? "";
-  const name = String(file.name || `${slot}.${ext}`).slice(0, 160);
+  const name = fitFileName(String(file.name || `${slot}.${ext}`));
 
   let path: string;
   const db = getDb();
@@ -1105,9 +1120,9 @@ export async function removeLabDocAction(formData: FormData): Promise<{ ok?: boo
   await requireCap("participants.manage", schemeId); // in THIS scheme, by the role model (2.4)
   const code = String(formData.get("code") ?? "").trim();
   const slot = String(formData.get("slot") ?? "");
-  if (!isLabDocSlot(slot)) return { error: "Unknown document." };
+  if (!isLabDocSlot(slot)) return { error: "Непознат документ. · Unknown document." };
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
 
   // The file is taken out of the slot but never deleted: it is kept and recorded
   // as superseded (part 0.9), decided inside the lock.
@@ -1140,9 +1155,9 @@ export async function setParticipantPaidAction(
 ): Promise<{ ok?: boolean; error?: string }> {
   await requireCap("participants.manage", schemeId); // in THIS scheme, by the role model (2.4)
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
   if (!(await listParticipants(schemeId)).some((p) => p.code === code)) {
-    return { error: "No such participant in this scheme." };
+    return { error: "Няма такъв участник в тази схема. · No such participant in this scheme." };
   }
   const at = new Date().toISOString();
   // D7 (7.4): the issued report reaches a participation once it is marked paid — who to tell is
@@ -1193,7 +1208,7 @@ export async function removeSchemeDocUploadAction(formData: FormData): Promise<{
   const docKey = String(formData.get("docKey") ?? "");
   await requireDocWriter(docKey, schemeId);
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
   // the issued report's file stays (7.4 review): a correction is imported from 2.0 and issued as R2…
   const issuedReport = (s: Pick<Scheme, "reportIssues">) => docKey === "report" && !!s.reportIssues?.length;
   if (issuedReport(scheme)) return { error: `${ISSUE_PROBLEM_TEXT.kept.bg} · ${ISSUE_PROBLEM_TEXT.kept.en}` };
@@ -1217,9 +1232,9 @@ export async function removeSchemeDocUploadAction(formData: FormData): Promise<{
 // owner decides, not the mere existence of text (button in the editor's action bar).
 export async function setDocReadyAction(schemeId: string, docKey: string, ready: boolean): Promise<{ ok?: boolean; error?: string }> {
   await requireDocWriter(docKey, schemeId);
-  if (!isDocKey(docKey)) return { error: "Unknown document." };
+  if (!isDocKey(docKey)) return { error: "Непознат документ. · Unknown document." };
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
   const docReady = { ...(scheme.docReady ?? {}) };
   if (ready) docReady[docKey] = true; else delete docReady[docKey];
   await updateScheme(schemeId, { docReady });
@@ -1232,9 +1247,9 @@ export async function setDocReadyAction(schemeId: string, docKey: string, ready:
 // and an app-built version exist ("uploaded" | "built").
 export async function setDocSourceAction(schemeId: string, docKey: string, source: "built" | "uploaded"): Promise<{ ok?: boolean; error?: string }> {
   await requireDocWriter(docKey, schemeId);
-  if (!isDocKey(docKey)) return { error: "Unknown document." };
+  if (!isDocKey(docKey)) return { error: "Непознат документ. · Unknown document." };
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
   // 7.9 review: the report's version in force is not switched under a review or an approval, nor once issued
   let refused: string | null = null;
   await updateSchemeWith(schemeId, (cur) => {
@@ -1264,14 +1279,27 @@ const docHtmlTooLarge = (bg: unknown, en: unknown) => String(bg ?? "").length > 
 // action's string ARGUMENTS toward one million — a document with one large picture (an inline picture is
 // one long string) could never be saved: «Maximum array nesting exceeded», a 500 (round 4, R4U-1). Inside
 // an object they are not counted; this action's own 3 MB bound holds. Plain strings are still taken.
-type DocBodies = { bg?: unknown; en?: unknown };
-const bodiesOf = (body: unknown, enArg?: unknown): { bg: string; en: string } =>
-  body && typeof body === "object" ? { bg: String((body as DocBodies).bg ?? ""), en: String((body as DocBodies).en ?? "") } : { bg: String(body ?? ""), en: String(enArg ?? "") };
-export async function saveDocHtmlAction(schemeId: string, docKey: string, body: DocBodies | string, enArg?: string): Promise<{ ok?: true; error?: string }> {
+type DocBodies = { bg?: unknown; en?: unknown; rev?: unknown };
+// a save from an editor that loaded an older version than the one kept now — another tab, another person
+// (round 5, R5UA-3: the later save silently undid the other)
+const DOC_STALE = "Документът е записан междувременно от друг раздел или човек — вашите промени не са записани. Копирайте ги, презаредете страницата и ги добавете отново. · The document was saved meanwhile from another tab or by another person — your changes were not saved. Copy them, reload the page and add them again.";
+// …each a text or nothing: anything else is refused, never coerced — «{ toString: 1 }» threw a 500, an array
+// was saved as its commas (round 5, R5SA-13)
+const textOrEmpty = (v: unknown): string | null => (typeof v === "string" ? v : v === undefined || v === null ? "" : null);
+const bodiesOf = (body: unknown, enArg?: unknown): { bg: string; en: string } | null => {
+  const [bg, en] = body && typeof body === "object" ? [textOrEmpty((body as DocBodies).bg), textOrEmpty((body as DocBodies).en)] : [textOrEmpty(body), textOrEmpty(enArg)];
+  return bg === null || en === null ? null : { bg, en };
+};
+const NOT_A_BODY = "Документът не е получен като текст — нищо не е записано. · The document did not arrive as text — nothing was saved.";
+export async function saveDocHtmlAction(schemeId: string, docKey: string, body: DocBodies | string, enArg?: string): Promise<{ ok?: true; rev?: number; stale?: true; error?: string }> {
   await requireDocWriter(docKey, schemeId);
   const scheme = await getScheme(schemeId);
   if (!scheme) throw new Error("Scheme not found");
-  const { bg, en } = bodiesOf(body, enArg);
+  // a document the portal knows, only — any key was taken, and went whole into the journal (R5SA-7)
+  if (!isDocKey(docKey)) return { error: "Непознат документ. · Unknown document." };
+  const bodies = bodiesOf(body, enArg);
+  if (!bodies) return { error: NOT_A_BODY };
+  const { bg, en } = bodies;
   // the size checked BEFORE the body is read (the security sweep, round 3 — R3S-3: a 50 MB body was
   // sanitized first and refused after); the coded lists' mark goes on after sanitizing (an HTML comment);
   // said to the editor, never thrown — a thrown error left it «Запазване…» for good (round 4, R4U-1)
@@ -1279,14 +1307,19 @@ export async function saveDocHtmlAction(schemeId: string, docKey: string, body: 
   const cleanBg = markCodedList(docKey, sanitizeDocHtml(bg));
   const cleanEn = markCodedList(docKey, sanitizeDocHtml(en));
   if (cleanBg.length > MAX_DOC_HTML || cleanEn.length > MAX_DOC_HTML) return { error: DOC_TOO_LARGE };
-  const docs = { ...(scheme.docs ?? {}), [docKey]: { bg: cleanBg, en: cleanEn } };
+  // the version the editor loaded, when it says one (the editor always does): an older one is refused
+  const kept = scheme.docs?.[docKey]?.rev ?? 0;
+  const loaded = body && typeof body === "object" && typeof (body as DocBodies).rev === "number" ? ((body as DocBodies).rev as number) : null;
+  if (loaded !== null && loaded !== kept) return { error: DOC_STALE, stale: true };
+  const rev = kept + 1;
+  const docs = { ...(scheme.docs ?? {}), [docKey]: { bg: cleanBg, en: cleanEn, rev } };
   await updateScheme(schemeId, { docs });
   // §8.3 — snapshot a revision (skips if unchanged). Records who saved it.
   const actor = (await getRoleContext()).email ?? "";
   await addRevision({ schemeId, docKey, bg: cleanBg, en: cleanEn, savedBy: actor });
   await logActivity("doc.saved", { schemeId, summary: `Document “${docKey}” edited` });
   revalidatePath(`/schemes/${schemeId}/build/${docKey}`, "page");
-  return { ok: true };
+  return { ok: true, rev };
 }
 
 // Translate a whole document's HTML BG→EN, preserving tags/images (only text runs
@@ -1300,13 +1333,31 @@ const htmlRunText = (run: string) => run
   .replace(/&#(\d+);/g, (_m, d) => { const n = Number(d); return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : ""; })
   .replace(/&nbsp;/g, "\u00a0").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, "&");
 const TRANSLATE_REFUSED = "Документ с имена на лаборатории не се изпраща за превод навън. · A document naming laboratories is never sent out for translation.";
+// text and tags apart, as «split(/(<[^>]+>)/)» did — by a scan: that pattern ran to the end of the document for
+// every «<» with no «>» after it (round 5, R5SA-7: 80 000 of them took 2 s; 3 MB, most of an hour)
+function splitTags(html: string): string[] {
+  const parts: string[] = [];
+  let text = 0;
+  for (let p = 0; ;) {
+    const i = html.indexOf("<", p);
+    if (i < 0) break;
+    const j = html.indexOf(">", i + 1);
+    if (j < 0) break;
+    if (j === i + 1) { p = j + 1; continue; } // «<>» is no tag
+    parts.push(html.slice(text, i), html.slice(i, j + 1));
+    text = p = j + 1;
+  }
+  parts.push(html.slice(text));
+  return parts;
+}
+
 export async function translateDocHtmlAction(input: { html?: unknown } | string, docKey?: string): Promise<{ html?: string; error?: string }> {
   await requireCapAnywhere("scheme.edit"); // the role model (2.4)
   if (typeof docKey === "string" && (isListDoc(docKey) || pairsNamesWithCodes(docKey))) return { error: TRANSLATE_REFUSED };
   const html = input && typeof input === "object" ? String(input.html ?? "") : String(input ?? ""); // one object, as a save (R4U-1)
   if (html.length > MAX_DOC_HTML) return { error: DOC_TOO_LARGE };
   if (hasCohortNames(String(html ?? ""))) return { error: TRANSLATE_REFUSED };
-  const parts = String(html ?? "").split(/(<[^>]+>)/);
+  const parts = splitTags(String(html ?? ""));
   // Bound the number of outbound translation calls: only the first N text runs are
   // translated (each is one fetch); the rest pass through untranslated. Prevents a
   // pathological document (thousands of tiny text runs) from firing thousands of
@@ -1554,7 +1605,7 @@ export async function labUploadDocAction(formData: FormData): Promise<void> {
   if (!magicMatches(bytes, f.type)) redirect(`${back}?e=upload`);
 
   const code = mine!.code;
-  const name = String(f.name || `${slot}.${ext}`).slice(0, 160);
+  const name = fitFileName(String(f.name || `${slot}.${ext}`));
   const prev = scheme!.labUploads?.[code]?.[slot];
 
   let path: string;
@@ -1677,10 +1728,10 @@ export async function inviteLabAction(formData: FormData) {
 // in the dashboard, not here, so the portal could not show or record them.
 async function sendAuthInvite(email: string, lab?: { labId: string; approval: Approval }): Promise<{ ok: boolean; userId?: string; error?: string }> {
   const db = getDb();
-  if (!db) return { ok: false, error: "Supabase is not configured." };
+  if (!db) return { ok: false, error: "Базата данни не е настроена. · Supabase is not configured." };
   if (isSharedMailbox(email)) return { ok: false, error: SHARED_MAILBOX_REFUSAL }; // never a login (Реш. 139)
   // Supabase sends this e-mail itself — in the test environment only to @ptsbg.eu (1.2)
-  if (!mailAllowedHere(email)) return { ok: false, error: "Test environment: only @ptsbg.eu addresses are invited." };
+  if (!mailAllowedHere(email)) return { ok: false, error: "Тестова среда: канят се само адреси @ptsbg.eu. · Test environment: only @ptsbg.eu addresses are invited." };
   try {
     const h = await headers();
     // one fixed address per environment for the links (NEXT_PUBLIC_SITE_URL)
@@ -1693,9 +1744,9 @@ async function sendAuthInvite(email: string, lab?: { labId: string; approval: Ap
     // that one goes only with its text shown and its approval on record
     if (!lab) {
       try {
-        if (await labEmailInUse(email)) return { ok: false, error: "This address belongs to a laboratory — invite it from its row." };
+        if (await labEmailInUse(email)) return { ok: false, error: "Този адрес е на лаборатория — поканете я от нейния ред. · This address belongs to a laboratory — invite it from its row." };
       } catch {
-        return { ok: false, error: "Could not check this address. Nothing was sent — try again in a moment." };
+        return { ok: false, error: "Адресът не можа да се провери. Нищо не е изпратено — опитайте отново след малко. · Could not check this address. Nothing was sent — try again in a moment." };
       }
     }
     if (lab && !(isMailConfigured() && origin)) {
@@ -1728,20 +1779,20 @@ export async function addStaffAction(formData: FormData): Promise<{ ok?: boolean
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const name = String(formData.get("name") ?? "").trim().slice(0, 120);
   const role = String(formData.get("role") ?? "staff") as StaffRole;
-  if (!email || !email.includes("@")) return { error: "A valid e-mail is required." };
-  if (!STAFF_ROLES.includes(role)) return { error: "Invalid role." };
+  if (!email || !email.includes("@")) return { error: "Нужен е валиден имейл. · A valid e-mail is required." };
+  if (!STAFF_ROLES.includes(role)) return { error: "Невалидна роля. · Invalid role." };
   if (isSharedMailbox(email)) return { error: SHARED_MAILBOX_REFUSAL };
-  if (isOwnerEmail(email)) return { error: "This e-mail is already a founder (manager)." };
+  if (isOwnerEmail(email)) return { error: "Този имейл вече е на основател (ръководител). · This e-mail is already a founder (manager)." };
   // a laboratory's address would turn that laboratory's login into a team login — a
   // participant's user's too (4.3 review)
   try {
-    if (await labEmailInUse(email)) return { error: "This e-mail belongs to a laboratory account, so it cannot be a team member." };
-    if (await participantLogin(email)) return { error: "This e-mail is a participant's user's login, so it cannot be a team member." };
+    if (await labEmailInUse(email)) return { error: "Този имейл е на лабораторен акаунт и не може да е член на екипа. · This e-mail belongs to a laboratory account, so it cannot be a team member." };
+    if (await participantLogin(email)) return { error: "Този имейл е вход на потребител на участник и не може да е член на екипа. · This e-mail is a participant's user's login, so it cannot be a team member." };
   } catch {
-    return { error: "Could not check whether this e-mail is already in use. Nothing was changed — try again in a moment." };
+    return { error: "Не можа да се провери дали този имейл вече се използва. Нищо не е променено — опитайте отново след малко. · Could not check whether this e-mail is already in use. Nothing was changed — try again in a moment." };
   }
   const existing = await getStaffByEmail(email);
-  if (existing) return { error: "This user already exists." };
+  if (existing) return { error: "Този потребител вече съществува. · This user already exists." };
   try {
     await addStaff({ email, name, role });
   } catch {
@@ -1769,9 +1820,9 @@ async function participantLogin(email: string): Promise<boolean> {
 export async function inviteStaffAction(email: string): Promise<{ ok?: boolean; error?: string }> {
   await requirePeopleManager(); // the head of the PT provider (2.2, Реш. 141)
   const e = (typeof email === "string" ? email : "").trim().toLowerCase();
-  if (!e || !e.includes("@")) return { error: "Missing e-mail." };
+  if (!e || !e.includes("@")) return { error: "Липсва имейл. · Missing e-mail." };
   // a server action takes any string: only an existing team member is invited here
-  if (!(await getStaffByEmail(e))) return { error: "Not a team member — add the person first." };
+  if (!(await getStaffByEmail(e))) return { error: "Не е член на екипа — първо добавете човека. · Not a team member — add the person first." };
   const inv = await sendAuthInvite(e);
   if (!inv.ok) return { error: inv.error };
   await logActivity("staff.invited", { summary: `Sign-in invite sent to ${e}` });
@@ -1784,15 +1835,15 @@ export async function addLabAction(formData: FormData): Promise<{ ok?: boolean; 
   await requireCapAnywhere("labs.manage"); // the role model (2.4)
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const name = String(formData.get("name") ?? "").trim().slice(0, 160);
-  if (!email || !email.includes("@")) return { error: "A valid e-mail is required." };
+  if (!email || !email.includes("@")) return { error: "Нужен е валиден имейл. · A valid e-mail is required." };
   if (isSharedMailbox(email)) return { error: SHARED_MAILBOX_REFUSAL };
   // a founder's or team member's address is never a laboratory (as on approval, N3)
   try {
-    if (isOwnerEmail(email) || (await staffEmailInUse(email))) return { error: "This e-mail belongs to a PTS team member, so it cannot become a laboratory account." };
+    if (isOwnerEmail(email) || (await staffEmailInUse(email))) return { error: "Този имейл е на член на екипа на PTS и не може да стане лабораторен акаунт. · This e-mail belongs to a PTS team member, so it cannot become a laboratory account." };
     // a participant's user of the legal entities (4.3) has its own login (4.3 review)
     if (await participantLogin(email)) return { error: "This e-mail is a participant's user's login (Организации), so it cannot become a laboratory account." };
   } catch {
-    return { error: "Could not check whether this e-mail is already in use. Nothing was changed — try again in a moment." };
+    return { error: "Не можа да се провери дали този имейл вече се използва. Нищо не е променено — опитайте отново след малко. · Could not check whether this e-mail is already in use. Nothing was changed — try again in a moment." };
   }
   const existing = await getLabByEmail(email);
   const lab = existing ?? (await addLab({ email, name }));
@@ -1811,7 +1862,7 @@ export async function inviteLabByIdAction(labId: string, textKey: string): Promi
   const shown = invitePreview();
   if (typeof textKey !== "string" || textKey !== shown.key) return { error: "Текстът на поканата е променен — отворете я отново. · The invitation's text has changed — open it again." };
   const lab = typeof labId === "string" ? await getLab(labId) : null;
-  if (!lab) return { error: "Laboratory not found." };
+  if (!lab) return { error: "Лабораторията не е намерена. · Laboratory not found." };
   const by = (await getRoleContext()).email ?? "build";
   const inv = await sendAuthInvite(lab.email, { labId: lab.id, approval: { by, ref: `invite:${shown.key}` } });
   if (inv.userId) await updateLab(lab.id, { authUserId: inv.userId }); // even if its e-mail failed
@@ -1939,9 +1990,9 @@ export async function approveLabApplicationAction(
   const app = await getLabApplication(id);
   // the earlier account requests only — a registration or a request to join is decided in
   // «Одобрения на регистрации» (9.1 review)
-  if (!app || app.status !== "pending" || (app.kind ?? "account") !== "account") return { error: "Application not found or already handled." };
+  if (!app || app.status !== "pending" || (app.kind ?? "account") !== "account") return { error: "Заявката не е намерена или вече е решена. · Application not found or already handled." };
   const db = getDb();
-  if (!db) return { error: "Approving needs Supabase configured." };
+  if (!db) return { error: "Одобряването изисква настроена база данни. · Approving needs Supabase configured." };
 
   // Finding N3 (part 0.5): approving must never take over an existing account. It
   // used to reuse a lab account matched by the typed e-mail and, when that e-mail
@@ -1953,17 +2004,17 @@ export async function approveLabApplicationAction(
   try {
     if (isSharedMailbox(app.email)) return { error: SHARED_MAILBOX_REFUSAL };
     if (isOwnerEmail(app.email) || (await staffEmailInUse(app.email))) {
-      return { error: "This e-mail belongs to a PTS team member, so it cannot become a laboratory account. Reject the request." };
+      return { error: "Този имейл е на член на екипа на PTS и не може да стане лабораторен акаунт. Отхвърлете заявката. · This e-mail belongs to a PTS team member, so it cannot become a laboratory account. Reject the request." };
     }
     if (await labEmailInUse(app.email)) {
-      return { error: "A laboratory account with this e-mail already exists, so this request is not approved — approving would hand that account over. Reject the request; the laboratory signs in with its existing account." };
+      return { error: "Лабораторен акаунт с този имейл вече има, затова заявката не е одобрена — одобряването би предало този акаунт. Отхвърлете заявката; лабораторията влиза със съществуващия си акаунт. · A laboratory account with this e-mail already exists, so this request is not approved — approving would hand that account over. Reject the request; the laboratory signs in with its existing account." };
     }
     if (await participantLogin(app.email)) {
       return { error: "This e-mail is a participant's user's login (Организации), so this request is not approved. Reject the request." };
     }
   } catch (e) {
     console.warn("[lab-approve] account check failed:", (e as Error)?.message ?? e);
-    return { error: "Could not check whether this e-mail is already in use. Nothing was changed — try again in a moment." };
+    return { error: "Не можа да се провери дали този имейл вече се използва. Нищо не е променено — опитайте отново след малко. · Could not check whether this e-mail is already in use. Nothing was changed — try again in a moment." };
   }
 
   // 1) mint the Supabase login with a ONE-TIME temp password (email_confirm so they
@@ -2000,7 +2051,7 @@ export async function approveLabApplicationAction(
   } catch (e) {
     console.warn("[lab-approve] lab account insert failed:", (e as Error)?.message ?? e);
     await db.auth.admin.deleteUser(authUserId).catch(() => {});
-    return { error: "Could not create the laboratory account, so the new login was withdrawn. Nothing was approved — try again in a moment." };
+    return { error: "Лабораторният акаунт не можа да се създаде, затова новият вход е оттеглен. Нищо не е одобрено — опитайте отново след малко. · Could not create the laboratory account, so the new login was withdrawn. Nothing was approved — try again in a moment." };
   }
 
   const me = (await getRoleContext()).email ?? "manager";
@@ -2021,7 +2072,7 @@ export async function rejectLabApplicationAction(formData: FormData): Promise<{ 
   if (!reason) return { error: `Напишете причината (поне ${REJECT_REASON_MIN} знака) — пази се с отказа 6 години. · Write the reason (${REJECT_REASON_MIN} characters at least) — it is kept with the rejection for 6 years.` };
   const app = await getLabApplication(id);
   // the earlier account requests only (9.1 review)
-  if (!app || app.status !== "pending" || (app.kind ?? "account") !== "account") return { error: "Application not found or already handled." };
+  if (!app || app.status !== "pending" || (app.kind ?? "account") !== "account") return { error: "Заявката не е намерена или вече е решена. · Application not found or already handled." };
   const me = (await getRoleContext()).email ?? "manager";
   await setLabApplicationReview(id, { status: "rejected", rejectReason: reason, reviewedBy: me });
   await logActivity("lab_application.rejected", { targetCode: id, summary: "Lab account application rejected" });
@@ -2041,21 +2092,21 @@ export async function resetTwoFactorAction(kind: "staff" | "lab" | "founder", id
   const ctx = await getRoleContext();
   if (!(await isEffectiveHead(ctx.email))) return { error: "Само ръководителят на РТ провайдъра нулира двуфакторния вход (Реш. 95). · Only the head of the PT provider resets two-factor sign-in." };
   // a server action's arguments come from the browser
-  if ((kind !== "staff" && kind !== "lab" && kind !== "founder") || typeof id !== "string" || !id || id.length > 254) return { error: "Not found." };
+  if ((kind !== "staff" && kind !== "lab" && kind !== "founder") || typeof id !== "string" || !id || id.length > 254) return { error: "Не е намерено. · Not found." };
   const db = getDb();
-  if (!db) return { error: "Supabase is not configured." };
+  if (!db) return { error: "Базата данни не е настроена. · Supabase is not configured." };
   const person = kind === "founder"
     ? (isOwnerEmail(id) ? { email: id.trim().toLowerCase() } : null)
     : kind === "staff" ? await getStaff(id) : await getLab(id);
-  if (!person || isSharedMailbox(person.email)) return { error: "Not found." };
+  if (!person || isSharedMailbox(person.email)) return { error: "Не е намерено. · Not found." };
   // the login: a laboratory keeps its id; otherwise found by address — and never,
   // through a laboratory row, the login of a founder or a team member
   let userId = kind === "lab" ? (person as { authUserId?: string }).authUserId : undefined;
   if (!userId && kind === "lab") {
     try {
-      if (isOwnerEmail(person.email) || (await staffEmailInUse(person.email))) return { error: "This laboratory's address belongs to a PTS team member — reset it on that person's row." };
+      if (isOwnerEmail(person.email) || (await staffEmailInUse(person.email))) return { error: "Адресът на тази лаборатория е на член на екипа на PTS — нулирайте го на реда на този човек. · This laboratory's address belongs to a PTS team member — reset it on that person's row." };
     } catch {
-      return { error: "Could not check this address. Nothing was changed — try again in a moment." };
+      return { error: "Адресът не можа да се провери. Нищо не е променено — опитайте отново след малко. · Could not check this address. Nothing was changed — try again in a moment." };
     }
   }
   if (!userId) {
@@ -2067,7 +2118,7 @@ export async function resetTwoFactorAction(kind: "staff" | "lab" | "founder", id
       if (data.users.length < 200) break;
     }
   }
-  if (!userId) return { error: "This person has no sign-in yet — nothing to reset." };
+  if (!userId) return { error: "Този човек още няма вход — няма какво да се нулира. · This person has no sign-in yet — nothing to reset." };
   const { data: factors, error: le } = await db.auth.admin.mfa.listFactors({ userId });
   if (le) return { error: le.message };
   const all = factors?.factors ?? [];
@@ -2151,8 +2202,8 @@ async function clearRolesOf(before: { id: string; email: string; permanentRole?:
 
 export async function setStaffRoleAction(id: string, role: StaffRole): Promise<{ ok?: boolean; error?: string }> {
   await requirePeopleManager(); // the head of the PT provider (2.2, Реш. 141)
-  if (!id) return { error: "Missing id." };
-  if (!STAFF_ROLES.includes(role)) return { error: "Invalid role." };
+  if (!id) return { error: "Липсва идентификатор. · Missing id." };
+  if (!STAFF_ROLES.includes(role)) return { error: "Невалидна роля. · Invalid role." };
   const before = typeof id === "string" ? await getStaff(id) : undefined;
   if (!before) return { error: NOT_A_MEMBER };
   const me = (await getRoleContext()).email;
@@ -2176,7 +2227,7 @@ export async function setStaffRoleAction(id: string, role: StaffRole): Promise<{
 
 export async function setStaffStatusAction(id: string, status: StaffStatus): Promise<{ ok?: boolean; error?: string }> {
   await requirePeopleManager(); // the head of the PT provider (2.2, Реш. 141)
-  if (!id || (status !== "active" && status !== "inactive")) return { error: "Bad request." };
+  if (!id || (status !== "active" && status !== "inactive")) return { error: "Неправилна заявка. · Bad request." };
   const before = typeof id === "string" ? await getStaff(id) : undefined;
   if (!before) return { error: NOT_A_MEMBER };
   const me = (await getRoleContext()).email;
@@ -2388,7 +2439,7 @@ export async function voidDeclarationAction(id: string, reason: string): Promise
 // stores the opaque lab id (never the lab name) to stay confidential (§4.2).
 export async function setLabStatusAction(id: string, status: LabStatus): Promise<{ ok?: boolean; error?: string }> {
   await requireCapAnywhere("labs.manage"); // the role model (2.4)
-  if (!id || (status !== "active" && status !== "inactive")) return { error: "Bad request." };
+  if (!id || (status !== "active" && status !== "inactive")) return { error: "Неправилна заявка. · Bad request." };
   const was = (await getLab(id))?.status ?? null;
   await updateLab(id, { status });
   await logActivity("lab.status", { targetCode: id, subject: `lab:${id}`, before: { status: was }, after: { status }, summary: `Laboratory account set ${status}` });
@@ -2860,7 +2911,7 @@ export async function restoreDocRevisionAction(formData: FormData): Promise<void
   // A coded-list revision saved before the swap is the other list's content: it is
   // not restored at all (no new revision either, so it cannot come back marked).
   if (!usableForDoc(docKey, rev!)) redirect(back);
-  const docs = { ...(scheme!.docs ?? {}), [docKey]: { bg: rev!.bg, en: rev!.en } };
+  const docs = { ...(scheme!.docs ?? {}), [docKey]: { bg: rev!.bg, en: rev!.en, rev: (scheme!.docs?.[docKey]?.rev ?? 0) + 1 } };
   await updateScheme(schemeId, { docs });
   const actor = (await getRoleContext()).email ?? "";
   await addRevision({ schemeId, docKey, bg: rev.bg, en: rev.en, savedBy: actor, note: `Restored from v${rev.version}` });
@@ -2897,9 +2948,9 @@ export async function createFolderAction(formData: FormData): Promise<void> {
 export async function renameFolderAction(id: string, name: string): Promise<{ ok?: boolean; error?: string }> {
   await requireCap("scheme.create"); // the role model (2.4)
   const f = await getFolder(id);
-  if (!f) return { error: "Folder not found." };
+  if (!f) return { error: "Папката не е намерена. · Folder not found." };
   const clean = name.trim().slice(0, 80);
-  if (!clean) return { error: "A name is required." };
+  if (!clean) return { error: "Нужно е име. · A name is required." };
   await renameFolder(id, clean);
   await logActivity("folder.renamed", { summary: `Folder renamed to “${clean}”` });
   revalidatePath("/", "layout");
@@ -2911,13 +2962,13 @@ export async function renameFolderAction(id: string, name: string): Promise<{ ok
 export async function deleteFolderAction(id: string): Promise<{ ok?: boolean; error?: string; emptyNeeded?: boolean }> {
   await requireCap("scheme.create"); // the role model (2.4)
   const f = await getFolder(id);
-  if (!f) return { error: "Folder not found." };
+  if (!f) return { error: "Папката не е намерена. · Folder not found." };
   const [subs, schemes] = await Promise.all([
     listChildFolders(f.type, id),
     listSchemesInFolder(f.type, id),
   ]);
   if (subs.length || schemes.length) {
-    return { error: "This folder isn’t empty — move or delete what’s inside it first.", emptyNeeded: true };
+    return { error: "Папката не е празна — първо преместете или изтрийте съдържанието ѝ. · This folder isn’t empty — move or delete what’s inside it first.", emptyNeeded: true };
   }
   await deleteFolder(id);
   await logActivity("folder.deleted", { summary: `Folder “${f.name}” deleted` });
@@ -3915,8 +3966,8 @@ export async function setChainAction(
 ): Promise<{ ok?: boolean; error?: string }> {
   await requireCap("dispatch", schemeId); // in THIS scheme, by the role model (2.4)
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
-  if (scheme.type !== "C") return { error: "Only calibration schemes have a chain." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
+  if (scheme.type !== "C") return { error: "Само калибровъчните схеми имат верига. · Only calibration schemes have a chain." };
   // the chain is the measurements: once processing has started (or the scheme is not
   // held, or closed) it is what it was (3.2)
   if (!chainOpen(scheme.status)) return { error: "Веригата не се променя след началото на обработката. · The chain does not change once processing has started." };
@@ -3950,9 +4001,9 @@ export async function setChainAction(
 /** His own guess at how long a lab keeps the device — only used until real hops exist. */
 export async function setChainPaceAction(schemeId: string, days: number): Promise<{ ok?: boolean; error?: string }> {
   await requireCap("dispatch", schemeId); // in THIS scheme, by the role model (2.4)
-  if (!(await getScheme(schemeId))) return { error: "Scheme not found." };
+  if (!(await getScheme(schemeId))) return { error: "Схемата не е намерена. · Scheme not found." };
   const n = Math.round(Number(days));
-  if (!Number.isFinite(n) || n < 0 || n > 365) return { error: "Give a number of days between 0 and 365." };
+  if (!Number.isFinite(n) || n < 0 || n > 365) return { error: "Въведете брой дни между 0 и 365. · Give a number of days between 0 and 365." };
   await updateSchemeWith(schemeId, (s) => ({ chain: { stops: s.chain?.stops ?? [], ...(s.chain ?? {}), daysPerLab: n || undefined } }));
   revalidatePath(`/schemes/${schemeId}`, "layout");
   revalidatePath("/lab", "page");
@@ -4017,8 +4068,8 @@ export async function runRemindersNowAction(): Promise<{ ok: true; raised: numbe
 export async function confirmChainDispatchAction(schemeId: string): Promise<{ ok?: boolean; error?: string }> {
   await requireCap("dispatch", schemeId); // in THIS scheme, by the role model (2.4)
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
-  if (!scheme.chain?.stops?.[0]) return { error: "Set the chain order first." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
+  if (!scheme.chain?.stops?.[0]) return { error: "Първо задайте реда на веригата. · Set the chain order first." };
 
   // the first stop's laboratory, before the dispatch is recorded (2.3)
   const pre0 = scheme.chain.stops[0];
@@ -4060,7 +4111,7 @@ export async function confirmChainDispatchAction(schemeId: string): Promise<{ ok
 export async function confirmChainReturnAction(schemeId: string): Promise<{ ok?: boolean; error?: string }> {
   await requireCap("dispatch", schemeId); // in THIS scheme, by the role model (2.4)
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
   const at = schemeNowIso(scheme); // the round's clock (1.3)
   const out: { problem: ReturnType<typeof returnProblem> } = { problem: "not-dispatched" };
   await updateSchemeWith(schemeId, (s) => {
@@ -4399,7 +4450,12 @@ export async function decideNoticeAction(formData: FormData): Promise<void> {
   // …in the scheme the notice is about: a notice of another scheme is not theirs, and
   // one that cannot be found (or read) is decided by nobody
   const notice = id ? await getNotice(id).catch(() => null) : null;
-  if (!notice || !(await mayNow("docs.release", notice.schemeId))) redirect("/notices");
+  // a notice of no scheme (a message to an organisation): by who releases documents AND manages the
+  // organisations — asked without a scheme, only a permanent role answered, and none has the right: nobody
+  // could release it (round 5, security Q4)
+  const mayDecide = !notice ? false : notice.schemeId ? await mayNow("docs.release", notice.schemeId)
+    : (await mayAnywhereNow("docs.release")) && (await mayAnywhereNow("labs.manage"));
+  if (!notice || !mayDecide) redirect("/notices");
   const raw = formData.get("decision");
   // only an explicit decision counts — anything else changes nothing
   const decision = raw === "release" || raw === "withhold" ? raw : null;
@@ -4435,11 +4491,11 @@ const ISSUE_REFUSAL = Object.fromEntries(Object.entries(ISSUE_PROBLEM_TEXT).map(
 
 export async function lifecycleActAction(schemeId: string, actRaw: string, noteRaw?: string): Promise<LifecycleResult> {
   await requireCap("scheme.edit", schemeId); // the scheme manager's acts (2.4)
-  if (!isActKey(actRaw)) return { error: "Bad request." };
+  if (!isActKey(actRaw)) return { error: "Неправилна заявка. · Bad request." };
   const act: ActKey = actRaw;
   const note = String(noteRaw ?? "").replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F​-‏﻿�]/g, "").trim();
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
   // a calibration scheme's processing: every participant through the chain (§11) — every
   // one still in the round (a refused, annulled or withdrawn one never gets the device, 5.1)
   const codes = act === "process" && scheme.type === "C" ? (await listParticipants(schemeId)).filter((p) => inFinalRound(scheme, p)).map((p) => p.code) : undefined;
@@ -4687,7 +4743,7 @@ const ANNOUNCE_REFUSAL = {
 export async function secondAnnouncementAction(schemeId: string, input: { runs?: unknown; note?: unknown }): Promise<{ ok: true; late?: number } | { error: string }> {
   await requireCap("scheme.edit", schemeId); // the scheme manager's act (2.4)
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
   const note = String(input?.note ?? "").replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F​-‏﻿�]/g, "").trim();
   const first = actProblem(scheme, "announce2", note);
   if (first) return { error: ACT_REFUSAL[first] };
@@ -4768,7 +4824,7 @@ export async function secondAnnouncementAction(schemeId: string, input: { runs?:
 export async function setApplicationsClosedAction(schemeId: string, closed: boolean): Promise<{ ok: true } | { error: string }> {
   await requireCap("participants.manage", schemeId); // in THIS scheme (2.4)
   const scheme = await getScheme(String(schemeId));
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
   const by = (await getRoleContext()).email ?? "build";
   const at = new Date().toISOString();
   let changed = false;
@@ -4786,7 +4842,7 @@ export async function setApplicationsClosedAction(schemeId: string, closed: bool
 export async function admitFromWaitlistAction(schemeId: string, participantId: string): Promise<{ ok: true } | { error: string }> {
   await requireCap("participants.manage", schemeId);
   const scheme = await getScheme(String(schemeId));
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
   const by = (await getRoleContext()).email ?? "build";
   const say = (k: keyof typeof ADMIT_PROBLEM_TEXT) => ({ error: `${ADMIT_PROBLEM_TEXT[k].bg}. · ${ADMIT_PROBLEM_TEXT[k].en}.` });
   const off = await holidaySet();
@@ -4833,7 +4889,7 @@ const say95 = (k: keyof typeof OFFER_PROBLEM_TEXT) => ({ error: `${OFFER_PROBLEM
 /** The participation of THIS scheme, going on in it — or why not. */
 async function carrierTarget(schemeId: string, participantId: string): Promise<{ error: string } | { scheme: Scheme; part: CodedParticipant }> {
   const scheme = await getScheme(String(schemeId));
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
   const part = (await listParticipants(scheme.id)).find((x) => x.id === String(participantId));
   if (!part) return { error: "Не е намерено. · Not found." };
   if (!inFinalRound(scheme, part) || !currentFinalList(scheme)) return { error: "Офертите са за участие в окончателния списък (Реш. 128). · The offers are for a participation on the final list (Decision 128)." };
@@ -5137,7 +5193,7 @@ const CODING_REFUSAL = Object.fromEntries(Object.entries(CODING_PROBLEM_TEXT).ma
 export async function codingAction(schemeId: string): Promise<{ ok: true; coded: number } | { error: string }> {
   await requireCap("results.enter", schemeId); // the coding expert's (Реш. 93; stage 9)
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
   const by = await actorNow();
   let parts: Awaited<ReturnType<typeof listParticipants>>;
   let events: Awaited<ReturnType<typeof listCaseEventsForScheme>>;
@@ -5257,7 +5313,7 @@ export async function stageTickAction(schemeId: string, no: number, done: boolea
   }
   const note = String(noteRaw ?? "").replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F​-‏﻿�]/g, "").trim();
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
   const by = await actorNow();
   const at = new Date().toISOString();
   const day = sofiaToday(schemeNowMs(scheme));
@@ -5311,10 +5367,14 @@ export async function stageTickAction(schemeId: string, no: number, done: boolea
 export async function recordAmendmentAction(schemeId: string, input: AmendmentInput): Promise<{ ok: true; no: number; incomplete?: string } | { error: string }> {
   await requireCap("order.manage", schemeId); // the head's order (2.4)
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
   const checked = checkAmendment(scheme, input);
   if (!checked.ok) { const t = AMENDMENT_PROBLEM_TEXT[checked.problem]; return { error: `${t.bg} · ${t.en}` }; }
   const v = checked.value;
+  // the deadlines as they will stand, in their order (round 5, R5UA-4: an amendment set results before dispatch)
+  const standing = { ...(scheme.dates ?? {}), ...v.dates } as Partial<Record<SchemeDateKey, string>>;
+  const backwards = datesOutOfOrder(standing);
+  if (backwards) return { error: datesOrderRefusal(backwards, standing) };
   const by = await actorNow();
   const at = new Date().toISOString();
   const day = sofiaToday(schemeNowMs(scheme));
@@ -5437,7 +5497,7 @@ export async function completeAmendmentAction(schemeId: string, amendmentId: str
   await requireCap("order.manage", schemeId);
   const scheme = await getScheme(schemeId);
   const a = scheme?.amendments?.find((x) => x.id === String(amendmentId));
-  if (!scheme || !a) return { error: "Not found." };
+  if (!scheme || !a) return { error: "Не е намерено. · Not found." };
   if (!a.pending?.length) return { ok: true };
   const r = await issueAmendmentEditions(schemeId, a.id, await actorNow());
   revalidatePath(`/schemes/${schemeId}`, "layout");
@@ -5452,8 +5512,8 @@ export async function completeAmendmentAction(schemeId: string, amendmentId: str
 export async function setChainWindowAction(schemeId: string, days: number): Promise<{ ok?: boolean; error?: string }> {
   await requireCap("dispatch", schemeId); // in THIS scheme, by the role model (2.4)
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
-  if (scheme.type !== "C") return { error: "Only calibration schemes have a chain." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
+  if (scheme.type !== "C") return { error: "Само калибровъчните схеми имат верига. · Only calibration schemes have a chain." };
   if (needsAmendment(scheme)) return { error: "Прозорецът се определя, докато схемата се подготвя; след отварянето — индивидуално удължаване със заповед. · The window is set while the scheme is prepared; once open — an individual extension with its order." };
   const n = Math.round(Number(days));
   if (!Number.isFinite(n) || n < 1 || n > 60) return { error: "Между 1 и 60 работни дни. · Between 1 and 60 working days." };
@@ -5476,9 +5536,9 @@ export async function setChainWindowAction(schemeId: string, days: number): Prom
 export async function grantExtensionAction(schemeId: string, code: string, input: ExtensionInput): Promise<{ ok: true } | { error: string }> {
   await requireCap("order.manage", schemeId); // the head's order (2.4)
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
   // the code must be a real participation in THIS scheme — never trust the form
-  if (!(await listParticipants(schemeId)).some((p) => p.code === code)) return { error: "No such participant in this scheme." };
+  if (!(await listParticipants(schemeId)).some((p) => p.code === code)) return { error: "Няма такъв участник в тази схема. · No such participant in this scheme." };
   // the key cleaned once, and read the same way by every check below (3.4 review)
   const key = extensionKey(input.key);
   if (!key) { const t = EXTENSION_PROBLEM_TEXT.key; return { error: `${t.bg} · ${t.en}` }; }
@@ -5582,7 +5642,7 @@ export async function addOfficialHolidaysAction(year: number): Promise<{ ok: tru
 export async function createBatchAction(schemeId: string, input: BatchInput): Promise<{ ok: true; id: string } | { error: string }> {
   await requireOneOf(["items.manage", "scheme.edit"], schemeId); // the technical expert, the scheme manager (D18)
   const scheme = await getScheme(schemeId);
-  if (!scheme) return { error: "Scheme not found." };
+  if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
   const first = checkBatch(scheme, input);
   if (!first.ok) { const t = BATCH_PROBLEM_TEXT[first.problem]; return { error: `${t.bg} · ${t.en}` }; }
   const v = first.value;
@@ -5614,7 +5674,7 @@ export async function drawBatchAction(schemeId: string, batchId: string, counts:
   await requireOneOf(["items.manage", "scheme.edit"], schemeId); // the technical expert, the scheme manager (D18)
   const scheme = await getScheme(schemeId);
   const batch = scheme?.batches?.find((b) => b.id === String(batchId));
-  if (!scheme || !batch) return { error: "Not found." };
+  if (!scheme || !batch) return { error: "Не е намерено. · Not found." };
   const by = await actorNow();
   const day = sofiaToday(schemeNowMs(scheme));
   let refused: string | null = "Not found.";
@@ -5650,7 +5710,7 @@ export async function addHomogeneityAction(schemeId: string, batchId: string, te
   if (raw.length > 200_000) return { error: "Твърде много наведнъж — поставете на части. · Too much at once — paste it in parts." };
   const scheme = await getScheme(schemeId);
   const batch = scheme?.batches?.find((b) => b.id === String(batchId));
-  if (!scheme || !batch) return { error: "Not found." };
+  if (!scheme || !batch) return { error: "Не е намерено. · Not found." };
   if (!batch.draw) return { error: "Първо изтеглете обектите на партидата. · Draw the batch's objects first." };
   const by = await actorNow();
   const at = new Date().toISOString();
@@ -5689,7 +5749,7 @@ export async function updateBatchAction(schemeId: string, batchId: string, input
   await requireOneOf(["items.manage", "scheme.edit"], schemeId); // the technical expert, the scheme manager (D18)
   const scheme = await getScheme(schemeId);
   const batch = scheme?.batches?.find((b) => b.id === String(batchId));
-  if (!scheme || !batch) return { error: "Not found." };
+  if (!scheme || !batch) return { error: "Не е намерено. · Not found." };
   // a field the form did not carry keeps its value
   const i = (input ?? {}) as Partial<BatchInput>;
   const merged: BatchInput = {
@@ -5735,7 +5795,7 @@ export async function setBatchRecordAction(schemeId: string, batchId: string, re
     before = b.hsRecord;
     return { batches: (cur.batches ?? []).map((x) => x.id !== b.id ? x : { ...x, hsRecord: rec || undefined }) };
   });
-  if (!found) return { error: "Not found." };
+  if (!found) return { error: "Не е намерено. · Not found." };
   await logActivity("batch.record", { schemeId, subject: `batch:${batchId}`, before: { hsRecord: before ?? null }, after: { hsRecord: rec || null }, summary: `Batch record of the homogeneity and stability assessment: ${rec || "—"}` });
   revalidatePath(`/schemes/${schemeId}`, "layout");
   return { ok: true };
@@ -5774,7 +5834,7 @@ export async function saveEntityAction(input: { id?: string; name: unknown; coun
   await requireCapAnywhere("labs.manage"); // the people of the laboratories (2.4)
   const actor = await actorNow();
   const was = input.id ? await oneEntity(input.id, actor) : null;
-  if (input.id && !was) return { error: "Not found." };
+  if (input.id && !was) return { error: "Не е намерено. · Not found." };
   const r = readEntity(input, [], was?.id);
   if (!r.ok) { const t = ENTITY_PROBLEM_TEXT[r.problem]; return { error: `${t.bg}. · ${t.en}.` }; }
   // only what the person changed from what the form showed — a form left open does not
@@ -5811,7 +5871,7 @@ export async function checkEntityViesAction(entityId: string): Promise<{ ok: tru
   await requireCapAnywhere("labs.manage");
   const actor = await actorNow();
   const e = await oneEntity(entityId, actor);
-  if (!e) return { error: "Not found." };
+  if (!e) return { error: "Не е намерено. · Not found." };
   if (!e.vat) return { error: "Няма номер по ДДС — приложете документ. · No VAT number — attach a document." };
   const v = await checkVies(e.vat, e.country);
   // the number may have changed while VIES answered: the answer is for the one asked
@@ -5833,7 +5893,7 @@ export async function setEntityManualCheckAction(entityId: string, checked: bool
   await requireCapAnywhere("labs.manage");
   const actor = await actorNow();
   const e = await oneEntity(entityId, actor);
-  if (!e) return { error: "Not found." };
+  if (!e) return { error: "Не е намерено. · Not found." };
   const n = Array.from(String(note ?? "").trim()).slice(0, 300).join("");
   if (checked && !entityChecked(e).registry) return { error: "Първо VIES (валиден за този номер) или приложен документ. · First VIES (valid for this number) or an attached document." };
   let patch: Partial<LegalEntity> = { manualCheck: checked ? { by: actor, at: new Date().toISOString(), eik: e.eik, vat: e.vat, country: e.country, ...(e.proofPath ? { proofPath: e.proofPath } : {}), ...(n ? { note: n } : {}) } : undefined };
@@ -5850,7 +5910,7 @@ export async function setEntityStateAction(entityId: string, to: EntityState): P
   if (!ENTITY_STATES.includes(to)) return { error: "?" };
   const actor = await actorNow();
   const e = await oneEntity(entityId, actor);
-  if (!e) return { error: "Not found." };
+  if (!e) return { error: "Не е намерено. · Not found." };
   const p = stateProblem(e, to);
   if (p === "same") return { ok: true };
   if (p === "unchecked") return { error: "Активно става след проверката — VIES или документ, и проверката на PTS. · It becomes active after the checks — VIES or a document, and PTS's own." };
@@ -5871,7 +5931,7 @@ export async function attachEntityProofAction(formData: FormData): Promise<{ ok:
   await requireCapAnywhere("labs.manage");
   const actor = await actorNow();
   const e = await oneEntity(formData.get("entityId"), actor);
-  if (!e) return { error: "Not found." };
+  if (!e) return { error: "Не е намерено. · Not found." };
   const file = formData.get("file");
   if (!(file instanceof File) || !file.size) return { error: "Изберете файл. · Choose a file." };
   if (!PROOF_EXT[file.type]) return { error: "PDF, JPG или PNG. · A PDF, JPG or PNG." };
@@ -5905,9 +5965,9 @@ export async function saveLaboratoryAction(input: { id?: string; entityId: strin
   if (!r.ok) { const t = LABORATORY_PROBLEM_TEXT[r.problem]; return { error: `${t.bg}. · ${t.en}.` }; }
   let was: Laboratory | undefined;
   if (input.id) {
-    if (!UUID_RE.test(String(input.id))) return { error: "Not found." };
+    if (!UUID_RE.test(String(input.id))) return { error: "Не е намерено. · Not found." };
     [was] = await openLaboratories({ actor, purpose: "write" }, { laboratoryId: String(input.id) });
-    if (!was) return { error: "Not found." };
+    if (!was) return { error: "Не е намерено. · Not found." };
   } else if (!UUID_RE.test(String(input.entityId ?? ""))) { const t = LABORATORY_PROBLEM_TEXT.entity; return { error: `${t.bg}. · ${t.en}.` }; }
   // the entity's state is the database's to hold (laboratories_rules) — not read here by
   // opening the entity (4.2 review); its refusal said in words
@@ -5928,10 +5988,10 @@ export async function saveLaboratoryAction(input: { id?: string; entityId: strin
 export async function setLaboratoryStateAction(laboratoryId: string, to: LaboratoryState): Promise<{ ok: true } | { error: string }> {
   await requireCapAnywhere("labs.manage");
   if (to !== "active" && to !== "inactive") return { error: "?" };
-  if (!UUID_RE.test(String(laboratoryId))) return { error: "Not found." };
+  if (!UUID_RE.test(String(laboratoryId))) return { error: "Не е намерено. · Not found." };
   const actor = await actorNow();
   const [l] = await openLaboratories({ actor, purpose: "write" }, { laboratoryId: String(laboratoryId) });
-  if (!l) return { error: "Not found." };
+  if (!l) return { error: "Не е намерено. · Not found." };
   if (l.state === to) return { ok: true };
   try { await putLaboratory(l.id, { state: to }, actor); } catch (e) { return entityRefusal(e, LABORATORY_PROBLEM_TEXT.entity); }
   await logActivity("laboratory.state", { subject: `laboratory:${l.id}`, before: { state: l.state }, after: { state: to }, summary: `Laboratory: ${l.state} → ${to}` });
@@ -5962,9 +6022,9 @@ export async function saveEntityUserAction(input: { id?: string; entityId: strin
   let was: EntityUser | undefined;
   let entityId = String(input.entityId ?? "");
   if (input.id) {
-    if (!UUID_RE.test(String(input.id))) return { error: "Not found." };
+    if (!UUID_RE.test(String(input.id))) return { error: "Не е намерено. · Not found." };
     [was] = await openEntityUsers({ actor, purpose: "write" }, { userId: String(input.id) });
-    if (!was) return { error: "Not found." };
+    if (!was) return { error: "Не е намерено. · Not found." };
     entityId = was.entityId;
   } else if (!UUID_RE.test(entityId)) return say("entity");
   try { if (await userEmailTaken(actor, r.fields.email, was?.id)) return say("taken"); } catch { return { error: ENTITY_FAILED }; }
@@ -6022,10 +6082,10 @@ async function providerMailbox(email: string): Promise<boolean> {
 export async function setEntityUserStateAction(userId: string, to: "active" | "inactive"): Promise<{ ok: true } | { error: string }> {
   await requireCapAnywhere("labs.manage");
   if (to !== "active" && to !== "inactive") return { error: "?" };
-  if (!UUID_RE.test(String(userId))) return { error: "Not found." };
+  if (!UUID_RE.test(String(userId))) return { error: "Не е намерено. · Not found." };
   const actor = await actorNow();
   const [u] = await openEntityUsers({ actor, purpose: "write" }, { userId: String(userId) });
-  if (!u) return { error: "Not found." };
+  if (!u) return { error: "Не е намерено. · Not found." };
   const next = to === "inactive" ? "inactive" : u.authUserId ? "active" : "invited";
   if (u.state === next) return { ok: true };
   // the entity keeps an active administrator — the database's rule (0033), said in words
@@ -6048,10 +6108,10 @@ export async function inviteEntityUserAction(userId: string, textKey: string): P
   await requireCapAnywhere("labs.manage"); // the people of the laboratories (2.4)
   const shown = invitePreview();
   if (typeof textKey !== "string" || textKey !== shown.key) return { error: "Текстът на поканата е променен — отворете я отново. · The invitation's text has changed — open it again." };
-  if (!UUID_RE.test(String(userId))) return { error: "Not found." };
+  if (!UUID_RE.test(String(userId))) return { error: "Не е намерено. · Not found." };
   const actor = await actorNow();
   const [u] = await openEntityUsers({ actor, purpose: "send" }, { userId: String(userId) });
-  if (!u) return { error: "Not found." };
+  if (!u) return { error: "Не е намерено. · Not found." };
   if (u.state !== "invited") return { error: "Канят се само поканени потребители — този вече е приел поканата или е неактивен. · Only an invited user is invited — this one has accepted, or is inactive." };
   // still not one of PTS's people, nor an earlier laboratory account — asked again at
   // the send; a lookup that fails refuses
@@ -6190,7 +6250,7 @@ export async function resendConfirmationNoticeAction(entityId: string): Promise<
   await requireCapAnywhere("labs.manage");
   const actor = await actorNow();
   const e = await oneEntity(entityId, actor);
-  if (!e) return { error: "Not found." };
+  if (!e) return { error: "Не е намерено. · Not found." };
   if (!e.confirmedAt || !e.confirmedBy) return { error: "Профилът още не е потвърден. · The profile is not confirmed yet." };
   if (!e.officialEmail) return { error: "Няма официален e-mail. · No official e-mail." };
   const [by] = await openEntityUsers({ actor, purpose: "send" }, { userId: e.confirmedBy });
@@ -6446,9 +6506,9 @@ export async function decideJoinAction(id: string, approve: boolean, reasonIn?: 
  *  same recorded words, to the official e-mail as it is now; PTS's person approves it. */
 export async function resendOfficialNoticeAction(messageId: string): Promise<{ ok: true } | { error: string }> {
   await requireCapAnywhere("labs.manage");
-  if (!UUID_RE.test(String(messageId))) return { error: "Not found." };
+  if (!UUID_RE.test(String(messageId))) return { error: "Не е намерено. · Not found." };
   const m = await getSentMessage(String(messageId)).catch(() => null);
-  if (!m || !m.entityId || !(OFFICIAL_NOTICE_KINDS_91 as readonly string[]).includes(m.kind) || m.outcome !== "failed") return { error: "Not found." };
+  if (!m || !m.entityId || !(OFFICIAL_NOTICE_KINDS_91 as readonly string[]).includes(m.kind) || m.outcome !== "failed") return { error: "Не е намерено. · Not found." };
   const actor = await actorNow();
   const ent = await oneEntity(m.entityId, actor);
   if (!ent || ent.state === "inactive" || ent.erasedAt) return { error: `${ENTITY_USER_PROBLEM_TEXT.entity.bg}. · ${ENTITY_USER_PROBLEM_TEXT.entity.en}.` };
@@ -6471,11 +6531,11 @@ export async function appointEntityAdminAction(userId: string, demote: boolean, 
   await requireCapAnywhere("labs.manage");
   const shown = officialNoticePreviews().find((n) => n.key === ADMIN_CHANGED_KEY)!;
   if (typeof textKeyShown !== "string" || textKeyShown !== shown.textKey) return { error: "Текстът на уведомлението е променен — отворете го отново. · The notice's text has changed — open it again." };
-  if (!UUID_RE.test(String(userId))) return { error: "Not found." };
+  if (!UUID_RE.test(String(userId))) return { error: "Не е намерено. · Not found." };
   const actor = await actorNow();
   const me = (await getRoleContext()).email ?? "build";
   const [target] = await openEntityUsers({ actor, purpose: "write" }, { userId: String(userId) });
-  if (!target) return { error: "Not found." };
+  if (!target) return { error: "Не е намерено. · Not found." };
   const ent = await oneEntity(target.entityId, actor);
   if (!ent || ent.state === "inactive") return { error: `${ENTITY_USER_PROBLEM_TEXT.entity.bg}. · ${ENTITY_USER_PROBLEM_TEXT.entity.en}.` };
   if (!ent.officialEmail) return { error: "Първо въведете официалния e-mail на юридическото лице — там отива уведомлението (К23). · First enter the legal entity's official e-mail — the notice goes there (К23)." };
@@ -7613,7 +7673,7 @@ export async function importAnalysisAction(formData: FormData): Promise<void> {
         stored.push(path);
       } else path = `data:${r.file.type};base64,${Buffer.from(r.bytes).toString("base64")}`; // no Supabase (dev)
       // the name it came with is kept for the record (identity/ only); it is never served or issued
-      files.push({ kind: r.kind, name: String(r.file.name || `${r.kind}.${ext}`).slice(0, 160), mime: r.file.type, size: r.file.size, sha256: sha256(r.bytes), path });
+      files.push({ kind: r.kind, name: fitFileName(String(r.file.name || `${r.kind}.${ext}`)), mime: r.file.type, size: r.file.size, sha256: sha256(r.bytes), path });
     }
   } catch { ok = false; }
   if (!ok) { await cleanUp(); redirect(back("imp=failed")); }

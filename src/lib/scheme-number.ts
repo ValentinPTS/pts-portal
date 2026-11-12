@@ -155,6 +155,20 @@ export function sameSchemeNumber(a: string, b: string): boolean {
   return !!String(a ?? "").trim() && foldSchemeNumber(a) === foldSchemeNumber(b);
 }
 
+/** The scheme numbers a document's text names that are NOT this scheme's — a plan copied from another
+ *  scheme, or started from another's saved template, went out with that scheme's number on its cover
+ *  (round 5, R5UA-1). Read as the module reads a number; tags out (a scan that stops at the next «<»). */
+const NUMBER_IN_TEXT = /(?:PTS|PTC|ПTC|ПTS|SIM|ILC)[ \u00a0-]*\d{2} ?\/ ?\d{1,2}(?: ?[-‐‑‒–—−] ?NA)? ?[-‐‑‒–—−] ?[TSCТС] ?[-‐‑‒–—−] ?\d+/g;
+export function otherSchemeNumbers(html: string, own: string): string[] {
+  const text = String(html ?? "").replace(/<[^<>]*>/g, " ").replace(/&nbsp;|&#160;|\u00a0/g, " ");
+  const found = new Set<string>();
+  for (const m of text.matchAll(NUMBER_IN_TEXT)) {
+    const n = m[0].replace(/\s+/g, " ").trim();
+    if (readSchemeNumber(n) && !sameSchemeNumber(n, own)) found.add(n);
+  }
+  return [...found];
+}
+
 /** The URL id from a number: «PTS 25/09-Т-1» → «25-09-T-1» (the letter is kept),
  *  «ILC 26/10-NA-T-1» → «ILC-26-10-NA-T-1», «SIM 26/03-T-1» → «SIM-26-03-T-1». */
 export function schemeIdFromNumber(number: string): string {

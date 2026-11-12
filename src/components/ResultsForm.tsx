@@ -33,7 +33,7 @@ const field = (kind: "d" | "mean" | "U" | "k", key: string, j?: number) => (kind
 const NAMES = { mean: { bg: "Средна стойност", en: "Mean" }, U: { bg: "U (разширена)", en: "U (expanded)" }, k: { bg: "k", en: "k" } };
 const ROMAN = ["I", "II", "III"];
 
-export default function ResultsForm({ schemeId, participantId, lang, rows, initial, editable, savedAt, rev, period, submitOpen = false }: {
+export default function ResultsForm({ schemeId, participantId, lang, rows, initial, editable: editableProp, savedAt, rev, period, submitOpen = false }: {
   schemeId: string; participantId: string; lang: "bg" | "en"; rows: FormRow[]; initial: Values; editable: boolean; savedAt?: string; rev: number;
   /** the scheme's dates the test period lies within: the dispatch, the results deadline in force (6.3) */
   period?: { from?: string; to?: string };
@@ -42,6 +42,10 @@ export default function ResultsForm({ schemeId, participantId, lang, rows, initi
 }) {
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const { values, change, save, state, bad: notNum, flush } = useDraftSaver({ schemeId, participantId, initial, rev, savedAt });
+  // the deadline passed while this tab was open: the server said the form is closed — the form says so too,
+  // and shuts (round 5, R5UB-4: the fields stayed editable, «Прегледай и подай» did nothing visible)
+  const closedNow = state.kind === "error" && state.error === "state";
+  const editable = editableProp && !closedNow;
   const status = saveStatus(state, L);
   // 6.3: the checks before submission, on request — completeness and format only
   // once run, the report follows the form as it is typed (the checks are pure — review)
@@ -65,6 +69,7 @@ export default function ResultsForm({ schemeId, participantId, lang, rows, initi
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); void save(); }} data-results-form={participantId} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {closedNow && <p role="alert" data-results-closed-now style={{ margin: 0, padding: "10px 14px", borderRadius: 10, background: "#fbeee6", color: "#7a2e0e", fontWeight: 700 }}>{lang === "bg" ? "Срокът изтече — формулярът вече не приема промени и подаване. Презаредете страницата, за да видите записаното." : "The deadline has passed — the form takes no more changes or submission. Reload the page to see what is on record."}</p>}
       {/* the test period (6.3: inside the scheme's dates) */}
       <fieldset className="card" data-test-period style={{ padding: "10px 14px", margin: 0, border: "1px solid var(--line)" }}>
         <legend style={{ fontWeight: 800, fontSize: 14, padding: "0 4px" }}>{L("Период на изпитване", "Test period")}</legend>

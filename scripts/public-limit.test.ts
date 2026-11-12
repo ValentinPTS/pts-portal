@@ -27,7 +27,7 @@ const addrNow = await publicFormLimit("registration", "198.51.100.99", AT + 4 * 
 t("…why not: «all» at everyone's ceiling, «address» at its own", allNow === "all" && addrNow === "address", `${allNow} ${addrNow}`);
 const lib = readFileSync(new URL("../src/lib/public-limit.ts", import.meta.url), "utf8");
 t("the address only as a keyed hash that includes the hour and the form", /hmac\(formKey\(\), `\$\{hour\}\|\$\{form\}\|\$\{normAddress\(address\)\}`\)/.test(lib));
-t("a database that cannot count refuses (fail closed)", /if \(error\) \{ console\.error\(`\[public-limit\] \$\{form\}:`, error\.message\); return "all"; \}/.test(lib));
+t("a database that cannot count refuses (fail closed)", /if \(error\) \{ console\.error\(`\[public-limit\] \$\{form\}:`, error\.message\); return failOpen \? "error" : "all"; \}/.test(lib) && /export async function publicFormAllowed[\s\S]{0,200}publicFormLimit\(form, address, nowMs\)\) === "ok"/.test(lib));
 const m55 = readFileSync(new URL("../supabase/migrations/0055_security_sweep.sql", import.meta.url), "utf8");
 t("the database's function takes what the code sends", /public_form_try\(p_form text, p_hour text, p_address text, p_per_address integer, p_global integer\)/.test(m55) && /db\.rpc\("public_form_try", \{ p_form: form, p_hour: hour, p_address: bucket, p_per_address: c\.perAddress, p_global: c\.all \}\)/.test(lib));
 t("…the database's answer: «ok», «address» or «all» (everyone's first)", /returns text/.test(m55.slice(m55.indexOf("function public.public_form_try"))) && /return 'all'[\s\S]{0,80}return 'address'/.test(m55) && /return 'ok'/.test(m55));

@@ -17,6 +17,13 @@ export const FORM_CEILINGS = {
   // (round 2, R2S-4: about twenty addresses could shut the password reset for the whole portal, unsaid)
   application: { perAddress: 8, all: 300 },
   password_reset: { perAddress: 10, all: 600 },
+  // sign-in and its second factor (round 5, R5SB-1): the sign-in service counts by the address it sees —
+  // the server's, the same for everyone. Counted here per person's address, per account (its e-mail,
+  // keyed), and per user for the 6-digit code and the current password; everyone's ceilings far above use
+  sign_in: { perAddress: 30, all: 6000 },
+  sign_in_account: { perAddress: 20, all: 6000 },
+  second_factor: { perAddress: 10, all: 6000 },
+  password_check: { perAddress: 10, all: 6000 },
 } as const;
 export type PublicForm = keyof typeof FORM_CEILINGS;
 
@@ -44,7 +51,14 @@ export type FormLimit = "ok" | "address" | "all";
 export async function publicFormAllowed(form: PublicForm, address: string, nowMs = Date.now()): Promise<boolean> {
   return (await publicFormLimit(form, address, nowMs)) === "ok";
 }
-export async function publicFormLimit(form: PublicForm, address: string, nowMs = Date.now()): Promise<FormLimit> {
+/** An attempt to sign in (or to give the 6-digit code, the current password): «ok», or why not. Unlike the
+ *  forms, a count that FAILS lets it through (said in the server's log) — signing in must not depend on the
+ *  counter; a ceiling reached does not. `key`: an address, or «account-…»/«user-…» (never with «:»). */
+export async function attemptLimit(kind: "sign_in" | "sign_in_account" | "second_factor" | "password_check", key: string, nowMs = Date.now()): Promise<FormLimit> {
+  const r = await publicFormLimit(kind, key.replace(/:/g, "_"), nowMs, true);
+  return r === "error" ? "ok" : r;
+}
+export async function publicFormLimit(form: PublicForm, address: string, nowMs = Date.now(), failOpen = false): Promise<FormLimit | "error"> {
   const hour = hourOfForm(nowMs);
   const bucket = `a:${hmac(formKey(), `${hour}|${form}|${normAddress(address)}`)}`;
   const c = FORM_CEILINGS[form];
@@ -59,6 +73,6 @@ export async function publicFormLimit(form: PublicForm, address: string, nowMs =
     return "ok";
   }
   const { data, error } = await db.rpc("public_form_try", { p_form: form, p_hour: hour, p_address: bucket, p_per_address: c.perAddress, p_global: c.all });
-  if (error) { console.error(`[public-limit] ${form}:`, error.message); return "all"; }
+  if (error) { console.error(`[public-limit] ${form}:`, error.message); return failOpen ? "error" : "all"; }
   return data === "ok" || data === "address" ? data : "all";
 }

@@ -79,7 +79,7 @@ function elements(xml: string, name: string, withBody = true): Element[] {
     const after = xml.charCodeAt(i + open.length);
     // «<c» is not «<cols», «<sheet» not «<sheets»: the name ends at whitespace, «/» or «>»
     if (!(after === 62 || after === 47 || after === 32 || after === 9 || after === 10 || after === 13)) { p = i + open.length; continue; }
-    const gt = xml.indexOf(">", i + open.length);
+    const gt = tagEnd(xml, i + open.length);
     if (gt < 0) throw new XlsxReadError("xlsx: a broken part (a tag never closed)");
     const self = xml.charCodeAt(gt - 1) === 47;
     const attrs = xml.slice(i + open.length, self ? gt - 1 : gt);
@@ -89,6 +89,16 @@ function elements(xml: string, name: string, withBody = true): Element[] {
     out.push({ attrs, body: xml.slice(gt + 1, e), start: i, end: e + close.length });
     p = e + close.length;
   }
+}
+/** The «>» that ends a tag — a «>» inside a quoted attribute is the attribute's (legal XML: round 5,
+ *  R5SA-12 — «<sheet name="A>B"/>» was cut there and the sheet lost unsaid). One forward scan. */
+function tagEnd(xml: string, from: number): number {
+  for (let p = from; p < xml.length; p++) {
+    const c = xml.charCodeAt(p);
+    if (c === 62) return p;
+    if (c === 34 || c === 39) { const q = xml.indexOf(c === 34 ? '"' : "'", p + 1); if (q < 0) return -1; p = q; }
+  }
+  return -1;
 }
 /** What stands between the first «open» and the «close» after it, or undefined. */
 const between = (xml: string, open: string, close: string): string | undefined => {
@@ -149,10 +159,15 @@ export function readXlsx(bytes: Uint8Array): ReadSheet[] {
   const text = (name: string) => { const f = files.get(name); return f ? Buffer.from(f).toString("utf8") : null; };
   const wb = text("xl/workbook.xml");
   if (!wb) throw new XlsxReadError("not a workbook (no xl/workbook.xml)");
+  // SpreadsheetML written with a namespace prefix («<x:si>», «<x:c>») is refused, said — never read as empty
+  // (round 5, R5SA-12: its strings and cells came back blank, unsaid)
+  const prefixed = (xml: string) => /<[A-Za-z_][\w.-]*:(?:workbook|sheets?|sst|si|sheetData|row|c|t|v|is)[\s/>]/.test(xml);
   const rels = text("xl/_rels/workbook.xml.rels") ?? "";
   const target = new Map(elements(rels, "Relationship", false).map((m) => [attr(` ${m.attrs}`, "Id") ?? "", attr(` ${m.attrs}`, "Target") ?? ""]));
   // «<si/>» is an empty string, never the start of the next (8.2 review)
-  const shared = elements(text("xl/sharedStrings.xml") ?? "", "si").map((m) => textOf(m.body ?? ""));
+  const sst = text("xl/sharedStrings.xml") ?? "";
+  if (prefixed(wb) || prefixed(sst)) throw new XlsxReadError("xlsx: a workbook written with namespace prefixes is not read — open it in Excel and save it again");
+  const shared = elements(sst, "si").map((m) => textOf(m.body ?? ""));
   const sheets: ReadSheet[] = [];
   // one budget for the whole workbook, each sheet's part read once, and a bound on the sheets — a
   // workbook listing one 2-million-cell part a hundred times passed every sheet's own budget (the
@@ -173,6 +188,7 @@ export function readXlsx(bytes: Uint8Array): ReadSheet[] {
     read.add(t);
     const xml = text(t);
     if (xml === null) continue;
+    if (prefixed(xml)) throw new XlsxReadError("xlsx: a workbook written with namespace prefixes is not read — open it in Excel and save it again");
     const rows: Cell[][] = [];
     for (const r of elements(xml, "row")) {
       const rn = Number(attr(` ${r.attrs}`, "r"));
