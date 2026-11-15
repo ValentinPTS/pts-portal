@@ -89,7 +89,9 @@ try {
   }
   // one who manages laboratory accounts but not PTS's people: no declaration dates at all
   const users = await page.request.get(BASE + "/users");
-  t("a scheme manager on «Потребители» sees no declarations column", users.status() === 200 && !(await users.text()).includes("data-declaration="));
+  const usersText = await users.text();
+  // …and the page OPENED: a page refused while it streams answers 200 too, its redirect inside (round 9)
+  t("a scheme manager on «Потребители» sees no declarations column", users.status() === 200 && !users.url().includes("denied") && !/NEXT_REDIRECT|NEXT_HTTP_ERROR_FALLBACK/.test(usersText) && !usersText.includes("data-declaration="));
   await go("/dev/persona?role=manager");
 
   // voided when recorded by mistake: in force for nobody, the earlier one is

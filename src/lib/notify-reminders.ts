@@ -62,9 +62,12 @@ export interface ReminderReport {
  * Only records notices — delivery is deliverPending's job, so a mail outage
  * cannot lose a reminder and the laboratory still sees it in the portal.
  */
-export async function raiseDueReminders(realNowMs: number = Date.now()): Promise<ReminderReport> {
+export async function raiseDueReminders(realNowMs: number = Date.now(), only: "all" | readonly string[] = "all"): Promise<ReminderReport> {
   const report: ReminderReport = { schemesChecked: 0, remindersRaised: 0, schemesReminded: [] };
-  const schemes = await listSchemes();
+  // the daily job: every scheme; a run by hand (the test environment): only the schemes its person edits — a
+  // role in one scheme raised every scheme's reminders (round 9, T4 A1). Both loops below (results due, the
+  // receipts) read this list.
+  const schemes = (await listSchemes()).filter((s) => only === "all" || only.includes(s.id));
   // part 1.8: the words are PTS's template; approved, the reminder goes out by
   // itself with that approval on record — otherwise it waits for a person
   const tpl = await getReminderTemplate("results.due");

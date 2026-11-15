@@ -8,8 +8,8 @@ import CoverPhotoField from "@/components/CoverPhotoField";
 import { useLang } from "@/components/LangProvider";
 import { calibrationSlotsBroken, effectiveDirections } from "@/lib/param-remap";
 import { ONLINE_APPLICATIONS_OPEN } from "@/lib/online-applications";
-import type { CalibrationData, Parameter, PriceRow, ScheduleItem, SchemeStatus, TeamMember } from "@/lib/types";
-import { findTeamMember } from "@/lib/team-roles";
+import type { CalibrationData, Parameter, PriceRow, ScheduleItem, SchemeStatus, TeamMember, TeamDuty } from "@/lib/types";
+import { findTeamMember, TEAM_DUTIES } from "@/lib/team-roles";
 import { markerLabels, readSchemeNumber, schemeMarkers, statedByNumber, type Activity, type SchemeKind } from "@/lib/scheme-number";
 import { STATE_LABEL } from "@/lib/lifecycle-model";
 import { ENGINE_FIELDS, characteristicLabel } from "@/lib/characteristics-model";
@@ -331,8 +331,9 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
     const fd = new FormData(e.currentTarget);
     const n = Number(fd.get("teamCount") ?? -1);
     if (n >= 0) {
-      const rows = Array.from({ length: n }, (_, i) => ({ name: String(fd.get(`team_${i}_name`) ?? "").trim(), roleBg: String(fd.get(`team_${i}_roleBg`) ?? ""), roleEn: String(fd.get(`team_${i}_roleEn`) ?? "") })).filter((r) => r.name);
-      if (!findTeamMember(rows, "manager")) { e.preventDefault(); alert(L("В «Екип на схемата» трябва да има ръководител на схемата (роля «Ръководител на схемата…» / «PT Scheme Manager») — той подписва сертификатите и заповедта.", "The «Scheme team» must keep its scheme manager (role «Ръководител на схемата…» / «PT Scheme Manager») — the manager signs the certificates and the Order.")); return; }
+      // the scheme manager is chosen under the team, and is a row with a name (round 9)
+      const at = String(fd.get("duty_manager") ?? "");
+      if (!/^\d+$/.test(at) || Number(at) >= n || !String(fd.get(`team_${at}_name`) ?? "").trim()) { e.preventDefault(); alert(L("Под «Екип на схемата» изберете кой е ръководителят на схемата — той подписва сертификатите и заповедта.", "Under the «Scheme team», choose who the scheme manager is — the manager signs the certificates and the Order.")); return; }
     }
     const oldCal = init.calibration;
     if (!isCal || !oldCal || !init.calDataSlots?.length) return;
@@ -782,8 +783,20 @@ const TEAM_ROLES: { bg: string; en: string }[] = [
   { bg: "Експерт статистическа обработка", en: "Statistical Processing Expert" },
   { bg: "Експерт събиране и кодиране на данни", en: "Data Collection & Coding Expert" },
 ];
+const DUTY_LABEL: Record<TeamDuty, { bg: string; en: string }> = {
+  manager: { bg: "Ръководител на схемата (подписва сертификатите и заповедта)", en: "Scheme manager (signs the certificates and the Order)" },
+  technical: { bg: "Технически експерт (в контактите на Инструкцията при калибриране)", en: "Technical expert (in a calibration Instruction's contacts)" },
+  coding: { bg: "Кодиране (съставя списъците)", en: "Coding (compiles the lists)" },
+};
 function TeamFields({ init, L }: { init: TeamMember[]; L: (bg: string, en: string) => string }) {
-  const [rows, setRows] = useState<TeamRow[]>(() => init.map((m) => ({ ...m, key: ++teamKey })));
+  // the opening rows are keyed by their place (1…), rows added later from 100 on — so the duties below can name them
+  const [rows, setRows] = useState<TeamRow[]>(() => init.map((m, i) => ({ ...m, key: i + 1 })));
+  // each duty: the row it was given to — or, for a team saved before the choice, the row the documents read today
+  // (the role's own name), so staff see it and confirm (round 9)
+  const [given, setGiven] = useState<Partial<Record<TeamDuty, number>>>(() => Object.fromEntries(TEAM_DUTIES.map((d) => {
+    const m = findTeamMember(init, d);
+    return [d, m ? init.indexOf(m) + 1 : undefined];
+  })));
   const set = (key: number, k: keyof TeamMember, v: string) => setRows((x) => x.map((r) => {
     if (r.key !== key) return r;
     const next = { ...r, [k]: v };
@@ -793,9 +806,10 @@ function TeamFields({ init, L }: { init: TeamMember[]; L: (bg: string, en: strin
     if (std && k === "roleEn" && !r.roleBg) next.roleBg = std.bg;
     return next;
   }));
+  const remove = (key: number) => { setRows((x) => x.filter((y) => y.key !== key)); setGiven((g) => Object.fromEntries(Object.entries(g).filter(([, k]) => k !== key))); };
   return (
     <div data-team>
-      <SectionTitle hint={L("Хората в т. «Екип» на плана и в контактите на Инструкцията (ръководителят на схемата; за калибриране и техническият експерт).", "The people in the plan's «Team» and in the Instruction's contacts (the scheme manager; for calibration also the technical expert).")}>
+      <SectionTitle hint={L("Хората в т. «Екип» на плана; под тях — кой подписва, кой е в контактите на Инструкцията, кой съставя списъците.", "The people in the plan's «Team»; below them — who signs, who is in the Instruction's contacts, who compiles the lists.")}>
         {L("Екип на схемата", "Scheme team")}
       </SectionTitle>
       <input type="hidden" name="teamCount" value={rows.length} />
@@ -807,11 +821,24 @@ function TeamFields({ init, L }: { init: TeamMember[]; L: (bg: string, en: strin
             <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Име", "Name")}</span><input name={`team_${i}_name`} value={r.name} maxLength={120} onChange={(e) => set(r.key, "name", e.target.value)} className={inputCls} style={inputStyle} /></label>
             <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Роля (БГ)", "Role (BG)")}</span><input name={`team_${i}_roleBg`} value={r.roleBg} maxLength={160} list="team-roles-bg" onChange={(e) => set(r.key, "roleBg", e.target.value)} className={inputCls} style={inputStyle} /></label>
             <label className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L("Роля (EN)", "Role (EN)")}</span><input name={`team_${i}_roleEn`} value={r.roleEn} maxLength={160} list="team-roles-en" onChange={(e) => set(r.key, "roleEn", e.target.value)} className={inputCls} style={inputStyle} /></label>
-            <button type="button" data-write className="btn btn-sm" aria-label={L("Премахни от екипа", "Remove from the team")} onClick={() => setRows((x) => x.filter((y) => y.key !== r.key))}>✕</button>
+            <button type="button" data-write className="btn btn-sm" aria-label={L("Премахни от екипа", "Remove from the team")} onClick={() => remove(r.key)}>✕</button>
           </div>
         ))}
       </div>
-      <button type="button" data-write className="btn btn-sm mt-2" onClick={() => setRows((x) => (x.length >= 12 ? x : [...x, { key: ++teamKey, name: "", roleBg: "", roleEn: "" }]))}>＋ {L("Добави човек", "Add a person")}</button>
+      <button type="button" data-write className="btn btn-sm mt-2" onClick={() => setRows((x) => (x.length >= 12 ? x : [...x, { key: 100 + ++teamKey, name: "", roleBg: "", roleEn: "" }]))}>＋ {L("Добави човек", "Add a person")}</button>
+      <div className="grid gap-2 mt-3" data-team-duties>
+        {TEAM_DUTIES.map((d) => {
+          const at = rows.findIndex((r) => r.key === given[d]);
+          return (
+            <label key={d} className="block"><span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{L(DUTY_LABEL[d].bg, DUTY_LABEL[d].en)}</span>
+              <select name={`duty_${d}`} value={at >= 0 ? String(at) : ""} data-team-duty={d} onChange={(e) => setGiven((g) => ({ ...g, [d]: e.target.value === "" ? undefined : rows[Number(e.target.value)]?.key }))} className={inputCls} style={inputStyle}>
+                <option value="">{d === "manager" ? L("— изберете —", "— choose —") : L("— по ролята в реда —", "— by the row's role —")}</option>
+                {rows.map((r, i) => (r.name.trim() ? <option key={r.key} value={String(i)}>{r.name}{r.roleBg || r.roleEn ? ` — ${L(r.roleBg || r.roleEn, r.roleEn || r.roleBg)}` : ""}</option> : null))}
+              </select>
+            </label>
+          );
+        })}
+      </div>
     </div>
   );
 }

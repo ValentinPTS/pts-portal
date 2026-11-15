@@ -70,6 +70,13 @@ t("…and only once", r.remindersRaised === 0, JSON.stringify(r));
 const stamps = Object.values((await getScheme(S))?.remindedAt ?? {}).map((v) => Date.parse(String(v)));
 t("the round was stamped «reminded» on the REAL clock, not the moved one", stamps.length === 1 && Math.abs(stamps[0] - Date.now()) < 60_000, JSON.stringify(stamps));
 
+// a run by hand covers only the schemes its person edits (round 9, T4 A1: a role in one scheme ran every scheme's)
+await updateSchemeWith(S, () => ({ remindedAt: {} }));
+r = await raiseDueReminders(REAL, ["26-99-T-99"]);
+t("a run limited to other schemes: this round is not even checked — nothing raised, nothing stamped", r.schemesChecked === 0 && r.remindersRaised === 0 && !Object.keys((await getScheme(S))?.remindedAt ?? {}).length, JSON.stringify(r));
+r = await raiseDueReminders(REAL, [S]);
+t("…limited to this round: this round alone is checked (its reminder exists already — not raised twice)", r.schemesChecked === 1 && Object.keys((await getScheme(S))?.remindedAt ?? {}).length === 1, JSON.stringify(r));
+
 // the real portal never follows a stored clock
 await updateSchemeWith(S, () => ({ remindedAt: {} }));
 delete process.env.PTS_ENVIRONMENT;
@@ -82,6 +89,7 @@ const stampLines = actions.split("\n").filter((l) => l.includes("stampProblem(s.
 t("chain stamps decide «future» on the round's clock", stampLines.length === 3 && stampLines.every((l) => l.includes("schemeNowMs(s)")), stampLines.join("\n"));
 t("no chain decision on Date.now() any more", stampLines.every((l) => !l.includes("Date.now()")));
 t("a moved clock may never go back before the chain, and clears the reminder stamps", /chainNewestMs\(scheme\.chain\)/.test(actions) && /remindedAt: \{\}/.test(actions));
+t("…a run by hand: the person's own schemes (scheme.edit), never every scheme", /export async function runRemindersNowAction[\s\S]{0,600}const scope = schemesFor\(await getViewer\(\), "scheme\.edit"\);\s*const r = await raiseDueReminders\(Date\.now\(\), scope\);/.test(actions));
 t("the reminders can be run by hand in the test environment only", /export async function runRemindersNowAction[\s\S]{0,160}if \(!isTestEnvironment\(\)\) return \{ error: "not-test" \}/.test(actions));
 t("a lab's chain record stamps are real time", (actions.match(/\{ by: "lab", recordedAt: new Date\(\)\.toISOString\(\) \}/g) ?? []).length === 2);
 t("the clock can be moved only in the test environment", /export async function setTestClockAction[\s\S]{0,400}if \(!isTestEnvironment\(\)\) return \{ error: "not-test" \}/.test(actions));

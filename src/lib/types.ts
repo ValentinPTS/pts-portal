@@ -465,7 +465,12 @@ export interface TeamMember {
   roleEn: string;
   roleBg: string;
   name: string;
+  /** what this person does for the documents, chosen under «Екип на схемата» (round 9): the scheme manager signs
+   *  the certificates and the Order; the technical expert is named in a calibration Instruction; the coding expert
+   *  compiles the lists. Each duty one person; one person may hold several. See lib/team-roles.ts. */
+  duties?: TeamDuty[];
 }
+export type TeamDuty = "manager" | "technical" | "coding";
 
 export interface Partner {
   nameEn: string;

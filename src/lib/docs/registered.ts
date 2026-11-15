@@ -1,3 +1,4 @@
+import { findTeamMember } from "../team-roles";
 import type { Scheme, Lang, DocOptions } from "../types";
 import { esc, pick, wrapDoc, docHeader, footer } from "../doc-shell";
 
@@ -47,7 +48,7 @@ function confNote(reveal: boolean, lang: Lang): string {
 
 // the person who compiles/codes the lists (Data collection & coding expert)
 function compiler(s: Scheme): { name: string; roleEn: string; roleBg: string } | undefined {
-  return s.team.find((m) => /кодиран|coding/i.test(m.roleBg + m.roleEn));
+  return findTeamMember(s.team ?? [], "coding"); // the mark, or the role's own name in one row (round 9)
 }
 
 function header(s: Scheme, lang: Lang, titleEn: string, titleBg: string): string {

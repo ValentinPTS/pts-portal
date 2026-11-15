@@ -102,6 +102,8 @@ t("R2U-4: the receiver's name at least two letters, in the browser too", /name="
   t("R6UL-5: the server reads the ЕИК without its label", /const LBL = "\(\?:ЕИК\|EIK\|UIC\|БУЛСТАТ\)";/.test(actions) && /\.replace\(new RegExp\(`\^\$\{LBL\}/.test(actions));
 }
 t("R2U-6: a register's ceiling said in its own words", /REGISTER_TEXT\[r\.why === "code" \? "limitedCode"/.test(actions));
+t("an uploaded document by the scheme's own keys only — «constructor» is not found, never a 500 (round 9, T4 A5)", /const up = scheme\?\.uploads && Object\.hasOwn\(scheme\.uploads, doc\) \? scheme\.uploads\[doc\] : undefined;/.test(src("app/schemes/[id]/uploaded/[doc]/route.ts")) && !/scheme\?\.uploads\?\.\[doc\]/.test(src("app/schemes/[id]/uploaded/[doc]/route.ts")));
+t("…and an upload is removed only for a document the portal knows", /export async function removeSchemeDocUploadAction[\s\S]{0,700}if \(!isDocKey\(docKey\)\) return \{ error:/.test(src("lib/actions.ts")));
 t("R2U-7: the staff side's downloads keep their names", ["app/schemes/[id]/uploaded/[doc]/route.ts", "app/users/declarations/[id]/route.ts"].every((f) => /filename\*=UTF-8''\$\{utf8Name\(/.test(src(f))));
 
 // round 3 (after dcaa376)
@@ -439,7 +441,8 @@ t("a saved certificate or list body never reaches a role without names.view thro
   t("R8S-1: an empty team never breaks the certificate (a mark to fill)", emptyOk);
   t("R8S-1: the certificate is signed by the scheme manager by role, whatever the order", signed.includes(pb8.team.find((m) => /Ръководител на схемата/.test(m.roleBg))!.name) && !signed.includes(rev8[0].name));
   t("R8S-1: certificate, its calibration twin, the Order and the statistical design: never «team[0]»", ["certificate", "certificate-c", "order", "stat-project"].every((f) => !/s\.team\[0\]/.test(src(`lib/docs/${f}.ts`)) && /teamMember\(s, "manager"\)/.test(src(`lib/docs/${f}.ts`))));
-  t("R8S-1: a team without its scheme manager is refused — by the server and by the form before it is sent", /if \(teamNow && !findTeamMember\(teamNow, "manager"\)\) redirect\(`\/schemes\/\$\{id\}\/edit\?err=team-manager`\);/.test(actions) && /if \(!findTeamMember\(rows, "manager"\)\) \{ e\.preventDefault\(\);/.test(src("components/SchemeEditor.tsx")) && /err === "team-manager"/.test(src("app/schemes/[id]/edit/page.tsx")));
+  // (round 9: the scheme manager is MARKED in «Екип на схемата» — exactly one, by the server and by the form)
+  t("R8S-1: a team without its scheme manager is refused — by the server and by the form before it is sent", /if \(teamNow && teamNow\.filter\(\(m\) => m\.duties\?\.includes\("manager"\)\)\.length !== 1\) redirect\(`\/schemes\/\$\{id\}\/edit\?err=team-manager`\);/.test(actions) && /const at = String\(fd\.get\("duty_manager"\) \?\? ""\);[\s\S]{0,200}e\.preventDefault\(\);/.test(src("components/SchemeEditor.tsx")) && /err === "team-manager"/.test(src("app/schemes/[id]/edit/page.tsx")));
   // R8S-2: whatever holds a link is held too; a large negative margin dropped, a Word table's small one kept
   const { sanitizeDocHtml: san8 } = await import("../src/lib/sanitize-html.ts");
   t("R8S-2: a margin pulling far back is dropped; «-5.4pt» from Word stays", !/margin/.test(san8('<div style="margin-top:-2000px">x</div>')) && !/margin/.test(san8('<div style="margin:-30em 0 0">x</div>')) && /margin-left:-5\.4pt/.test(san8('<table style="margin-left:-5.4pt"><tr><td>x</td></tr></table>')));
@@ -494,6 +497,25 @@ t("a saved certificate or list body never reaches a role without names.view thro
   const merged = `<h2 class="sec"><span class="n">2.</span> Персонал, участващ в схемата за изпитване за пригодност<span style="font-size: 13.5pt;">&nbsp;Информация за услуги, доставени от външни доставчици, свързани с тази схема</span></h2><div class="body"><p>x</p></div>`;
   const back10 = rt10(merged, { team: [{ roleBg: "Ръководител на схемата", roleEn: "PT Scheme Manager", name: "M" }] } as never, "bg");
   t("R8 final: the plan's team comes back under a heading with a span in it (a selection merged two headings) — once", (back10.match(/class="team"/g) ?? []).length === 1 && (rt10(back10, { team: [] } as never, "bg").match(/class="team"/g) ?? []).length === 1);
+}
+
+
+// ── round 9, the team: a duty is GIVEN to a person, never guessed from the role's words (T5, the part-1 review) ─
+{
+  const { findTeamMember: ft } = await import("../src/lib/team-roles.ts");
+  type D = "manager" | "technical" | "coding";
+  const r = (bg: string, en: string, name: string, ...duties: D[]) => ({ roleBg: bg, roleEn: en, name, ...(duties.length ? { duties } : {}) });
+  const sales = r("Мениджър продажби", "Sales Manager", "S"), mgr = r("Ръководител на схемата", "PT Scheme Manager", "M"), mgr2 = r("Ръководител на РТ схемата", "Scheme Manager", "M2"), dep = r("Заместник-ръководител на схемата", "Deputy PT Scheme Manager", "D");
+  t("T5: a duty nobody was given — a «Sales Manager» never signs; no one, when no row is the scheme manager", ft([sales, r("Технически експерт", "Technical expert", "T")], "manager") === undefined);
+  t("T5: …two scheme managers: no one (never the row order); the deputy never", ft([mgr, mgr2], "manager") === undefined && ft([mgr2, mgr], "manager") === undefined && ft([dep, mgr], "manager")?.name === "M");
+  t("T5: …one scheme manager by the role's own name: that one, whatever the order", ft([sales, mgr, dep], "manager")?.name === "M" && ft([dep, sales, mgr], "manager")?.name === "M");
+  t("T5: a given duty decides, not the words", ft([r("Мениджър продажби", "Sales Manager", "S", "manager"), mgr], "manager")?.name === "S");
+  t("T5: …a duty not given falls back to the role's own name — a technical expert added as a row is named (review 1)", ft([r("Ръководител на схемата", "PT Scheme Manager", "M", "manager"), r("Технически експерт", "Technical expert", "T")], "technical")?.name === "T");
+  t("T5: …one person may hold two duties — the manager and the technical expert (review 3)", ft([r("Ръководител на схемата и технически експерт", "PT Scheme Manager and Technical Expert", "V", "manager", "technical")], "technical")?.name === "V" && ft([r("x", "y", "V", "manager", "technical")], "manager")?.name === "V");
+  t("T5: the server reads «duty_<d>» as the row's index; the scheme manager must be given", /const dutyRow = \(d: TeamDuty\): number =>/.test(actions) && /duties: TEAM_DUTIES\.filter\(\(d\) => dutyRow\(d\) === i\)/.test(actions));
+  t("T5: the «signed» lock only when someone DID sign (review 2)", /if \(was && JSON\.stringify\(\[was\.name, was\.roleBg, was\.roleEn\]\) !== JSON\.stringify/.test(actions));
+  t("T5: the lists' compiler by the same reading — the registered list and F 7.2.1-6 (review 4)", /return findTeamMember\(s\.team \?\? \[\], "coding"\);/.test(src("lib/docs/registered.ts")) && /const compiler = findTeamMember\(s\.team \?\? \[\], "coding"\);/.test(src("lib/docs/results-coded.ts")) && !/function teamRole/.test(src("lib/docs/results-coded.ts")));
+  t("T5: the sample teams carry their duties", /duties: \["manager"\]/.test(src("lib/seed-force.ts")) && /duties: \["technical"\]/.test(src("lib/seed-force.ts")) && /duties: \["manager"\]/.test(src("lib/seed-paving-blocks.ts")));
 }
 
 console.log(`security-sweep.test: ${pass} passed, ${fail} failed`);

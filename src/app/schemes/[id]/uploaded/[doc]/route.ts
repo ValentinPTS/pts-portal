@@ -24,7 +24,8 @@ async function serve(req: NextRequest, ctx: { params: Promise<{ id: string; doc:
   if ((isRestrictedDoc(doc) || showsIdentities(doc)) && !(await mayNow("names.view", id))) return new Response("Forbidden — only who sees the laboratories' names here may open this document (ISO/IEC 17043 §4.2).", { status: 403 });
   if (!(await mayViewDoc(doc, id))) return new Response("Forbidden — the Order is for the staff it assigns roles to (Реш. 149).", { status: 403 }); // an uploaded Order (Реш. 149, 2.6)
   const scheme = await getScheme(id);
-  const up = scheme?.uploads?.[doc];
+  // the scheme's own keys only: «constructor», «__proto__», «toString» are every object's — a 500 (round 9, T4 A5)
+  const up = scheme?.uploads && Object.hasOwn(scheme.uploads, doc) ? scheme.uploads[doc] : undefined;
   if (!scheme || !up) return new Response("Not found", { status: 404 });
 
   let bytes: Uint8Array;

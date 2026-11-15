@@ -128,7 +128,8 @@ try {
   }
   await go(`/dev/persona?model=statistics_expert@${C}`);
   const tree = await html(deepest);
-  t(`a statistics expert of ${C} opening ${T}'s folder sees no link to ${T}`, tree.status === 200 && !tree.text.includes(`href="/schemes/${T}"`), `${deepest} status ${tree.status}`);
+  // …and the folder OPENED (round 9: a refused page streams 200 with its redirect inside)
+  t(`a statistics expert of ${C} opening ${T}'s folder sees no link to ${T}`, tree.status === 200 && !refused(tree) && !/NEXT_HTTP_ERROR_FALLBACK/.test(tree.text) && !tree.text.includes(`href="/schemes/${T}"`), `${deepest} status ${tree.status} ${tree.url}`);
   await go(`/dev/persona?model=statistics_expert@${T}`);
   t(`…while its own statistics expert does`, (await html(deepest)).text.includes(`href="/schemes/${T}"`));
 

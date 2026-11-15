@@ -59,8 +59,10 @@ try {
     `/schemes/${S}/build/registered`,
   ];
 
-  const mgr = await html(`/schemes/${S}/results`);
-  t("manager: results show the lab column", mgr.text.includes(NAME));
+  // (a participant not yet coded has a provisional code and is not on the results page — the participants page shows it;
+  // round 9: this script is not in the gates, and these three checks had been failing since coding came in)
+  const mgr = await html(`/schemes/${S}/participants`);
+  t("manager: the participants page shows the lab's name", mgr.status === 200 && !/NEXT_REDIRECT|NEXT_HTTP_ERROR_FALLBACK/.test(mgr.text) && mgr.text.includes(NAME));
   // part 0.2: F 7.2.1-6 is the name↔code mapping — a manager opens it, with names
   const six = await html(`/schemes/${S}/doc/results-coded/print?lang=bg`);
   t("manager: F 7.2.1-6 opens with the name", six.status === 200 && six.text.includes(NAME) && six.text.includes("F 7.2.1-6"));
@@ -96,7 +98,8 @@ try {
     const bogus = await html(`/schemes/${S}/build/results-coded@2`);
     t(`${role}: invented document key is not found`, bogus.text.includes("NEXT_HTTP_ERROR_FALLBACK;404") || bogus.status === 404, `status ${bogus.status}`);
     const fill5 = await html(`/schemes/${S}/fill/registered-coded?lang=bg`);
-    t(`${role}: fill view of F 7.2.1-5 has no name`, fill5.status === 200 && !fill5.text.includes(NAME), `status ${fill5.status}`);
+    // …and it OPENED: a refusal is a 307 to /denied, which Playwright follows to a 200 (round 9)
+    t(`${role}: fill view of F 7.2.1-5 has no name`, fill5.status === 200 && !fill5.url.includes("denied") && !/NEXT_REDIRECT|NEXT_HTTP_ERROR_FALLBACK/.test(fill5.text) && !fill5.text.includes(NAME), `status ${fill5.status} ${fill5.url}`);
     const pdf = await page.request.post(BASE + "/api/pdf", { data: { id: S, doc: "results-coded", lang: "bg" }, timeout: 90000 });
     t(`${role}: PDF of F 7.2.1-6 refused`, pdf.status() === 403, `status ${pdf.status()}`);
     const five = await html(`/schemes/${S}/doc/registered-coded/print?lang=bg`);
@@ -112,8 +115,8 @@ try {
   // 3. who sees names HERE — the scheme manager and the coding expert of this scheme
   for (const role of [`scheme_manager@${S}`, `coding_expert@${S}`]) {
     await persona(role);
-    const r = await html(`/schemes/${S}/results`);
-    t(`${role}: sees who is behind the code`, r.status === 200 && r.text.includes(NAME));
+    const r = await html(`/schemes/${S}/participants`);
+    t(`${role}: sees who is behind the code`, r.status === 200 && !/NEXT_REDIRECT|NEXT_HTTP_ERROR_FALLBACK/.test(r.text) && r.text.includes(NAME));
     const m = await html(`/schemes/${S}/doc/results-coded/print?lang=bg`);
     t(`${role}: F 7.2.1-6 opens with the name`, m.status === 200 && m.text.includes(NAME));
   }

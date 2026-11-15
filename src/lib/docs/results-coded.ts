@@ -27,10 +27,7 @@ export const EXTRA_CSS = `
   .signs .ln{display:inline-block;border-bottom:1px solid #999;min-width:170px;}
 `;
 
-// Съставил = data collection & coding expert; Проверил = the scheme manager.
-function teamRole(s: Scheme, re: RegExp): { name: string; roleEn: string; roleBg: string } | undefined {
-  return s.team.find((m) => re.test(m.roleBg + m.roleEn));
-}
+// Съставил = the coding expert; Проверил = the scheme manager — both by lib/team-roles (round 9).
 
 export function renderCodesAndResults(s: Scheme, lang: Lang, opts?: DocOptions): string {
   const L = (en: string, bg: string) => esc(pick(lang, en, bg));
@@ -89,7 +86,7 @@ export function renderCodesAndResults(s: Scheme, lang: Lang, opts?: DocOptions):
     })
     .join("");
 
-  const compiler = teamRole(s, /кодиран|coding/i);
+  const compiler = findTeamMember(s.team ?? [], "coding"); // as the registered list (round 9 review)
   const approver = findTeamMember(s.team ?? [], "manager"); // the scheme manager by role (round 8 review, RV8-4)
   const date = esc(s.orderDate ?? s.revisionDate);
   const signs = `<div class="signs">

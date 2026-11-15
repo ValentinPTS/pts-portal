@@ -158,8 +158,8 @@ import { ACTS, ACT_PROBLEM_TEXT, TICK_PROBLEM_TEXT, STATE_LABEL, MIN_NOTE, curre
 import { sanitizeDocHtml } from "./sanitize-html";
 import { SCHEME_DOC_BUCKET, SCHEME_DOC_EXT, MAX_SCHEME_DOC_BYTES, ensureSchemeDocsBucket, fitFileName } from "./scheme-uploads";
 import { isDocKey } from "./doc-stages";
-import type { UploadedDoc, CodedParticipant, TeamMember } from "./types";
-import { findTeamMember } from "./team-roles";
+import type { UploadedDoc, CodedParticipant, TeamMember, TeamDuty } from "./types";
+import { findTeamMember, TEAM_DUTIES } from "./team-roles";
 import { logActivity } from "./activity";
 import { decideNotice, getNotice, markRead, readerKey, listForProvider, listForLab, listForParticipations, listForEntity, eraseEntityNotices } from "./notifications";
 import {
@@ -1149,12 +1149,18 @@ export async function removeLabDocAction(formData: FormData): Promise<{ ok?: boo
   if (!isLabDocSlot(slot)) return { error: "Непознат документ. · Unknown document." };
   const scheme = await getScheme(schemeId);
   if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
+  // the code must be a real participation in THIS scheme — never trust the form (round 9, T4 A2: a removal
+  // «for» any posted code was journalled though nothing was there); as uploadLabDocAction
+  if (!(await listParticipants(schemeId)).some((p) => p.code === code)) return { error: "Няма такъв участник в тази схема. · No such participant in this scheme." };
 
   // The file is taken out of the slot but never deleted: it is kept and recorded
   // as superseded (part 0.9), decided inside the lock.
   const actor = (await getRoleContext()).email ?? "";
+  let had = false;
   await updateSchemeWith(schemeId, (s) => {
     const removed = s.labDocs?.[code]?.[slot];
+    if (!removed) return {}; // nothing in the slot (removed meanwhile): nothing to record
+    had = true;
     const labDocs = { ...(s.labDocs ?? {}) };
     // Drop the slot, and the code's whole entry once its last slot is gone, so the
     // scheme JSONB doesn't accumulate empty objects for every participant ever.
@@ -1164,7 +1170,8 @@ export async function removeLabDocAction(formData: FormData): Promise<{ ok?: boo
     else labDocs[code] = forCode;
     return { labDocs, ...supersede(s, `labdoc:${code}:${slot}`, removed, "removed", actor) };
   });
-  await logActivity("labdoc.removed", { schemeId, targetCode: code, summary: `${LAB_DOC_SLOTS[slot as LabDocSlot].en} removed for ${code}` });
+  // journalled only after a file was in fact taken out (rule 6: after the act, never for one that did not happen)
+  if (had) await logActivity("labdoc.removed", { schemeId, targetCode: code, summary: `${LAB_DOC_SLOTS[slot as LabDocSlot].en} removed for ${code}` });
   revalidatePath(`/schemes/${schemeId}`, "layout");
   return { ok: true };
 }
@@ -1233,6 +1240,8 @@ export async function removeSchemeDocUploadAction(formData: FormData): Promise<{
   await requireCap("scheme.edit", schemeId); // in THIS scheme, by the role model (2.4)
   const docKey = String(formData.get("docKey") ?? "");
   await requireDocWriter(docKey, schemeId);
+  // a document the portal knows, only (round 9, T4 A5: «constructor» was recorded as a removed upload)
+  if (!isDocKey(docKey)) return { error: "Непознат документ. · Unknown document." };
   const scheme = await getScheme(schemeId);
   if (!scheme) return { error: "Схемата не е намерена. · Scheme not found." };
   // the issued report's file stays (7.4 review): a correction is imported from 2.0 and issued as R2…
@@ -3208,16 +3217,21 @@ export async function updateSchemeAction(formData: FormData) {
       .trim();
   // The scheme's team (round 7, R7UP-4) — a row a person with a role; a form without the section keeps it
   const teamCountRaw = formData.get("teamCount");
+  const dutyRow = (d: TeamDuty): number => { const v = String(formData.get(`duty_${d}`) ?? ""); return /^\d{1,2}$/.test(v) ? Number(v) : -1; };
   const teamNow: TeamMember[] | null = teamCountRaw === null ? null : Array.from({ length: Math.min(12, Math.max(0, Number(teamCountRaw) || 0)) }, (_, i) => ({
     name: str(`team_${i}_name`, "").slice(0, 120), roleBg: str(`team_${i}_roleBg`, "").slice(0, 160), roleEn: str(`team_${i}_roleEn`, "").slice(0, 160),
+    // the duties given to this row under the team — one row each, a row may hold several (round 9)
+    ...(TEAM_DUTIES.some((d) => dutyRow(d) === i) ? { duties: TEAM_DUTIES.filter((d) => dutyRow(d) === i) } : {}),
   })).filter((m) => m.name); // (a name with no role yet is kept — dropped unsaid before, round 7 verification)
   // …and a team without its scheme manager is refused: the manager signs the certificates and the Order (round 8, R8S-1)
-  if (teamNow && !findTeamMember(teamNow, "manager")) redirect(`/schemes/${id}/edit?err=team-manager`);
+  if (teamNow && teamNow.filter((m) => m.duties?.includes("manager")).length !== 1) redirect(`/schemes/${id}/edit?err=team-manager`);
   // …and once a certificate is released the manager's row stays as it signed it — the certificates are rendered
   // fresh on each opening (round 8 review, RV8-5; as the number and the markers are locked by certificates)
   if (teamNow && Object.values(existing.certificates ?? {}).some((c) => !!(c as { released?: unknown })?.released)) {
     const was = findTeamMember(existing.team ?? [], "manager"), now = findTeamMember(teamNow, "manager");
-    if (JSON.stringify([was?.name, was?.roleBg, was?.roleEn]) !== JSON.stringify([now?.name, now?.roleBg, now?.roleEn])) redirect(`/schemes/${id}/edit?err=team-signed`);
+    // (only when someone DID sign: a team whose reading named no one — two managers, a loose «Manager» saved on a
+    // round 7–8 build — may be given its manager; it never could be, round 9 review)
+    if (was && JSON.stringify([was.name, was.roleBg, was.roleEn]) !== JSON.stringify([now?.name, now?.roleBg, now?.roleEn])) redirect(`/schemes/${id}/edit?err=team-signed`);
   }
   // row count posted by the SchemeEditor (variable-length lists). Bounded; null
   // when absent (an older form) → fall back to fixed-index mapping over existing.
@@ -4113,8 +4127,10 @@ export async function setTestClockAction(schemeId: string, wall: string | null):
 export async function runRemindersNowAction(): Promise<{ ok: true; raised: number } | { error: "not-test" }> {
   await requireCapAnywhere("scheme.edit"); // the role model (2.4)
   if (!isTestEnvironment()) return { error: "not-test" };
-  const r = await raiseDueReminders();
-  await logActivity("notify.run", { summary: `Reminders run by hand in the test environment: ${r.remindersRaised} raised` });
+  // only where this person edits the scheme (round 9, T4 A1) — «all» for the local build alone
+  const scope = schemesFor(await getViewer(), "scheme.edit");
+  const r = await raiseDueReminders(Date.now(), scope);
+  await logActivity("notify.run", { summary: `Reminders run by hand in the test environment: ${r.remindersRaised} raised in ${r.schemesChecked} scheme(s)` });
   revalidatePath("/", "layout");
   return { ok: true, raised: r.remindersRaised };
 }

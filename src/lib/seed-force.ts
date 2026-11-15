@@ -21,10 +21,10 @@ export const forceCalibration: Scheme = {
   minParticipants: 1,
 
   team: [
-    { roleEn: "PT Scheme Manager", roleBg: "Ръководител на схемата за изпитване за пригодност", name: "eng. V. Belovski" },
-    { roleEn: "Technical Expert", roleBg: "Технически експерт", name: "eng. N. Vladimirova" },
+    { roleEn: "PT Scheme Manager", roleBg: "Ръководител на схемата за изпитване за пригодност", name: "eng. V. Belovski", duties: ["manager"] },
+    { roleEn: "Technical Expert", roleBg: "Технически експерт", name: "eng. N. Vladimirova", duties: ["technical"] },
     { roleEn: "Statistical Processing Expert", roleBg: "Експерт статистическа обработка", name: "eng. A. Atanasov" },
-    { roleEn: "Data Collection & Coding Expert", roleBg: "Експерт събиране и кодиране на данни", name: "T. Kasabova" },
+    { roleEn: "Data Collection & Coding Expert", roleBg: "Експерт събиране и кодиране на данни", name: "T. Kasabova", duties: ["coding"] },
   ],
 
   // partner slot unused for calibration (the reference lab is in `calibration`)

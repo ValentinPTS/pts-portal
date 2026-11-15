@@ -70,7 +70,7 @@ export default async function EditSchemePage({
       {err === "team-manager" && (
         <div role="alert" className="card p-3 mt-3 text-sm" data-err-team-manager style={{ background: "#fbeeee", border: "1px solid #e3c8c8", color: "#8f2f2f" }}>
           <b>{L("Промените НЕ са запазени.", "The changes were NOT saved.")}</b>{" "}
-          {L("В «Екип на схемата» трябва да има ръководител на схемата (роля «Ръководител на схемата…» / «PT Scheme Manager») — той подписва сертификатите и заповедта.", "The «Scheme team» must keep its scheme manager (role «Ръководител на схемата…» / «PT Scheme Manager») — the manager signs the certificates and the Order.")}
+          {L("Под «Екип на схемата» изберете кой е ръководителят на схемата — той подписва сертификатите и заповедта.", "Under the «Scheme team», choose who the scheme manager is — the manager signs the certificates and the Order.")}
         </div>
       )}
       {err === "team-signed" && (

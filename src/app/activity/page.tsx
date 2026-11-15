@@ -79,7 +79,8 @@ export default async function ActivityPage({
           <span className="block text-xs mb-0.5" style={{ color: "var(--muted)" }}>{tr("activity.filter.scheme")}</span>
           <select name="scheme" defaultValue={schemeId ?? ""} style={selStyle}>
             <option value="">{tr("activity.filter.all")}</option>
-            {schemes.map((s) => <option key={s.id} value={s.id}>{s.number}</option>)}
+            {/* only the schemes whose journal this person reads (round 9, T4 A4) — never another scheme's number */}
+            {schemes.filter((s) => scope === "all" || scope.includes(s.id)).map((s) => <option key={s.id} value={s.id}>{s.number}</option>)}
           </select>
         </label>
         <label className="block">

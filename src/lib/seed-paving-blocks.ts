@@ -22,10 +22,10 @@ export const pavingBlocks: Scheme = {
   minParticipants: 5,
 
   team: [
-    { roleEn: "PT Scheme Manager", roleBg: "Ръководител на схемата за изпитване за пригодност", name: "eng. V. Belovski" },
+    { roleEn: "PT Scheme Manager", roleBg: "Ръководител на схемата за изпитване за пригодност", name: "eng. V. Belovski", duties: ["manager"] },
     { roleEn: "Materials Engineer", roleBg: "Инженер материалознание", name: "I. Dobreva, PhD" },
     { roleEn: "Statistical Processing Expert", roleBg: "Експерт статистическа обработка", name: "eng. A. Atanasov" },
-    { roleEn: "Data Collection & Coding Expert", roleBg: "Експерт събиране и кодиране на данни", name: "T. Kasabova" },
+    { roleEn: "Data Collection & Coding Expert", roleBg: "Експерт събиране и кодиране на данни", name: "T. Kasabova", duties: ["coding"] },
   ],
 
   partner: {
