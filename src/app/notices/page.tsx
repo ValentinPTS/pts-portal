@@ -7,7 +7,7 @@ import { getServerT } from "@/lib/i18n-server";
 import { bodyFor, subjectFor, classFor, mailBaseUrl } from "@/lib/notify-deliver";
 import { testSubject } from "@/lib/environment";
 import { listSent, type MessageClass } from "@/lib/sent-messages";
-import { noticeKindText, COURIER_NOTICE_KINDS } from "@/lib/notice-kinds";
+import { noticeKindText, COURIER_NOTICE_KINDS, TYPED_NOTICE_KINDS } from "@/lib/notice-kinds";
 
 // Notices to laboratories (Реш. 138, plan parts 0.8 and 1.8). Nothing reaches a
 // participant unless a person saw the exact text and pressed «Изпрати» — or, for a
@@ -37,17 +37,22 @@ export default async function NoticesPage({ searchParams }: { searchParams: Prom
   // a laboratory's address is an identity: per message, in its scheme (Реш. 93)
   const isManager = authorizeAnywhere(viewer, "names.view");
   const seesAddress = (schemeId?: string) => authorize(viewer, "names.view", schemeId);
+  // an extension's notice in full also to who issues the Orders — the head typed its number and reason (round 9 review)
+  const seesOwnOrder = (n: { schemeId?: string; kind: string }) => n.kind === "deadline.extended" && authorize(viewer, "order.manage", n.schemeId);
   // a message's words: those to a participation are by its code, never a name — the rest
   // (a registration's, a profile's: to an organisation) name it and its people, and their time
   // matches the journal's lines: only to who sees names, or manages the organisations
   // (the security sweep, SC-1)
   const managesLabs = authorizeAnywhere(viewer, "labs.manage");
-  const seesWords = (m: { schemeId?: string; code?: string; kind: string }) => (!!m.code && !COURIER_NOTICE_KINDS.has(m.kind)) || seesAddress(m.schemeId) || (!m.schemeId && managesLabs);
+  // round 9 (T2): a notice whose words carry what a person typed about the participation — as the courier's
+  const seesWords = (m: { schemeId?: string; code?: string; kind: string }) => (!!m.code && !COURIER_NOTICE_KINDS.has(m.kind) && !TYPED_NOTICE_KINDS.has(m.kind)) || seesAddress(m.schemeId) || seesOwnOrder(m) || (!m.schemeId && managesLabs);
   // a held notice: its exact words to who decides it — but one naming a participation's courier only to
   // who sees names in its scheme (round 2, R2S-3)
-  const seesHeld = (n: { schemeId?: string; kind: string }) => !COURIER_NOTICE_KINDS.has(n.kind) || seesAddress(n.schemeId);
+  const seesHeld = (n: { schemeId?: string; kind: string }) => (!COURIER_NOTICE_KINDS.has(n.kind) && !TYPED_NOTICE_KINDS.has(n.kind)) || seesAddress(n.schemeId) || seesOwnOrder(n);
   const { lang } = await getServerT();
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
+  // what replaces those words for who sees no names (round 9, T2)
+  const typedLine = L("Текстът съдържа въведени от човек данни за участието — вижда го ръководителят на схемата (и експертът по кодиране); изпраща го ръководителят на схемата.", "The text holds what a person typed about the participation — the scheme manager (and the coding expert) reads it; the scheme manager sends it.");
   // only the schemes this person works in: a notice carries a code (2.4)
   const scope = schemesFor(viewer, "codes.view");
   const inScope = (schemeId?: string | null) => scope === "all" || (!!schemeId && scope.includes(schemeId));
@@ -85,6 +90,7 @@ export default async function NoticesPage({ searchParams }: { searchParams: Prom
         <Link href="/notices/texts" style={{ color: "var(--green-dark)", fontWeight: 700 }}>{L("«Текстове на напомнянията»", "«Reminder texts»")}</Link>.
       </p>
 
+      {refusedAs === "typed" && <div role="alert" data-notice-typed-needed className="card p-3 mt-4" style={{ borderLeft: "4px solid var(--red)" }}>{L("Не е изпратено: текстът съдържа въведени от човек данни за участието — изпраща го който вижда имената в схемата.", "Not sent: the text holds what a person typed about the participation — sent by who sees names in the scheme.")}</div>}
       {namesNeeded && <div role="alert" data-notice-names-needed className="card p-3 mt-4" style={{ borderLeft: "4px solid var(--red)" }}>{L("Не е изпратено: текстът назовава превозвача и товарителницата — изпраща го който вижда имената в схемата.", "Not sent: the text names the carrier and the waybill — it is sent by who sees the names in the scheme.")}</div>}
       {decidedMeanwhile && <div role="alert" data-notice-decided className="card p-3 mt-4" style={{ borderLeft: "4px solid var(--amber)" }}>{L("Нищо не е променено: това известие вече е решено — от друг раздел или от друг човек. Вижте «Изпратени имейли» по-долу.", "Nothing changed: this notice was already decided — from another tab or by another person. See «E-mails sent» below.")}</div>}
       {refused && <div role="alert" data-notice-refused className="card p-3 mt-4" style={{ borderLeft: "4px solid var(--red)" }}>{L("Не е изпратено: схемата вече не е започнала (върната в чернова или архивирана) — изберете «Не изпращай».", "Not sent: the scheme is no longer started (back to draft or archived) — choose «Do not send».")}</div>}
@@ -107,7 +113,7 @@ export default async function NoticesPage({ searchParams }: { searchParams: Prom
               </>) : (
                 // its words name the participation's courier — the person who sends it sees them (Реш. 138), so only
                 // who sees names in that scheme (the security sweep, round 2, R2S-3)
-                <div data-courier-words-hidden className="text-sm mt-2" style={{ color: "var(--muted)" }}>{L("Текстът назовава превозвача и товарителницата на участника — вижда го и го изпраща който вижда имената в схемата.", "The text names the participant's carrier and waybill — it is read and sent by who sees the names in the scheme.")}</div>
+                TYPED_NOTICE_KINDS.has(n.kind) ? <div data-typed-words-hidden className="text-sm mt-2" style={{ color: "var(--muted)" }}>{typedLine}</div> : <div data-courier-words-hidden className="text-sm mt-2" style={{ color: "var(--muted)" }}>{L("Текстът назовава превозвача и товарителницата на участника — вижда го и го изпраща който вижда имената в схемата.", "The text names the participant's carrier and waybill — it is read and sent by who sees the names in the scheme.")}</div>
               )}
               {canDecide && mayDecide(n.schemeId) && seesHeld(n) && (
                 <div className="flex gap-2 mt-3">
@@ -158,7 +164,7 @@ export default async function NoticesPage({ searchParams }: { searchParams: Prom
                         <div className="text-xs mt-1"><b>{L("Тема", "Subject")}:</b> {m.subject}</div>
                         <pre className="text-xs mt-1" style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>{m.body}</pre>
                       </details>
-                    ) : <span data-sent-words-hidden data-kind={m.kind}>{CLASS[m.class]} · {noticeKindText(m.kind, lang === "bg" ? "bg" : "en")}</span>}
+                    ) : <span data-sent-words-hidden data-kind={m.kind}>{CLASS[m.class]} · {noticeKindText(m.kind, lang === "bg" ? "bg" : "en")}{TYPED_NOTICE_KINDS.has(m.kind) ? <span data-typed-words-hidden className="block text-xs" style={{ color: "var(--muted)" }}>{typedLine}</span> : null}</span>}
                   </td>
                   <td className="p-2">{m.schemeId ? (number.get(m.schemeId) ?? m.schemeId) : "—"}{m.code ? <span className="font-mono"> · {m.code}</span> : null}</td>
                   {isManager && <td className="p-2 font-mono text-xs">{seesAddress(m.schemeId) ? m.to : "—"}</td>}

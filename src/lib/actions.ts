@@ -25,7 +25,7 @@ import { giveFeedback } from "./feedback";
 import { lookupCertificate, requestAddress } from "./cert-register";
 import { publicFormLimit } from "./public-limit";
 import { BRAND_FILE, imageUrlAllowed } from "./image-hosts";
-import { COURIER_NOTICE_KINDS } from "./notice-kinds";
+import { COURIER_NOTICE_KINDS, TYPED_NOTICE_KINDS } from "./notice-kinds";
 import { validateEik } from "./verify-eik";
 import { REGISTER_TEXT, type RegisterAnswer } from "./cert-register-model";
 import { getServerT } from "./i18n-server";
@@ -4538,6 +4538,8 @@ export async function decideNoticeAction(formData: FormData): Promise<void> {
   // a notice whose words name a participation's courier is released only by who sees names in its scheme —
   // the person who sends it sees its exact words (the security sweep, round 2, R2S-3)
   if (decision === "release" && COURIER_NOTICE_KINDS.has(notice.kind) && !(await mayNow("names.view", notice.schemeId))) redirect("/notices?refused=names");
+  // …and one whose words carry what a person typed about the participation (round 9, T2): the same
+  if (decision === "release" && TYPED_NOTICE_KINDS.has(notice.kind) && !(await mayNow("names.view", notice.schemeId))) redirect("/notices?refused=typed");
   const by = (await getRoleContext()).email ?? "build";
   const changed = id && decision ? await decideNotice(id, decision, by) : false;
   if (changed && decision === "release") await logActivity("notice.released", { subject: `notice:${id}`, summary: "Notice to a laboratory released («Изпрати»)" });

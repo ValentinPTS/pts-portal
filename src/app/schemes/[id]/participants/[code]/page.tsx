@@ -5,7 +5,7 @@ import { getScheme } from "@/lib/store";
 import { listParticipants, withoutIdentity } from "@/lib/participants";
 import { namesFor } from "@/lib/identities";
 import { listCaseEvents } from "@/lib/case-events";
-import { LAB_RECORDER, redactCaseEventForStaff } from "@/lib/redact";
+import { LAB_RECORDER, redactCaseEventForStaff, type ShownCaseEvent } from "@/lib/redact";
 import { addCaseEventAction, voidCaseEventAction } from "@/lib/actions";
 import { requireStaff } from "@/lib/roles";
 import { logActivity } from "@/lib/activity";
@@ -79,6 +79,8 @@ export default async function CaseFilePage({
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const canAddStep = await mayNow("dispatch", id);
   const canReveal = await mayNow("names.view", id); // the scheme manager and the coding expert, here (Реш. 93, 2.4)
+  // an extension's Order number and reason: also to who issues the Orders (the head) — he typed them (round 9 review)
+  const seesExtension = canReveal || (await mayNow("order.manage", id));
   // 6.4: the submitted versions — to who reads or enters the results here; the unlock by who enters them
   const canSeeResults = (await mayNow("results.read", id)) || (await mayNow("results.enter", id));
   const canEnterResults = await mayNow("results.enter", id);
@@ -116,7 +118,8 @@ export default async function CaseFilePage({
 
   // A non-manager never sees a lab's e-mail or the name of a file it uploaded (N4).
   // voided steps included: they stay in the file, struck through (part 0.9)
-  const events = (await listCaseEvents(id, code, { includeVoided: true })).map((e) => (canReveal ? e : redactCaseEventForStaff(e)));
+  // round 9 (T2): who sees no names here reads no typed words of a step — hidden, never masked
+  const events = (await listCaseEvents(id, code, { includeVoided: true })).map((e): ShownCaseEvent => (canReveal ? e : redactCaseEventForStaff(e)));
   const reported = s.scoring?.results?.[code] ?? {};
   const reportedCount = Object.keys(reported).length;
   const today = sofiaToday(schemeNowMs(s)); // the round's Bulgarian day (1.3)
@@ -180,7 +183,7 @@ export default async function CaseFilePage({
           <div style={labelStyle}>{lang === "bg" ? "За резултатите" : "For the results"}</div>
           <div data-deadline="resultsDue" data-state={resultsState}>
             {rd.at ? fmtSchemeDate(rd.at) : "—"}
-            {rd.ext && <span style={labelStyle}> · {lang === "bg" ? `удължен по Заповед № ${rd.ext.orderNo}` : `extended by Order No. ${rd.ext.orderNo}`}</span>}
+            {rd.ext && <span style={labelStyle}> · {seesExtension ? (lang === "bg" ? `удължен по Заповед № ${rd.ext.orderNo}` : `extended by Order No. ${rd.ext.orderNo}`) : (lang === "bg" ? "удължен по заповед" : "extended by an order")}</span>}
             {resultsState === "overdue" && <b style={{ color: "#8f2f2f" }}> · {lang === "bg" ? "просрочен" : "overdue"}</b>}
             {resultsState === "late" && <span style={{ color: "#9a6b22" }}> · {lang === "bg" ? "подадени след срока" : "submitted after the deadline"}</span>}
           </div>
@@ -189,7 +192,7 @@ export default async function CaseFilePage({
               <div style={labelStyle}>{lang === "bg" ? "Уредът — да се предаде до" : "The instrument — to hand on by"}</div>
               <div data-deadline="chain" data-state={winState}>
                 {fmtSchemeDate(win.due)}
-                <span style={labelStyle}> · {win.ext ? (lang === "bg" ? `удължен по Заповед № ${win.ext.orderNo}` : `extended by Order No. ${win.ext.orderNo}`) : (lang === "bg" ? `${win.days} работни дни от получаването (${fmtSchemeDate(win.received)})` : `${win.days} working days from the receipt (${fmtSchemeDate(win.received)})`)}</span>
+                <span style={labelStyle}> · {win.ext ? (seesExtension ? (lang === "bg" ? `удължен по Заповед № ${win.ext.orderNo}` : `extended by Order No. ${win.ext.orderNo}`) : (lang === "bg" ? "удължен по заповед" : "extended by an order")) : (lang === "bg" ? `${win.days} работни дни от получаването (${fmtSchemeDate(win.received)})` : `${win.days} working days from the receipt (${fmtSchemeDate(win.received)})`)}</span>
                 {winState === "overdue" && <b style={{ color: "#8f2f2f" }}> · {lang === "bg" ? "просрочен" : "overdue"}</b>}
               </div>
             </>
@@ -198,7 +201,7 @@ export default async function CaseFilePage({
         {(s.extensions ?? []).filter((e) => e.code === code).length > 0 && (
           <ul className="text-sm mt-3" data-extensions style={{ paddingLeft: 18 }}>
             {(s.extensions ?? []).filter((e) => e.code === code).map((e) => (
-              <li key={e.id}>{fmtSchemeDate(e.day)} · {e.key === "chain" ? (lang === "bg" ? "прозорецът" : "the window") : (lang === "bg" ? "резултатите" : "the results")} → <b>{fmtSchemeDate(e.until)}</b> · {lang === "bg" ? "Заповед №" : "Order No."} {e.orderNo} {lang === "bg" ? "от" : "of"} {fmtSchemeDate(e.orderDate)} — {e.reason}</li>
+              <li key={e.id}>{fmtSchemeDate(e.day)} · {e.key === "chain" ? (lang === "bg" ? "прозорецът" : "the window") : (lang === "bg" ? "резултатите" : "the results")} → <b>{fmtSchemeDate(e.until)}</b> · {seesExtension ? <>{lang === "bg" ? "Заповед №" : "Order No."} {e.orderNo} {lang === "bg" ? "от" : "of"} {fmtSchemeDate(e.orderDate)} — {e.reason}</> : <>{lang === "bg" ? "заповед от" : "an order of"} {fmtSchemeDate(e.orderDate)} <span data-typed-hidden style={{ color: "var(--muted)", fontStyle: "italic" }}>· {lang === "bg" ? "номерът и основанието — за ръководителя на схемата и експерта по кодиране" : "its number and reason — for the scheme manager and the coding expert"}</span></>}</li>
             ))}
           </ul>
         )}
@@ -285,7 +288,7 @@ export default async function CaseFilePage({
                       <b>{L2("версия", "version")} {x.version}</b> · <Link href={`/schemes/${id}/participants/${encodeURIComponent(code)}/v/${x.version}`} data-staff-record-link={x.version}>{L2("запис →", "record →")}</Link> · {ackMoment(x.submittedAt)} · {x.submittedBy.startsWith("entityuser:") ? L2("потребител на организацията", "a user of the organisation") : L2("акаунтът на лабораторията", "the laboratory's account")} · {L2("разписка", "receipt")} <span style={{ fontFamily: "monospace" }}>{x.id.slice(0, 8)}</span>{x.configVersion ? ` · v.${x.configVersion}` : ""}
                       {d?.unlock ? <span style={{ color: "#7a5416" }}> · {L2("след срока, отключено", "after the deadline, unlocked")}: «{d.unlock.reason}»</span> : null}
                       {/* the part, in the lab's own words, may name a laboratory: to who may see the names (6.4 review) */}
-                      {d?.confirmations?.subcontracted ? <span style={{ color: "var(--muted)" }}> · {L2("част на подизпълнител", "part subcontracted")}{canReveal ? `: ${d.confirmations.subcontractedPart ?? ""}` : ""}</span> : null}
+                      {d?.confirmations?.subcontracted ? <span style={{ color: "var(--muted)" }}> · {L2("част на подизпълнител", "part subcontracted")}{revealed ? `: ${d.confirmations.subcontractedPart ?? ""}` : ""}</span> : null}
                       <div style={{ fontSize: 12, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
                         {Object.entries(d?.values ?? {}).map(([k, v]) => `${k}: ${v.nr ? "N/R" : v.na ? "N/A" : d?.kind === "C" ? `${v.ref ?? "—"} → ${v.meas ?? "—"} (${L2("грешка", "error")} ${v.error ?? "—"}; U ${v.U ?? "—"})` : `${v.mean ?? "—"} (U ${v.U ?? "—"}, k ${v.k ?? "—"})`}`).join(" · ")}
                       </div>
@@ -355,10 +358,11 @@ export default async function CaseFilePage({
                   )}
                   {e.ref && <span style={{ marginLeft: 8 }}>· {e.ref}</span>}
                   {e.note && <div style={{ color: "var(--muted)", fontSize: 13 }}>{e.note}</div>}
+                  {e.hidden?.length ? <div data-typed-hidden={e.hidden.join(" ")} style={{ color: "var(--muted)", fontSize: 12, fontStyle: "italic" }}>{L("въведеният текст се вижда от ръководителя на схемата и експерта по кодиране", "the typed text is visible to the scheme manager and the coding expert")}</div> : null}
                   {e.recordedBy && <div style={{ color: "var(--muted)", fontSize: 11 }}>{tr("case.recordedBy")}: {e.recordedBy === LAB_RECORDER ? tr("case.byLab") : e.recordedBy}</div>}
                   {e.voidedAt && (
                     <div style={{ color: "var(--red)", fontSize: 11, textDecoration: "none", display: "inline-block" }}>
-                      {tr("case.voided")} {fmtDate(e.voidedAt.slice(0, 10))}{e.voidedBy ? ` · ${e.voidedBy}` : ""} — {e.voidReason}
+                      {tr("case.voided")} {fmtDate(e.voidedAt.slice(0, 10))}{e.voidedBy ? ` · ${e.voidedBy}` : ""}{e.voidReason ? ` — ${e.voidReason}` : ""}
                     </div>
                   )}
                 </td>

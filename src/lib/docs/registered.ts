@@ -6,6 +6,7 @@ import { esc, pick, wrapDoc, docHeader, footer } from "../doc-shell";
 //   • F 7.2.1-4 «Списък на заявилите участие / List of applied participants» —
 //     registration & logistics (named): delivery address, contact, participations,
 //     laboratory activity, courier. Identical columns for T and C schemes.
+//     The courier is typed freely (a waybill fits in it) — masked as the identity columns are (round 9, T2).
 //   • F 7.2.1-6 «Кодиран списък на резултатите / Encrypted list of results» —
 //     name ↔ lab code + sample code, one row PER CHARACTERISTIC the lab registered
 //     for (rowspan groups), each with its standard code. Manager only.
@@ -92,7 +93,7 @@ export function renderRegistered(s: Scheme, lang: Lang, opts?: DocOptions): stri
             <td>${maskCell(reveal, p.email ?? "", lang)}</td>
             <td class="c">${esc(String(p.participations ?? 1))}</td>
             <td class="c">${activity}</td>
-            <td class="c">${esc(p.courier ?? "")}</td>
+            <td class="c">${maskCell(reveal, p.courier ?? "", lang)}</td>
           </tr>`
         )
         .join("")

@@ -17,11 +17,11 @@ const actions = src("lib/actions.ts");
 // (lines about an organisation itself — «entity:…», no code — may keep it: they are redacted on display)
 const codedWithBy = actions.split("\n").filter((l) => /logAs\(|logActivity\(/.test(l) && /targetCode: (p|part!?|t\.part|own|meta)\b|\.\.\.meta/.test(l) && /\bby\b[:,} ]/.test(l) && /after: \{[^}]*\bby\b/.test(l));
 t("SA-1: no journal line about a participation writes an account id in its after", codedWithBy.length === 0 && !/after: \{ \.\.\.\(meta\.after \?\? \{\}\), by \}/.test(actions) && !/targetCode: t\.part\.code, after: \{ by \}/.test(actions) && !/"participant\.applied_online", \{[^\n]*after: \{ by:/.test(actions), codedWithBy.join("\n").slice(0, 400));
-t("SA-1: the journal page redacts per line by names.view", /authorize\(viewer, "names\.view", e\.schemeId \?\? undefined\) \? e : redactActivityForStaff\(e\)/.test(src("app/activity/page.tsx")));
+t("SA-1: the journal page redacts per line by names.view", /authorize\(viewer, "names\.view", e\.schemeId \?\? undefined\) \|\| \(e\.action === "deadline\.extended" && authorize\(viewer, "order\.manage", e\.schemeId \?\? undefined\)\) \? e : redactActivityForStaff\(e\)/.test(src("app/activity/page.tsx")));
 t("SA-1: the redactor scrubs subject, before and after", /subject: staffLine \? e\.subject : scrubRef\(e\.subject\)/.test(src("lib/redact.ts")) && /after: staffLine \? e\.after : scrubIdentity\(e\.after\)/.test(src("lib/redact.ts")));
 // SC-1: an organisation's e-mail words only to who sees names or manages the organisations
 const notices = src("app/notices/page.tsx");
-t("SC-1: «Изпратени имейли» shows a message's words only by code, names.view, or labs.manage (no scheme)", /const seesWords = \(m: \{ schemeId\?: string; code\?: string; kind: string \}\) => \(!!m\.code && !COURIER_NOTICE_KINDS\.has\(m\.kind\)\) \|\| seesAddress\(m\.schemeId\) \|\| \(!m\.schemeId && managesLabs\);/.test(notices) && /\{seesWords\(m\) \? \(/.test(notices));
+t("SC-1: «Изпратени имейли» shows a message's words only by code, names.view, or labs.manage (no scheme)", /const seesWords = \(m: \{ schemeId\?: string; code\?: string; kind: string \}\) => \(!!m\.code && !COURIER_NOTICE_KINDS\.has\(m\.kind\) && !TYPED_NOTICE_KINDS\.has\(m\.kind\)\) \|\| seesAddress\(m\.schemeId\) \|\| seesOwnOrder\(m\) \|\| \(!m\.schemeId && managesLabs\);/.test(notices) && /\{seesWords\(m\) \? \(/.test(notices));
 // SC-3: the waybill
 t("SC-3: no waybill in the coded export's shipments", !/coded\/shipments\.csv[^\n]*waybill/.test(src("lib/round-export.ts")) && /carrier: _c, waybill: _w/.test(src("lib/round-export.ts")));
 // SC-5: the chain's size
@@ -516,6 +516,134 @@ t("a saved certificate or list body never reaches a role without names.view thro
   t("T5: the «signed» lock only when someone DID sign (review 2)", /if \(was && JSON\.stringify\(\[was\.name, was\.roleBg, was\.roleEn\]\) !== JSON\.stringify/.test(actions));
   t("T5: the lists' compiler by the same reading — the registered list and F 7.2.1-6 (review 4)", /return findTeamMember\(s\.team \?\? \[\], "coding"\);/.test(src("lib/docs/registered.ts")) && /const compiler = findTeamMember\(s\.team \?\? \[\], "coding"\);/.test(src("lib/docs/results-coded.ts")) && !/function teamRole/.test(src("lib/docs/results-coded.ts")));
   t("T5: the sample teams carry their duties", /duties: \["manager"\]/.test(src("lib/seed-force.ts")) && /duties: \["technical"\]/.test(src("lib/seed-force.ts")) && /duties: \["manager"\]/.test(src("lib/seed-paving-blocks.ts")));
+}
+
+// ── round 9, stage 2 — T2 free text (Ivaylo 2026-11-13, option b): who sees codes only reads no typed words ──────────
+// (the rule end to end, every page as every role: scratchpad qa/round9/freetext/verify-freetext.mjs)
+{
+  const red = await import("../src/lib/redact.ts");
+  const nk = await import("../src/lib/notice-kinds.ts");
+  type CE = Parameters<typeof red.redactCaseEventForStaff>[0];
+  type AE = Parameters<typeof red.redactActivityForStaff>[0];
+  const WB = "товарителница 62 555 444 333", NAME = "Лаборатория Тест ООД", PLAIN = "получено от Иван — всичко наред";
+  const ce = (p: Partial<CE>): CE => ({ id: "c", schemeId: "S", code: "26111701", kind: "other", at: "2026-11-15", recordedBy: "ana@ptsbg.eu", recordedAt: "2026-11-15T10:00:00Z", source: "manual", ...p });
+
+  // F1 — a timeline step's typed words: hidden whatever they hold, said so; the rest of the step kept
+  for (const words of [WB, NAME, PLAIN, "ok", "12"]) {
+    const r = red.redactCaseEventForStaff(ce({ ref: words, note: words, voidReason: words, voidedAt: "2026-11-15T11:00:00Z", voidedBy: "ana@ptsbg.eu" }));
+    t(`round 9 F1: a step's reference, note and void reason hidden, whatever they hold («${words}»)`, r.ref === undefined && r.note === undefined && r.voidReason === undefined
+      && JSON.stringify(r.hidden) === JSON.stringify(["ref", "note", "voidReason"]) && r.kind === "other" && r.at === "2026-11-15" && r.recordedBy === "ana@ptsbg.eu" && r.voidedBy === "ana@ptsbg.eu", JSON.stringify(r));
+  }
+  const bare = ce({});
+  t("round 9 F1: a step with no typed words comes back as it is", red.redactCaseEventForStaff(bare) === bare);
+  t("round 9 F1: an older stamp of a laboratory — its recorder «laboratory»", red.redactCaseEventForStaff(ce({ source: "auto", recordedBy: "office@lab.bg", note: "x" })).recordedBy === red.LAB_RECORDER);
+  // …but the app's own note on a step it stamped (AUTO_NOTE_KINDS) — read where it is written; a typed one never
+  const own9 = red.redactCaseEventForStaff(ce({ source: "auto", kind: "receipt_confirmed", recordedBy: red.LAB_RECORDER, ref: "W2-52234", note: "онлайн протокол за получаване 11:24: НЕгоден · online receipt protocol 11:24: NOT fit" }));
+  t("round 9 F1: the app's own note on its stamp (a listed kind) kept — its reference hidden", own9.note === "онлайн протокол за получаване 11:24: НЕгоден · online receipt protocol 11:24: NOT fit" && own9.ref === undefined && own9.hidden === undefined /* the app's own ref is not announced as typed (round 9 review) */, JSON.stringify(own9));
+  t("round 9 F1: …not of an unlisted kind (PTS's dispatch names the scheme's documents), nor a step PTS recorded by hand (the chain's stamps)",
+    red.redactCaseEventForStaff(ce({ source: "auto", kind: "items_dispatched", note: "dispatched; documents: Декларация" })).note === undefined
+    && red.redactCaseEventForStaff(ce({ source: "manual", kind: "receipt_confirmed", note: `device received 12:30 (calibration chain) — recorded by PTS: ${NAME}` })).note === undefined
+    && !("items_dispatched" in red.AUTO_NOTE_KINDS));
+  // every auto stamp of a listed kind is one read for the list: a new one, or a changed note, fails here until read
+  const REVIEWED9 = [
+    "prev ? \"заменен от лабораторията (качен в портала) · replaced by the laboratory (portal upload)\" : \"качен от лабораторията (портала) · uploaded by the laboratory (portal)\",",
+    "`device received ${sofiaTime(at)} (calibration chain)`, source: \"auto\",",
+    "`device handed on ${sofiaTime(at)} (calibration chain)`, source: \"auto\",",
+    "`онлайн протокол за получаване ${fields.time}: ${fields.suitable ? \"годен\" : \"НЕгоден\"}${fields.undamaged ? \"\" : \" (повредена опаковка)\"} · online receipt protocol ${fields.time}: ${fields.suitable ? \"fit\" : \"NOT fit\"}${fields.undamaged ? \"\" : \" (packaging damaged)\"}`,",
+    "`онлайн резултати — версия ${version}${lateBy ? \" (отключено от PTS след срока)\" : \"\"} · online results — version ${version}${late}`, recordedBy: LAB_RECORDER, source: \"auto\""
+  ];
+  const listed9 = [...actions.matchAll(/addCaseEvent\(\{([\s\S]*?)\}\)/g)].map((m) => m[1]).filter((b) => /source: "auto"/.test(b))
+    .filter((b) => (/kind: "([a-z_]+)"/.exec(b)?.[1] ?? "") in red.AUTO_NOTE_KINDS || /kind: slotDef\.kind/.test(b)).map((b) => (/note: ([^\n]*)/.exec(b)?.[1] ?? "").trim());
+  t("round 9 F1: every auto stamp of a listed kind writes a note read for the list (built from the record's data only)", listed9.length === REVIEWED9.length && listed9.every((n) => REVIEWED9.includes(n)), listed9.filter((n) => !REVIEWED9.includes(n)).join(" | "));
+  t("round 9 F1: the calibration chain's stamp note — to who sees names only", /note: seesNames \? st\.received\.note : undefined/.test(src("app/schemes/[id]/page.tsx")) && /note: seesNames \? st\.sent\.note : undefined/.test(src("app/schemes/[id]/page.tsx")));
+  t("round 9 F1: the pages hide (the case file, traceability, the audit pack's codes-only copy) and say so; the round export (names only) masks",
+    /canReveal \? e : redactCaseEventForStaff\(e\)/.test(src("app/schemes/[id]/participants/[code]/page.tsx")) && /data-typed-hidden/.test(src("app/schemes/[id]/participants/[code]/page.tsx"))
+    && /reveal \? rawEvents : rawEvents\.map\(redactCaseEventForStaff\)/.test(src("app/schemes/[id]/traceability/page.tsx")) && /e\.hidden\?\.length \?/.test(src("app/schemes/[id]/traceability/page.tsx"))
+    && /showNames \? e : redactCaseEventForStaff\(e\)/.test(src("app/schemes/[id]/audit-pack/route.ts")) && /data-typed-hidden/.test(src("app/schemes/[id]/audit-pack/route.ts"))
+    && /maskCaseEventForExport\(e\)/.test(src("lib/round-export.ts")) && /maskActivityForExport\(e\)/.test(src("lib/round-export.ts")));
+  // decision 3 — the audit pack: its results and their evaluation only with results.read
+  t("round 9: the audit pack's results and evaluation only to who reads the results (the head: the pack without them)",
+    /const seesResults = await mayNow\("results\.read", id\);/.test(src("app/schemes/[id]/audit-pack/route.ts")) && /const metrics = seesResults \? metricsForScheme\(scheme\) : \[\];/.test(src("app/schemes/[id]/audit-pack/route.ts"))
+    && /\$\{seesResults \? `<h3>/.test(src("app/schemes/[id]/audit-pack/route.ts")));
+
+  // the journal — an allow-list: words only of the listed actions; the label, the code, the time otherwise
+  const ev = (p: Partial<AE>): AE => ({ id: "1", at: "2026-11-15T10:00:00Z", actorEmail: "ana@ptsbg.eu", actorRole: "staff", action: "x", summary: "", ...p });
+  for (const [action, summary] of [["case.updated", `Timeline: other for 26111701 (${PLAIN})`], ["deadline.extended", `26111701: the results deadline extended to 2026-12-01 by Order No. 7 of 2026-11-15 — ${NAME}`],
+    ["labdoc.uploaded", "Proforma invoice No. 12345 sent to 26111701"], ["some.new_action", NAME]]) {
+    const r = red.redactActivityForStaff(ev({ action, summary, schemeId: "S", targetCode: "26111701" }));
+    t(`round 9 journal: «${action}» — the label, the code and the time, never its words`, r.summary === "" && r.summaryHidden === true && r.targetCode === "26111701" && r.at === "2026-11-15T10:00:00Z", JSON.stringify(r));
+  }
+  const ok9 = red.redactActivityForStaff(ev({ action: "results.submitted", summary: "26111701 submitted its results online — version 2", schemeId: "S" }));
+  t("round 9 journal: a line built from the record's own data — as it is", ok9.summary === "26111701 submitted its results online — version 2" && !ok9.summaryHidden);
+  const mail9 = red.redactActivityForStaff(ev({ action: "lab_application.approved", summary: "Lab application approved for office@primer-lab.bg" }));
+  t("round 9 journal: an older line's e-mail in shown words — masked", !mail9.summary.includes("primer-lab") && mail9.summary.includes("•••@•••"), mail9.summary);
+  const up9 = red.redactActivityForStaff(ev({ action: "lab.uploaded", summary: "Lab upload: protocol (Protokol_Primer_Lab_OOD.pdf)" }));
+  const disp9 = red.redactActivityForStaff(ev({ action: "delivery.dispatched", summary: "The object for 26111677 — 2026-11-11, waybill 62 123 456 789" }));
+  t("round 9 journal: older lines in the known forms — the file name and the waybill cut, as before", up9.summary === "Lab upload: protocol" && disp9.summary === "The object for 26111677 — 2026-11-11, waybill •••", `${up9.summary} | ${disp9.summary}`);
+  const ba9 = red.redactActivityForStaff(ev({ action: "deadline.extended", schemeId: "S", before: { until: "2026-11-20" },
+    after: { until: "2026-12-01", orderNo: "7", orderDate: "2026-11-15", reason: PLAIN, n: 3, ok: true, by: "entityuser:7b81e94d-0bbf-4008-a67c-f454b4bfbdaf", dates: { resultsDue: "2026-12-01" }, note: WB, number: "12345" } }));
+  t("round 9 journal: before/after — states, dates, numbers kept; every typed string and every id «•••»",
+    JSON.stringify(ba9.after) === JSON.stringify({ until: "2026-12-01", orderNo: "•••", orderDate: "2026-11-15", reason: "•••", n: 3, ok: true, by: "•••", dates: { resultsDue: "2026-12-01" }, note: "•••", number: "•••" })
+    && JSON.stringify(ba9.before) === JSON.stringify({ until: "2026-11-20" }), JSON.stringify(ba9.after));
+  const staff9 = red.redactActivityForStaff(ev({ action: "staff.added", summary: "Staff ana@ptsbg.eu added as staff", after: { by: "head@ptsbg.eu" } }));
+  t("round 9 journal: a line about PTS's own people — as before", staff9.summary === "Staff ana@ptsbg.eu added as staff" && JSON.stringify(staff9.after) === JSON.stringify({ by: "head@ptsbg.eu" }));
+  const actor9 = red.redactActivityForStaff(ev({ action: "auth.logout", summary: "Signed out", actorEmail: "office@lab.bg", actorRole: "none", actorName: "office@lab.bg", actorId: "u" }));
+  t("round 9 journal: the actor's rules as before — an unrecognised account masked, no id", actor9.actorEmail === "•••@•••" && actor9.actorName === "•••@•••" && actor9.actorId === undefined);
+  t("round 9 journal: the page marks a line whose words are hidden, with its code", /\.map\(\(e\): ShownActivityEvent => \(authorize\(viewer, "names\.view", e\.schemeId \?\? undefined\) \|\| \(e\.action === "deadline\.extended" && authorize\(viewer, "order\.manage", e\.schemeId \?\? undefined\)\) \? e : redactActivityForStaff\(e\)\)\)/.test(src("app/activity/page.tsx")) && /data-summary-hidden/.test(src("app/activity/page.tsx")));
+  // every action the portal writes is placed — shown with its reason, or hidden — so a new one is decided, not leaked
+  const { readdirSync } = await import("node:fs");
+  const written9 = new Set<string>();
+  for (const f of readdirSync(new URL("../src/", import.meta.url), { recursive: true }) as string[]) {
+    if (!/\.(ts|tsx)$/.test(f)) continue;
+    const s = src(f);
+    for (const m of s.matchAll(/(?:logActivity\(|logAs\(\s*\{[^}]*\}\s*,|\blog\(|\.log\()\s*(?:[\w.!]+(?:\s*===\s*"[^"]*")?\s*\?\s*)?"([a-z_]+\.[a-z_0-9]+)"(?:\s*:\s*"([a-z_]+\.[a-z_0-9]+)")?/g)) { written9.add(m[1]); if (m[2]) written9.add(m[2]); }
+  }
+  const labelled9 = [...src("lib/i18n.ts").matchAll(/"act\.([a-z_]+\.[a-z_0-9]+)"/g)].map((m) => m[1]);
+  const unplaced9 = [...new Set([...labelled9, ...written9])].filter((a) => !/^(staff|role)\./.test(a) && !(a in red.SUMMARY_SHOWN) && !(a in red.SUMMARY_HIDDEN));
+  t("round 9 journal: every action written or labelled is placed — shown (with why) or hidden", unplaced9.length === 0 && written9.size > 100, `${written9.size} written; unplaced: ${unplaced9.join(", ")}`);
+  t("round 9 journal: shown and hidden do not overlap; the three typed ones hidden", Object.keys(red.SUMMARY_SHOWN).every((a) => !(a in red.SUMMARY_HIDDEN))
+    && ["case.updated", "deadline.extended", "labdoc.uploaded"].every((a) => a in red.SUMMARY_HIDDEN));
+
+  // F2 — the courier on F 7.2.1-4: masked as the identity columns
+  t("round 9 F2: the courier on «Регистрирани участници» masked for who sees no names", /<td class="c">\$\{maskCell\(reveal, p\.courier \?\? "", lang\)\}<\/td>/.test(src("lib/docs/registered.ts")) && !/esc\(p\.courier/.test(src("lib/docs/registered.ts")));
+
+  // F3 (and F4, F5 on «Известия») — a notice whose words carry what a person typed: its label, code and time to who sees
+  // no names, held or sent; released only by who sees names (as the courier's)
+  t("round 9 F3: the three kinds", ["participation.refused", "deadline.extended", "invoice.ready"].every((k) => nk.TYPED_NOTICE_KINDS.has(k)) && nk.TYPED_NOTICE_KINDS.size === 3);
+  const np9 = src("app/notices/page.tsx");
+  t("round 9 F3: «Известия» — held and sent, their words to who sees names in the scheme; the line said instead",
+    /const seesHeld = \(n: \{ schemeId\?: string; kind: string \}\) => \(!COURIER_NOTICE_KINDS\.has\(n\.kind\) && !TYPED_NOTICE_KINDS\.has\(n\.kind\)\) \|\| seesAddress\(n\.schemeId\) \|\| seesOwnOrder\(n\);/.test(np9)
+    && /!!m\.code && !COURIER_NOTICE_KINDS\.has\(m\.kind\) && !TYPED_NOTICE_KINDS\.has\(m\.kind\)/.test(np9)
+    && (np9.match(/data-typed-words-hidden/g) ?? []).length === 2 && /TYPED_NOTICE_KINDS\.has\(n\.kind\) \? <div data-typed-words-hidden/.test(np9));
+  t("round 9 F3: such a notice released only by who sees names in its scheme — said so",
+    /if \(decision === "release" && TYPED_NOTICE_KINDS\.has\(notice\.kind\) && !\(await mayNow\("names\.view", notice\.schemeId\)\)\) redirect\("\/notices\?refused=typed"\);/.test(actions) && /refusedAs === "typed" && <div role="alert" data-notice-typed-needed/.test(np9));
+  t("round 9 F3: the laboratory and the e-mail get the whole text — nothing stored differently", !/typed/.test(src("lib/notifications.ts")) && /Основание: \$\{reason\}/.test(src("lib/notify-events.ts")) && /по Заповед № \$\{orderNo\}/.test(src("lib/notify-events.ts")));
+
+  // F4 — an extension's order number and reason: to who sees names only, everywhere PTS's pages show them
+  const cp9 = src("app/schemes/[id]/participants/[code]/page.tsx");
+  t("round 9 F4: the case file — the deadlines «удължен по заповед», the list without number and reason, for who sees no names",
+    (cp9.match(/seesExtension \? \(lang === "bg" \? `удължен по Заповед №/g) ?? []).length === 2 && /\{seesExtension \? <>\{lang === "bg" \? "Заповед №" : "Order No\."\} \{e\.orderNo\}/.test(cp9));
+  t("round 9 F4: the calibration chain — a stop's window «удължен», its order's number to who sees names",
+    /orderNo: seesNames \? w\.ext\?\.orderNo : undefined, extended: !!w\.ext/.test(src("app/schemes/[id]/page.tsx")) && /r\.due\.extended \?/.test(src("components/SchemeChainPanel.tsx")));
+
+  // the side items
+  t("round 9: a carrier's offer takes 60 characters, as the server", /name="carrier" required maxLength=\{60\}/.test(src("components/CarrierOffersPanel.tsx")));
+  t("round 9: the subcontracted part on the case file only under the reveal step (an opening on record)", /\{revealed \? `: \$\{d\.confirmations\.subcontractedPart/.test(cp9) && !/canReveal \? `: \$\{d\.confirmations\.subcontractedPart/.test(cp9));
+}
+
+
+// ── round 9, part 2 review: who typed it reads it; the app's own steps are not «typed» ───────────────
+{
+  const { redactCaseEventForStaff: rc } = await import("../src/lib/redact.ts");
+  const own = rc({ id: "e", schemeId: "S", code: "1", kind: "results_returned", day: "2026-11-15", source: "auto", recordedBy: "laboratory", ref: "v1", note: "online results — version 1" } as never) as { ref?: string; note?: string; hidden?: string[] };
+  t("R9 review: a step the app stamped — its ref kept out, never announced as typed words; its note shown", own.ref === undefined && !(own.hidden ?? []).includes("ref") && own.note === "online results — version 1");
+  const typed = rc({ id: "e", schemeId: "S", code: "1", kind: "other", day: "2026-11-15", source: "manual", recordedBy: "staff@x", ref: "товарителница 1", note: "бележка" } as never) as { ref?: string; note?: string; hidden?: string[] };
+  t("R9 review: …a step PTS typed — its ref and note hidden and announced", typed.ref === undefined && typed.note === undefined && (typed.hidden ?? []).includes("ref") && (typed.hidden ?? []).includes("note"));
+  const pp = src("app/schemes/[id]/participants/[code]/page.tsx");
+  t("R9 review: an extension's Order number and reason — also to who issues the Orders (the head typed them)", /const seesExtension = canReveal \|\| \(await mayNow\("order\.manage", id\)\);/.test(pp) && (pp.match(/seesExtension \?/g) ?? []).length >= 2
+    && /e\.action === "deadline\.extended" && authorize\(viewer, "order\.manage"/.test(src("app/activity/page.tsx")) && /const seesOwnOrder = /.test(src("app/notices/page.tsx")));
+  t("R9 review: the messages name who can act — the journal for the scheme manager; the notice sent by the scheme manager", /думите на реда — за ръководителя на схемата"/.test(src("app/activity/page.tsx")) && /изпраща го ръководителят на схемата/.test(src("app/notices/page.tsx")));
+  t("R9 review: the scheme page links the audit pack with names for who sees names", /\{seesNames && <a href=\{`\/schemes\/\$\{id\}\/audit-pack\?lang=\$\{lang\}&names=1`\}/.test(src("app/schemes/[id]/page.tsx")));
 }
 
 console.log(`security-sweep.test: ${pass} passed, ${fail} failed`);

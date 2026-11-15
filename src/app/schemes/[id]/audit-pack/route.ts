@@ -4,7 +4,7 @@ import { getScheme } from "@/lib/store";
 import { listParticipants, withoutIdentity } from "@/lib/participants";
 import { namesFor } from "@/lib/identities";
 import { listCaseEvents } from "@/lib/case-events";
-import { redactCaseEventForStaff } from "@/lib/redact";
+import { redactCaseEventForStaff, type ShownCaseEvent } from "@/lib/redact";
 import { getDoc } from "@/lib/documents";
 import { metricsForScheme, scoreMetric, sigmaFloor } from "@/lib/scoring";
 import { esc, pick } from "@/lib/doc-shell";
@@ -54,6 +54,9 @@ async function serve(req: NextRequest, ctx: { params: Promise<{ id: string }> })
     const wantNames = req.nextUrl.searchParams.get("names") === "1";
   const showNames = wantNames && (await mayNow("names.view", id)); // the scheme manager and the coding expert (2.4)
   if (showNames) await logActivity("names.viewed", { schemeId: id, subject: "audit-pack", summary: "Laboratory names shown with their codes — the audit pack" });
+  // Ivaylo (round 9, decision 3): the pack goes to every codes.view role; its results and their evaluation only to who
+  // reads the results — the head gets the timelines without them
+  const seesResults = await mayNow("results.read", id);
 
   // names only when a manager asked for them — an opening, on record (2.3)
   const participants = showNames ? await namesFor(id, await listParticipants(id)) : (await listParticipants(id)).map(withoutIdentity);
@@ -62,14 +65,15 @@ async function serve(req: NextRequest, ctx: { params: Promise<{ id: string }> })
   // full-scheme fetch is newest-first; each code's slice is re-sorted below.
   // Without names, also without a lab's e-mail or uploaded file name (N4).
   // voided steps are part of the record — included, and marked (part 0.9)
-  const allEvents = (await listCaseEvents(id, undefined, { includeVoided: true })).map((e) => (showNames ? e : redactCaseEventForStaff(e)));
+  // round 9 (T2): the codes-only copy hides a step's typed words — hidden, never masked (the internal copy, ?names=1, keeps them)
+  const allEvents = (await listCaseEvents(id, undefined, { includeVoided: true })).map((e): ShownCaseEvent => (showNames ? e : redactCaseEventForStaff(e)));
   const eventsByCode = new Map<string, typeof allEvents>();
   for (const e of allEvents) {
     const arr = eventsByCode.get(e.code);
     if (arr) arr.push(e);
     else eventsByCode.set(e.code, [e]);
   }
-  const metrics = metricsForScheme(scheme);
+  const metrics = seesResults ? metricsForScheme(scheme) : [];
   const isCal = scheme.type === "C";
   // Score ONCE per metric for the whole scheme (scoreMetric walks every code), then
   // index by code — the pack REUSES the Final Report's numbers instead of
@@ -119,13 +123,13 @@ async function serve(req: NextRequest, ctx: { params: Promise<{ id: string }> })
           // a voided step stays in the pack, struck through, with who/when/why
           const strike = e.voidedAt ? ' style="text-decoration:line-through;color:#888"' : "";
           const voided = e.voidedAt
-            ? `<div style="color:#a33;text-decoration:none">${L("voided", "анулирано")} ${fmtDate(e.voidedAt.slice(0, 10))}${e.voidedBy ? ` · ${esc(e.voidedBy)}` : ""} — ${esc(e.voidReason ?? "")}</div>`
+            ? `<div style="color:#a33;text-decoration:none">${L("voided", "анулирано")} ${fmtDate(e.voidedAt.slice(0, 10))}${e.voidedBy ? ` · ${esc(e.voidedBy)}` : ""}${e.voidReason ? ` — ${esc(e.voidReason)}` : ""}</div>`
             : "";
           return `<tr>
           <td class="d"${strike}>${fmtDate(e.at)}</td>
           <td${strike}>${L(kindEn(e.kind), kindBg(e.kind))}</td>
           <td${strike}>${esc(refCell)}</td>
-          <td>${esc(e.note ?? "")}${voided}</td>
+          <td>${esc(e.note ?? "")}${e.hidden?.length ? `<span class="muted" data-typed-hidden>${L("the typed text is visible to the scheme manager and the coding expert", "въведеният текст се вижда от ръководителя на схемата и експерта по кодиране")}</span>` : ""}${voided}</td>
           <td class="s">${e.source === "auto" ? L("auto", "авт.") : L("manual", "ръчно")}</td>
         </tr>`;
         }).join("")
@@ -157,10 +161,10 @@ async function serve(req: NextRequest, ctx: { params: Promise<{ id: string }> })
       <table class="tl"><thead><tr>
         <th>${L("Date", "Дата")}</th><th>${L("Event", "Събитие")}</th><th>${L("Ref / waybill", "Реф. / товарителница")}</th><th>${L("Note", "Бележка")}</th><th>${L("Source", "Източник")}</th>
       </tr></thead><tbody>${rows}</tbody></table>
-      <h3>${L("Reported results and evaluation", "Въведени резултати и оценка")}</h3>
+      ${seesResults ? `<h3>${L("Reported results and evaluation", "Въведени резултати и оценка")}</h3>
       ${resRows
         ? `<table class="rs"><thead><tr>${resHead}</tr></thead><tbody>${resRows}</tbody></table>`
-        : `<p class="muted">${L("No results reported.", "Няма въведени резултати.")}</p>`}
+        : `<p class="muted">${L("No results reported.", "Няма въведени резултати.")}</p>`}` : ""}
     </section>`);
   }
 
@@ -195,7 +199,7 @@ async function serve(req: NextRequest, ctx: { params: Promise<{ id: string }> })
   </span>
 </div>
 <h1>${esc(scheme.number)} — ${schemeTitle}</h1>
-<p class="sub">${L("Audit pack (codes only)", "Одиторски пакет (само кодове)")}${showNames ? L(" · with names", " · с имена") : ""} · ${L("generated", "генериран")} ${stamp} · ${participants.length} ${L("participants", "участници")}</p>
+<p class="sub">${L("Audit pack (codes only)", "Одиторски пакет (само кодове)")}${showNames ? L(" · with names", " · с имена") : ""}${seesResults ? "" : `<span data-no-results>${L(" · without the results (a right this role does not hold)", " · без резултатите (право, което тази роля няма)")}</span>`} · ${L("generated", "генериран")} ${stamp} · ${participants.length} ${L("participants", "участници")}</p>
 ${sections.join("") || `<p class="muted">${L("No participants yet.", "Все още няма участници.")}</p>`}
 </body></html>`;
 

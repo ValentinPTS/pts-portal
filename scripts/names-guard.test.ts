@@ -2,7 +2,7 @@
 // (§4.2, finding N4). Lines written before part 0.1 can carry a laboratory's
 // e-mail or the name of a file it uploaded; the redactors must mask both, and must
 // leave everything else — staff e-mails, app stamps, staff-typed entries — alone.
-import { LAB_ACTOR, LAB_RECORDER, redactActivityForStaff, redactCaseEventForStaff } from "../src/lib/redact.ts";
+import { LAB_ACTOR, LAB_RECORDER, maskActivityForExport as redactActivityForStaff, maskCaseEventForExport as redactCaseEventForStaff } from "../src/lib/redact.ts"; // round 9: the masking is the export's; the pages hide (security-sweep «round 9»)
 import type { ActivityEvent, CaseEvent } from "../src/lib/types.ts";
 
 let pass = 0, fail = 0;

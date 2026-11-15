@@ -88,6 +88,9 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
   const { lang, tr } = await getServerT();
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const canManage = await mayNow("participants.manage", id); // the applications name the labs (§4.2, 2.4)
+  // round 9 (T2): what a person typed about one participation (a chain stamp's note, an extension's order number)
+  // only to who sees names here
+  const seesNames = await mayNow("names.view", id);
   const seesOrder = await mayViewDoc(ORDER_DOC, id);
   const type = s.type;
   const slug = TYPE_SLUG[type];
@@ -429,6 +432,9 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
             {canManage && <Link href={`/schemes/${id}/applications`} className="hoverrow" style={menuRow}>📥 {tr("scheme.applications")}</Link>}
             <Link href={`/activity?scheme=${id}`} className="hoverrow" style={menuRow}>🕑 {tr("activity.viewForScheme")}</Link>
             <a href={`/schemes/${id}/audit-pack?lang=${lang}`} target="_blank" rel="noopener" className="hoverrow" style={menuRow}>⇩ {tr("activity.auditPack")}</a>
+            {/* the copy with the names and the typed words — only for who sees names here (round 9 review: the default copy,
+                the one handed to the auditor, hides the timeline's typed words from everyone) */}
+            {seesNames && <a href={`/schemes/${id}/audit-pack?lang=${lang}&names=1`} target="_blank" rel="noopener" className="hoverrow" style={menuRow} data-audit-pack-names>⇩ {lang === "bg" ? "Одиторски пакет — с имената" : "Audit pack — with names"}</a>}
             {/* the whole round (part 1.10, Реш. 136) — a manager's, journalled */}
             {canManage && <a href={`/schemes/${id}/export`} data-export="all" className="hoverrow" style={menuRow}>⇩ {tr("export.round")}</a>}
             {canManage && <a href={`/schemes/${id}/export?part=coded`} data-export="coded" className="hoverrow" style={menuRow}>⇩ {tr("export.coded")}</a>}
@@ -537,14 +543,15 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
             frozen: !!st.receivedAt, holding: !!st.receivedAt && !st.sentAt,
             receivedAt: st.receivedAt, sentAt: st.sentAt,
             // who recorded each step and how — never the PTS member's e-mail
-            received: st.received ? { by: st.received.by, source: st.received.source, note: st.received.note } : undefined,
-            sent: st.sent ? { by: st.sent.by, source: st.sent.source, note: st.sent.note } : undefined,
+            // a stamp's note is PTS's words about this laboratory's stop — to who sees names only (round 9, T2)
+            received: st.received ? { by: st.received.by, source: st.received.source, note: seesNames ? st.received.note : undefined } : undefined,
+            sent: st.sent ? { by: st.sent.by, source: st.sent.source, note: seesNames ? st.sent.note : undefined } : undefined,
             // its window (3.4) — overdue a state, never a block
             due: (() => {
               const w = st.kind === "lab" ? chainWindow(s, st, offDays) : null;
               if (!w) return undefined;
               const state = deadlineState(w.due, st.sentAt, schemeNowMs(s));
-              return { text: fmtSchemeDate(w.due), orderNo: w.ext?.orderNo, overdue: state === "overdue", late: state === "late" };
+              return { text: fmtSchemeDate(w.due), orderNo: seesNames ? w.ext?.orderNo : undefined, extended: !!w.ext, overdue: state === "overdue", late: state === "late" };
             })(),
           }))}
           windowDays={windowDays(s)}

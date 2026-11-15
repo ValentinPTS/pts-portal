@@ -40,6 +40,11 @@ const KIND_TEXT: Record<string, { bg: string; en: string }> = {
  *  read, sent and released only by who sees names in that scheme. */
 export const COURIER_NOTICE_KINDS: ReadonlySet<string> = new Set(["items.dispatched", "carrier.offers"]);
 
+/** Round 9 (T2, Ivaylo 2026-11-13): the notices whose words carry what a PERSON typed about one participation — a
+ *  refusal's reason, an extension's order number, an invoice's or a proforma's number (lib/notify-events.ts). Read,
+ *  sent and released, as the courier's, only by who sees names in that scheme; the laboratory gets the whole text. */
+export const TYPED_NOTICE_KINDS: ReadonlySet<string> = new Set(["participation.refused", "deadline.extended", "invoice.ready"]);
+
 export function noticeKindText(kind: string, lang: "bg" | "en"): string {
   const t = KIND_TEXT[kind];
   if (t) return t[lang];

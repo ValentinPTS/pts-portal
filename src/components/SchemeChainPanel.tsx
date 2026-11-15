@@ -33,7 +33,7 @@ export interface ChainRow {
   received?: StampView; // who recorded the arrival
   sent?: StampView;     // who recorded the handover
   // its window (3.4): to hand on by — from its receipt, in working days, or its extension
-  due?: { text: string; orderNo?: string; overdue: boolean; late: boolean };
+  due?: { text: string; orderNo?: string; extended?: boolean; overdue: boolean; late: boolean };
 }
 
 export interface StampView { by: "lab" | "pts"; source?: ChainStampSource; note?: string }
@@ -234,7 +234,7 @@ export default function SchemeChainPanel({
               )}
               {r.due && (
                 <span data-chain-due={r.code} data-overdue={r.due.overdue ? "1" : "0"} style={{ fontSize: 11.5, color: r.due.overdue ? "#8f2f2f" : "var(--muted)", fontWeight: r.due.overdue ? 700 : 400 }}>
-                  · {L("до", "by")} {r.due.text}{r.due.orderNo ? ` (${L("удължен, Заповед №", "extended, Order No.")} ${r.due.orderNo})` : ""}
+                  · {L("до", "by")} {r.due.text}{r.due.orderNo ? ` (${L("удължен, Заповед №", "extended, Order No.")} ${r.due.orderNo})` : r.due.extended ? ` (${L("удължен", "extended")})` : ""}
                   {r.due.overdue ? ` — ${L("просрочен", "overdue")}` : r.due.late ? ` — ${L("предаден след срока", "handed on late")}` : ""}
                 </span>
               )}

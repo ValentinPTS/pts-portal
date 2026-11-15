@@ -5,12 +5,12 @@ import { getScheme } from "@/lib/store";
 import { listParticipants } from "@/lib/participants";
 import { namesFor } from "@/lib/identities";
 import { listCaseEvents } from "@/lib/case-events";
-import { redactCaseEventForStaff } from "@/lib/redact";
+import { redactCaseEventForStaff, type ShownCaseEvent } from "@/lib/redact";
 import { getDoc } from "@/lib/documents";
 import { getServerT } from "@/lib/i18n-server";
 import { requireStaff } from "@/lib/roles";
 import { logActivity } from "@/lib/activity";
-import type { CaseEvent, CaseEventKind } from "@/lib/types";
+import type { CaseEventKind } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -40,11 +40,12 @@ export default async function TraceabilityPage({ params }: { params: Promise<{ i
   const { lang, tr } = await getServerT();
   const reveal = await mayNow("names.view", id); // dispatch with identities: the scheme manager or the coding expert (D18)
   if (reveal && participants.length) await logActivity("names.viewed", { schemeId: id, subject: "page:traceability", summary: "Laboratory names shown with their codes — traceability matrix" });
-  // A non-manager never sees a lab's e-mail or uploaded file name in a tooltip (N4).
-  const events = reveal ? rawEvents : rawEvents.map(redactCaseEventForStaff);
+  // A non-manager never sees a lab's e-mail or uploaded file name in a tooltip (N4) — nor, from round 9 (T2), any
+  // typed words of a step: hidden, never masked
+  const events: ShownCaseEvent[] = reveal ? rawEvents : rawEvents.map(redactCaseEventForStaff);
 
   // events arrive newest-first → the first match per (code, kind) is the latest
-  const latest = new Map<string, CaseEvent>();
+  const latest = new Map<string, ShownCaseEvent>();
   for (const e of events) {
     const k = `${e.code}|${e.kind}`;
     if (!latest.has(k)) latest.set(k, e);
@@ -109,7 +110,7 @@ export default async function TraceabilityPage({ params }: { params: Promise<{ i
                     // the lab's own signed file names it — manager only, like the file itself
                     const up = slot && reveal ? s.labUploads?.[p.code]?.[slot] : undefined;
                     if (e) {
-                      const tip = [docName(e.docKey), e.ref, e.note, e.recordedBy, e.source === "auto" ? "auto" : ""]
+                      const tip = [docName(e.docKey), e.ref, e.note, e.hidden?.length ? (lang === "bg" ? "‹въведеният текст се вижда от ръководителя на схемата и експерта по кодиране›" : "‹the typed text is visible to the scheme manager and the coding expert›") : "", e.recordedBy, e.source === "auto" ? "auto" : ""]
                         .filter(Boolean).join(" · ");
                       return (
                         <td key={m.kind} className="p-1 text-center" style={{ whiteSpace: "nowrap" }}>

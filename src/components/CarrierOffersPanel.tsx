@@ -37,7 +37,7 @@ export default function CarrierOffersPanel({ lang, schemeId, participantId, rec 
         {!chosen && offers.length < 5 && (
           <form data-carrier-add={participantId} className="flex gap-2 items-center" style={{ flexWrap: "wrap" }}
             onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const el = e.currentTarget; run(() => addCarrierOfferAction(schemeId, participantId, { carrier: fd.get("carrier"), price: fd.get("price"), days: fd.get("days"), note: fd.get("note") }), () => el.reset()); }}>
-            <input name="carrier" required maxLength={80} placeholder={L("превозвач", "carrier")} style={field} />
+            <input name="carrier" required maxLength={60} placeholder={L("превозвач", "carrier")} style={field} />
             <input name="price" required placeholder={L("цена, €", "price, €")} style={{ ...field, width: 90 }} />
             <input name="days" placeholder={L("дни", "days")} style={{ ...field, width: 60 }} />
             <input name="note" maxLength={200} placeholder={L("бележка", "note")} style={field} />

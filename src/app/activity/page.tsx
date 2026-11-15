@@ -3,7 +3,7 @@ import { sofiaZone } from "@/lib/scheme-dates";
 import Link from "next/link";
 import { requireCapAnywhere, getViewer, authorize, schemesFor } from "@/lib/access";
 import { listActivity, listActivityActions, journalHealth } from "@/lib/activity";
-import { LAB_ACTOR, redactActivityForStaff } from "@/lib/redact";
+import { LAB_ACTOR, redactActivityForStaff, type ShownActivityEvent } from "@/lib/redact";
 import { listSchemeSummaries } from "@/lib/store";
 import { getServerT } from "@/lib/i18n-server";
 
@@ -42,7 +42,7 @@ export default async function ActivityPage({
   searchParams: Promise<{ scheme?: string; action?: string }>;
 }) {
   await requireCapAnywhere("journal.read"); // the role model (2.4)
-  const { tr } = await getServerT();
+  const { lang, tr } = await getServerT();
   const sp = await searchParams;
   const schemeId = (sp.scheme ?? "").trim() || undefined;
   const action = (sp.action ?? "").trim() || undefined;
@@ -57,7 +57,9 @@ export default async function ActivityPage({
   ]);
   const events = rawEvents
     .filter((e) => scope === "all" || (!!e.schemeId && scope.includes(e.schemeId)))
-    .map((e) => (authorize(viewer, "names.view", e.schemeId ?? undefined) ? e : redactActivityForStaff(e)));
+    // round 9 (T2): a line's words only by the allow-list (lib/redact.ts SUMMARY_SHOWN) for who sees no names in its scheme
+    .map((e): ShownActivityEvent => (authorize(viewer, "names.view", e.schemeId ?? undefined) || (e.action === "deadline.extended" && authorize(viewer, "order.manage", e.schemeId ?? undefined)) ? e : redactActivityForStaff(e)));
+  // (an extension's line in full also to who issues the Orders — the head typed its number and reason, round 9 review)
   const health = journalHealth();
 
   const selStyle = { border: "1px solid var(--line)", borderRadius: 8, padding: "6px 9px", fontSize: 13, background: "#fff" } as const;
@@ -118,7 +120,9 @@ export default async function ActivityPage({
                 </td>
                 <td className="p-2">
                   <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "var(--green-light)", borderRadius: 999, padding: "2px 8px", marginRight: 8 }}>{tr(`act.${e.action}`)}</span>
-                  {e.summary}
+                  {e.summaryHidden
+                    ? <span data-summary-hidden style={{ color: "var(--muted)", fontStyle: "italic" }}>{e.targetCode ? <span className="font-mono" style={{ fontStyle: "normal", color: "var(--ink)" }}>{e.targetCode} · </span> : null}{lang === "bg" ? "думите на реда — за ръководителя на схемата" : "the line's words — for the scheme manager"}</span>
+                    : e.summary}
                   {e.schemeId && (
                     <Link href={`/schemes/${e.schemeId}`} className="ml-2" style={{ fontSize: 12, color: "var(--muted)" }}>· {e.schemeId}</Link>
                   )}

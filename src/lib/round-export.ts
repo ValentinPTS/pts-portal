@@ -27,7 +27,7 @@ import { listRevisionsForScheme } from "./doc-revisions";
 import { getLab } from "./labs";
 import { listDesignations } from "./processing-roles";
 import { listSchemeRoles } from "./scheme-roles";
-import { redactActivityForStaff, redactCaseEventForStaff } from "./redact";
+import { maskActivityForExport, maskCaseEventForExport } from "./redact";
 import { DOCUMENTS, isListDoc, pairsNamesWithCodes, savedDocBody } from "./documents";
 import { hasCohortNames } from "./doc-release";
 import { renderCohortDoc } from "./cohort-doc";
@@ -463,7 +463,7 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
   addCoded("coded/submitted_values.csv", [...submitted].sort((a, b) => (codeById.get(a.participantId) ?? "").localeCompare(codeById.get(b.participantId) ?? "") || a.version - b.version).flatMap((x) => versionValueRows(x, codeById.get(x.participantId) ?? "—", labelOf, rank)), VALUE_COLUMNS);
   addCoded("coded/results_in_force.csv", inForceRows(coded.filter((p) => inFinalRound(s, p)), submitted, corrected, s.submissionLocks, labelOf, rank, s.labUploads), IN_FORCE_COLUMNS);
   // old stamps carry a lab's e-mail and file name: redacted as for staff (N4)
-  addCoded("coded/case_events.csv", events.map((e: CaseEvent) => { const r = redactCaseEventForStaff(e); return { ...r, recordedBy: r.recordedBy.startsWith("lab:") ? "laboratory" : r.recordedBy, schemeId: undefined }; }),
+  addCoded("coded/case_events.csv", events.map((e: CaseEvent) => { const r = maskCaseEventForExport(e); return { ...r, recordedBy: r.recordedBy.startsWith("lab:") ? "laboratory" : r.recordedBy, schemeId: undefined }; }),
     ["id", "code", "kind", "at", "ref", "note", "recordedBy", "recordedAt", "source", "docKey", "voidedAt", "voidedBy", "voidReason"]);
   // readBefore46: the first read by anyone, as it was kept before 4.6 — since, a read is
   // each person's (the bell's state, not round data)
@@ -488,7 +488,7 @@ export async function buildRoundExport(schemeId: string, want: "all" | "coded", 
     ["id", "role", "personEmail", "orderRef", "assignedBy", "assignedAt", "endedAt", "endedBy"]);
   addCoded("coded/processing_roles.csv", (await listDesignations({ schemeId, all: true })).map((d) => ({ ...d, schemeId: undefined })),
     ["id", "processor", "reviewer", "approver", "reviewerBasis", "coincide", "justification", "setBy", "setAt", "endedAt", "endedBy"]);
-  addCoded("coded/journal.csv", journal.map((e: ActivityEvent) => ({ ...redactActivityForStaff(e), schemeId: undefined })),
+  addCoded("coded/journal.csv", journal.map((e: ActivityEvent) => ({ ...maskActivityForExport(e), schemeId: undefined })),
     ["id", "at", "actorName", "actorEmail", "actorRole", "action", "targetCode", "subject", "summary", "before", "after"]);
 
   // saved versions of the documents: a body that names laboratories → identity/
