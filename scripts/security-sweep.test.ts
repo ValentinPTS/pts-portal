@@ -189,7 +189,7 @@ t("a saved certificate or list body never reaches a role without names.view thro
   t("Q2: the PDF's internal token only to the portal's own origin", /ownOrigins\.includes\(asked\) \? asked : ownOrigins\[0\]/.test(src("app/api/pdf/route.ts")));
   const we5 = src("components/WordEditor.tsx");
   t("R5UA-2: a link inside the portal, unsaved words — saved first, then followed", /document\.addEventListener\("click", onClick, true\)/.test(we5) && /void saveNow\.current\(\)\.then\(\(ok\) => \{\n\s*if \(ok\) return go\(\);/.test(we5) && /const go = \(\) => router\.push\(/.test(we5));
-  t("R5UA-3: a document saved over a newer one is refused, said", /if \(loaded !== null && loaded !== kept\) \{ stale = true; return \{\}; \}/.test(actions) && /if \(stale\) return \{ error: DOC_STALE, stale: true \};/.test(actions) && /rev: revRef\.current/.test(we5) && /initialRev=\{s\.docs\?\.\[doc\]\?\.rev \?\? 0\}/.test(src("app/schemes/[id]/build/[doc]/page.tsx")));
+  t("R5UA-3: a document saved over a newer one is refused, said", /if \(loaded !== null && loaded !== kept\) \{ stale = true; return \{\}; \}/.test(actions) && /if \(stale\) return \{ error: DOC_STALE, stale: true, rev: keptRev, sid: keptSid \?\? null \};/.test(actions) && /rev: revRef\.current/.test(we5) && /initialRev=\{s\.docs\?\.\[doc\]\?\.rev \?\? 0\}/.test(src("app/schemes/[id]/build/[doc]/page.tsx")));
   t("R5UB-1: a form the page's scripts send is held until they are live — never the browser's own GET",
     /<script id="pts-hold-early-submit" dangerouslySetInnerHTML=\{\{ __html: PRE_HYDRATION_GUARD \}\} \/>/.test(src("app/layout.tsx")) && /!f\.hasAttribute\("action"\)&&!f\.hasAttribute\("method"\)\)\{e\.preventDefault\(\)/.test(src("app/layout.tsx")) && /setAttribute\("data-hydrated", ""\)/.test(src("components/Hydrated.tsx")));
   t("R5UB-2: a register number that is no text never throws", /typeof input\.number === "string" \? input\.number : ""/.test(src("lib/cert-register.ts")));
@@ -461,7 +461,7 @@ t("a saved certificate or list body never reaches a role without names.view thro
   t("R8UP-1: «⤢ Страници» hides the editor, never unmounts it (it came back empty and was saved empty)", /<div className="we-body" style=\{preview && pdfUrl \? \{ display: "none" \} : undefined\}>/.test(we9) && !/\{preview && pdfUrl \? \(/.test(we9));
   t("R8UP-2: the plan's team is locked in the editor like the Instruction's contacts", /body\.querySelectorAll<HTMLElement>\("div\.team"\)/.test(we9) && /const locked = Array\.from\(body\.querySelectorAll\("\[data-team-contacts\], div\.team"\)\);/.test(we9));
   t("R8UP-3: an organisation's user gets its own participation's certificate — its laboratory's name, opened as its own", /openLaboratories\(\{ actor: participantActor\(ps\.user\.id\), purpose: "lab\.own" \}, \{ entityId: ps\.entity\.id \}\)\)\.find\(\(l\) => l\.id === mine\.laboratoryId\)/.test(src("app/lab/doc/[scheme]/[doc]/route.ts")));
-  t("R8UP-5: «Заключи (попълване)» makes the editor read-only from the press, saves, then leaves", /if \(body\) body\.contentEditable = "false";\n    setBusy\("fill"\);\n    if \(!\(await saveAll\(\)\)\) \{ if \(body\) body\.contentEditable = "true"; setBusy\(""\); return; \}/.test(we9));
+  t("R8UP-5: «Заключи (попълване)» makes the editor read-only from the press, saves, then leaves", /if \(body\) body\.contentEditable = "false";\n    setBusy\("fill"\);\n    if \(!\(await saveAll\(\)\)\) \{ if \(syncingRef\.current\) alert\(syncLost\(\)\); else if \(body\) body\.contentEditable = "true"; setBusy\(""\); return; \}/.test(we9));
   t("R8 verification: a save never deselects; a click that moved nothing is no edit", /const \{ nb, ne \} = snap \?\? \(\(\) => \{ const x = snapshot\(\); setBg\(x\.nb\); setEn\(x\.ne\); return x; \}\)\(\);/.test(we9) && /if \(dragMoved\.current\) setSaved\(false\);/.test(we9));
   // RV8-2: no inline «!important» however spelled; a negative margin however spelled
   const { sanitizeDocHtml: san9 } = await import("../src/lib/sanitize-html.ts");
@@ -644,6 +644,98 @@ t("a saved certificate or list body never reaches a role without names.view thro
     && /e\.action === "deadline\.extended" && authorize\(viewer, "order\.manage"/.test(src("app/activity/page.tsx")) && /const seesOwnOrder = /.test(src("app/notices/page.tsx")));
   t("R9 review: the messages name who can act — the journal for the scheme manager; the notice sent by the scheme manager", /думите на реда — за ръководителя на схемата"/.test(src("app/activity/page.tsx")) && /изпраща го ръководителят на схемата/.test(src("app/notices/page.tsx")));
   t("R9 review: the scheme page links the audit pack with names for who sees names", /\{seesNames && <a href=\{`\/schemes\/\$\{id\}\/audit-pack\?lang=\$\{lang\}&names=1`\}/.test(src("app/schemes/[id]/page.tsx")));
+}
+
+// ── round 9, the editor's saves: the version belongs to the TAB, not to each opening of the editor (T3 F1/F2) ─────────
+{
+  const we10 = src("components/WordEditor.tsx");
+  const read10 = src("lib/doc-editor-read.ts");
+  const page10 = src("app/schemes/[id]/build/[doc]/page.tsx");
+  const tab = await import("../src/lib/doc-tab.ts");
+  const sync10 = we10.slice(we10.indexOf("async function syncWithTab("), we10.indexOf("function adoptStored("));
+  const adopt10 = we10.slice(we10.indexOf("function adoptStored("), we10.indexOf("function adoptStored(") + 1400);
+  // wiring
+  t("T3: every save is named; the tab's record told before it goes and when it is answered", /sid = newSaveId\(\);\n\s*mySids\.current = \[\.\.\.mySids\.current, sid\]\.slice\(-30\);\n\s*tabSent\(schemeId, docKey, sid\);\n\s*const r = await saveDocHtmlAction\(schemeId, docKey, \{ bg: nb, en: ne, rev: revRef\.current, sid \}\);\n\s*tabAnswered\(schemeId, docKey, sid, /.test(we10));
+  t("T3: the save chain is the tab's — the next opening of the document waits for it, the closing save too", /saveChain\.current = p\.catch\(\(\) => false\);\n\s*tabTrack\(schemeId, docKey, saveChain\.current\);/.test(we10) && /if \(!savedRef\.current && ref\.current\) void save\(snapshot\(\)\);/.test(we10));
+  t("T3 F1/F2: an editor opened again reads the tab's newer copy first — read-only before the first paint, every save after it", /useLayoutEffect\(\(\) => \{\n\s*if \(!canEdit \|\| syncingRef\.current\) return;\n\s*const plan = planOpen\(schemeId, docKey, initialRev\);\n\s*if \(!plan\.read\) return;\n\s*syncingRef\.current = true;\n\s*if \(ref\.current\) ref\.current\.contentEditable = "false";/.test(we10) && /async function saveOnceNow\(snap\?: \{ nb: string; ne: string \}\): Promise<boolean> \{\n[^\n]*\n[^\n]*\n\s*if \(editGen\.current !== savedGen\.current\) await synced\.current;/.test(we10) && /await Promise\.race\(\[plan\.wait\.catch\(\(\) => \{\}\), sleepMs\(SYNC_WAIT_MS\), woken\(\)\]\);/.test(sync10) && /if \(ref\.current && busyRef\.current !== "fill"\) ref\.current\.contentEditable = "true";/.test(sync10));
+  t("T3: what is read is shown and its version taken; nothing waits to be saved; a read that never comes is said", /revRef\.current = got\.rev;\n\s*tabAdopt\(schemeId, docKey, got\.rev, settled\);/.test(adopt10) && /savedGen\.current = editGen\.current;\n\s*setSaved\(true\);/.test(adopt10) && /<span data-sync-error/.test(we10) && /if \(l === lang \|\| syncingRef\.current\) return;/.test(we10));
+  t("T3: the server keeps each save's id with its version and names the stored ones in a refusal; any other id is none", /\[docKey\]: \{ bg: cleanBg, en: cleanEn, rev, \.\.\.\(sid \? \{ sid \} : \{\}\) \}/.test(actions) && /keptRev = kept; keptSid = cur\.docs\?\.\[docKey\]\?\.sid;\n\s*if \(loaded !== null && loaded !== kept\) \{ stale = true; return \{\}; \}/.test(actions) && /const sid = typeof sidIn === "string" && SAVE_ID\.test\(sidIn\) \? sidIn : undefined;/.test(actions));
+  t("T3: the editor's read and its peek are gated before anything is read", /export async function readDocForEditorAction\(schemeId: string, docKey: string\)[^\n]*\n[^\n]*\n\s*await requireCap\("codes\.view", schemeId\);[^\n]*\n\s*const d = await editorDocNow\(schemeId, docKey\);/.test(actions) && /export async function peekDocForEditorAction\(schemeId: string, docKey: string\)[^\n]*\n[^\n]*\n\s*await requireCap\("codes\.view", schemeId\);[^\n]*\n\s*const v = await editorDocVersion\(schemeId, docKey\);/.test(actions));
+  // the read: the page's gates, all and only, and its body line for line (the page keeps its own lines — gates read them)
+  const gates = (f: string) => [...f.matchAll(/await (require\w+)\(([^)]*)\)/g)].map((m) => `${m[1]}(${m[2]})`).sort().join(" | ");
+  const pinned = [
+    'if (isRestrictedDoc(doc)) await requireCap("names.view", id);',
+    "const coded = (await listParticipants(id)).filter(inRound);",
+    'const reveal = await mayNow("names.view", id);',
+    "const participants = reveal && showsIdentities(doc) ? await namesFor(id, coded) : coded.map(withoutIdentity);",
+    'if (reveal && pairsNamesWithCodes(doc) && participants.length) await logActivity("names.viewed", { schemeId: id, subject: `doc:${doc}`, summary: `Laboratory names shown with their codes — the document ${doc}` });',
+    'const saved0 = (isList || showsIdentities(doc)) && !reveal ? { bg: "", en: "" } : (savedDocBody(s, doc) ?? { bg: "", en: "" });',
+    "const dft = defaultDocHtml(s, doc, participants, reveal);",
+    '? { bg: retagFormBody(saved0.bg ?? "", dft.bg), en: retagFormBody(saved0.en ?? "", dft.en) }',
+    'refreshTeam(doc === "instruction" ? refreshInstruction(body, s, l) : body, s, l)',
+  ];
+  const peek10 = read10.slice(read10.indexOf("export async function editorDocVersion("), read10.indexOf("export async function editorDocNow("));
+  t("T3: the editor's read — the page's gates, all and only (for the body and the version alike), and its body line for line", gates(page10) === gates(read10) && gates(read10).split(" | ").length === 4 && (read10.match(/await editorGate\(id, doc\);/g) ?? []).length === 2 && pinned.every((l) => page10.includes(l) && read10.includes(l)) && /initialRev=\{s\.docs\?\.\[doc\]\?\.rev \?\? 0\}/.test(page10) && /rev: s\.docs\?\.\[doc\]\?\.rev \?\? 0, sid: s\.docs\?\.\[doc\]\?\.sid \?\? null/.test(read10), `${gates(page10)} ≠ ${gates(read10)}; missing: ${pinned.filter((l) => !(page10.includes(l) && read10.includes(l))).join(" ¦ ")}`);
+  t("T3: the autosave waits AUTOSAVE_MS after the last edit, never more than AUTOSAVE_MAX_WAIT_MS of steady typing", tab.AUTOSAVE_MS === 2500 && tab.AUTOSAVE_MAX_WAIT_MS === 20_000 && tab.autosaveWait(1000, 1000) === 2500 && tab.autosaveWait(0, 19_000) === 1000 && tab.autosaveWait(0, 25_000) === 0 && tab.autosaveWait(0, 25_000, 2500) === 2500 && /const wait = autosaveDelay\(dirtySince, atLeast\);/.test(we10) && (() => { const d: { current: number | null } = { current: null }; return tab.autosaveDelay(d) === 2500 && typeof d.current === "number" && tab.autosaveDelay({ current: Date.now() - 30_000 }) === 0 && tab.autosaveDelay({ current: Date.now() - 30_000 }, 2500) === 2500; })());
+  t("T3: «Готов» refused — said, never nothing", /if \(!r\?\.error\) setReady\(next\);\n\s*else alert\(/.test(we10));
+  // review 3
+  t("T3 review 1: one autosave queued or on its way at most — a hung save never floods; the maximum wait counts again from the queue", /function queueSave\(\) \{\n\s*dirtySince\.current = null;\n\s*if \(autoQueued\.current\) return;\n\s*const p = save\(\);\n\s*autoQueued\.current = p;/.test(we10) && /scheduleAutosave\(AUTOSAVE_MS\); else queueSave\(\); \}/.test(we10) && /if \(!savedRef\.current\) queueSave\(\);/.test(we10) && !/else void save\(\); \}/.test(we10) && !/if \(!savedRef\.current\) void save\(\);/.test(we10));
+  t("T3 review 2: an empty stored copy opens the start screen, as the page — never the old body shown as «saved»", /setCoverIn\(hasCover\(nb\) \|\| hasCover\(ne\)\);\n[^\n]*\n[^\n]*\n\s*if \(got\.bg === "" && got\.en === ""\) setStarted\(false\);/.test(adopt10));
+  t("T3 review 3: after a failed sync «Заключи (попълване)» keeps the editor read-only and says so; nothing to save is no refusal", /if \(!\(await saveAll\(\)\)\) \{ if \(syncingRef\.current\) alert\(syncLost\(\)\); else if \(body\) body\.contentEditable = "true";/.test(we10) && we10.indexOf("if (gen === savedGen.current) { dirtySince.current = null;") < we10.indexOf("if (syncingRef.current) return false;") && /Презаредете страницата/.test(we10.slice(we10.indexOf("const syncLost = "), we10.indexOf("const syncLost = ") + 300)));
+  t("T3 review 4: the sync stops when its editor is gone, and at the first refused read — never asked again (each refusal a navigation)", /useLayoutEffect\(\(\) => \{ alive\.current = true; return \(\) => \{ alive\.current = false; \}; \}, \[\]\);/.test(we10) && (sync10.match(/if \(!alive\.current\) return;/g) ?? []).length >= 5 && /if \(!v\) return failed\(\);/.test(sync10) && /if \(!got\) return failed\(\);/.test(sync10) && !/i >= SYNC_POLLS/.test(sync10));
+  t("T3 review 5: the wait is bounded by time; the version is peeked at (no body, nothing journalled), the body read once; a thrown save is answered", /const quick = deadline\(SYNC_POLL_TOTAL_MS\);/.test(sync10) && /const v = await ask<\{ rev: number; sid: string \| null \}>\(\(\) => peekDocForEditorAction\(schemeId, docKey\)\);/.test(sync10) && (we10.match(/readDocForEditorAction\(schemeId, docKey\)/g) ?? []).length === 1 && !/logActivity|savedDocBody|namesFor/.test(peek10) && /if \(sid && !pageLeaving\(\)\) tabAnswered\(schemeId, docKey, sid, null\);/.test(we10) && tab.SYNC_POLL_TOTAL_MS === 4000 && tab.deadline(0).passed() && !tab.deadline(60_000).passed());
+  t("T3 review 6: only THIS opening's echo is taken; another opening's late save is refused and said, never written over; an unanswered save is waited for, read-only", /if \(r\?\.stale && typeof r\.rev === "number" && !again && !!r\.sid && mySids\.current\.includes\(r\.sid\)\) \{ revRef\.current = r\.rev; continue; \}/.test(we10) && /if \(r\?\.stale && isOwnSave\(schemeId, docKey, r\.sid\)\) \{ setSaveErr\(/.test(we10) && /if \(unansweredAge\(schemeId, docKey\) >= SYNC_GIVE_UP_MS \|\| gaveUp\.passed\(\)\) break;/.test(sync10) && tab.SYNC_GIVE_UP_MS === 60_000);
+  // review 3, recheck
+  t("T3 recheck 1: the wait says up to a minute and that a reload does not shorten it; «Отвори записаното сега» takes the stored copy at once", /до една минута — презареждането не скъсява чакането/.test(sync10) && /function openStoredNow\(\) \{ openNow\.current = true; wake\.current\?\.\(\); \}/.test(we10) && (we10.match(/data-sync-open-now onClick=\{openStoredNow\}/g) ?? []).length === 2 && /while \(plan\.read && \(plan\.wait \|\| plan\.awaitSid\) && !openNow\.current\)/.test(sync10) && /if \(plan\.read \|\| openNow\.current\) \{/.test(sync10));
+  t("T3 recheck 1: …safe — a save landing after it is refused and said, never taken as this opening's echo", /!!r\.sid && mySids\.current\.includes\(r\.sid\)\) \{ revRef\.current = r\.rev; continue; \}/.test(we10) && !/isOwnSave\(schemeId, docKey, r\.sid\)\) \{ revRef\.current/.test(we10));
+  t("T3 recheck 2: a failed peek or read is tried again within the time bound; a refusal (Next's redirect) stops at the first", /if \(isNextRefusal\(e\) \|\| i >= SYNC_RETRIES \|\| gaveUp\.passed\(\) \|\| !alive\.current\) return null;/.test(sync10) && /const got = await ask<EditorDocNowIn>\(\(\) => readDocForEditorAction\(schemeId, docKey\)\);/.test(sync10) && tab.SYNC_RETRIES === 4 && tab.isNextRefusal({ digest: "NEXT_REDIRECT;push;/denied;307;" }) && tab.isNextRefusal({ digest: "NEXT_HTTP_ERROR_FALLBACK;404" }) && !tab.isNextRefusal(new TypeError("Failed to fetch")) && !tab.isNextRefusal(null) && !tab.isNextRefusal({ digest: 3 }));
+  t("T3 recheck 3: the refusal of a newer copy is true in this tab and in a duplicated one", /от този или от друг раздел/.test(we10) && /from this tab or another/.test(we10) && !/по-ранно отваряне на документа в този раздел/.test(we10));
+  // T3 F2, traced: a save broken off as the page leaves is not marked answered — the next opening waits for it
+  t("T3 F2 (traced): a save that throws while the page leaves stays unanswered — the next opening waits for it; one that fails while the page stays is answered", /if \(sid && !pageLeaving\(\)\) tabAnswered\(schemeId, docKey, sid, null\);/.test(we10) && /window\.addEventListener\("pagehide", \(\) => markLeaving\(true\)\);/.test(src("lib/doc-tab.ts")) && /window\.addEventListener\("pageshow", \(\) => markLeaving\(false\)\);/.test(src("lib/doc-tab.ts")) && !tab.pageLeaving() && (tab.markLeaving(true), tab.pageLeaving()) && (tab.markLeaving(false), !tab.pageLeaving()));
+  // behaviour: the tab's record (a storage of the test's own — a full page load keeps it, the module's memory not)
+  const kv = new Map<string, string>();
+  const ss = { getItem: (k: string) => kv.get(k) ?? null, setItem: (k: string, v: string) => { kv.set(k, v); } };
+  const S = "26-01-T-1", D = "plan";
+  tab.__tabForTests(ss);
+  const first = tab.planOpen(S, D, 0);
+  t("T3: a first opening — nothing to wait for, nothing to read", first.wait === null && !first.read && first.awaitSid === null);
+  // F1: the save of the editor before answered after its page left; Back/Forward bring back the copy of version 3
+  let settle!: () => void;
+  const onItsWay = new Promise<void>((res) => { settle = res; });
+  tab.tabSent(S, D, "s1-aaaaaaaa"); tab.tabTrack(S, D, onItsWay);
+  const during = tab.planOpen(S, D, 3);
+  t("T3 F1: opened again while that save is on its way — waits for it", during.wait === onItsWay && during.read);
+  tab.tabAnswered(S, D, "s1-aaaaaaaa", 4); settle(); await onItsWay; await Promise.resolve();
+  const after = tab.planOpen(S, D, 3);
+  t("T3 F1: …then reads the stored copy (version 4 known; the page's copy is version 3)", after.wait === null && after.read && after.awaitSid === null);
+  t("T3: a page drawn after that save — nothing to read", !tab.planOpen(S, D, 4).read && !tab.planOpen(S, "instruction", 0).read);
+  // F2: a full load while a save of this tab was on its way (its page gone, its answer never seen)
+  tab.tabSent(S, D, "s2-bbbbbbbb");
+  tab.__tabForTests(ss);
+  const f2 = tab.planOpen(S, D, 4);
+  t("T3 F2: a reload with a save of this tab unanswered — reads until the stored copy is that save", f2.read && f2.awaitSid === "s2-bbbbbbbb" && f2.wait === null);
+  t("T3 review 6: …its age is known (by this browser's clock); none once answered", tab.unansweredAge(S, D) >= 0 && tab.unansweredAge(S, D) < 5000);
+  tab.tabAdopt(S, D, 5, "s2-bbbbbbbb");
+  t("T3 F2: …once taken, an opening of version 5 reads nothing", !tab.planOpen(S, D, 5).read && tab.unansweredAge(S, D) === -1);
+  t("T3: this tab's saves are its own (through a reload); another's, or none, are not", tab.isOwnSave(S, D, "s2-bbbbbbbb") && tab.isOwnSave(S, D, "s1-aaaaaaaa") && !tab.isOwnSave(S, D, "s9-zzzzzzzz") && !tab.isOwnSave(S, D, null) && !tab.isOwnSave(S, "instruction", "s2-bbbbbbbb"));
+  tab.tabSent(S, D, "s3-cccccccc"); tab.tabAnswered(S, D, "s3-cccccccc", null);
+  t("T3: a refused save is answered — nothing to wait for — and stores no version", !tab.planOpen(S, D, 5).read && tab.planOpen(S, D, 4).read);
+  // review 4: an adoption never takes the tab's version back, and settles only the save it waited for
+  tab.tabSent(S, D, "s5-eeeeeeee"); tab.tabAnswered(S, D, "s5-eeeeeeee", 7);
+  tab.tabAdopt(S, D, 5, null);
+  t("T3 review 4: an opening that took version 5 after version 7 was answered — the tab still knows 7", tab.planOpen(S, D, 6).read && !tab.planOpen(S, D, 7).read);
+  tab.tabSent(S, D, "s6-ffffffff"); // a newer editor's save, on its way
+  tab.tabAdopt(S, D, 7, "s5-eeeeeeee");
+  t("T3 review 4: …and settles only the save it waited for — a newer editor's still on its way stays unanswered", tab.planOpen(S, D, 7).awaitSid === "s6-ffffffff");
+  tab.tabAdopt(S, D, 8, "s6-ffffffff");
+  t("T3 review 4: …which the opening that waited for it settles", tab.planOpen(S, D, 8).awaitSid === null && !tab.planOpen(S, D, 8).read);
+  tab.__tabForTests({ getItem: () => null, setItem: () => {} });
+  t("T3: another tab (its own storage, its own memory) — none of this tab's saves, nothing to read", !tab.isOwnSave(S, D, "s2-bbbbbbbb") && !tab.planOpen(S, D, 0).read);
+  tab.__tabForTests({ getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } });
+  tab.tabSent(S, D, "s4-dddddddd"); tab.tabAnswered(S, D, "s4-dddddddd", 9);
+  t("T3: storage blocked — the page's own memory still holds the record", tab.planOpen(S, D, 8).read && tab.isOwnSave(S, D, "s4-dddddddd") && tab.unansweredAge(S, D) === -1);
+  t("T3: a save id is one the server takes", tab.SAVE_ID.test(tab.newSaveId()) && !tab.SAVE_ID.test("x") && !tab.SAVE_ID.test("<script>aaaaaaaa"));
+  tab.__tabForTests(null);
 }
 
 console.log(`security-sweep.test: ${pass} passed, ${fail} failed`);

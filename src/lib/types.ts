@@ -696,7 +696,9 @@ export interface Scheme {
   // documents authored in the Word-like editor — rich HTML per language, keyed by
   // document key. This is the current builder's storage.
   // `rev`: a save count — an editor that loaded an older one is told, never written over (round 5, R5UA-3)
-  docs?: Record<string, { bg: string; en: string; rev?: number }>;
+  // `sid`: the id the editor gave the save that stored it — a refusal names it, so an editor tells its own tab's earlier
+  // save from another tab's or person's (round 9, T3 F1/F2; absent on a body stored before, or by a restore)
+  docs?: Record<string, { bg: string; en: string; rev?: number; sid?: string }>;
   // owner-filled values for fillable document form fields (checkboxes, options,
   // ratings, blanks). Keyed by document key → field id → value. JSONB, no migration.
   formData?: Record<string, Record<string, string>>;

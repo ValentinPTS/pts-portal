@@ -29,6 +29,8 @@ import { COURIER_NOTICE_KINDS, TYPED_NOTICE_KINDS } from "./notice-kinds";
 import { validateEik } from "./verify-eik";
 import { REGISTER_TEXT, type RegisterAnswer } from "./cert-register-model";
 import { getServerT } from "./i18n-server";
+import { editorDocNow, editorDocVersion, type EditorDocNow, type EditorDocVersion } from "./doc-editor-read";
+import { SAVE_ID } from "./doc-tab";
 import { fixPrices } from "./scheme-prices";
 import { participantViewer } from "./participation-view";
 import { readOffer, chooseProblem, liveOffers, OFFER_PROBLEM_TEXT, type CarrierOffer, type OfferProblem, type SentNotice } from "./carrier-model";
@@ -1314,7 +1316,7 @@ const docHtmlTooLarge = (bg: unknown, en: unknown) => String(bg ?? "").length > 
 // action's string ARGUMENTS toward one million — a document with one large picture (an inline picture is
 // one long string) could never be saved: «Maximum array nesting exceeded», a 500 (round 4, R4U-1). Inside
 // an object they are not counted; this action's own 3 MB bound holds. Plain strings are still taken.
-type DocBodies = { bg?: unknown; en?: unknown; rev?: unknown };
+type DocBodies = { bg?: unknown; en?: unknown; rev?: unknown; sid?: unknown };
 // a save from an editor that loaded an older version than the one kept now — another tab, another person
 // (round 5, R5UA-3: the later save silently undid the other)
 const DOC_STALE = "Документът е записан междувременно от друг раздел или човек — вашите промени не са записани. Копирайте ги, презаредете страницата и ги добавете отново. · The document was saved meanwhile from another tab or by another person — your changes were not saved. Copy them, reload the page and add them again.";
@@ -1326,7 +1328,7 @@ const bodiesOf = (body: unknown, enArg?: unknown): { bg: string; en: string } | 
   return bg === null || en === null ? null : { bg, en };
 };
 const NOT_A_BODY = "Документът не е получен като текст — нищо не е записано. · The document did not arrive as text — nothing was saved.";
-export async function saveDocHtmlAction(schemeId: string, docKey: string, body: DocBodies | string, enArg?: string): Promise<{ ok?: true; rev?: number; stale?: true; error?: string }> {
+export async function saveDocHtmlAction(schemeId: string, docKey: string, body: DocBodies | string, enArg?: string): Promise<{ ok?: true; rev?: number; stale?: true; error?: string; sid?: string | null }> {
   await requireDocWriter(docKey, schemeId);
   const scheme = await getScheme(schemeId);
   if (!scheme) throw new Error("Scheme not found");
@@ -1346,20 +1348,47 @@ export async function saveDocHtmlAction(schemeId: string, docKey: string, body: 
   // and written INSIDE the scheme's lock, and only this document merged into the scheme's documents as they
   // are then (round 6, R6S-9: read before, written after, a save of another document could undo this one's)
   const loaded = body && typeof body === "object" && typeof (body as DocBodies).rev === "number" ? ((body as DocBodies).rev as number) : null;
-  let rev = 0, stale = false;
+  // the save's own id (the editor names each save), kept beside the version: a refusal names the stored version and
+  // save, so an editor tells its own tab's earlier save — a closing one, one sent from a page just left — from another
+  // tab's or person's (round 9, T3 F1/F2). Anything else sent as an id is no id.
+  const sidIn = body && typeof body === "object" ? (body as DocBodies).sid : undefined;
+  const sid = typeof sidIn === "string" && SAVE_ID.test(sidIn) ? sidIn : undefined;
+  let rev = 0, stale = false, keptRev = 0;
+  let keptSid: string | undefined;
   await updateSchemeWith(schemeId, (cur) => {
     const kept = cur.docs?.[docKey]?.rev ?? 0;
+    keptRev = kept; keptSid = cur.docs?.[docKey]?.sid;
     if (loaded !== null && loaded !== kept) { stale = true; return {}; }
     rev = kept + 1;
-    return { docs: { ...(cur.docs ?? {}), [docKey]: { bg: cleanBg, en: cleanEn, rev } } };
+    return { docs: { ...(cur.docs ?? {}), [docKey]: { bg: cleanBg, en: cleanEn, rev, ...(sid ? { sid } : {}) } } };
   });
-  if (stale) return { error: DOC_STALE, stale: true };
+  if (stale) return { error: DOC_STALE, stale: true, rev: keptRev, sid: keptSid ?? null };
   // §8.3 — snapshot a revision (skips if unchanged). Records who saved it.
   const actor = (await getRoleContext()).email ?? "";
   await addRevision({ schemeId, docKey, bg: cleanBg, en: cleanEn, savedBy: actor });
   await logActivity("doc.saved", { schemeId, summary: `Document “${docKey}” edited` });
   revalidatePath(`/schemes/${schemeId}/build/${docKey}`, "page");
   return { ok: true, rev };
+}
+
+// The document as its editor's page gives it, read again (round 9, the editor's one save controller — T3 F1/F2): an
+// editor opened again in the same tab — Back and Forward bring the page back from Next's cache with the props of its
+// first opening; a reload drawn while a save of this tab was on its way — reads the stored copy before it takes a
+// keystroke. The same gates and the same body as the page (lib/doc-editor-read; security-sweep holds the two together).
+const NO_SUCH_DOC = "Непознат документ. · Unknown document.";
+export async function readDocForEditorAction(schemeId: string, docKey: string): Promise<EditorDocNow | { error: string }> {
+  if (typeof schemeId !== "string" || typeof docKey !== "string") return { error: NO_SUCH_DOC };
+  await requireCap("codes.view", schemeId); // as the page — its other gates in editorDocNow, in the page's order
+  const d = await editorDocNow(schemeId, docKey);
+  return d ?? { error: NO_SUCH_DOC };
+}
+// …only the stored version and the save that stored it: no body, so no names and nothing to journal — what an opening
+// that waits for this tab's last save peeks at until it is that one; the body is read once after (review 3)
+export async function peekDocForEditorAction(schemeId: string, docKey: string): Promise<EditorDocVersion | { error: string }> {
+  if (typeof schemeId !== "string" || typeof docKey !== "string") return { error: NO_SUCH_DOC };
+  await requireCap("codes.view", schemeId); // as the page — its other gates in editorDocVersion, in the page's order
+  const v = await editorDocVersion(schemeId, docKey);
+  return v ?? { error: NO_SUCH_DOC };
 }
 
 // Translate a whole document's HTML BG→EN, preserving tags/images (only text runs

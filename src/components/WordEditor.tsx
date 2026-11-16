@@ -23,8 +23,12 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { saveDocHtmlAction, translateDocHtmlAction, translateAction, addLibraryItemAction, saveDocTemplateAction, deleteDocTemplateAction, uploadCoverImageAction, setDocReadyAction } from "@/lib/actions";
+import { saveDocHtmlAction, translateDocHtmlAction, translateAction, addLibraryItemAction, saveDocTemplateAction, deleteDocTemplateAction, uploadCoverImageAction, setDocReadyAction, readDocForEditorAction, peekDocForEditorAction } from "@/lib/actions";
+// the tab's record of each document's saves (round 9, T3 F1/F2) and the autosave's timing
+import { AUTOSAVE_MS, SYNC_POLL_MS, SYNC_POLL_TOTAL_MS, SYNC_SLOW_POLL_MS, SYNC_WAIT_MS, SYNC_GIVE_UP_MS, SYNC_RETRIES, isNextRefusal, pageLeaving, autosaveDelay, deadline, unansweredAge, planOpen, tabTrack, tabSent, tabAnswered, tabAdopt, isOwnSave, newSaveId, type OpenPlan } from "@/lib/doc-tab";
 
+// the stored copy an opening of the editor reads (lib/doc-editor-read via readDocForEditorAction)
+type EditorDocNowIn = { bg: string; en: string; rev: number; sid: string | null };
 // the documents that name laboratories (lib/documents: LIST_DOCS with names + NAME_CODE_DOCS)
 const NAMES_DOCS = new Set(["registered", "results-coded", "certificate"]);
 import { useLang } from "@/components/LangProvider";
@@ -413,6 +417,20 @@ export default function WordEditor({
   const [selOpts, setSelOpts] = useState(0); // its option count (for the bar)
   const [preview, setPreview] = useState(false);              // inline PDF preview open
   const [saveErr, setSaveErr] = useState(""); // why the last save did not go through (R4U-1)
+  // the tab knows of a newer stored copy than this page's (Back/Forward, a reload while a save was on its way): read-only
+  // and «Зарежда…» until it is read (round 9, T3 F1/F2); syncErr — it could not be read, said
+  const [syncing, setSyncing] = useState(false);
+  const [syncErr, setSyncErr] = useState("");
+  const syncingRef = useRef(false);
+  const synced = useRef<Promise<void>>(Promise.resolve());
+  const [syncNote, setSyncNote] = useState(""); // still waiting for this tab's last save — said (review 3)
+  const alive = useRef(true); // this editor still on screen: the sync of one gone stops (review 3)
+  const mySids = useRef<string[]>([]); // the saves THIS opening sent — the only echo it takes as its own (review 3)
+  const autoQueued = useRef<Promise<boolean> | null>(null); // the one autosave queued or on its way (review 3)
+  // «Отвори записаното сега» pressed: the wait for this tab's unanswered save ends — the stored copy taken at once; `wake`
+  // ends the sleep between two peeks (review 3, recheck)
+  const openNow = useRef(false);
+  const wake = useRef<(() => void) | null>(null);
   const revRef = useRef(initialRev); // the version this editor holds — sent with each save (R5UA-3)
   const [pasteNote, setPasteNote] = useState(""); // pictures a paste could not bring (R4U-3)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);  // object URL of the rendered PDF
@@ -450,6 +468,7 @@ export default function WordEditor({
   useEffect(() => { savedRef.current = saved; }, [saved]);
   useEffect(() => { busyRef.current = busy; }, [busy]);
   const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dirtySince = useRef<number | null>(null); // the first edit not yet on its way — the autosave's maximum wait (round 9)
   const dragMoved = useRef(false);
   const drag = useRef<null | { mode: "resize" | "move"; handle: string; px: number; py: number; w: number; h: number; left: number; top: number; ratio: number }>(null);
 
@@ -923,12 +942,26 @@ export default function WordEditor({
   // Debounced autosave: persist a few seconds after edits stop, so work is never lost
   // and the owner doesn't have to remember to save. Skips when already saved or while
   // another action is running (the refs hold the latest values, not this closure's).
-  function scheduleAutosave() {
+  // …and while the typing goes on without a pause, at least every AUTOSAVE_MAX_WAIT_MS: each keystroke pushed it on,
+  // and 30 s of steady typing made no save at all — a crashed browser would have taken all of it (round 9, T3)
+  function scheduleAutosave(atLeast = 0) {
     if (autoTimer.current) clearTimeout(autoTimer.current);
+    const wait = autosaveDelay(dirtySince, atLeast);
     autoTimer.current = setTimeout(() => {
       // another act running (a picture, the PDF): tried again later, never dropped (R6UP-1)
-      if (!savedRef.current) { if (busyRef.current && busyRef.current !== "save") scheduleAutosave(); else void save(); }
-    }, 2500);
+      if (!savedRef.current) { if (busyRef.current && busyRef.current !== "save") scheduleAutosave(AUTOSAVE_MS); else queueSave(); }
+    }, wait);
+  }
+  // Never a second autosave behind one that is queued or on its way (review 3: a save that hung 32 s, then 55 saves in
+  // 22 s — past the maximum wait every keystroke's 0 ms timer queued one more behind it). The maximum wait counts again
+  // from the next edit; what is typed meanwhile goes with the next one (save()'s own autosave for the edits left).
+  function queueSave() {
+    dirtySince.current = null;
+    if (autoQueued.current) return;
+    const p = save();
+    autoQueued.current = p;
+    const clear = () => { if (autoQueued.current === p) autoQueued.current = null; };
+    p.then(clear, clear);
   }
   // The editable body's input handler: mark unsaved (only when it flips), reflow the
   // page gaps, and arm the autosave. Guarding setSaved avoids a redundant re-render on
@@ -987,7 +1020,7 @@ export default function WordEditor({
   function onEditorKeyDown(e: React.KeyboardEvent) {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
       e.preventDefault(); // Ctrl/⌘+S saves (Ctrl+B/I/U are native in contentEditable)
-      if (!savedRef.current) void save();
+      if (!savedRef.current) queueSave(); // (one queued at most, as the autosave — a held key never floods, review 3)
     }
     // The Instruction's contacts are one uneditable piece: a Backspace on the line after them (or a Delete on
     // the line before, or over a selection that takes them in) took the whole block in one keystroke (round
@@ -1173,6 +1206,114 @@ export default function WordEditor({
     window.addEventListener("beforeunload", h);
     return () => window.removeEventListener("beforeunload", h);
   }, []);
+  // Opened again in this tab (round 9, T3 F1/F2): Back and Forward bring this page back from Next's cache with the props
+  // of its first opening, and a reload can be drawn while this tab's last save is still on its way — the editor held an
+  // older copy and an older version: it showed the document without the words just saved, and every save of it was
+  // refused as «saved meanwhile from another tab or person». The tab's record (lib/doc-tab) says whether a save of this
+  // document is on its way or a newer version is stored; then the stored copy is read before a keystroke is taken.
+  // Read-only from before the first paint; the state is set after the effect (syncWithTab), never in it. Once, as the
+  // editor opens — what it compares is the page's props as they came.
+  // (on screen or not — a ref the effect sets, so React's development double mount keeps the sync going; review 3)
+  useLayoutEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  useLayoutEffect(() => {
+    if (!canEdit || syncingRef.current) return;
+    const plan = planOpen(schemeId, docKey, initialRev);
+    if (!plan.read) return;
+    syncingRef.current = true;
+    if (ref.current) ref.current.contentEditable = "false";
+    synced.current = syncWithTab(plan);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // the stored copy could not be read: read-only, every save refused, said with the way out (review 3)
+  const syncLost = () => L("Документът не можа да се зареди наново — нищо не се записва. Презаредете страницата.", "The document could not be loaded again — nothing is saved. Reload the page.");
+  async function syncWithTab(first: OpenPlan): Promise<void> {
+    await Promise.resolve();
+    if (!alive.current) return;
+    setSyncing(true);
+    const sleepMs = (ms: number) => new Promise((res) => setTimeout(res, ms));
+    const failed = () => { setSyncErr(syncLost()); }; // (syncingRef stays set: read-only, nothing saved over it)
+    const gaveUp = deadline(SYNC_GIVE_UP_MS);
+    // past a short while, said: up to a minute, a reload does not shorten it — and «Отвори записаното сега» (review 3, recheck)
+    const waitText = L("Последното записване от този раздел още не е потвърдено. Документът е само за четене до една минута — презареждането не скъсява чакането.", "The last save from this tab is not confirmed yet. The document is read-only for up to a minute — reloading does not shorten the wait.");
+    const woken = () => new Promise<void>((res) => { wake.current = res; });
+    // a peek or a read: a refusal (Next's redirect or not-found — the right or the session gone, each one a navigation)
+    // stops at the first; the connection or a restarting server is tried again a few times, within the time bound
+    async function ask<R>(call: () => Promise<R | { error: string }>): Promise<R | null> {
+      for (let i = 0; ; i++) {
+        try {
+          const r = await call();
+          return r && typeof r === "object" && "error" in r ? null : (r as R);
+        } catch (e) {
+          if (isNextRefusal(e) || i >= SYNC_RETRIES || gaveUp.passed() || !alive.current) return null;
+        }
+        await sleepMs(SYNC_POLL_MS * 2 ** i);
+        if (!alive.current) return null;
+      }
+    }
+    let plan = first;
+    // 1. the editor before this one in this page, its save still on its way — waited for (a while)
+    if (plan.wait) {
+      const note = sleepMs(SYNC_POLL_TOTAL_MS).then(() => { if (alive.current && syncingRef.current && !openNow.current) setSyncNote(waitText); });
+      await Promise.race([plan.wait.catch(() => {}), sleepMs(SYNC_WAIT_MS), woken()]);
+      void note;
+      if (!alive.current) return;
+      plan = planOpen(schemeId, docKey, initialRev);
+    }
+    // 2. while this tab's last save is unanswered: the stored VERSION peeked at (no body — no names, nothing journalled)
+    //    until it is that save — about SYNC_POLL_TOTAL_MS whatever the latency; past that, said, still read-only; the
+    //    save taken as lost only once it is SYNC_GIVE_UP_MS old (a landing after that is refused and said, never written
+    //    over: the only echo an opening takes is its own — review 3)
+    const quick = deadline(SYNC_POLL_TOTAL_MS);
+    while (plan.read && (plan.wait || plan.awaitSid) && !openNow.current) {
+      const v = await ask<{ rev: number; sid: string | null }>(() => peekDocForEditorAction(schemeId, docKey));
+      if (!alive.current) return;
+      // refused, or the connection gone through every try: stopped, said
+      if (!v) return failed();
+      if (!plan.wait && v.sid === plan.awaitSid) break;
+      if (quick.passed()) {
+        if (unansweredAge(schemeId, docKey) >= SYNC_GIVE_UP_MS || gaveUp.passed()) break;
+        setSyncNote(waitText);
+      }
+      await Promise.race([sleepMs(quick.passed() ? SYNC_SLOW_POLL_MS : SYNC_POLL_MS), woken()]);
+      if (!alive.current) return;
+      plan = planOpen(schemeId, docKey, initialRev);
+    }
+    // 3. the stored copy, read once (journalled once, as the page)
+    if (plan.read || openNow.current) {
+      const got = await ask<EditorDocNowIn>(() => readDocForEditorAction(schemeId, docKey));
+      if (!alive.current) return;
+      if (!got) return failed();
+      adoptStored(got, plan.awaitSid);
+    }
+    syncingRef.current = false;
+    // (never over «Заключи (попълване)» pressed meanwhile: read-only from its press, R8UP-5)
+    if (ref.current && busyRef.current !== "fill") ref.current.contentEditable = "true";
+    setSyncNote("");
+    setSyncing(false);
+  }
+  // «Отвори записаното сега»: the wait for this tab's unanswered save ends — the stored copy is taken at once. Safe: if that
+  // save lands later, the next save here is refused and said («a newer copy was saved meanwhile»), never written over —
+  // the only echo an opening takes as its own is a save it sent itself (review 3, recheck)
+  function openStoredNow() { openNow.current = true; wake.current?.(); }
+  // The stored copy, read: shown, its version taken. What is shown is what is stored — nothing waits to be saved (an
+  // edit a toolbar made on the old copy while it was read-only went with it). `settled`: the save of this tab it waited for.
+  function adoptStored(got: EditorDocNowIn, settled: string | null) {
+    const nb = sanitizeDocHtml(got.bg), ne = sanitizeDocHtml(got.en);
+    revRef.current = got.rev;
+    tabAdopt(schemeId, docKey, got.rev, settled);
+    setBg(nb); setEn(ne);
+    setCoverIn(hasCover(nb) || hasCover(ne));
+    // empty (another tab's «Върни автоматичния изглед»): the start screen, as the page shows it — the old body was kept on
+    // screen as «saved» and the next keystroke wrote it over the reset (review 3)
+    if (got.bg === "" && got.en === "") setStarted(false);
+    // (the language is БГ until this is done — the switch waits for it)
+    else if (ref.current) { ref.current.innerHTML = nb; setTimeout(refreshGuides, 0); }
+    else setStarted(true); // the start screen was up: the stored copy opens
+    if (autoTimer.current) clearTimeout(autoTimer.current);
+    dirtySince.current = null;
+    savedGen.current = editGen.current;
+    setSaved(true);
+  }
   useEffect(() => {
     if (!started) return;
     refreshGuides();
@@ -1585,7 +1726,7 @@ export default function WordEditor({
     return { nb: lang === "bg" ? cur : bg, ne: lang === "en" ? cur : en };
   }
   function switchLang(l: "bg" | "en") {
-    if (l === lang) return;
+    if (l === lang || syncingRef.current) return; // (the tab's newer copy first — round 9)
     const { nb, ne } = fold();
     setLang(l);
     if (ref.current) ref.current.innerHTML = sanitizeDocHtml(l === "bg" ? nb : ne);
@@ -1603,6 +1744,7 @@ export default function WordEditor({
     catch { setBusy(""); return alert(L("Не стана — проверете връзката и опитайте отново.", "It did not go through — check the connection and try again.")); }
     setBusy("");
     if (!r?.error) setReady(next);
+    else alert(L("«Готов» не е записано: ", "«Ready» was not saved: ") + r.error); // said, never nothing (round 9)
   }
 
   // Paste keeps the source formatting: take the clipboard's HTML flavour (another
@@ -1653,21 +1795,47 @@ export default function WordEditor({
   const saveOnce = useRef<(snap?: { nb: string; ne: string }) => Promise<boolean>>(async () => true);
   useEffect(() => { saveOnce.current = saveOnceNow; });
   async function saveOnceNow(snap?: { nb: string; ne: string }): Promise<boolean> {
+    // the tab's newer copy, when one is being read, first — never saved over (round 9, T3 F1/F2); with nothing to save,
+    // nothing to wait for: a link or an act is never held up by an opening still waiting for this tab's last save (review 3)
+    if (editGen.current !== savedGen.current) await synced.current;
     const gen = editGen.current;
-    if (gen === savedGen.current) { if (!savedRef.current) { savedRef.current = true; setSavedState(true); } return true; }
+    if (gen === savedGen.current) { dirtySince.current = null; if (!savedRef.current) { savedRef.current = true; setSavedState(true); } return true; }
+    // …one that could not be read (said on the bar): nothing saved over it — and nothing to save is no refusal (review 3)
+    if (syncingRef.current) return false;
     // (a snapshot taken as the editor closed — its page is gone by now — R7UP-5). A save never deselects: the
     // picture's or the dropdown's bar vanished 2.5 s after each change once those changes armed the autosave
     // (round 8 verification of R8UP-4)
     const { nb, ne } = snap ?? (() => { const x = snapshot(); setBg(x.nb); setEn(x.ne); return x; })();
     setBusy("save");
+    dirtySince.current = null;
+    let sid = "";
     try {
-      const r = await saveDocHtmlAction(schemeId, docKey, { bg: nb, en: ne, rev: revRef.current });
-      if (r?.error) { setSaveErr(r.error); return false; }
-      if (typeof r?.rev === "number") revRef.current = r.rev;
-      savedGen.current = gen; setSaveErr("");
-      if (editGen.current === gen) { savedRef.current = true; setSavedState(true); }
-      return true;
+      // each save named, the tab's record told before it goes and when it is answered (round 9): an opening of this
+      // document after this page waits for it, and a refusal naming this opening's own save is no conflict
+      for (let again = false; ; again = true) {
+        sid = newSaveId();
+        mySids.current = [...mySids.current, sid].slice(-30);
+        tabSent(schemeId, docKey, sid);
+        const r = await saveDocHtmlAction(schemeId, docKey, { bg: nb, en: ne, rev: revRef.current, sid });
+        tabAnswered(schemeId, docKey, sid, !r?.error && typeof r?.rev === "number" ? r.rev : null);
+        sid = "";
+        // refused because THIS opening's own earlier save is what is stored (its answer lost on the way — every word of
+        // it is in this one): its version taken, saved again — once (round 9, T3)
+        if (r?.stale && typeof r.rev === "number" && !again && !!r.sid && mySids.current.includes(r.sid)) { revRef.current = r.rev; continue; }
+        // …another opening's in this tab, or a duplicated tab's (its sessionStorage a copy of this one's): never written
+        // over — said, its words kept, these to be copied (review 3: it was taken as an echo and overwritten without a word)
+        if (r?.stale && isOwnSave(schemeId, docKey, r.sid)) { setSaveErr(L("Междувременно е записано по-ново копие на документа (от този или от друг раздел) — нищо не е записано върху него. Копирайте последните си думи и презаредете страницата.", "A newer copy of the document was saved meanwhile (from this tab or another) — nothing was written over it. Copy your latest words and reload the page.")); return false; }
+        if (r?.error) { setSaveErr(r.error); return false; }
+        if (typeof r?.rev === "number") revRef.current = r.rev;
+        savedGen.current = gen; setSaveErr("");
+        if (editGen.current === gen) { savedRef.current = true; setSavedState(true); }
+        return true;
+      }
     } catch {
+      // (answered, as far as the tab's record goes — the next opening never waits the whole poll for it; review 3) — but
+      // not one broken off as the page leaves: it may well have reached the server, and the next opening waits for it
+      // (T3 F2, traced: marked answered, the next page drew the version before it and its first save was refused)
+      if (sid && !pageLeaving()) tabAnswered(schemeId, docKey, sid, null);
       setSaveErr(L("Не е записано — проверете връзката и натиснете «Запази» (Ctrl+S) отново.", "Not saved — check the connection and press «Save» (Ctrl+S) again."));
       return false;
     } finally {
@@ -1680,6 +1848,7 @@ export default function WordEditor({
   function save(snap?: { nb: string; ne: string }): Promise<boolean> {
     const p = saveChain.current.then(() => saveOnce.current(snap));
     saveChain.current = p.catch(() => false);
+    tabTrack(schemeId, docKey, saveChain.current); // the next opening of this document in this tab waits for it (round 9)
     return p.then((ok) => { if (ok && editGen.current !== savedGen.current) scheduleAutosave(); return ok; });
   }
   // …until the latest edit is saved: before an act that needs the document as it is — a link, «Готов»,
@@ -1690,6 +1859,7 @@ export default function WordEditor({
     return save().then((ok) => (ok && savedGen.current < target ? saveAll(target) : ok));
   }
   async function translate() {
+    if (syncingRef.current) return; // (the tab's newer copy first — round 9)
     const { nb } = fold();
     setBusy("tr");
     // a failed call never leaves the button «Превеждане…» and the autosave waiting for good (round 7, R7UP-7)
@@ -1733,7 +1903,7 @@ export default function WordEditor({
     const body = ref.current;
     if (body) body.contentEditable = "false";
     setBusy("fill");
-    if (!(await saveAll())) { if (body) body.contentEditable = "true"; setBusy(""); return; }
+    if (!(await saveAll())) { if (syncingRef.current) alert(syncLost()); else if (body) body.contentEditable = "true"; setBusy(""); return; }
     window.location.href = `/schemes/${encodeURIComponent(schemeId)}/fill/${encodeURIComponent(docKey)}`;
   }
   // Inline page preview = the real PDF (true pages 1, 2 … with gaps, exactly as
@@ -1856,6 +2026,7 @@ export default function WordEditor({
   }
 
   async function saveAsTemplate() {
+    if (syncingRef.current) return; // (the tab's newer copy first — round 9)
     const name = window.prompt(
       L(`Наименувайте този шаблон „${docNameBg ?? docNameEn}“ (ще се предлага при стартиране на този документ във всяка ${schemeType === "C" ? "калибровъчна" : "изпитвателна"} схема):`,
         `Name this “${docNameEn}” template (it'll be offered when starting this document in any ${schemeType === "C" ? "calibration" : "testing"} scheme):`),
@@ -1944,6 +2115,8 @@ export default function WordEditor({
     );
   }
 
+  // the tab's newer copy being read: no start screen under it (round 9)
+  if (!started && syncing) return <div data-syncing className="card p-5" style={{ maxWidth: 640, color: "var(--muted)" }}>{syncErr ? <span data-sync-error style={{ color: "#b42318" }}>{syncErr}</span> : <>{syncNote || L("Зарежда…", "Loading…")}{syncNote && <button type="button" className="btn btn-sm" data-sync-open-now onClick={openStoredNow} style={{ marginLeft: 8, fontSize: 12 }}>{L("Отвори записаното сега", "Open the stored copy now")}</button>}</>}</div>;
   if (!started) {
     const startRow: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--line)", borderRadius: 9, padding: "8px 10px" };
     return (
@@ -2022,7 +2195,8 @@ export default function WordEditor({
         <button className="btn btn-primary" onClick={() => void save()} disabled={busy === "save" || saved} title={L("Запази (Ctrl+S)", "Save (Ctrl+S)")}>{busy === "save" ? L("Запазване…", "Saving…") : saved ? L("Запазено ✓", "Saved ✓") : L("Запази", "Save")}</button>
         {/* live save status — the document autosaves a few seconds after you stop editing */}
         <span className="text-sm" style={{ color: saved ? "var(--green-dark)" : "var(--muted)", minWidth: 116, display: "inline-flex", alignItems: "center", gap: 5 }} title={L("Документът се запазва автоматично", "The document autosaves as you work")}>
-          {busy === "save" ? L("Запазване…", "Saving…")
+          {syncing ? (syncErr ? <span data-sync-error style={{ color: "#b42318" }}>{syncErr}</span> : <span data-syncing>{syncNote || L("Зарежда…", "Loading…")}{syncNote && <button type="button" className="btn btn-sm" data-sync-open-now onClick={openStoredNow} style={{ marginLeft: 8, fontSize: 12 }} title={L("Отваря записаното сега. Думите от непотвърденото записване, които не виждате тук, може да не бъдат запазени — копирайте каквото ви трябва, преди да продължите.", "Opens the stored copy now. Words from the unconfirmed save that you do not see here may not be kept — copy what you need before you go on.")}>{L("Отвори записаното сега", "Open the stored copy now")}</button>}</span>)
+            : busy === "save" ? L("Запазване…", "Saving…")
             : busy === "img" ? L("Качване на изображение…", "Uploading image…")
             : saveErr && !saved ? <span data-save-error style={{ color: "#b42318" }}>{saveErr}</span>
             : pasteNote ? <span data-paste-note style={{ color: "#9a6700" }}>{pasteNote}</span>
