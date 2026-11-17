@@ -329,7 +329,7 @@ ok("round 2 — the portal's own pictures kept", sanitizeDocHtml(`<img src="/bra
   ok("review 4b / 4 — a button (a meter, a video…) dropped between words leaves a space, not «OKCancel»", S(`<p>x<button>OK</button><button>Cancel</button>y</p>`) === `<p>x OK Cancel y</p>` && S(`<p>a<meter>3</meter> b</p>`) === `<p>a 3 b</p>` && S(`<p>a<label>b</label>c</p>`) === `<p>abc</p>`);
   // 5 — a picture's margins reduced to what fits; a picture a little wider than the column as wide as the column
   ok("review 4b / 5 — a float as wide as its cell keeps the margins above and below it; its side margins are reduced to the room left", S(`<table><tr><td style="width:40mm"><img src="/brand/logo.png" alt="" style="width:60mm;float:left;margin:4px 12px 8px 0">x</td><td>y</td></tr></table>`) === `<table><tr><td style="width:40mm"><img src="/brand/logo.png" alt="" style="width:60mm;float:left;margin:4px 12px 8px 0;margin-left:0mm;margin-right:0mm">x</td><td>y</td></tr></table>`);
-  ok("review 4b / 5 — a picture in the line wider than the column (Word's 161 mm) is as wide as the column, not its own size", S(`<p><img src="/brand/logo.png" alt="" style="width:161mm;height:60mm"></p>`) === `<p><img src="/brand/logo.png" alt="" style="width:160.86mm;height:60mm"></p>`);
+  ok("review 4b / 5 — a picture in the line wider than the column (Word's 161 mm) is as wide as the column, not its own size (and its height scaled with it — the walk-through, M2)", S(`<p><img src="/brand/logo.png" alt="" style="width:161mm;height:60mm"></p>`) === `<p><img src="/brand/logo.png" alt="" style="width:160.86mm;height:59.95mm"></p>`);
   ok("review 4b / 5 — the editor's own floats (no width yet) unchanged", S(`<p><img src="/brand/logo.png" alt="" style="float: left; margin: 4px 12px 8px 0px;"></p>`) === `<p><img src="/brand/logo.png" alt="" style="float: left; margin: 4px 12px 8px 0px;"></p>`);
 }
 // round 9, last look: a tag dropped wherever it stands is dropped inside a link too — the link and its words kept;
@@ -343,6 +343,24 @@ ok("round 2 — the portal's own pictures kept", sanitizeDocHtml(`<img src="/bra
   ok("last look / 3 — …what is kept still ends a link's words: a box, a picture, a <section> kept as a box",
     S(`<p><a href="https://e.example/">x<div>y</div></a></p>`) === `<p>x</p><div>y</div>` && S(`<p><a href="https://e.example/">x<img src="/brand/logo.png">y</a></p>`) === `<p>x<img src="/brand/logo.png">y</p>` &&
     S(`<p><a href="https://e.example/">x<section>y</section></a></p>`) === `<p>x</p><div>y</div>`);
+}
+// round 9, the walk-through (M2): a picture keeps its proportions — when its width or height is fitted to the column or
+// a page, the other is scaled with it, in its attributes and in its style; a free picture keeps the size it was given
+{
+  const S = sanitizeDocHtml;
+  ok("walk-through M2 — Word's 800 × 450 picture is stored 608 × 342, not 608 × 450 (attributes)",
+    S(`<p><img src="/brand/logo.png" width="800" height="450"></p>`) === `<p><img src="/brand/logo.png" width="608" height="342"></p>` &&
+    S(`<p><img src="/brand/logo.png" width="300" height="2000"></p>`) === `<p><img src="/brand/logo.png" width="150" height="1000"></p>`,
+    S(`<p><img src="/brand/logo.png" width="800" height="450"></p>`));
+  ok("walk-through M2 — …and in its style, whichever comes first (a width over the column, a height over a page, a width over 100 %)",
+    S(`<p><img src="/brand/logo.png" style="width:170mm;height:95.625mm"></p>`) === `<p><img src="/brand/logo.png" style="width:160.86mm;height:90.48mm"></p>` &&
+    S(`<p><img src="/brand/logo.png" style="height:95.625mm;width:170mm"></p>`) === `<p><img src="/brand/logo.png" style="height:90.48mm;width:160.86mm"></p>` &&
+    S(`<p><img src="/brand/logo.png" style="width:100mm;height:400mm"></p>`) === `<p><img src="/brand/logo.png" style="width:65.75mm;height:263mm"></p>` &&
+    S(`<p><img src="/brand/logo.png" style="width:120%;height:60mm"></p>`) === `<p><img src="/brand/logo.png" style="width:100%;height:50mm"></p>`);
+  ok("walk-through M2 — a picture that fits, a free stamp with its mm sizes, the editor's own picture: as written",
+    S(`<p><img src="/brand/logo.png" width="600" height="400" style="width:100mm;height:66.67mm"></p>`) === `<p><img src="/brand/logo.png" width="600" height="400" style="width:100mm;height:66.67mm"></p>` &&
+    S(`<img class="free" src="/brand/snas.png" style="left:100mm;top:20mm;width:40mm;height:40mm;z-index:2">`) === `<img class="free" src="/brand/snas.png" style="left:100mm;top:20mm;width:40mm;height:40mm;z-index:2">` &&
+    S(`<p><img src="/brand/logo.png" alt="" style="width:120mm;height:84.5mm"></p>`) === `<p><img src="/brand/logo.png" alt="" style="width:120mm;height:84.5mm"></p>`);
 }
 
 ok("text that merely mentions a form or a script is not touched", sanitizeDocHtml(`<p>The script of the form: 5 &lt; 6</p>`) === `<p>The script of the form: 5 &lt; 6</p>`);

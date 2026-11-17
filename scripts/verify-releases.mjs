@@ -109,7 +109,7 @@ try {
   await relI.waitFor();
   await relI.locator("[data-release-target]").selectOption(pidA);
   await relI.locator("[data-release-send]").click();
-  t("to one participation: sent, the participation told", await waitFor(async () => /участието е уведомено|participation is told/.test(await textOf(relI.locator("[data-release-msg]")))));
+  t("to one participation: sent — its notice waits in «Известия» (the real-user walk-through, M7)", await waitFor(async () => /чака във «Известия»|waits in «Notices»/.test(await textOf(relI.locator("[data-release-msg]")))));
   // ── to one user: the Protocol to the user by name ──
   await go(`/schemes/${S}/editions`);
   const relP = page.locator('[data-release-to-one="protocol"]');

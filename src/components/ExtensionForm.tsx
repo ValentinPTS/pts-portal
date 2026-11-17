@@ -20,7 +20,7 @@ export default function ExtensionForm({ schemeId, code, lang, calibration }: { s
         e.preventDefault();
         const fd = new FormData(e.currentTarget);
         const day = String(fd.get("day") ?? ""), hour = String(fd.get("hour") ?? "");
-        if (!window.confirm(L("Удължаването се записва и лабораторията се уведомява. Продължаваме?", "The extension is recorded and the laboratory is told. Go ahead?"))) return;
+        if (!window.confirm(L("Удължаването се записва; известието към лабораторията чака във «Известия», докато ръководителят на схемата го изпрати. Продължаваме?", "The extension is recorded; the notice to the laboratory waits in «Notices» until the scheme manager sends it. Go ahead?"))) return;
         start(async () => {
           setError(null);
           const r = await grantExtensionAction(schemeId, code, {

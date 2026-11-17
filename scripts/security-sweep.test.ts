@@ -464,7 +464,7 @@ t("a saved certificate or list body never reaches a role without names.view thro
   const signed = cert.render!({ ...pb8, team: rev8 } as never, "bg", o8);
   t("R8S-1: an empty team never breaks the certificate (a mark to fill)", emptyOk);
   t("R8S-1: the certificate is signed by the scheme manager by role, whatever the order", signed.includes(pb8.team.find((m) => /Ръководител на схемата/.test(m.roleBg))!.name) && !signed.includes(rev8[0].name));
-  t("R8S-1: certificate, its calibration twin, the Order and the statistical design: never «team[0]»", ["certificate", "certificate-c", "order", "stat-project"].every((f) => !/s\.team\[0\]/.test(src(`lib/docs/${f}.ts`)) && /teamMember\(s, "manager"\)/.test(src(`lib/docs/${f}.ts`))));
+  t("R8S-1: certificate, its calibration twin, the Order and the statistical design: never «team[0]» (the Order: signed by the head of PTS — the real-user walk-through, M3)", ["certificate", "certificate-c", "stat-project"].every((f) => !/s\.team\[0\]/.test(src(`lib/docs/${f}.ts`)) && /teamMember\(s, "manager"\)/.test(src(`lib/docs/${f}.ts`))) && !/s\.team\[0\]/.test(src("lib/docs/order.ts")) && /const head = providerHeadName\(lang\);/.test(src("lib/docs/order.ts")));
   // (round 9: the scheme manager is MARKED in «Екип на схемата» — exactly one, by the server and by the form)
   t("R8S-1: a team without its scheme manager is refused — by the server and by the form before it is sent", /if \(teamNow && teamNow\.filter\(\(m\) => m\.duties\?\.includes\("manager"\)\)\.length !== 1\) redirect\(`\/schemes\/\$\{id\}\/edit\?err=team-manager`\);/.test(actions) && /const at = String\(fd\.get\("duty_manager"\) \?\? ""\);[\s\S]{0,200}e\.preventDefault\(\);/.test(src("components/SchemeEditor.tsx")) && /err === "team-manager"/.test(src("app/schemes/[id]/edit/page.tsx")));
   // R8S-2: whatever holds a link is held too; a large negative margin dropped, a Word table's small one kept
@@ -537,7 +537,7 @@ t("a saved certificate or list body never reaches a role without names.view thro
   t("T5: …a duty not given falls back to the role's own name — a technical expert added as a row is named (review 1)", ft([r("Ръководител на схемата", "PT Scheme Manager", "M", "manager"), r("Технически експерт", "Technical expert", "T")], "technical")?.name === "T");
   t("T5: …one person may hold two duties — the manager and the technical expert (review 3)", ft([r("Ръководител на схемата и технически експерт", "PT Scheme Manager and Technical Expert", "V", "manager", "technical")], "technical")?.name === "V" && ft([r("x", "y", "V", "manager", "technical")], "manager")?.name === "V");
   t("T5: the server reads «duty_<d>» as the row's index; the scheme manager must be given", /const dutyRow = \(d: TeamDuty\): number =>/.test(actions) && /duties: TEAM_DUTIES\.filter\(\(d\) => dutyRow\(d\) === i\)/.test(actions));
-  t("T5: the «signed» lock only when someone DID sign (review 2)", /if \(was && JSON\.stringify\(\[was\.name, was\.roleBg, was\.roleEn\]\) !== JSON\.stringify/.test(actions));
+  t("T5: the «signed» lock only when someone DID sign (review 2)", /return !!was && JSON\.stringify\(\[was\.name, was\.roleBg, was\.roleEn\]\) !== JSON\.stringify/.test(actions));
   t("T5: the lists' compiler by the same reading — the registered list and F 7.2.1-6 (review 4)", /return findTeamMember\(s\.team \?\? \[\], "coding"\);/.test(src("lib/docs/registered.ts")) && /const compiler = findTeamMember\(s\.team \?\? \[\], "coding"\);/.test(src("lib/docs/results-coded.ts")) && !/function teamRole/.test(src("lib/docs/results-coded.ts")));
   t("T5: the sample teams carry their duties", /duties: \["manager"\]/.test(src("lib/seed-force.ts")) && /duties: \["technical"\]/.test(src("lib/seed-force.ts")) && /duties: \["manager"\]/.test(src("lib/seed-paving-blocks.ts")));
 }
@@ -647,8 +647,8 @@ t("a saved certificate or list body never reaches a role without names.view thro
   const cp9 = src("app/schemes/[id]/participants/[code]/page.tsx");
   t("round 9 F4: the case file — the deadlines «удължен по заповед», the list without number and reason, for who sees no names",
     (cp9.match(/seesExtension \? \(lang === "bg" \? `удължен по Заповед №/g) ?? []).length === 2 && /\{seesExtension \? <>\{lang === "bg" \? "Заповед №" : "Order No\."\} \{e\.orderNo\}/.test(cp9));
-  t("round 9 F4: the calibration chain — a stop's window «удължен», its order's number to who sees names",
-    /orderNo: seesNames \? w\.ext\?\.orderNo : undefined, extended: !!w\.ext/.test(src("app/schemes/[id]/page.tsx")) && /r\.due\.extended \?/.test(src("components/SchemeChainPanel.tsx")));
+  t("round 9 F4: the calibration chain — a stop's window «удължен», its order's number to who sees names (and, the attack round, who grants it)",
+    /orderNo: seesExtension \? w\.ext\?\.orderNo : undefined, extended: !!w\.ext/.test(src("app/schemes/[id]/page.tsx")) && /r\.due\.extended \?/.test(src("components/SchemeChainPanel.tsx")));
 
   // the side items
   t("round 9: a carrier's offer takes 60 characters, as the server", /name="carrier" required maxLength=\{60\}/.test(src("components/CarrierOffersPanel.tsx")));
@@ -683,7 +683,7 @@ t("a saved certificate or list body never reaches a role without names.view thro
   t("T3: the save chain is the tab's — the next opening of the document waits for it, the closing save too", /saveChain\.current = p\.catch\(\(\) => false\);\n\s*tabTrack\(schemeId, docKey, saveChain\.current\);/.test(we10) && /if \(!savedRef\.current && ref\.current\) void save\(snapshot\(\)\);/.test(we10));
   t("T3 F1/F2: an editor opened again reads the tab's newer copy first — read-only before the first paint, every save after it", /useLayoutEffect\(\(\) => \{\n\s*if \(!canEdit \|\| syncingRef\.current\) return;\n\s*const plan = planOpen\(schemeId, docKey, initialRev\);\n\s*if \(!plan\.read\) return;\n\s*syncingRef\.current = true;\n\s*if \(ref\.current\) ref\.current\.contentEditable = "false";/.test(we10) && /async function saveOnceNow\(snap\?: \{ nb: string; ne: string \}\): Promise<boolean> \{\n[^\n]*\n[^\n]*\n\s*if \(editGen\.current !== savedGen\.current\) await synced\.current;/.test(we10) && /await Promise\.race\(\[plan\.wait\.catch\(\(\) => \{\}\), sleepMs\(SYNC_WAIT_MS\), woken\(\)\]\);/.test(sync10) && /if \(ref\.current && busyRef\.current !== "fill"\) ref\.current\.contentEditable = "true";/.test(sync10));
   t("T3: what is read is shown and its version taken; nothing waits to be saved; a read that never comes is said", /revRef\.current = got\.rev;\n\s*tabAdopt\(schemeId, docKey, got\.rev, settled\);/.test(adopt10) && /savedGen\.current = editGen\.current;\n\s*setSaved\(true\);/.test(adopt10) && /<span data-sync-error/.test(we10) && /if \(l === lang \|\| syncingRef\.current\) return;/.test(we10));
-  t("T3: the server keeps each save's id with its version and names the stored ones in a refusal; any other id is none", /\[docKey\]: \{ bg: cleanBg, en: cleanEn, rev, \.\.\.\(sid \? \{ sid \} : \{\}\) \}/.test(actions) && /keptRev = kept; keptSid = cur\.docs\?\.\[docKey\]\?\.sid;\n\s*if \(loaded !== null && loaded !== kept\) \{ stale = true; return \{\}; \}/.test(actions) && /const sid = typeof sidIn === "string" && SAVE_ID\.test\(sidIn\) \? sidIn : undefined;/.test(actions));
+  t("T3: the server keeps each save's id with its version and names the stored ones in a refusal; any other id is none", /\[docKey\]: \{ bg: cleanBg, en: cleanEn, rev, \.\.\.\(sid && tag \? \{ sid, sidBy: tag \} : \{\}\) \}/.test(actions) && /keptRev = kept; keptSid = sidFor\(cur\.docs\?\.\[docKey\], tag\) \?\? undefined;\n\s*if \(loaded !== null && loaded !== kept\) \{ stale = true; return \{\}; \}/.test(actions) && /const sid = typeof sidIn === "string" && SAVE_ID\.test\(sidIn\) \? sidIn : undefined;/.test(actions));
   t("T3: the editor's read and its peek are gated before anything is read", /export async function readDocForEditorAction\(schemeId: string, docKey: string\)[^\n]*\n[^\n]*\n\s*await requireCap\("codes\.view", schemeId\);[^\n]*\n\s*const d = await editorDocNow\(schemeId, docKey\);/.test(actions) && /export async function peekDocForEditorAction\(schemeId: string, docKey: string\)[^\n]*\n[^\n]*\n\s*await requireCap\("codes\.view", schemeId\);[^\n]*\n\s*const v = await editorDocVersion\(schemeId, docKey\);/.test(actions));
   // the read: the page's gates, all and only, and its body line for line (the page keeps its own lines — gates read them)
   const gates = (f: string) => [...f.matchAll(/await (require\w+)\(([^)]*)\)/g)].map((m) => `${m[1]}(${m[2]})`).sort().join(" | ");
@@ -699,7 +699,7 @@ t("a saved certificate or list body never reaches a role without names.view thro
     'refreshTeam(doc === "instruction" ? refreshInstruction(body, s, l) : body, s, l)',
   ];
   const peek10 = read10.slice(read10.indexOf("export async function editorDocVersion("), read10.indexOf("export async function editorDocNow("));
-  t("T3: the editor's read — the page's gates, all and only (for the body and the version alike), and its body line for line", gates(page10) === gates(read10) && gates(read10).split(" | ").length === 4 && (read10.match(/await editorGate\(id, doc\);/g) ?? []).length === 2 && pinned.every((l) => page10.includes(l) && read10.includes(l)) && /initialRev=\{s\.docs\?\.\[doc\]\?\.rev \?\? 0\}/.test(page10) && /rev: s\.docs\?\.\[doc\]\?\.rev \?\? 0, sid: s\.docs\?\.\[doc\]\?\.sid \?\? null/.test(read10), `${gates(page10)} ≠ ${gates(read10)}; missing: ${pinned.filter((l) => !(page10.includes(l) && read10.includes(l))).join(" ¦ ")}`);
+  t("T3: the editor's read — the page's gates, all and only (for the body and the version alike), and its body line for line", gates(page10) === gates(read10) && gates(read10).split(" | ").length === 4 && (read10.match(/await editorGate\(id, doc\);/g) ?? []).length === 2 && pinned.every((l) => page10.includes(l) && read10.includes(l)) && /initialRev=\{s\.docs\?\.\[doc\]\?\.rev \?\? 0\}/.test(page10) && /rev: s\.docs\?\.\[doc\]\?\.rev \?\? 0, sid: sidFor\(s\.docs\?\.\[doc\], await saverTagNow\(\)\)/.test(read10), `${gates(page10)} ≠ ${gates(read10)}; missing: ${pinned.filter((l) => !(page10.includes(l) && read10.includes(l))).join(" ¦ ")}`);
   t("T3: the autosave waits AUTOSAVE_MS after the last edit, never more than AUTOSAVE_MAX_WAIT_MS of steady typing", tab.AUTOSAVE_MS === 2500 && tab.AUTOSAVE_MAX_WAIT_MS === 20_000 && tab.autosaveWait(1000, 1000) === 2500 && tab.autosaveWait(0, 19_000) === 1000 && tab.autosaveWait(0, 25_000) === 0 && tab.autosaveWait(0, 25_000, 2500) === 2500 && /const wait = autosaveDelay\(dirtySince, atLeast\);/.test(we10) && (() => { const d: { current: number | null } = { current: null }; return tab.autosaveDelay(d) === 2500 && typeof d.current === "number" && tab.autosaveDelay({ current: Date.now() - 30_000 }) === 0 && tab.autosaveDelay({ current: Date.now() - 30_000 }, 2500) === 2500; })());
   t("T3: «Готов» refused — said, never nothing", /if \(!r\?\.error\) setReady\(next\);\n\s*else alert\(/.test(we10));
   // review 3
@@ -760,6 +760,21 @@ t("a saved certificate or list body never reaches a role without names.view thro
   t("T3: storage blocked — the page's own memory still holds the record", tab.planOpen(S, D, 8).read && tab.isOwnSave(S, D, "s4-dddddddd") && tab.unansweredAge(S, D) === -1);
   t("T3: a save id is one the server takes", tab.SAVE_ID.test(tab.newSaveId()) && !tab.SAVE_ID.test("x") && !tab.SAVE_ID.test("<script>aaaaaaaa"));
   tab.__tabForTests(null);
+}
+
+// ── round 9, stage 3 — the fresh attack's Lows, as fixed ────────────────────────────────────────────────────────
+{
+  const act9 = src("lib/actions.ts"), read9 = src("lib/doc-editor-read.ts"), page9 = src("app/schemes/[id]/page.tsx");
+  const upd = act9.slice(act9.indexOf("export async function updateSchemeAction"), act9.indexOf("export async function updateSchemeAction") + 60000);
+  const lockAt = upd.indexOf("await updateSchemeWith(id, (current) => {");
+  t("round 9 attack S2: a save's id is stored with its saver's tag, and named back only to that saver (the save, the peek, the read)",
+    /keptSid = sidFor\(cur\.docs\?\.\[docKey\], tag\) \?\? undefined;/.test(act9) && /\.\.\.\(sid && tag \? \{ sid, sidBy: tag \} : \{\}\)/.test(act9)
+    && (read9.match(/sid: sidFor\(s\.docs\?\.\[doc\], await saverTagNow\(\)\)/g) ?? []).length === 2 && !/sid: s\.docs\?\.\[doc\]\?\.sid/.test(read9));
+  t("round 9 attack L2: the «signed» team lock decided on the scheme INSIDE its lock too (a certificate released while the save ran)",
+    lockAt > 0 && /if \(teamNow && changesSigner\(current, teamNow\)\) \{ teamSignedLate = true; return \{\}; \}/.test(upd.slice(lockAt, lockAt + 1500))
+    && /if \(teamSignedLate\) redirect\(`\/schemes\/\$\{id\}\/edit\?err=team-signed`\);/.test(upd) && /if \(teamNow && changesSigner\(existing, teamNow\)\) redirect/.test(upd));
+  t("round 9 attack L3: the scheme page's chain shows the extension's Order No. to who grants it (order.manage) too",
+    /const seesExtension = seesNames \|\| \(await mayNow\("order\.manage", id\)\);/.test(page9) && /orderNo: seesExtension \? w\.ext\?\.orderNo : undefined/.test(page9));
 }
 
 console.log(`security-sweep.test: ${pass} passed, ${fail} failed`);

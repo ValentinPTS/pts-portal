@@ -17,6 +17,8 @@ import WordEditor from "@/components/WordEditor";
 import { requireStaff } from "@/lib/roles";
 import { logActivity } from "@/lib/activity";
 import { refreshInstruction, refreshTeam } from "@/lib/docs/instruction-common";
+import { refreshOrderHead } from "@/lib/docs/order";
+import { getProviderHead } from "@/lib/custom-skins";
 import { getServerT } from "@/lib/i18n-server";
 import { isSendableDoc } from "@/lib/doc-release";
 
@@ -58,7 +60,9 @@ export default async function BuildDocPage({
   // the editor opens what the print shows: the Instruction's contacts and the team as the scheme's are now —
   // a block deleted or with words left inside comes back whole, the words after it, editable (round 7
   // verification: R7UP-2 within a session, R7UP-6's bare text and line ends, R7UP-4's plan team)
-  const refreshed = (body: string, l: "bg" | "en") => (body ? refreshTeam(doc === "instruction" ? refreshInstruction(body, s, l) : body, s, l) : body);
+  // …and the Order with the head of PTS as set now (review 5: the editor opened it with the old name, or none)
+  const head = await getProviderHead();
+  const refreshed = (body: string, l: "bg" | "en") => (body ? refreshOrderHead(refreshTeam(doc === "instruction" ? refreshInstruction(body, s, l) : body, s, l), doc, head, l) : body);
   const saved = { ...saved1, bg: refreshed(saved1.bg ?? "", "bg"), en: refreshed(saved1.en ?? "", "en") };
   // the editable title page (cover) for this document in the scheme's skin
   const skin = await resolveSkinAsync(s);
@@ -128,8 +132,8 @@ export default async function BuildDocPage({
         initialReady={!!s.docReady?.[doc]}
         initialBg={saved.bg}
         initialEn={saved.en}
-        defaultBg={dft.bg}
-        defaultEn={dft.en}
+        defaultBg={refreshOrderHead(dft.bg, doc, head, "bg")}
+        defaultEn={refreshOrderHead(dft.en, doc, head, "en")}
         coverBg={cov.bg}
         coverEn={cov.en}
         hasDefault={hasDocTemplate(doc)}

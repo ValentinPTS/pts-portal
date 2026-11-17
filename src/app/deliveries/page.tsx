@@ -49,9 +49,10 @@ const ERR: Record<string, { bg: string; en: string }> = {
   moved: { bg: "Междувременно нещо се промени (друга пратка или протокол) — нищо не е записано. Вижте реда отново.", en: "Something changed meanwhile (another shipment or protocol) — nothing was recorded. Look at the row again." },
 };
 const OK: Record<string, { bg: string; en: string }> = {
-  dispatch: { bg: "Записано: обектът е изпратен; участието е уведомено.", en: "Recorded: the object is sent; the participation is told." },
-  replacement: { bg: "Записано: заместващ обект е изпратен; участието е уведомено.", en: "Recorded: a replacement object is sent; the participation is told." },
-  handover: { bg: "Записано: обектът е предаден на куриера на участника; участието е уведомено.", en: "Recorded: the object is handed to the participant's courier; the participation is told." },
+  // a laboratory's notice is held until a person sends it (Реш. 138) — said as it is (the real-user walk-through, M7)
+  dispatch: { bg: "Записано: обектът е изпратен; известието към участието чака във «Известия», докато ръководителят на схемата го изпрати.", en: "Recorded: the object is sent; the notice to the participation waits in «Notices» until the scheme manager sends it." },
+  replacement: { bg: "Записано: заместващ обект е изпратен; известието към участието чака във «Известия», докато ръководителят на схемата го изпрати.", en: "Recorded: a replacement object is sent; the notice to the participation waits in «Notices» until the scheme manager sends it." },
+  handover: { bg: "Записано: обектът е предаден на куриера на участника; известието към участието чака във «Известия», докато ръководителят на схемата го изпрати.", en: "Recorded: the object is handed to the participant's courier; the notice to the participation waits in «Notices» until the scheme manager sends it." },
   resolved: { bg: "Сигналът е отбелязан като решен.", en: "The problem is marked resolved." },
   days: { bg: "Минималният брой работни дни е записан.", en: "The minimum working days are saved." },
 };

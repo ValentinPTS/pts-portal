@@ -146,6 +146,38 @@ export async function getDefaultCoverImage(): Promise<string | null> {
   }
 }
 
+// ── The head of the PT provider — who signs every Order (Ivaylo, 2026-11-17: «Head of PTS, always»; never the
+// scheme's team — the Order named the scheme manager under the head's title). One name per language, set once. ─────
+const HEAD_KEY = "provider_head";
+export type ProviderHead = { bg: string; en: string };
+export async function getProviderHead(): Promise<ProviderHead | null> {
+  const parse = (v: string | null | undefined): ProviderHead | null => {
+    try { const o = JSON.parse(v ?? ""); return o && typeof o.bg === "string" && typeof o.en === "string" && (o.bg || o.en) ? { bg: o.bg, en: o.en } : null; } catch { return null; }
+  };
+  const db = getDb();
+  if (!db) return parse(memSettings.get(HEAD_KEY));
+  try {
+    const { data, error } = await db.from("app_settings").select("value").eq("key", HEAD_KEY).maybeSingle();
+    if (error) throw error;
+    return parse(data?.value);
+  } catch (e) {
+    warn(e);
+    return parse(memSettings.get(HEAD_KEY));
+  }
+}
+export async function setProviderHead(head: ProviderHead): Promise<void> {
+  const value = JSON.stringify({ bg: head.bg, en: head.en });
+  const db = getDb();
+  if (!db) { memSettings.set(HEAD_KEY, value); return; }
+  try {
+    const { error } = await db.from("app_settings").upsert({ key: HEAD_KEY, value, updated_at: new Date().toISOString() });
+    if (error) throw error;
+  } catch (e) {
+    warn(e);
+    memSettings.set(HEAD_KEY, value);
+  }
+}
+
 // Pass an empty string to clear it.
 export async function setDefaultCoverImage(url: string): Promise<void> {
   const db = getDb();

@@ -59,7 +59,7 @@ export default function ReleaseToOne({ lang, schemeId, docKey, participations, u
       if ("error" in r && r.error) { setMsg(r.error); return; }
       if ("needsNote" in r && r.needsNote) { setMsg(L("Не е изпратено — нужна е бележка какво и защо е променено.", "Not sent — a note of what changed and why is needed.")); return; }
       const withheld = "namesWithheld" in r && (r.namesWithheld || r.scoresWithheld) ? L(" Таблица с имена или оценки на портала в документа не се показват на лабораторията.", " A names table or portal scores in the document are not shown to the laboratory.") : "";
-      setMsg((level === "participation" ? L("Изпратено — участието е уведомено.", "Sent — the participation is told.") : L("Изпратено — съобщете на потребителя.", "Sent — tell the user.")) + withheld);
+      setMsg((level === "participation" ? L("Изпратено — известието към участието чака във «Известия», докато го изпратите.", "Sent — the notice to the participation waits in «Notices» until you send it.") : L("Изпратено — съобщете на потребителя.", "Sent — tell the user.")) + withheld);
       setTarget("");
       router.refresh();
     });

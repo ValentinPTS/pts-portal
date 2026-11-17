@@ -1,6 +1,6 @@
 import type { Scheme, Lang } from "../types";
-import { esc, pick, wrapDoc, footer } from "../doc-shell";
-import { teamMember } from "./instruction-common";
+import { esc, pick, wrapDoc, footer, providerHeadName } from "../doc-shell";
+import { findTeamMember } from "../team-roles";
 
 const FORM = "internal";
 
@@ -21,16 +21,36 @@ export const EXTRA_CSS = `
   .oitem{margin:9px 0;} .oitem .lbl{font-family:var(--sans);font-weight:700;color:var(--ink);}
   .oitem ul{margin:4px 0 0;padding-left:20px;} .oitem li{margin:2px 0;}
   .oteam{margin:5px 0 0;padding-left:0;list-style:none;}
-  .oteam li{margin:4px 0;} .oteam .role{font-family:var(--sans);font-weight:700;color:var(--green-dark);}
+  .oteam li{margin:4px 0;} .oteam .role{font-family:var(--sans);font-weight:700;color:var(--green-dark);} .oteam .duty{color:var(--muted);}
   .osign{margin-top:44px;margin-left:auto;width:300px;text-align:center;} .osign .ln{border-top:2px solid var(--green-dark);padding-top:4px;}
   .osign .nm{font-family:var(--sans);font-weight:700;} .osign .rl{color:var(--muted);font-size:9.5pt;}
 `;
+
+/** The Order's signature as the head of PTS is set NOW — in a saved body (an issued edition, the editor's PDF, the round
+ *  export) or the default one rendered without the skin; an Order saved before carried the scheme manager's name under
+ *  the head's title (the real-user walk-through, M3; review 5: only one of three paths showed the head). Another
+ *  document — unchanged; no head set — the line is blank, signed by hand. */
+export function refreshOrderHead(html: string, doc: string, head: { bg: string; en: string } | null | undefined, lang: Lang): string {
+  if (doc !== "order" || !html) return html;
+  const name = (lang === "bg" ? head?.bg || head?.en : head?.en || head?.bg) ?? "";
+  return html.replace(/(<div\b[^>]*\bclass="osign"[^>]*>[\s\S]*?<div\b[^>]*\bclass="nm"[^>]*>)[\s\S]*?(<\/div>)/, (_m, a: string, b: string) => `${a}${esc(name)}${b}`);
+}
 
 export function renderOrder(s: Scheme, lang: Lang): string {
   const L = (en: string, bg: string) => esc(pick(lang, en, bg));
   const isCal = s.type === "C";
   const startDate = s.schedule[0]?.date ?? "";
-  const mgr = teamMember(s, "manager"); // by role, never the first row (round 8, R8S-1)
+  // signed by the head of PTS, set once for the organisation — never a row of the scheme's team (the real-user walk-through,
+  // M3: the scheme manager was named under the head's title); no head set — the line is left to be signed by hand
+  const head = providerHeadName(lang);
+  // who holds each duty, read as every other document reads it (team-roles) — marked in the team's list, so the Order
+  // and the coded lists name the same compiler (M10: the Order listed the roles as typed only)
+  const team = s.team ?? [];
+  const dutyOf = new Map<object, string[]>();
+  for (const [d, en, bg] of [["manager", "scheme manager", "ръководител на схемата"], ["technical", "technical expert", "технически експерт"], ["coding", "compiles the coded lists", "съставя кодираните списъци"]] as const) {
+    const m = findTeamMember(team, d);
+    if (m) dutyOf.set(m, [...(dutyOf.get(m) ?? []), pick(lang, en, bg)]);
+  }
 
   // numbered items, mirroring the real memo (testing carries the characteristics
   // line, calibration does not)
@@ -74,8 +94,8 @@ export function renderOrder(s: Scheme, lang: Lang): string {
   );
   items.push(
     `<div class="oitem"><span class="lbl">${L("Team conducting the scheme", "Екип за провеждане на схемата за изпитване за пригодност")}:</span>
-      <ul class="oteam">${s.team
-        .map((m) => `<li><span class="role">${L(m.roleEn, m.roleBg)}:</span> ${esc(m.name)}</li>`)
+      <ul class="oteam">${team
+        .map((m) => `<li><span class="role">${L(m.roleEn, m.roleBg)}:</span> ${esc(m.name)}${dutyOf.has(m) ? ` <span class="duty">(${esc(dutyOf.get(m)!.join(", "))})</span>` : ""}</li>`)
         .join("")}</ul></div>`
   );
 
@@ -95,7 +115,7 @@ export function renderOrder(s: Scheme, lang: Lang): string {
     ${numbered}
     <div class="osign">
       <div class="ln"></div>
-      <div class="nm">${mgr ? esc(mgr.name) : ""}</div>
+      <div class="nm">${esc(head)}</div>
       <div class="rl">${L("Head of the Proficiency Testing Provider", "Ръководител на организатора на изпитване за пригодност")}</div>
     </div>
     ${footer(s, FORM)}`;

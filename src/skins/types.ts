@@ -29,6 +29,8 @@ export interface Skin {
   // scheme has no cover of its own, so one uploaded photo appears on every title
   // page. Attached per-render by resolveSkinAsync; not part of the skin's identity.
   defaultCover?: string;
+  // The head of the PT provider (app setting), who signs the Order — attached per-render like defaultCover.
+  providerHead?: { bg: string; en: string };
   // The cover/head block (no body markers — the shell adds those).
   cover(s: Scheme, lang: Lang, docTitleEn: string, docTitleBg: string, opts?: { withImage?: boolean }): string;
   // The footer block (no body markers).

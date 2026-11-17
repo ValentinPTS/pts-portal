@@ -176,7 +176,7 @@ export const SUMMARY_SHOWN: Readonly<Record<string, string>> = {
   "certificate.numbered": "the code", "certificate.released": "the code, R, the languages", "certificate.updated": "the code",
   "chain.dispatched": "fixed words", "chain.handed_over": "the code", "chain.order": "a count", "chain.received": "the code",
   "chain.returned": "fixed words", "chain.stamped": "the stop, the code and how — the note is not in it",
-  "cover.default": "fixed words",
+  "cover.default": "fixed words", "provider.head": "fixed words",
   "declaration.recorded": "PTS's person and the day", "declaration.signed": "the code, the document, its edition",
   "delivery.dispatched": "the code, the day, «with a waybill» — never the waybill (older lines: cut below)",
   "delivery.problem": "the code — the laboratory's words are not in it", "delivery.problem_resolved": "the code — the note is not in it",

@@ -650,6 +650,26 @@ const CEA = S.CEA;
   check("neg", "uploaded/[doc] route", "doc=constructor on a scheme with uploads: not found, never a 500 (A5)", ctor.status !== 500, `status ${ctor.status}`);
 }
 
+// ── the fresh attack's findings, as fixed (round 9, stage 3) ─────────────────
+{
+  // S2: a save's id is named back only to who made it. X saves; Y — another scheme manager of A — peeks X's id and
+  // saves with it; X's next save (its version now old) is refused: the refusal must not name X's id, or X's editor
+  // takes Y's save for its own echo and saves over Y's words without a word (WordEditor: mySids.current.includes)
+  const Y = await persona(new Session("Y"), `model=scheme_manager@${A}`);
+  const v0 = val(await act(PA, "peekDocForEditorAction", [A, "plan"])).rev ?? 0;
+  const sidX = `tabX-${tag}-0001`;
+  const s1 = await act(PA, "saveDocHtmlAction", [A, "plan", { bg: `<p>${M("sx")}</p>`, en: "", rev: v0, sid: sidX }]);
+  check("pos", "saveDocHtmlAction", "X's save with its id goes", val(s1).ok === true && val(s1).rev === v0 + 1, errOf(s1));
+  const pkX = val(await act(PA, "peekDocForEditorAction", [A, "plan"]));
+  check("pos", "peekDocForEditorAction", "X's peek names X's own save", pkX.sid === sidX, JSON.stringify(pkX));
+  const pkY = val(await act(Y, "peekDocForEditorAction", [A, "plan"]));
+  check("neg", "peekDocForEditorAction", "Y's peek does not name X's save", pkY.rev === v0 + 1 && !pkY.sid, JSON.stringify(pkY));
+  const s2 = await act(Y, "saveDocHtmlAction", [A, "plan", { bg: `<p>${M("sy")}</p>`, en: "", rev: v0 + 1, sid: sidX }]);
+  check("pos", "saveDocHtmlAction", "Y's save (X's id sent) goes — as Y's", val(s2).ok === true, errOf(s2));
+  const s3 = await act(PA, "saveDocHtmlAction", [A, "plan", { bg: `<p>${M("sx2")}</p>`, en: "", rev: v0 + 1, sid: `tabX-${tag}-0002` }]);
+  check("neg", "saveDocHtmlAction", "X's stale save is refused, and the refusal does not name X's id as the stored save (S2)", val(s3).stale === true && val(s3).sid !== sidX, JSON.stringify(val(s3)));
+}
+
 // ── 7. the action ids: taken from the pages ─────────────────────────────────
 for (const [who, p] of [[S.build, `/schemes/${A}/build/plan/history`], [S.build, `/schemes/${A}/participants`], [S.build, `/schemes/${A}/participants/${P.L1.code}`], [S.build, `/schemes/${A}/results`], [S.build, `/schemes/${A}/review`], [S.build, `/schemes/${A}/doc/certificate`], [S.build, "/notices"], [S.build, `/deliveries?scheme=${A}`], [S.L1, `/lab/p/${P.L1.pid}`], [S.U1, `/lab/apply/${C}`]]) await harvest(who, p).catch(() => {});
 const used = [...usedEntries].filter((n) => IDS.has(n));

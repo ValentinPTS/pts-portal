@@ -115,6 +115,10 @@ export default async function NoticesPage({ searchParams }: { searchParams: Prom
                 // who sees names in that scheme (the security sweep, round 2, R2S-3)
                 TYPED_NOTICE_KINDS.has(n.kind) ? <div data-typed-words-hidden className="text-sm mt-2" style={{ color: "var(--muted)" }}>{typedLine}</div> : <div data-courier-words-hidden className="text-sm mt-2" style={{ color: "var(--muted)" }}>{L("Текстът назовава превозвача и товарителницата на участника — вижда го и го изпраща който вижда имената в схемата.", "The text names the participant's carrier and waybill — it is read and sent by who sees the names in the scheme.")}</div>
               )}
+              {/* a held notice, to who cannot send it: who does (the real-user walk-through, M7 — the head saw no button and no word) */}
+              {!(canDecide && mayDecide(n.schemeId)) && n.audience === "lab" && !n.releasedAt && !n.withheldAt && (
+                <div data-notice-sender className="text-sm mt-2" style={{ color: "var(--muted)" }}>{L("Чака ръководителя на схемата да го изпрати.", "Waiting for the scheme manager to send it.")}</div>
+              )}
               {canDecide && mayDecide(n.schemeId) && seesHeld(n) && (
                 <div className="flex gap-2 mt-3">
                   {releasable(n) ? (

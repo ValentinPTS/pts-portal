@@ -29,7 +29,7 @@ import { COURIER_NOTICE_KINDS, TYPED_NOTICE_KINDS } from "./notice-kinds";
 import { validateEik } from "./verify-eik";
 import { REGISTER_TEXT, type RegisterAnswer } from "./cert-register-model";
 import { getServerT } from "./i18n-server";
-import { editorDocNow, editorDocVersion, type EditorDocNow, type EditorDocVersion } from "./doc-editor-read";
+import { editorDocNow, editorDocVersion, saverTagNow, sidFor, type EditorDocNow, type EditorDocVersion } from "./doc-editor-read";
 import { SAVE_ID } from "./doc-tab";
 import { fixPrices } from "./scheme-prices";
 import { participantViewer } from "./participation-view";
@@ -142,7 +142,7 @@ import { getSkinAsync, setDefaultSkinAsync } from "../skins";
 import { sanitizeSkinData } from "../skins/custom";
 import {
   upsertCustomSkin, getCustomSkin, deleteCustomSkin, getDefaultSkinId, setDefaultSkinId,
-  setDefaultCoverImage,
+  setDefaultCoverImage, getProviderHead, setProviderHead,
 } from "./custom-skins";
 import { getDb, dbMode } from "./supabase";
 import { getLabByEmail, addLab, addLabOrThrow, getLab, labEmailInUse, updateLab } from "./labs";
@@ -488,6 +488,23 @@ export async function uploadDefaultCoverAction(formData: FormData): Promise<{ ur
     revalidatePath("/", "layout");
   }
   return res;
+}
+
+// The head of the PT provider — who signs every Order (the real-user walk-through, M3; Ivaylo: «Head of PTS, always»).
+// Set once, by the head (people.manage — never a scheme's own manager); journalled and in the register of changes.
+export async function setProviderHeadAction(formData: FormData): Promise<void> {
+  await requireCapAnywhere("people.manage"); // the head only — a scheme manager of any scheme holds library.manage (review 5)
+  const clean = (k: string) => String(formData.get(k) ?? "").replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u2028\u2029\uFEFF\uFFFD]/g, "").replace(/\s+/g, " ").trim().slice(0, 120);
+  const head = { bg: clean("headBg"), en: clean("headEn") };
+  const was = await getProviderHead();
+  if (was?.bg !== head.bg || was?.en !== head.en) {
+    await setProviderHead(head);
+    await logActivity("provider.head", { summary: "The head of the PT provider (who signs the Order) changed" });
+    await settingChanged("Ръководител на организатора (подписва заповедите) — сменен", "The head of the PT provider, who signs the Order, changed.", "app_settings:provider_head");
+  }
+  revalidatePath("/skins", "page");
+  revalidatePath("/", "layout");
+  redirect("/skins?head=saved");
 }
 
 export async function clearDefaultCoverAction(): Promise<{ ok?: boolean }> {
@@ -1353,14 +1370,17 @@ export async function saveDocHtmlAction(schemeId: string, docKey: string, body: 
   // tab's or person's (round 9, T3 F1/F2). Anything else sent as an id is no id.
   const sidIn = body && typeof body === "object" ? (body as DocBodies).sid : undefined;
   const sid = typeof sidIn === "string" && SAVE_ID.test(sidIn) ? sidIn : undefined;
+  // …and whose it is: an id is named back only to who stored it — another person's save sent with this tab's id is
+  // theirs, never this tab's echo (round 9 attack, S2: it was, and this tab saved over their words without a word)
+  const tag = await saverTagNow();
   let rev = 0, stale = false, keptRev = 0;
   let keptSid: string | undefined;
   await updateSchemeWith(schemeId, (cur) => {
     const kept = cur.docs?.[docKey]?.rev ?? 0;
-    keptRev = kept; keptSid = cur.docs?.[docKey]?.sid;
+    keptRev = kept; keptSid = sidFor(cur.docs?.[docKey], tag) ?? undefined;
     if (loaded !== null && loaded !== kept) { stale = true; return {}; }
     rev = kept + 1;
-    return { docs: { ...(cur.docs ?? {}), [docKey]: { bg: cleanBg, en: cleanEn, rev, ...(sid ? { sid } : {}) } } };
+    return { docs: { ...(cur.docs ?? {}), [docKey]: { bg: cleanBg, en: cleanEn, rev, ...(sid && tag ? { sid, sidBy: tag } : {}) } } };
   });
   if (stale) return { error: DOC_STALE, stale: true, rev: keptRev, sid: keptSid ?? null };
   // §8.3 — snapshot a revision (skips if unchanged). Records who saved it.
@@ -3229,6 +3249,17 @@ export async function createSchemeAction(formData: FormData) {
   redirect(folderView(String(formData.get("type")) === "C" ? "C" : "T", null));
 }
 
+// Once a certificate is released the manager's row stays as it signed it — the certificates are rendered fresh on each
+// opening (round 8 review, RV8-5; as the number and the markers are locked by certificates). Only when someone DID sign:
+// a team whose reading named no one — two managers, a loose «Manager» saved on a round 7–8 build — may be given its
+// manager; it never could be (round 9 review). Decided on the scheme as read first AND as it is inside the save's lock
+// (round 9 attack: a certificate released while the save ran was not seen — read before, written after, R6S-9).
+function changesSigner(s: Scheme, teamNow: TeamMember[]): boolean {
+  if (!Object.values(s.certificates ?? {}).some((c) => !!(c as { released?: unknown })?.released)) return false;
+  const was = findTeamMember(s.team ?? [], "manager"), now = findTeamMember(teamNow, "manager");
+  return !!was && JSON.stringify([was.name, was.roleBg, was.roleEn]) !== JSON.stringify([now?.name, now?.roleBg, now?.roleEn]);
+}
+
 // SECURITY: Server Actions are reachable via direct POST, not only the UI — so the
 // owner check lives INSIDE the action (proxy.ts alone is not sufficient).
 export async function updateSchemeAction(formData: FormData) {
@@ -3254,14 +3285,8 @@ export async function updateSchemeAction(formData: FormData) {
   })).filter((m) => m.name); // (a name with no role yet is kept — dropped unsaid before, round 7 verification)
   // …and a team without its scheme manager is refused: the manager signs the certificates and the Order (round 8, R8S-1)
   if (teamNow && teamNow.filter((m) => m.duties?.includes("manager")).length !== 1) redirect(`/schemes/${id}/edit?err=team-manager`);
-  // …and once a certificate is released the manager's row stays as it signed it — the certificates are rendered
-  // fresh on each opening (round 8 review, RV8-5; as the number and the markers are locked by certificates)
-  if (teamNow && Object.values(existing.certificates ?? {}).some((c) => !!(c as { released?: unknown })?.released)) {
-    const was = findTeamMember(existing.team ?? [], "manager"), now = findTeamMember(teamNow, "manager");
-    // (only when someone DID sign: a team whose reading named no one — two managers, a loose «Manager» saved on a
-    // round 7–8 build — may be given its manager; it never could be, round 9 review)
-    if (was && JSON.stringify([was.name, was.roleBg, was.roleEn]) !== JSON.stringify([now?.name, now?.roleBg, now?.roleEn])) redirect(`/schemes/${id}/edit?err=team-signed`);
-  }
+  // …and once a certificate is released the manager's row stays as it signed it (changesSigner; again inside the lock)
+  if (teamNow && changesSigner(existing, teamNow)) redirect(`/schemes/${id}/edit?err=team-signed`);
   // row count posted by the SchemeEditor (variable-length lists). Bounded; null
   // when absent (an older form) → fall back to fixed-index mapping over existing.
   const cnt = (k: string): number | null => {
@@ -3626,10 +3651,13 @@ export async function updateSchemeAction(formData: FormData) {
   // tab's save silently undone (the security sweep, UM-2). Refused, the person sees what is saved now.
   const seenRev = formData.get("editRev");
   let staleEdit = false;
+  let teamSignedLate = false; // a certificate released while this save ran (round 9 attack)
   await updateSchemeWith(id, (current) => {
     if (seenRev !== null && Number(seenRev) !== (current.editRev ?? 0)) { staleEdit = true; return {}; }
     // …re-checked here: a final list announced meanwhile refuses the reorder (5.2 review)
     if (paramsRestructured && currentFinalList(current)) { listFinalLate = true; return {}; }
+    // …and a certificate released meanwhile keeps its signer (round 9 attack: decided only before the lock)
+    if (teamNow && changesSigner(current, teamNow)) { teamSignedLate = true; return {}; }
     // official PTS number — shown on every document + drives the year grouping.
     // Falls back to the existing number if the field was cleared.
     let number = numberRefused || (spellingChange && hasCerts(current)) ? current.number : newNumber;
@@ -3787,6 +3815,7 @@ export async function updateSchemeAction(formData: FormData) {
   });
   if (staleEdit) redirect(`/schemes/${id}/edit?err=stale&t=${Date.now()}`);
   if (listFinalLate) redirect(`/schemes/${id}/edit?err=list-final`);
+  if (teamSignedLate) redirect(`/schemes/${id}/edit?err=team-signed`);
 
   // Participants' registered characteristics follow their standards too (separate
   // table; scheme written first so documents never see new standards with old

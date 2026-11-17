@@ -2,6 +2,7 @@ import type { Scheme, Lang, DocOptions } from "./types";
 import { refreshAccreditation } from "./accreditation-mark";
 import { refreshGateSentences } from "./gate-texts";
 import { refreshInstruction, refreshTeam } from "./docs/instruction-common";
+import { refreshOrderHead } from "./docs/order";
 import type { Skin } from "../skins/types";
 import { getDoc } from "./documents";
 import { BODY_START, BODY_END, stripBodyMarkers, withSkin } from "./doc-shell";
@@ -113,6 +114,8 @@ export function docPrintHtml(
   // the markers out BEFORE the body is sanitized — never removed from what the sanitizer passed (R2S-1)
   // …and the team as the scheme's team is now, wherever the body shows it (round 7 verification, R7UP-4)
   const teamed = refreshTeam(key === "instruction" ? refreshInstruction(gated, s, lang) : gated, s, lang);
-  const wrapped = `<div class="pts-docbody" style="position:relative">\n${sanitizeDocHtml(stripBodyMarkers(teamed))}\n</div>`;
+  // …and the Order signed by the head of PTS as set now (review 5: a saved or default body printed the old name or none)
+  const headed = refreshOrderHead(teamed, key, (skin ?? resolveSkin(s)).providerHead, lang);
+  const wrapped = `<div class="pts-docbody" style="position:relative">\n${sanitizeDocHtml(stripBodyMarkers(headed))}\n</div>`;
   return stripBodyMarkers(full.slice(0, start) + "\n" + wrapped + "\n" + full.slice(b.end));
 }

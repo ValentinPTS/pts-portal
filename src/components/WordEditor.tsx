@@ -430,6 +430,8 @@ export default function WordEditor({
   const [selOpts, setSelOpts] = useState(0); // its option count (for the bar)
   const [preview, setPreview] = useState(false);              // inline PDF preview open
   const [saveErr, setSaveErr] = useState(""); // why the last save did not go through (R4U-1)
+  // a newer stored version seen on coming back to this tab — not this opening's own (the real-user walk-through, M6)
+  const [staleRev, setStaleRev] = useState(0);
   // the tab knows of a newer stored copy than this page's (Back/Forward, a reload while a save was on its way): read-only
   // and «Зарежда…» until it is read (round 9, T3 F1/F2); syncErr — it could not be read, said
   const [syncing, setSyncing] = useState(false);
@@ -1219,6 +1221,27 @@ export default function WordEditor({
     window.addEventListener("beforeunload", h);
     return () => window.removeEventListener("beforeunload", h);
   }, []);
+  // Back on this tab (focus, or shown again): a newer copy stored by another tab or person is said BEFORE a word is
+  // typed on the old one — «Всичко е запазено» stood on it, and the first save was refused out of sight (the real-user
+  // walk-through, M6). The version only (no body, nothing journalled); this opening's own saves are never «newer».
+  useEffect(() => {
+    // for who edits only (a reader never sees the note); a tab shown again always (a real switch — rare, the case
+    // that matters), a window's focus at most once every 3 s (review 5: one request per focus; a 15 s bound missed a
+    // quick switch back — the note never came)
+    let peeking = false, last = 0;
+    const check = async (always: boolean) => {
+      if (!canEdit || peeking || document.visibilityState !== "visible" || (!always && Date.now() - last < 3_000)) return;
+      peeking = true; last = Date.now();
+      try {
+        const v = await peekDocForEditorAction(schemeId, docKey);
+        if (v && !("error" in v) && v.rev > revRef.current && !(v.sid && mySids.current.includes(v.sid))) setStaleRev(v.rev);
+      } catch { /* refused or no connection — the next save says it */ } finally { peeking = false; }
+    };
+    const onFocus = () => void check(false), onShown = () => void check(true);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onShown);
+    return () => { window.removeEventListener("focus", onFocus); document.removeEventListener("visibilitychange", onShown); };
+  }, [schemeId, docKey, canEdit]);
   // Opened again in this tab (round 9, T3 F1/F2): Back and Forward bring this page back from Next's cache with the props
   // of its first opening, and a reload can be drawn while this tab's last save is still on its way — the editor held an
   // older copy and an older version: it showed the document without the words just saved, and every save of it was
@@ -2196,6 +2219,7 @@ export default function WordEditor({
   );
   const unitLabel = unit === "mm" ? "мм" : unit === "cm" ? "см" : "px";
 
+  const staleShown = staleRev > revRef.current && !syncing;
   return (
     <div>
       <style>{EDITOR_CSS + COVER_CSS + scopeCss(extraCss, ".we-page")}</style>
@@ -2212,6 +2236,7 @@ export default function WordEditor({
             : busy === "save" ? L("Запазване…", "Saving…")
             : busy === "img" ? L("Качване на изображение…", "Uploading image…")
             : saveErr && !saved ? <span data-save-error style={{ color: "#b42318" }}>{saveErr}</span>
+            : staleShown ? <span data-stale-note style={{ color: "#b42318" }}>{L("Има по-ново копие", "A newer copy exists")}</span>
             : pasteNote ? <span data-paste-note style={{ color: "#9a6700" }}>{pasteNote}</span>
             : saved ? L("Всичко е запазено", "All changes saved")
             : L("Незапазени промени", "Unsaved changes")}
@@ -2257,6 +2282,13 @@ export default function WordEditor({
       </div>
 
       <div className="we-stickyhead">
+      {/* a refused save, or a newer copy stored elsewhere — said where the person is typing, not only in the save bar
+          above (the real-user walk-through, M6: it scrolled away and the person kept typing) */}
+      {(saveErr && !saved) || staleShown ? (
+        <div role="alert" data-save-error-sticky style={{ background: "#fbeeee", color: "#b42318", border: "1px solid #f0c4c4", borderRadius: 8, padding: "6px 10px", margin: "0 0 6px", fontSize: 13 }}>
+          {saveErr && !saved ? saveErr : L("По-ново копие на документа е записано в друг раздел или от друг човек — презаредете страницата, преди да пишете: думите тук няма да се запишат върху него.", "A newer copy of the document was saved in another tab or by another person — reload the page before typing: words here will not be written over it.")}
+        </div>
+      ) : null}
       {/* formatting toolbar */}
       {!preview && (
       <div className="we-toolbar mb-3">

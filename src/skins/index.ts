@@ -10,6 +10,7 @@ import {
   getDefaultSkinId,
   setDefaultSkinId,
   getDefaultCoverImage,
+  getProviderHead,
 } from "../lib/custom-skins";
 
 // The skin registry. Two kinds of skin coexist:
@@ -60,7 +61,9 @@ export async function setDefaultSkinAsync(type: SchemeType, id: string): Promise
 export async function resolveSkinAsync(s: Scheme): Promise<Skin> {
   const base = s.skin ? await getSkinAsync(s.skin) : await getSkinAsync(await getDefaultSkinIdAsync(s.type));
   const defaultCover = (await getDefaultCoverImage()) ?? undefined;
-  return defaultCover ? { ...base, defaultCover } : base;
+  // …and who signs the Order (the head of PTS — an app setting, never the scheme's team)
+  const providerHead = (await getProviderHead()) ?? undefined;
+  return defaultCover || providerHead ? { ...base, ...(defaultCover ? { defaultCover } : {}), ...(providerHead ? { providerHead } : {}) } : base;
 }
 
 // ── Sync fallback (built-ins only) — kept for unit tests + sync render fallback ──

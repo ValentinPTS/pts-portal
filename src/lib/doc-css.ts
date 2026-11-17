@@ -90,6 +90,11 @@ export const DOC_CSS = `
   .schemettl{font-family:var(--sans);font-weight:700;font-size:13pt;margin:2px 0 10px;}
   .coverimg{width:46%;max-width:100%;height:auto;border-radius:8px;margin-top:10px;}
   img{max-width:100%;}
+  /* a picture in a body keeps its proportions when max-width narrows it: its height follows its width, whatever its
+     height attribute said (Word's 800 × 450 printed 608 × 450, an oval; round 9, the walk-through) — as on the editor's
+     canvas. Of no weight (:where): every rule that sizes a picture on purpose (a logo's class, an inline style, a
+     free picture's mm) still does. */
+  :where(.pts-docbody img:not(.free)){height:auto;}
   /* "Free (over text)" pictures. The Word editor's applyWrap() gives the image
      class="free" plus inline left/top in mm and leaves the position to CSS —
      measured against the editable body, which is position:relative in the editor

@@ -2,7 +2,8 @@ import Link from "next/link";
 import { listSchemeSummaries } from "@/lib/store";
 import { skinsForTypeAsync, getDefaultSkinIdAsync, SKINS } from "@/skins";
 import { setDefaultSkinAction } from "@/lib/actions";
-import { getDefaultCoverImage } from "@/lib/custom-skins";
+import { getDefaultCoverImage, getProviderHead } from "@/lib/custom-skins";
+import ProviderHeadCard from "@/components/ProviderHeadCard";
 import DeleteSkinButton from "@/components/DeleteSkinButton";
 import DefaultCoverCard from "@/components/DefaultCoverCard";
 import { getServerT } from "@/lib/i18n-server";
@@ -14,11 +15,14 @@ const BUILTIN = new Set(SKINS.map((s) => s.meta.id));
 // Skins gallery — choose how the documents look, per scheme type. Built-in skins
 // + your own custom skins, each with a live preview. Create new skins with the
 // visual editor; set a per-type default.
-export default async function SkinsPage({ searchParams }: { searchParams: Promise<{ type?: string }> }) {
+export default async function SkinsPage({ searchParams }: { searchParams: Promise<{ type?: string; head?: string }> }) {
   await requireStaff(); // read gate: manager/staff/auditor only
   // who manages the library sets, makes and removes skins; the rest read (the security sweep, UR-1)
   const canManage = await mayAnywhereNow("library.manage");
-  const { type: t } = await searchParams;
+  // who signs every Order — the head only (review 5: library.manage is any scheme's manager)
+  const canSetHead = await mayAnywhereNow("people.manage");
+  const { type: t, head: headParam } = await searchParams;
+  const headSaved = headParam === "saved";
   const type: "T" | "C" = t === "C" ? "C" : "T";
   const skins = await skinsForTypeAsync(type);
   const defId = await getDefaultSkinIdAsync(type);
@@ -26,6 +30,7 @@ export default async function SkinsPage({ searchParams }: { searchParams: Promis
   const scope = schemesFor(await getViewer(), "codes.view");
   const sample = (await listSchemeSummaries()).find((s) => s.type === type && (scope === "all" || scope.includes(s.id)));
   const defaultCover = await getDefaultCoverImage();
+  const providerHead = await getProviderHead();
   const { tr, lang } = await getServerT();
 
   const tab = (val: "T" | "C", label: string) => (
@@ -54,6 +59,7 @@ export default async function SkinsPage({ searchParams }: { searchParams: Promis
       </div>
 
       {canManage && <DefaultCoverCard current={defaultCover} />}
+      {canSetHead && <ProviderHeadCard current={providerHead} lang={lang} saved={headSaved} />}
 
       <div className="flex gap-2 mt-4 mb-5">{tab("T", tr("skins.tabTesting"))}{tab("C", tr("skins.tabCalibration"))}</div>
 

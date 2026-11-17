@@ -78,7 +78,16 @@ export function withSkin<T>(skin: Skin, fn: () => T): T {
 function activeSkin(): Skin {
   return skinCtx.getStore() ?? classicSkin;
 }
+/** The head of the PT provider in this language — who signs the Order; "" when none is set (the line is signed by hand). */
+export function providerHeadName(lang: Lang): string {
+  const h = activeSkin().providerHead;
+  return (lang === "bg" ? h?.bg || h?.en : h?.en || h?.bg) ?? "";
+}
 
+// The title page's «Cover photo — click to add or replace» is the EDITOR's prompt: never on a document page, whatever the
+// skin — it printed on issued documents, the PDF and the laboratory's copy (the real-user walk-through, M5). Last, so
+// no skin's own rule shows it again; the editor keeps its own styles and still shows it.
+const PLACEHOLDER_HIDDEN = ".coverimg-empty{display:none!important;}";
 export function wrapDoc(lang: Lang, titleAttr: string, bodyHTML: string, extraCss = ""): string {
   const sk = activeSkin();
   return `<!DOCTYPE html>
@@ -87,7 +96,7 @@ export function wrapDoc(lang: Lang, titleAttr: string, bodyHTML: string, extraCs
 <meta charset="utf-8">
 <title>${esc(titleAttr)}</title>
 ${fontLinks(sk.fonts)}
-<style>${sk.css}${extraCss}</style>
+<style>${sk.css}${extraCss}${PLACEHOLDER_HIDDEN}</style>
 </head>
 <body>${sk.sideBorder !== false ? `<div class="doc-side" aria-hidden="true"></div>` : ""}<div class="page">${bodyHTML}</div></body>
 </html>`;

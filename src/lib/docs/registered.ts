@@ -43,8 +43,8 @@ function confNote(reveal: boolean, lang: Lang): string {
   return reveal
     ? ""
     : `<p class="confnote">${esc(pick(lang,
-        "Names are hidden — only a Manager may reveal the name behind a code (ISO/IEC 17043 §4.2).",
-        "Имената са скрити — само Мениджър може да разкрие името зад даден код (ISO/IEC 17043 §4.2)."))}</p>`;
+        "Names are hidden — only the scheme manager and the coding expert may reveal the name behind a code (ISO/IEC 17043 §4.2).",
+        "Имената са скрити — само ръководителят на схемата и експертът по кодиране могат да разкрият името зад даден код (ISO/IEC 17043 §4.2)."))}</p>`;
 }
 
 // the person who compiles/codes the lists (Data collection & coding expert)

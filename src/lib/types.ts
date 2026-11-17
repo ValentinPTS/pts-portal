@@ -698,7 +698,8 @@ export interface Scheme {
   // `rev`: a save count — an editor that loaded an older one is told, never written over (round 5, R5UA-3)
   // `sid`: the id the editor gave the save that stored it — a refusal names it, so an editor tells its own tab's earlier
   // save from another tab's or person's (round 9, T3 F1/F2; absent on a body stored before, or by a restore)
-  docs?: Record<string, { bg: string; en: string; rev?: number; sid?: string }>;
+  // `sidBy`: a one-way tag of who made that save — the id is named back to that person only (round 9 attack, S2)
+  docs?: Record<string, { bg: string; en: string; rev?: number; sid?: string; sidBy?: string }>;
   // owner-filled values for fillable document form fields (checkboxes, options,
   // ratings, blanks). Keyed by document key → field id → value. JSONB, no migration.
   formData?: Record<string, Record<string, string>>;

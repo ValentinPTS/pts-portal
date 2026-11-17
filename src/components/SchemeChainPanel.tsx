@@ -39,8 +39,9 @@ export interface ChainRow {
 export interface StampView { by: "lab" | "pts"; source?: ChainStampSource; note?: string }
 
 export default function SchemeChainPanel({
-  schemeId, lang, rows, participantCodes, refLabName, daysPerLab, dispatchedAt, returnedAt, clockOffsetMs = 0, windowDays, windowEditable = false,
+  schemeId, lang, rows, participantCodes, refLabName, daysPerLab, dispatchedAt, returnedAt, clockOffsetMs = 0, windowDays, windowEditable = false, canEdit = true,
 }: {
+  canEdit?: boolean; // who may mark the chain («dispatch»); anyone else reads it — no button to press, then be refused (M4)
   windowDays?: number; // working days per laboratory from its receipt (3.4)
   windowEditable?: boolean; // only while the scheme is prepared; then by extension
   schemeId: string;
@@ -181,6 +182,10 @@ export default function SchemeChainPanel({
   const by = (v?: StampView) => (v?.by === "pts" ? ` (PTS${v.source ? `, ${stampSourceLabel(v.source, lang)}` : ""})` : "");
 
   return (
+    // read-only for who cannot mark the chain (the real-user walk-through, M4: the buttons were offered, the form filled
+    // and confirmed, then refused) — every button and field of the panel disabled at once, said in one line
+    <fieldset disabled={!canEdit} data-chain-readonly={canEdit ? undefined : ""} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+    {!canEdit && <div className="text-sm" style={{ color: "var(--muted)", margin: "6px 0 -4px" }}>{L("Само за преглед — веригата се отбелязва от ръководителя на схемата и експерта по кодиране.", "Read only — the chain is marked by the scheme manager and the coding expert.")}</div>}
     <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "12px 16px", margin: "10px 0 6px", opacity: working ? 0.6 : 1 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
         <span style={{ fontSize: 13, fontWeight: 700 }}>{L("Веригата", "The chain")}</span>
@@ -370,6 +375,7 @@ export default function SchemeChainPanel({
         )}
       </div>
     </div>
+    </fieldset>
   );
 }
 

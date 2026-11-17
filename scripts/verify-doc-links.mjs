@@ -356,6 +356,34 @@ for (const view of ["screen", "print"]) {
   t("last look — a link under a free picture is on top at its own words (screen, print, the editor)", res.every((x) => x.endsWith("covered, link on top") && x.includes(": covered")), res.join(" | "));
 }
 
+// ── 1e. round 9, the walk-through (M2): a picture keeps its proportions in every view; a free one its size and place ──
+// (Word's 800 × 450 picture showed 608 × 342 in the editor but printed 608 × 450 — an oval — in the print view, the PDF
+// and the lab's copy: DOC_CSS had max-width with no height:auto, and the cleaner kept the old height)
+{
+  const PICS = `<p><img src="/brand/logo.png" alt="" width="1530" height="1078"></p>` + // Word's attributes: twice its size
+    `<p><img src="/brand/logo.png" alt="" style="width:170mm;height:119.78mm"></p>` + // a style wider than the column
+    `<p><img src="/brand/logo.png" alt="" style="width:80mm;height:56.37mm"></p>` + // one that fits
+    `<p>Подпис:</p><img class="free" src="/brand/snas.png" alt="" style="left:100mm;top:20mm;width:40mm;height:40mm;z-index:2">`; // a stamp of its own size
+  const stored = sanitizeDocHtml(PICS);
+  const measure = (sel) => { const body = document.querySelector(sel), b = body.getBoundingClientRect(), mm = 96 / 25.4;
+    return [...body.querySelectorAll("img")].map((i) => { const r = i.getBoundingClientRect();
+      return i.classList.contains("free") ? { free: true, w: r.width / mm, h: r.height / mm, left: (r.left - b.left) / mm, top: (r.top - b.top) / mm } : { ratio: r.width / r.height, natural: i.naturalWidth / i.naturalHeight, w: r.width }; }); };
+  const views = {};
+  for (const view of ["screen", "print"]) views[view] = await look(view, stored, measure, ".pts-docbody");
+  state.html = fillPage(stored); state.csp = CSP.replace("form-action 'none'", "form-action 'self'");
+  await pages.fill.goto(`${ORIGIN}/doc?pics=${n++}`, { waitUntil: "load" }); await settle(pages.fill, ".pts-docbody");
+  views.fill = await pages.fill.evaluate(measure, ".pts-docbody");
+  await pages.editor.evaluate((h) => { scrollTo(0, 0); document.querySelector(".we-docbody").innerHTML = h; }, stored);
+  await settle(pages.editor, ".we-docbody");
+  views.editor = await pages.editor.evaluate(measure, ".we-docbody");
+  const bad = [];
+  for (const [v, list] of Object.entries(views)) for (const p of list) {
+    if (p.free) { if (Math.abs(p.w - 40) > 0.5 || Math.abs(p.h - 40) > 0.5 || Math.abs(p.left - 100) > 0.5 || Math.abs(p.top - 20) > 0.5) bad.push(`${v}: the stamp ${p.w.toFixed(1)}×${p.h.toFixed(1)} mm at ${p.left.toFixed(1)}, ${p.top.toFixed(1)}`); }
+    else if (!p.natural || Math.abs(p.ratio / p.natural - 1) > 0.02 || p.w > 609) bad.push(`${v}: a picture ${p.w.toFixed(0)} px wide at ${p.ratio.toFixed(3)} (its own ${p.natural.toFixed(3)})`);
+  }
+  t("walk-through M2 — a picture keeps its proportions (screen, print, the Fill view, the editor); a free stamp its 40 × 40 mm at 100, 20 mm", !bad.length && Object.values(views).every((l) => l.length === 4), bad.join(" | "));
+}
+
 // ── 1c. round 9 review 4, second look: a word in a table's cell is never split ─────────────────
 // (a cell is as wide as its longest word, as it always was: «anywhere» split «Международни» in an 18-mm Word cell)
 {

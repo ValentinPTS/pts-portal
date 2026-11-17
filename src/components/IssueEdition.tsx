@@ -41,7 +41,9 @@ export default function IssueEdition({ schemeId, docs, initial }: { schemeId: st
 
   if (!docs.length) return null;
   return (
-    <form onSubmit={submit} data-issue-edition className="card p-4 mt-4" style={{ display: "grid", gap: 10, maxWidth: 720 }}>
+    // «data-live-only»: the document chosen is the script's own state — a choice made while the page still loaded was
+    // shown, never taken, and the first document's edition was issued (round 9, the real-user walk-through, M1)
+    <form onSubmit={submit} data-issue-edition data-live-only className="card p-4 mt-4" style={{ display: "grid", gap: 10, maxWidth: 720 }}>
       <div className="font-bold" style={{ color: "var(--green-dark)" }}>{L("Издай нова редакция", "Issue a new edition")}</div>
       <p className="text-sm" style={{ color: "var(--muted)", margin: 0 }}>
         {L("Документът, какъвто е сега, става следващата си редакция: замразен файл, който не се променя повече. Изпращането към участниците изпраща редакция.",

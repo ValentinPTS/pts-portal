@@ -12,14 +12,29 @@ import { getScheme } from "./store";
 import { getDoc, isFormDoc, isListDoc, isRestrictedDoc, savedDocBody, pairsNamesWithCodes, showsIdentities } from "./documents";
 import { listParticipants, withoutIdentity } from "./participants";
 import { inRound } from "./application-model";
-import { namesFor } from "./identities";
+import { createHash } from "crypto";
+import { namesFor, actorKeyNow } from "./identities";
 import { defaultDocHtml } from "./doc-html";
 import { retagFormBody } from "./form-hydrate";
 import { logActivity } from "./activity";
 import { refreshInstruction, refreshTeam } from "./docs/instruction-common";
+import { refreshOrderHead } from "./docs/order";
+import { getProviderHead } from "./custom-skins";
 
 export type EditorDocNow = { bg: string; en: string; rev: number; sid: string | null };
 export type EditorDocVersion = { rev: number; sid: string | null };
+
+/** Who saves, as a one-way tag (round 9 attack, S2): a save's id is stored with it and named back to that person only.
+ *  The peek handed every reader the last save's id; another person who sent it with a save of their own was taken, by
+ *  the first person's editor, for its own echo — and their words saved over without a word. The login (in development
+ *  without one, the persona — identities.actorKeyNow); no e-mail goes into the scheme's documents, a tag does. */
+export async function saverTagNow(): Promise<string> {
+  const who = await actorKeyNow();
+  return who === "unknown" ? "" : createHash("sha256").update(`pts-doc-saver:${who}`).digest("base64url").slice(0, 22);
+}
+/** The stored save's id — for who made it; to anyone else, none (their editor then says a newer copy was saved). */
+export const sidFor = (entry: { sid?: string; sidBy?: string } | undefined, tag: string): string | null =>
+  entry?.sid && tag && entry.sidBy === tag ? entry.sid : null;
 
 // the page's gates, in its order — for the body and for the version alike
 async function editorGate(id: string, doc: string): Promise<void> {
@@ -36,7 +51,7 @@ export async function editorDocVersion(id: string, doc: string): Promise<EditorD
   await editorGate(id, doc);
   const s = await getScheme(id);
   if (!s || !getDoc(doc)) return null;
-  return { rev: s.docs?.[doc]?.rev ?? 0, sid: s.docs?.[doc]?.sid ?? null };
+  return { rev: s.docs?.[doc]?.rev ?? 0, sid: sidFor(s.docs?.[doc], await saverTagNow()) };
 }
 
 /** null: no such scheme or document (the page's «not found») */
@@ -57,6 +72,8 @@ export async function editorDocNow(id: string, doc: string): Promise<EditorDocNo
   const saved1 = isFormDoc(doc)
     ? { bg: retagFormBody(saved0.bg ?? "", dft.bg), en: retagFormBody(saved0.en ?? "", dft.en) }
     : saved0;
-  const refreshed = (body: string, l: "bg" | "en") => (body ? refreshTeam(doc === "instruction" ? refreshInstruction(body, s, l) : body, s, l) : body);
-  return { bg: refreshed(saved1.bg ?? "", "bg"), en: refreshed(saved1.en ?? "", "en"), rev: s.docs?.[doc]?.rev ?? 0, sid: s.docs?.[doc]?.sid ?? null };
+  // …and the Order with the head of PTS as set now (review 5: the editor opened it with the old name, or none)
+  const head = await getProviderHead();
+  const refreshed = (body: string, l: "bg" | "en") => (body ? refreshOrderHead(refreshTeam(doc === "instruction" ? refreshInstruction(body, s, l) : body, s, l), doc, head, l) : body);
+  return { bg: refreshed(saved1.bg ?? "", "bg"), en: refreshed(saved1.en ?? "", "en"), rev: s.docs?.[doc]?.rev ?? 0, sid: sidFor(s.docs?.[doc], await saverTagNow()) };
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { updateSchemeAction } from "@/lib/actions";
@@ -233,6 +233,11 @@ function SaveBar({ id, label, cancel }: { id: string; label: string; cancel: str
   );
 }
 
+// The form's fields as sent — a picked file by its name and size (review 5: «changed» is this against how it opened)
+function formNow(f: HTMLFormElement | null): string {
+  return f ? JSON.stringify([...new FormData(f)].map(([k, v]) => [k, typeof v === "string" ? v : `${v.name}:${v.size}`])) : "";
+}
+
 export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
   const { lang } = useLang();
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
@@ -360,8 +365,34 @@ export default function SchemeEditor({ init }: { init: SchemeEditorInit }) {
     if (confirmRef.current) confirmRef.current.value = "1";
   }
 
+  // Left with changes not saved — a reload, a closed tab, an in-app link (the «←», the menu): asked first, as the editor
+  // asks (the real-user walk-through, M8: the changes went without a word). «Changed» is the form's fields against how
+  // it opened (review 5: a button that changes nothing — the status already chosen, «Копирай линка» — asked too); a
+  // save on its way is no leaving; the scheme as the server gives it again (a refusal, a save) is the form's new start.
+  const formRef = useRef<HTMLFormElement>(null);
+  const openedAs = useRef<string | null>(null);
+  const sentRef = useRef(false);
+  useEffect(() => { sentRef.current = false; openedAs.current = formNow(formRef.current); }, [init]);
+  const leaveText = L("Има незапазени промени в схемата — да излезете без тях?", "The scheme has unsaved changes — leave without them?");
+  useEffect(() => {
+    const changed = () => !sentRef.current && openedAs.current !== null && formNow(formRef.current) !== openedAs.current;
+    const onUnload = (e: BeforeUnloadEvent) => { if (changed()) { e.preventDefault(); e.returnValue = ""; } };
+    const onLeave = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a || a.target === "_blank" || a.hasAttribute("download") || a.getAttribute("href")?.startsWith("#")) return;
+      if (!changed()) return;
+      if (window.confirm(leaveText)) { openedAs.current = null; return; }
+      e.preventDefault(); e.stopPropagation();
+    };
+    window.addEventListener("beforeunload", onUnload);
+    document.addEventListener("click", onLeave, true);
+    return () => { window.removeEventListener("beforeunload", onUnload); document.removeEventListener("click", onLeave, true); };
+  }, [leaveText]);
+
   return (
-    <form action={updateSchemeAction} onSubmit={guardCalibrationEdit}>
+    <form ref={formRef} action={updateSchemeAction}
+      onSubmit={(e) => { guardCalibrationEdit(e); if (!e.defaultPrevented) sentRef.current = true; }}>
       <input type="hidden" name="id" value={init.id} />
       <input type="hidden" name="editRev" value={init.editRev ?? 0} />
       <input ref={confirmRef} type="hidden" name="calslotsConfirm" defaultValue="" />

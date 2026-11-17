@@ -126,7 +126,7 @@ const CLASS_TAGS: Record<string, string> = {
   "c": "div td th", "cal": "div", "cals": "div", "cap": "span", "certcontent": "div", "certfrom": "div p",
   "certno": "div", "certpreview": "div", "ch": "td th", "charmeta": "p", "chars": "div", "charsec": "div",
   "cline": "div", "code": "td", "col": "div", "compiledby": "div", "confnote": "p", "contact": "div",
-  "contacts": "div", "cover": "div", "coverimg": "img", "coverimg-empty": "img", "crit": "div", "crule": "div",
+  "contacts": "div", "cover": "div", "coverimg": "img", "coverimg-empty": "img", "crit": "div", "crule": "div", "duty": "span",
   "csub": "div", "ctext": "span", "ctitle": "div", "d": "div", "dec-declare": "div", "dec-field": "div",
   "dec-hint": "div", "dec-intro": "div", "dec-list": "ol", "dec-sign": "div", "dochead": "div",
   "dochead-wrap": "div", "docttl": "div", "docttl2": "div", "em": "span", "emb": "img", "empty": "div span p",
@@ -607,7 +607,8 @@ function fontFamily(val: Tok[]): string | null {
 // ── the grammar of each property ────────────────────────────────────────────────────────
 // A check returns the value written back (null: dropped); `c.rewrote` when it had to clamp it. It also notes
 // in `c.box` what the layout check needs — the sides and the width of the box, read from the PARSED value.
-type Box = { mL?: Len; mR?: Len; pL?: Len; pR?: Len; bL?: number; bR?: number; W?: Len; minW?: Len; ti?: number; left?: number };
+type Box = { mL?: Len; mR?: Len; pL?: Len; pR?: Len; bL?: number; bR?: number; W?: Len; minW?: Len; ti?: number; left?: number;
+  imgW?: number; imgPct?: number; imgH?: number }; // (a picture in the line: the width and height it was given, before fitting)
 type Ctx = { tag: string; inLink: boolean; free: boolean; box: Box; rewrote: boolean };
 type Check = (val: Tok[], c: Ctx) => string | null;
 
@@ -779,10 +780,18 @@ const PROPS: Record<string, { tags?: Set<string>; link?: boolean; check: Check }
   // sizes: never wider than the column (the layout check then fits them in the box they sit in), never taller
   // than a page; a free picture as wide as the sheet
   // (a picture in the line a little wider than the column — Word's 161 mm — is as wide as the column, not its own size)
-  width: { tags: new Set([...BOXES, "span", "input"]), check: (val, c) => { const w = words(val); const l = w.length === 1 ? length(w[0], { pct: true, auto: true }) : null; if (c.tag === "img" && !c.free && l && "mm" in l && l.mm > COLUMN_MM) { c.rewrote = true; c.box.W = { mm: Math.floor(COLUMN_MM * 100) / 100 }; return mmOut(COLUMN_MM); } if (!within(l, 0, c.free ? 182 : COLUMN_MM)) return null; c.box.W = l!; return tokOut(w[0][0]); } },
+  // (a picture in the line wider than the column — Word's 161 mm, a «120 %» — is as wide as the column, its height
+  // scaled with it: fitPicture)
+  width: { tags: new Set([...BOXES, "span", "input"]), check: (val, c) => { const w = words(val); const l = w.length === 1 ? length(w[0], { pct: true, auto: true }) : null;
+    if (c.tag === "img" && !c.free && l && "mm" in l && l.mm > COLUMN_MM) { c.rewrote = true; c.box.imgW = l.mm; c.box.W = { mm: Math.floor(COLUMN_MM * 100) / 100 }; return mmOut(COLUMN_MM); }
+    if (c.tag === "img" && !c.free && l && "pct" in l && l.pct > 100) { c.rewrote = true; c.box.imgPct = l.pct; c.box.W = { pct: 100 }; return "100%"; }
+    if (!within(l, 0, c.free ? 182 : COLUMN_MM)) return null; c.box.W = l!; return tokOut(w[0][0]); } },
   "min-width": { tags: new Set([...BOXES, "span", "input"]), check: (val, c) => { const w = words(val); const l = w.length === 1 ? length(w[0], { pct: true }) : null; if (!within(l, 0, COLUMN_MM)) return null; c.box.minW = l!; return tokOut(w[0][0]); } },
   "max-width": { tags: new Set([...BOXES, "span", "input"]), check: one((w) => (within(length(w, { pct: true }), 0, COLUMN_MM) ? tokOut(w[0]) : null)) },
-  height: { tags: BOXES, check: (val, c) => { const w = words(val); const l = w.length === 1 ? length(w[0], { auto: true }) : null; return within(l, 0, c.tag === "img" ? PRINTABLE_H_MM : PAGE_MM) ? tokOut(w[0][0]) : null; } },
+  // (a picture in the line taller than a page is a page tall, its width scaled with it: fitPicture)
+  height: { tags: BOXES, check: (val, c) => { const w = words(val); const l = w.length === 1 ? length(w[0], { auto: true }) : null;
+    if (c.tag === "img" && !c.free && l && "mm" in l && l.mm >= 0) { c.box.imgH = l.mm; if (l.mm > PRINTABLE_H_MM) { c.rewrote = true; return mmOut(PRINTABLE_H_MM); } }
+    return within(l, 0, c.tag === "img" ? PRINTABLE_H_MM : PAGE_MM) ? tokOut(w[0][0]) : null; } },
   "min-height": { tags: BOXES, check: one((w) => (within(length(w), 0, PAGE_MM) ? tokOut(w[0]) : null)) },
   overflow: { tags: new Set(["div", "td", "th"]), check: kw("hidden", "visible", "clip") },
   gap: { tags: new Set(["div"]), check: (val) => { const w = words(val); return w.length >= 1 && w.length <= 2 && w.every((x) => within(length(x), 0, 20)) ? w.map((x) => tokOut(x[0])).join(" ") : null; } },
@@ -952,6 +961,36 @@ function fontAsSpan(tag: Tag): Tag {
   const attrs = tag.attrs.filter((a) => !["color", "face", "size", "style"].includes(a.name));
   if (css.length) attrs.push({ name: "style", raw: escAttr(css.join(";")) });
   return { ...tag, name: "span", attrs };
+}
+// A picture in the line keeps its proportions wherever it is shown (round 9, the walk-through: Word's 800 × 450
+// picture was stored 608 wide and still 450 high, and printed as an oval): when its width or its height has to be
+// fitted — to the column (608 px, 160.86 mm), to a page (1000 px, 263 mm), to 100 % — the other is scaled by the same
+// factor, in its attributes and in its style alike. (A free picture keeps the size the editor gave it.)
+function fitPicture(tag: Tag, kept: [string, string][], style: Kept | null, box: Box): boolean {
+  let changed = false;
+  // its attributes: width and height in px
+  const px = (k: string) => { if (!kept.some((x) => x[0] === k)) return null; const a = tag.attrs.find((x) => x.name === k); const m = /^\s*(\d{1,7}(?:\.\d+)?)\s*$/.exec((a?.raw != null ? decodeAttr(a.raw) : null) ?? ""); return m ? Number(m[1]) : null; };
+  const w = px("width"), h = px("height");
+  const ka = Math.min(1, w ? 608 / w : 1, h ? 1000 / h : 1);
+  if (ka < 1 && w && h) {
+    for (const [k, v] of [["width", Math.min(608, Math.max(1, Math.round(w * ka)))], ["height", Math.min(1000, Math.max(1, Math.round(h * ka)))]] as const) {
+      const i = kept.findIndex((x) => x[0] === k); kept[i] = [k, ` ${k}="${v}"`];
+    }
+    changed = true;
+  }
+  // its style: a width in mm or %, a height in mm
+  if (style) {
+    const ks = Math.min(1, box.imgW ? COLUMN_MM / box.imgW : 1, box.imgPct ? 100 / box.imgPct : 1, box.imgH && box.imgH > PRINTABLE_H_MM ? PRINTABLE_H_MM / box.imgH : 1);
+    if (ks < 1) {
+      const set = (prop: string, out: string) => { const i = style.findIndex((x) => x.prop === prop); if (i >= 0) style[i] = { prop, out: `${prop}:${out}` }; };
+      const wl = box.imgW ?? (box.W && "mm" in box.W ? box.W.mm : undefined);
+      if (wl !== undefined) set("width", mmOut(Math.min(COLUMN_MM, wl * ks)));
+      else if (box.imgPct !== undefined || (box.W && "pct" in box.W)) set("width", `${Math.floor(Math.min(100, (box.imgPct ?? (box.W as { pct: number }).pct) * ks) * 100) / 100}%`);
+      if (box.imgH !== undefined) set("height", mmOut(Math.min(PRINTABLE_H_MM, box.imgH * ks)));
+      changed = true;
+    }
+  }
+  return changed;
 }
 // A <center>: a <div> whose lines are centred (its own style, after, wins).
 function centerAsDiv(tag: Tag): Tag {
@@ -1380,6 +1419,7 @@ function sanitizePass(s: string): string {
       if (v.value !== undefined) { changed = true; kept.push([a.name, ` ${a.name}="${escAttr(v.value)}"`]); continue; }
       kept.push([a.name, a.raw === null ? ` ${a.name}` : ` ${a.name}="${quoteAttr(a.raw)}"`]);
     }
+    if (name === "img" && !c.free && fitPicture(tag, kept, style, c.box)) changed = true;
     if (classRaw !== null) {
       // (a box kept under another name is a plain one: a document's class is the app's, never a pasted <figure>'s)
       classes = inLink || name !== src ? [] : classList.filter((x) => CLASSES.get(x)?.has(name) && (x !== "free" || c.free));

@@ -267,7 +267,7 @@ const DICT: Record<string, Entry> = {
   "part.portal": { bg: "Портал", en: "Portal" },
   "part.invoiceSent": { bg: "изпратена", en: "invoice sent" },
   "part.hidden": { bg: "Скрито", en: "Hidden" },
-  "part.confBanner": { bg: "Имената са видими само за Мениджър (ISO/IEC 17043 §4.2). С Вашата роля виждате само кодовете.", en: "Names are visible to a Manager only (ISO/IEC 17043 §4.2). With your role you see codes only." },
+  "part.confBanner": { bg: "Имената са видими само за ръководителя на схемата и експерта по кодиране (ISO/IEC 17043 §4.2). С Вашата роля виждате само кодовете.", en: "Names are visible only to the scheme manager and the coding expert (ISO/IEC 17043 §4.2). With your role you see codes only." },
   "part.inviteToPortal": { bg: "Покани в портала", en: "Invite to portal" },
   "part.openCase": { bg: "Отвори досие", en: "Open case file" },
 
@@ -279,8 +279,8 @@ const DICT: Record<string, Entry> = {
   "case.name": { bg: "Лаборатория", en: "Laboratory" },
   "case.reveal": { bg: "Покажи името", en: "Reveal name" },
   "case.hide": { bg: "Скрий името", en: "Hide name" },
-  "case.revealHint": { bg: "Само Мениджър може да види името зад кода (ISO/IEC 17043 §4.2).", en: "Only a Manager may see the name behind the code (ISO/IEC 17043 §4.2)." },
-  "case.hiddenName": { bg: "Скрито (само Мениджър)", en: "Hidden (Manager only)" },
+  "case.revealHint": { bg: "Името зад кода виждат само ръководителят на схемата и експертът по кодиране (ISO/IEC 17043 §4.2).", en: "Only the scheme manager and the coding expert may see the name behind the code (ISO/IEC 17043 §4.2)." },
+  "case.hiddenName": { bg: "Скрито (само ръководителят на схемата и експертът по кодиране)", en: "Hidden (the scheme manager and the coding expert only)" },
   "case.timeline": { bg: "Хронология", en: "Timeline" },
   "case.noEvents": { bg: "Все още няма стъпки. Първата се добавя при създаване на кода.", en: "No steps yet. The first is added when the code is assigned." },
   "case.auto": { bg: "авт.", en: "auto" },
@@ -610,6 +610,7 @@ const DICT: Record<string, Entry> = {
   "act.lab_application.approved": { bg: "Одобрена заявка за акаунт", en: "Account application approved" },
   "act.lab_application.rejected": { bg: "Отхвърлена заявка за акаунт", en: "Account application rejected" },
   "act.cover.default": { bg: "Обща заглавна снимка", en: "Shared title-page photo" },
+  "act.provider.head": { bg: "Ръководител на организатора (подписва заповедите)", en: "Head of the PT provider (signs the Orders)" },
   // results audit trail (§7.5.1/§8.4) — added with the logActivity calls in
   // saveScoringAction / autoAssignAction; the summary carries the cell-level diff.
   "act.results.saved": { bg: "Запазени резултати", en: "Results saved" },

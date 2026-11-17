@@ -400,9 +400,14 @@ export default async function CaseFilePage({
         <input type="hidden" name="code" value={code} />
         {returnTo && <input type="hidden" name="returnTo" value={returnTo} />}
         <label className="block"><span className="block mb-0.5" style={labelStyle}>{tr("case.kind")}</span>
-          <select name="kind" className={inputCls} style={inputStyle} defaultValue={preKind}>
-            {MANUAL_KINDS.filter((k) => !(k === "items_dispatched" && s?.type === "T")).map((k) => <option key={k} value={k}>{tr(`casekind.${k}`)}</option>)}
-          </select></label>
+          {/* a step asked for (from the traceability matrix) that this scheme does not offer here — a testing scheme's
+              dispatch goes by «Доставки» — preselects nothing: it showed the first step, and a quick «＋» recorded the
+              wrong fact (the real-user walk-through, M9) */}
+          {(() => { const offered = MANUAL_KINDS.filter((k) => !(k === "items_dispatched" && s?.type === "T")); const pre = offered.includes(preKind) ? preKind : ""; return (
+          <select name="kind" className={inputCls} style={inputStyle} defaultValue={pre} required>
+            {pre === "" && <option value="" disabled>{L("— изберете стъпка —", "— choose a step —")}</option>}
+            {offered.map((k) => <option key={k} value={k}>{tr(`casekind.${k}`)}</option>)}
+          </select>); })()}</label>
         <label className="block"><span className="block mb-0.5" style={labelStyle}>{tr("case.date")}</span>
           <input name="at" type="date" defaultValue={today} className={inputCls} style={inputStyle} /></label>
         <label className="block"><span className="block mb-0.5" style={labelStyle}>{tr("case.ref")}</span>

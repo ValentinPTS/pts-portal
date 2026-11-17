@@ -91,6 +91,9 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
   // round 9 (T2): what a person typed about one participation (a chain stamp's note, an extension's order number)
   // only to who sees names here
   const seesNames = await mayNow("names.view", id);
+  // …and an extension's Order No. also to who grants it (order.manage — the head), as on the case file, the journal
+  // and «Известия» (round 9 attack: the scheme page showed the head only «удължен»)
+  const seesExtension = seesNames || (await mayNow("order.manage", id));
   const seesOrder = await mayViewDoc(ORDER_DOC, id);
   const type = s.type;
   const slug = TYPE_SLUG[type];
@@ -551,7 +554,7 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
               const w = st.kind === "lab" ? chainWindow(s, st, offDays) : null;
               if (!w) return undefined;
               const state = deadlineState(w.due, st.sentAt, schemeNowMs(s));
-              return { text: fmtSchemeDate(w.due), orderNo: seesNames ? w.ext?.orderNo : undefined, extended: !!w.ext, overdue: state === "overdue", late: state === "late" };
+              return { text: fmtSchemeDate(w.due), orderNo: seesExtension ? w.ext?.orderNo : undefined, extended: !!w.ext, overdue: state === "overdue", late: state === "late" };
             })(),
           }))}
           windowDays={windowDays(s)}
@@ -562,6 +565,7 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
           clockOffsetMs={clockOffsetMs(s)}
           dispatchedAt={s.chain?.dispatchedAt}
           returnedAt={s.chain?.returnedAt}
+          canEdit={await mayNow("dispatch", id)}
         />
       )}
 
