@@ -169,6 +169,19 @@ const EDITOR_CSS = `
   .we-page::before{content:"";position:absolute;top:${MARGIN_MM.top}mm;bottom:${MARGIN_MM.bottom}mm;left:${MARGIN_MM.left}mm;width:8mm;background:url(/brand/embroidery-side.png) top center/100% auto repeat-y;pointer-events:none;z-index:0;}
   .we-docbody{position:relative;min-height:calc(${PAGE_BREAK_MM}mm - ${PAGE_PAD_PX.top + PAGE_PAD_PX.bottom}px);outline:none;z-index:1;}
   .we-docbody:focus{outline:none;}
+  /* mirror of DOC_CSS's body rules (round 9 review 4): a word longer than its whole line breaks, a field never
+     wider than its box, a dropdown and a pasted field in a cell give way as the cell does, a <pre> wraps — the
+     canvas breaks the lines the PDF breaks; and a link looks, and sits, as it prints */
+  .we-docbody{overflow-wrap:break-word;}
+  .we-docbody a,.we-docbody a *{position:static!important;display:inline!important;float:none!important;transform:none!important;translate:none!important;scale:none!important;rotate:none!important;zoom:normal!important;offset-path:none!important;margin:0!important;padding:0!important;border:0!important;width:auto!important;height:auto!important;min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;text-indent:0!important;letter-spacing:normal!important;word-spacing:normal!important;place-self:start!important;flex:none!important;opacity:1!important;visibility:visible!important;overflow-wrap:anywhere!important;color:#0563c1!important;background:transparent!important;text-shadow:none!important;-webkit-text-stroke:0!important;}
+  @media screen{.we-docbody a,.we-docbody a *{text-shadow:1px 0 #fff,-1px 0 #fff,0 1px #fff,0 -1px #fff!important;}}
+  .we-docbody a{font-size:min(1em,24pt)!important;text-decoration:underline!important;position:relative!important;z-index:21!important;}
+  .we-docbody :has(a){position:static!important;transform:none!important;translate:none!important;scale:none!important;rotate:none!important;zoom:normal!important;height:auto!important;max-height:none!important;}
+  .we-docbody .dochead-wrap:has(a){margin:0!important;}
+  .we-docbody input,.we-docbody select,.we-docbody textarea{max-width:100%;}
+  .we-docbody :is(td,th) select,.we-docbody :is(td,th) input:not([class]):not([type=checkbox]):not([type=radio]){width:100%;}
+  .we-page .we-docbody .ff-line,.we-page .we-docbody .blank{min-width:min(220px,100%);}
+  .we-docbody pre{white-space:pre-wrap;}
   .we-page h2{font-family:'Sofia Sans Condensed',sans-serif;font-weight:700;font-size:13.5pt;color:var(--ink);border-bottom:2.5px solid var(--red);padding-bottom:5px;margin:20px 0 4px;}
   .we-page h3{font-family:'Sofia Sans Condensed',sans-serif;font-weight:700;font-size:11.5pt;color:var(--green-dark);margin:12px 0 3px;}
   .we-page p{margin:6px 0;}

@@ -100,21 +100,47 @@ export const DOC_CSS = `
      because every skin is DOC_CSS + overrides, so one rule covers classic, modern,
      minimal and every custom skin. */
   img.free{position:absolute;max-width:none;z-index:1;}
-  /* No link in a document's body is stretched over the screen (round 7, R7S-4): a fixed class, a huge free
-     picture, a transform, negative margins took any click anywhere elsewhere. A link and what is in it stay in
-     the flow, on screen (paper takes no clicks); the side strip is the shell's, never the body's. */
-  /* (round 7 review, RV7-2: containing the whole body clipped a stamp or a signature below the last line and a
-     wide table on every screen view — the links are held instead, on screen only; the PDF is as it was) */
+  /* A document's body (round 9 — the cleaner's allow-list does most of this; these rules hold what CSS alone
+     decides, in EVERY medium: on screen, in print and so in the PDF, whose link annotations followed the link's
+     box — rounds 7–8 held links on screen only, and a PDF link covered whole pages).
+     · On screen the body is its own stacking context: nothing in it stacks over the page around it — the Fill
+       view's sticky save bar, the side strip — whatever z-index a free picture carries. Not in print: there the
+       title page's white header band (z-index 41) must still cover the printed side strip (z-index 40) beside the
+       logo (round 9 review 4), and no page UI is printed.
+     · A word longer than its whole line breaks rather than running out of it — and only such a word: a table's
+       columns are as wide as the words in them, as they always were («anywhere» split «Международни» in an
+       18-mm cell; round 9 review 4, second look); a field, a dropdown, a field's line never wider than its box,
+       and in a table's cell a dropdown and a field the form builder did not make give way as the cell does. */
+  @media screen{.pts-docbody{isolation:isolate;}}
+  .pts-docbody{overflow-wrap:break-word;}
+  .pts-docbody input,.pts-docbody select,.pts-docbody textarea{max-width:100%;}
+  .pts-docbody :is(td,th) select,.pts-docbody :is(td,th) input:not([class]):not([type=checkbox]):not([type=radio]){width:100%;}
+  .pts-docbody .ff-line,.pts-docbody .blank{min-width:min(220px,100%);}
+  .pts-docbody pre{white-space:pre-wrap;}
   .pts-docbody .doc-side{display:none!important;}
-  @media screen{
-    .pts-docbody a,.pts-docbody a *{position:static!important;transform:none!important;translate:none!important;scale:none!important;float:none!important;margin:0!important;padding:0!important;border-width:0!important;zoom:normal!important;max-width:100%!important;}
-    /* (a border grew a link over the page as padding did; an svg's link painted outside the svg — round 8 final check) */
-    .pts-docbody svg{overflow:hidden!important;}
-    /* a free picture inside a link stays where it was put (as in print — round 8, R8UP-6), and takes no clicks */
-    .pts-docbody a img.free{position:absolute!important;max-width:none!important;pointer-events:none!important;}
-    /* …and whatever holds a link: a positioned or transformed box around it carried it over the page (round 8, R8S-2) */
-    .pts-docbody :has(a){position:static!important;transform:none!important;translate:none!important;scale:none!important;rotate:none!important;zoom:normal!important;}
-  }
+  /* · A link is its words. The cleaner lets nothing but text and inline formatting into one; here it gets no
+       box of its own either: never placed, sized, stretched as a flex or grid item, padded or bordered, never
+       bigger than 24 pt whatever the paragraph around it, and its long address breaks anywhere rather than
+       running out of its line. Its colour is the link's own, and underlined: a reader always sees where a link is
+       — white words were one (round 9 review 4) — while what is behind it shows through and what is inside it (a
+       strike-through) keeps its own lines. On screen it is edged in white too (blue on a blue cell); never in
+       print, where an edge is more text: the PDF's text layer read every linked word twice (round 9, last look).
+       It is painted above any free picture (z-index up to 20): a picture laid over a link hid it while a click
+       there still followed it — and stays inside the body's own stacking context on screen, under the printed
+       side strip (40) and the title page's band (41) in print. */
+  .pts-docbody a,.pts-docbody a *{position:static!important;display:inline!important;float:none!important;transform:none!important;translate:none!important;scale:none!important;rotate:none!important;zoom:normal!important;offset-path:none!important;margin:0!important;padding:0!important;border:0!important;width:auto!important;height:auto!important;min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;text-indent:0!important;letter-spacing:normal!important;word-spacing:normal!important;place-self:start!important;flex:none!important;opacity:1!important;visibility:visible!important;overflow-wrap:anywhere!important;color:#0563c1!important;background:transparent!important;text-shadow:none!important;-webkit-text-stroke:0!important;}
+  @media screen{.pts-docbody a,.pts-docbody a *{text-shadow:1px 0 #fff,-1px 0 #fff,0 1px #fff,0 -1px #fff!important;}}
+  .pts-docbody a{font-size:min(1em,24pt)!important;text-decoration:underline!important;position:relative!important;z-index:21!important;}
+  /* · …and what holds a link is not lifted, turned or clipped short over it: a box around a link stays in the
+       flow (round 8, R8S-2) and is as tall as its content (a fixed height let the link's words run below the
+       body); the title page's header band, which bleeds into the margin by design, does not bleed around one. */
+  .pts-docbody :has(a){position:static!important;transform:none!important;translate:none!important;scale:none!important;rotate:none!important;zoom:normal!important;height:auto!important;max-height:none!important;}
+  .pts-docbody .dochead-wrap:has(a){margin:0!important;}
+  /* · Pictures take no clicks: none is a link any more (the cleaner unlinks a link around one), and a free
+       stamp below the last line, or a float hanging below the body, must stay visible (round 7 review, RV7-2)
+       without covering the page around it. A drawing paints only inside its own box. */
+  .pts-docbody img{pointer-events:none;}
+  .pts-docbody svg{overflow:hidden!important;}
   /* lighter document header (logo + embroidery band + centred title) for utility
      forms that don't have a full title page; the wrap is a white band that bleeds
      left over the side embroidery so the side strip starts at the first section */

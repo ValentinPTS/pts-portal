@@ -36,8 +36,9 @@ const eik = (() => { const d = String(10000000 + (stamp * 131) % 89999999).slice
 const ENT = `Съобщения ${stamp} ООД`, LAB = `Лаб. съобщения ${stamp}`, USER = `Потребител съобщения ${stamp}`, NAME_A = `Съобщения А ${stamp}`, NAME_B = `Съобщения Б ${stamp}`;
 const TO_A = `Лично до А ${stamp}: резултатите ви закъсняват.`, TO_ALL = `До всички ${stamp}: срокът е удължен.`, TO_ORG = `До организацията ${stamp}: нов адрес за фактури.`;
 // a server action's redirect may navigate in place: watch the address (5.6 gotcha)
-// a form posted natively with what it held — a second press, a stale tab, a direct call (5.9 gotcha)
-const postNative = (f) => page.evaluate(({ f }) => { const form = document.createElement("form"); form.method = "post"; form.action = location.pathname + location.search; form.enctype = "multipart/form-data"; document.body.append(form); for (const [k, v] of Object.entries(f)) { const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = v; form.append(i); } form.submit(); }, { f });
+// a form posted natively with what it held — a second press, a stale tab, a direct call (5.9 gotcha) — submitted after evaluate returns: a submit inside it
+// can navigate before evaluate answers («Execution context was destroyed», round 9 gate A)
+const postNative = (f) => page.evaluate(({ f }) => { const form = document.createElement("form"); form.method = "post"; form.action = location.pathname + location.search; form.enctype = "multipart/form-data"; document.body.append(form); for (const [k, v] of Object.entries(f)) { const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = v; form.append(i); } setTimeout(() => form.submit(), 0); }, { f });
 const formOf = (composer) => composer.locator("form").evaluate((f) => Object.fromEntries(new FormData(f)));
 const send = async (composer, bg, until) => {
   await composer.locator("[data-message-bg]").fill(bg);

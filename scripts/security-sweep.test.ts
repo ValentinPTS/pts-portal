@@ -253,9 +253,9 @@ t("a saved certificate or list body never reaches a role without names.view thro
   t("R6S-4: an <input type=hidden> keeps its type; a file input loses it", sanitizeDocHtml('<input type="hidden" name="x" value="1">') === '<input type="hidden" name="x" value="1">' && !/file/.test(sanitizeDocHtml('<input type="file" name="f">')));
   // R6S-7: nothing pinned over the page through a variable, nor a link stretched over it
   t("R6S-7: position through var() or a custom property is dropped", sanitizeDocHtml('<div style="position:var(--p);color:red">a</div>') === '<div style="color:red">a</div>' && !/position|fixed/.test(sanitizeDocHtml('<div style="--x:fixed;position:var(--x)">a</div>')));
-  t("R6S-7: absolute inside a link is dropped; outside one it stays", !/position/.test(sanitizeDocHtml('<a href="https://ptsbg.eu"><span style="position:absolute;top:0;left:0;width:100vw">x</span></a>')) && /position:absolute/.test(sanitizeDocHtml('<span style="position:absolute;top:0">x</span>')));
+  t("R6S-7 / round 9: no inline position — inside a link or out (a free picture gets it from its class)", !/position/.test(sanitizeDocHtml('<a href="https://ptsbg.eu"><span style="position:absolute;top:0;left:0;width:100vw">x</span></a>')) && !/position/.test(sanitizeDocHtml('<span style="position:absolute;top:0">x</span>')));
   // R6S-8: only the keyword itself opens a new tab without its opener
-  t("R6S-8: target=« _blank» (a named window that keeps the opener) is dropped; «_blank» kept", !/target/.test(sanitizeDocHtml('<a href="https://ptsbg.eu" target=" _blank">a</a>')) && /target="_blank"/.test(sanitizeDocHtml('<a href="https://ptsbg.eu" target="_blank">a</a>')));
+  t("R6S-8 / round 9: a link's target is the cleaner's own — «_blank» with «noopener noreferrer», whatever was written (« _blank», a named window, «opener», none)", ['', ' target=" _blank"', ' target="_blank"', ' target="w1" rel="opener"', ' rel="noopener"'].every((x) => sanitizeDocHtml(`<a href="https://ptsbg.eu"${x}>a</a>`) === '<a href="https://ptsbg.eu" target="_blank" rel="noopener noreferrer">a</a>'));
   // R6S-11: another round's number found however the editor spelled it
   const others = otherSchemeNumbers("<p>PTS 26/<b></b>11-T-2 and PTS&nbsp;26/11&#8209;T&#x2D;3 and PTS 26/11-T-1</p>", "PTS 26/11-T-1");
   t("R6S-11: another round's number through tags and entities", others.length === 2, JSON.stringify(others));
@@ -356,7 +356,31 @@ t("a saved certificate or list body never reaches a role without names.view thro
   t("Q3: after sign-in such a link is offered on «/open»; only a portal path, only such a page; no prefetch", safeDest("internal", "/registrations") === "/open?to=%2Fregistrations" && /const to = safeNext\(/.test(openPage) && /const path = to\.split\(\/\[\?#\]\/\)\[0\];/.test(openPage) && /path !== "\/open" && ACTS_WHEN_OPENED\.test\(path\)/.test(openPage) && /<a href=\{offered\} className="btn btn-primary" data-open-continue>/.test(openPage) && !/<Link href=\{offered\}/.test(openPage));
   // R7S-4: the document body contains whatever is in it
   const docCss = src("lib/doc-css.ts");
-  t("R7S-4 / RV7-2: links stay in the flow on screen; the body is NOT contained (a stamp below the text, a wide table stay visible); print untouched", !/contain:paint/.test(docCss) && /\.pts-docbody \.doc-side\{display:none!important;\}/.test(docCss) && /@media screen\{\s*\.pts-docbody a,\.pts-docbody a \*\{position:static!important;transform:none!important;translate:none!important;scale:none!important;float:none!important;margin:0!important;padding:0!important;border-width:0!important;zoom:normal!important;max-width:100%!important;\}/.test(docCss) && /\.pts-docbody a img\.free\{position:absolute!important;max-width:none!important;pointer-events:none!important;\}/.test(docCss) && /\.pts-docbody :has\(a\)\{position:static!important;transform:none!important;/.test(docCss));
+  t("R7S-4 / RV7-2 / round 9: links stay in the flow in EVERY medium (the PDF too); the body is NOT contained (a stamp below the text, a wide table stay visible) but is its own stacking context; pictures take no clicks", !/contain:paint/.test(docCss) && /\.pts-docbody \.doc-side\{display:none!important;\}/.test(docCss) && !/@media screen\{\s*\.pts-docbody a,\.pts-docbody a \*\{position/.test(docCss) && /\.pts-docbody a,\.pts-docbody a \*\{position:static!important;display:inline!important;float:none!important;transform:none!important;/.test(docCss) && /\.pts-docbody\{isolation:isolate;\}/.test(docCss) && /\.pts-docbody img\{pointer-events:none;\}/.test(docCss) && /\.pts-docbody :has\(a\)\{position:static!important;transform:none!important;/.test(docCss));
+  // round 9 review 4: the body a stacking context on SCREEN only (in print the title page's white band, z 41, must cover
+  // the printed side strip, z 40); a word longer than its line breaks; fields give way in a cell; a link always looks one
+  t("round 9 review 4: isolation on screen only; long words break; fields in a cell give way; a link's colour is its own",
+    /@media screen\{\.pts-docbody\{isolation:isolate;\}\}/.test(docCss) && !/(^|[;}\s])\.pts-docbody\{isolation:isolate;\}/.test(docCss.replace(/@media screen\{\.pts-docbody\{isolation:isolate;\}\}/g, ""))
+    && /\.pts-docbody :is\(td,th\) select,[^{]*\{width:100%;\}/.test(docCss));
+  // …and its second look: a word breaks only where it would run out of its line (never «anywhere» in the body — it split
+  // «Международни» in an 18-mm cell); a link breaks anywhere, keeps its own colour edged in white over what shows through,
+  // and is underlined on itself only (a <s> inside keeps its line); the editor's canvas looks and breaks the same
+  const we = src("components/WordEditor.tsx");
+  t("round 9 review 4b: words whole in the body, links break anywhere; a link's look forced on the link, behind it transparent; the canvas the same",
+    /\.pts-docbody\{overflow-wrap:break-word;\}/.test(docCss) && !/overflow-wrap:anywhere;\}/.test(docCss.replace(/\.pts-docbody a,\.pts-docbody a \*\{[^}]*\}/, ""))
+    && /\.pts-docbody a,\.pts-docbody a \*\{[^}]*overflow-wrap:anywhere!important;color:#0563c1!important;background:transparent!important;/.test(docCss)
+    && /\.pts-docbody a\{font-size:min\(1em,24pt\)!important;text-decoration:underline!important;/.test(docCss) && !/\.pts-docbody a,\.pts-docbody a \*\{[^}]*text-decoration/.test(docCss)
+    && /\.we-docbody\{overflow-wrap:break-word;\}/.test(we) && /\.we-docbody a,\.we-docbody a \*\{[^}]*color:#0563c1!important;background:transparent!important;/.test(we) && /\.we-docbody a\{font-size:min\(1em,24pt\)!important;text-decoration:underline!important;/.test(we));
+  // …and its last look: the white edge on screen only (in print it is more text — the PDF read each linked word twice),
+  // never a stroke; a link painted above any free picture (z-index ≤ 20), under the printed strip (40) and band (41);
+  // the editor's canvas the same
+  const noEdge = (css: string, body: string) => new RegExp(`\\.${body} a,\\.${body} a \\*\\{[^}]*text-shadow:none!important;-webkit-text-stroke:0!important;\\}`).test(css)
+    && new RegExp(`@media screen\\{\\.${body} a,\\.${body} a \\*\\{text-shadow:[^}]*#fff[^}]*!important;\\}\\}`).test(css)
+    && (css.match(/text-shadow:(?!none)[^;]*;/g) ?? []).length === 1 && !/text-stroke:(?!0!)/.test(css)
+    && new RegExp(`\\.${body} a\\{[^}]*position:relative!important;z-index:21!important;\\}`).test(css);
+  t("round 9 last look: a link's white edge on screen only, no stroke; links above free pictures (≤ 20), below the strip (40) and the band (41); the canvas the same",
+    noEdge(docCss, "pts-docbody") && noEdge(we, "we-docbody") && /\.doc-side\{[^}]*z-index:40;/.test(docCss) && /\.dochead-wrap\{[^}]*z-index:41;/.test(docCss)
+    && /const z = Math\.max\(0, Math\.min\(20, t\.n\)\);/.test(src("lib/sanitize-html.ts")));
   // R7S-5: the waybill mask — more phrasings; what a codes-only reader needs kept
   const leaks7 = ["получено с куриер 62\u00A0555\u00A0444\u00A0333", "изпратено с куриер 62.555.444.333", "изпратено с куриер, номер 123456789", "Европът 1234567", "Box Now 98765432", "товарителница: 62–555–444–333", "колет 62555444333"].map((x) => String(scrubIdentity(x)));
   t("R7S-5: the waybill masked however it is written", leaks7.every((x) => x.endsWith("•••") && !/\d{3}/.test(x)), leaks7.join(" | "));
@@ -445,8 +469,8 @@ t("a saved certificate or list body never reaches a role without names.view thro
   t("R8S-1: a team without its scheme manager is refused — by the server and by the form before it is sent", /if \(teamNow && teamNow\.filter\(\(m\) => m\.duties\?\.includes\("manager"\)\)\.length !== 1\) redirect\(`\/schemes\/\$\{id\}\/edit\?err=team-manager`\);/.test(actions) && /const at = String\(fd\.get\("duty_manager"\) \?\? ""\);[\s\S]{0,200}e\.preventDefault\(\);/.test(src("components/SchemeEditor.tsx")) && /err === "team-manager"/.test(src("app/schemes/[id]/edit/page.tsx")));
   // R8S-2: whatever holds a link is held too; a large negative margin dropped, a Word table's small one kept
   const { sanitizeDocHtml: san8 } = await import("../src/lib/sanitize-html.ts");
-  t("R8S-2: a margin pulling far back is dropped; «-5.4pt» from Word stays", !/margin/.test(san8('<div style="margin-top:-2000px">x</div>')) && !/margin/.test(san8('<div style="margin:-30em 0 0">x</div>')) && /margin-left:-5\.4pt/.test(san8('<table style="margin-left:-5.4pt"><tr><td>x</td></tr></table>')));
-  t("R8S-2: on screen a positioned or transformed box around a link is held", /\.pts-docbody :has\(a\)\{position:static!important;transform:none!important;translate:none!important;scale:none!important;rotate:none!important;zoom:normal!important;\}/.test(src("lib/doc-css.ts")));
+  t("R8S-2: a margin pulling far back is dropped; Word's «-5.4pt» on a table clamped to -1 mm (round 9: what a hit may stray)", !/margin/.test(san8('<div style="margin-top:-2000px">x</div>')) && !/margin/.test(san8('<div style="margin:-30em 0 0">x</div>')) && /margin-left:-1mm/.test(san8('<table style="margin-left:-5.4pt"><tr><td>x</td></tr></table>')));
+  t("R8S-2 / round 9: a positioned or transformed box around a link is held, in every medium, and is as tall as its content", /\.pts-docbody :has\(a\)\{position:static!important;transform:none!important;translate:none!important;scale:none!important;rotate:none!important;zoom:normal!important;height:auto!important;max-height:none!important;\}/.test(src("lib/doc-css.ts")) && !/@media screen\{\s*[^}]*:has\(a\)/.test(src("lib/doc-css.ts")));
   // R8S-3: the waybill mask
   const { scrubIdentity: sc8 } = await import("../src/lib/redact.ts");
   t("R8S-3: two waybills joined by a comma are masked; nothing of a waybill beside a decimal shows", !/\d{6}/.test(String(sc8("62555444333,62555444334"))) && !/\d{5}/.test(String(sc8("0.5 62555444333"))));
@@ -465,8 +489,8 @@ t("a saved certificate or list body never reaches a role without names.view thro
   t("R8 verification: a save never deselects; a click that moved nothing is no edit", /const \{ nb, ne \} = snap \?\? \(\(\) => \{ const x = snapshot\(\); setBg\(x\.nb\); setEn\(x\.ne\); return x; \}\)\(\);/.test(we9) && /if \(dragMoved\.current\) setSaved\(false\);/.test(we9));
   // RV8-2: no inline «!important» however spelled; a negative margin however spelled
   const { sanitizeDocHtml: san9 } = await import("../src/lib/sanitize-html.ts");
-  t("RV8-2: «!important» never kept inline (any spelling); quoted «!» kept", !/important|!/.test(san9('<p style="color:red!/**/important;width:1px!\\69mportant">a</p>').replace(/<\/?p[^>]*>/g, (m) => (m.startsWith("<p ") ? m.replace(/style="[^"]*"/, (x) => x) : m)).match(/style="([^"]*)"/)?.[1] ?? "") && /'A!B'/.test(san9(`<p style="font-family:'A!B'">a</p>`)));
-  t("RV8-2: a negative margin as e-notation, calc(), var(), an unknown unit or -webkit- is dropped; Word's -42.55pt kept", ['margin-top:-5e3px', 'margin:calc(-1 * 5000px)', '--m:-5000px;margin-top:var(--m)', '-webkit-margin-before:-5000px', 'margin-top:-40lh'].every((c) => !/margin/.test(san9(`<div style="${c}">a</div>`))) && /margin-left:-42\.55pt/.test(san9('<table style="margin-left:-42.55pt"><tr><td>a</td></tr></table>')));
+  t("RV8-2: «!important» never kept inline (any spelling); a font name with «!» is none (round 9: letters, digits, spaces, «._-»)", !/important|!/.test(san9('<p style="color:red!/**/important;width:1px!\\69mportant">a</p>').replace(/<\/?p[^>]*>/g, (m) => (m.startsWith("<p ") ? m.replace(/style="[^"]*"/, (x) => x) : m)).match(/style="([^"]*)"/)?.[1] ?? "") && san9(`<p style="font-family:'A!B'">a</p>`) === "<p>a</p>" && /font-family:'A B'/.test(san9(`<p style="font-family:'A B'">a</p>`)));
+  t("RV8-2: a negative margin as e-notation, calc(), var(), an unknown unit or -webkit- is dropped; Word's -42.55pt clamped to -1 mm (round 9)", ['margin-top:-5e3px', 'margin:calc(-1 * 5000px)', '--m:-5000px;margin-top:var(--m)', '-webkit-margin-before:-5000px', 'margin-top:-40lh'].every((c) => !/margin/.test(san9(`<div style="${c}">a</div>`))) && /margin-left:-1mm/.test(san9('<table style="margin-left:-42.55pt"><tr><td>a</td></tr></table>')));
   // RV8-4 / RV8-5: who signs
   const { findTeamMember: ftm } = await import("../src/lib/team-roles.ts");
   const mk = (bg: string, en: string, name = "x") => ({ roleBg: bg, roleEn: en, name });
@@ -492,7 +516,7 @@ t("a saved certificate or list body never reaches a role without names.view thro
   t("R8 final: an amount written in thousands and a long decimal fraction kept", sc9("сума 1 234 567 890,00 лв.") === "сума 1 234 567 890,00 лв." && sc9("x = 0,123456789") === "x = 0,123456789");
   const { sanitizeDocHtml: san10 } = await import("../src/lib/sanitize-html.ts");
   t("R8 final: «!important» hidden behind a comment holding a quote is cut too", !/important/.test(san10(`<a href="https://x.example"><img class="free" style="pointer-events:auto/*'*/!important"></a>`)) && !/important/.test(san10(`<p style='color:red/*"*/!important'>a</p>`)));
-  t("R8 final: a link and what is in it have no border on screen; an svg paints only inside its box", /border-width:0!important;/.test(src("lib/doc-css.ts")) && /\.pts-docbody svg\{overflow:hidden!important;\}/.test(src("lib/doc-css.ts")));
+  t("R8 final / round 9: a link and what is in it have no border, in every medium; an svg paints only inside its box", /\.pts-docbody a,\.pts-docbody a \*\{[^}]*border:0!important;/.test(src("lib/doc-css.ts")) && /\.pts-docbody svg\{overflow:hidden!important;\}/.test(src("lib/doc-css.ts")));
   const { refreshTeam: rt10 } = await import("../src/lib/docs/instruction-common.ts");
   const merged = `<h2 class="sec"><span class="n">2.</span> Персонал, участващ в схемата за изпитване за пригодност<span style="font-size: 13.5pt;">&nbsp;Информация за услуги, доставени от външни доставчици, свързани с тази схема</span></h2><div class="body"><p>x</p></div>`;
   const back10 = rt10(merged, { team: [{ roleBg: "Ръководител на схемата", roleEn: "PT Scheme Manager", name: "M" }] } as never, "bg");

@@ -133,7 +133,7 @@ try {
   await go(`/lab/p/${pidA}`);
   t("«Запознах се»: recorded — the row says so, with the day and the hour", (await attr(docRow("instruction"), "data-doc-ack")) === "done" && /Потвърдено на|Acknowledged on/.test(await textOf(docRow("instruction").locator("[data-ack-done]"))));
   // the same form posted again (a second press, a stale tab): no second record — said so
-  await page.evaluate(({ f }) => { const form = document.createElement("form"); form.method = "post"; form.action = location.pathname; form.enctype = "multipart/form-data"; document.body.append(form); for (const [k, v] of Object.entries(f)) { const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = v; form.append(i); } form.submit(); }, { f: staleForm });
+  await page.evaluate(({ f }) => { const form = document.createElement("form"); form.method = "post"; form.action = location.pathname; form.enctype = "multipart/form-data"; document.body.append(form); for (const [k, v] of Object.entries(f)) { const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = v; form.append(i); } setTimeout(() => form.submit(), 0); }, { f: staleForm });
   await waitFor(async () => /e=ack-twice/.test(page.url()), 30);
   t("…the same form again (a second press, a stale tab): no second record — said so", /e=ack-twice/.test(page.url()) && (await page.locator('[data-page-err="ack-twice"]').count()) === 1);
   await go(`/lab/p/${pidA}`);
@@ -143,7 +143,7 @@ try {
   t("the declaration's box: the edition named, the tick, «Подписвам»", (await decl.count()) === 1 && /редакция № 1|edition No\. 1/.test(await decl.innerText()));
   // another participation's id on A's form: not A's own — nothing recorded for B (only a participation's own)
   const declForm = await decl.evaluate((f) => Object.fromEntries(new FormData(f)));
-  await page.evaluate(({ f }) => { const form = document.createElement("form"); form.method = "post"; form.action = location.pathname; form.enctype = "multipart/form-data"; document.body.append(form); for (const [k, v] of Object.entries(f)) { const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = v; form.append(i); } form.submit(); }, { f: { ...declForm, participantId: pidB, tick: "on" } });
+  await page.evaluate(({ f }) => { const form = document.createElement("form"); form.method = "post"; form.action = location.pathname; form.enctype = "multipart/form-data"; document.body.append(form); for (const [k, v] of Object.entries(f)) { const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = v; form.append(i); } setTimeout(() => form.submit(), 0); }, { f: { ...declForm, participantId: pidB, tick: "on" } });
   await waitFor(async () => !page.url().includes(`/lab/p/${pidA}`), 30);
   t("another participation's id on A's form: sent back to the portal's start — not its own", !page.url().includes(`/lab/p/${pidA}`) && !page.url().includes(`/lab/p/${pidB}`), page.url());
   await go(`/lab/p/${pidA}`);
@@ -191,7 +191,7 @@ try {
   t("edition 2 sent: the instruction asks again", (await attr(docRow("instruction"), "data-doc-ack")) === "asked");
   // the form drawn for edition 1, posted now: refused — the edition is the one to acknowledge
   // (posted natively — a hydrated form re-renders its hidden fields from the page)
-  await page.evaluate(({ f }) => { const form = document.createElement("form"); form.method = "post"; form.action = location.pathname; form.enctype = "multipart/form-data"; document.body.append(form); for (const [k, v] of Object.entries(f)) { const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = v; form.append(i); } form.submit(); }, { f: staleForm });
+  await page.evaluate(({ f }) => { const form = document.createElement("form"); form.method = "post"; form.action = location.pathname; form.enctype = "multipart/form-data"; document.body.append(form); for (const [k, v] of Object.entries(f)) { const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = v; form.append(i); } setTimeout(() => form.submit(), 0); }, { f: staleForm });
   await waitFor(async () => /e=ack-edition/.test(page.url()), 30);
   t("…a form drawn for edition 1, posted after edition 2: refused, said so", /e=ack-edition/.test(page.url()));
   await go("/dev/persona?role=manager");

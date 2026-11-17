@@ -153,7 +153,7 @@ try {
   await waitFor(async () => /corr=ok/.test(page.url()), 30);
   // …then the very same form, posted natively with what it held (the 5.9 way): «recorded», nothing new
   await go(`${staffUrl}`);
-  await page.evaluate(({ f }) => { const form = document.createElement("form"); form.method = "post"; form.action = location.pathname + location.search; form.enctype = "multipart/form-data"; document.body.append(form); for (const [k, v] of Object.entries(f)) { const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = v; form.append(i); } form.submit(); }, { f: fd });
+  await page.evaluate(({ f }) => { const form = document.createElement("form"); form.method = "post"; form.action = location.pathname + location.search; form.enctype = "multipart/form-data"; document.body.append(form); for (const [k, v] of Object.entries(f)) { const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = v; form.append(i); } setTimeout(() => form.submit(), 0); }, { f: fd });
   const answered = await waitFor(async () => /corr=ok/.test(page.url()), 30);
   await go(`${staffUrl}#corrections`);
   t("the same form posted twice: recorded once — «recorded», one record for it", answered && (await attr(page.locator("[data-correction-history]"), "data-correction-history")) === "3" && (await attr(page.locator(`[data-correction-row="${K}::d1"]`), "data-used")) === "5,0");
