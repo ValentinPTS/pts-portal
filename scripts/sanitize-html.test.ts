@@ -275,9 +275,11 @@ ok("round 2 — the portal's own pictures kept", sanitizeDocHtml(`<img src="/bra
   {
     const fit = (a: string, b: string) => { const k = Math.floor(3e6 / (a.length + b.length)); return a.repeat(k) + b.repeat(k); };
     const shapes: [string, string][] = [["tick boxes under «</div>»", fit('<span class="ff-box">', "</div>")], ["bars under «</li>»", fit('<span class="bar">', "</li>")], ["tab stops under «<td>»", fit('<span class="we-tab">', "<td>")], ["rows of rowspan=9999", "<table>" + "<tr><td rowspan=9999>x".repeat(Math.floor(3e6 / 22))]];
+    // linear, not «under a second»: ~0.3 s a pass on a Mac, 3–4× that on a shared build machine (GitHub took 1.3 s and
+    // stopped the 47df5ab release). Quadratic, 136 000 rows would take minutes — a 5 s ceiling still catches it at once.
     for (const [name, h] of shapes) {
       const t0 = Date.now(), o = S(h), t1 = Date.now(); S(o); const t2 = Date.now();
-      ok(`review 4 / 2 — 3 MB of ${name}: saved in under a second, and shown again in under a second`, t1 - t0 < 1000 && t2 - t1 < 1000, `${t1 - t0} ms, ${t2 - t1} ms`);
+      ok(`review 4 / 2 — 3 MB of ${name}: saved, and shown again, in linear time (each well under 5 s, even on a slow build machine)`, t1 - t0 < 5000 && t2 - t1 < 5000, `${t1 - t0} ms, ${t2 - t1} ms`);
     }
   }
   ok("review 4 / 2 — a rowspan past 1000 is 1000 in the room it takes (it was 1 inside, 1000 written: no fixed point, the body escaped)",
