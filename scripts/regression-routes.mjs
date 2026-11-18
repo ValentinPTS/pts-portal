@@ -156,6 +156,7 @@ export const ROUTES = [
   // ── development only ──
   { file: "dev/persona/route.ts", names: "dev", paths: () => [] },
   { file: "dev/code/route.ts", names: "dev", paths: () => [] },
+  { file: "dev/ui/page.tsx", names: "dev", paths: () => [] }, // the redesign's building blocks (R0) — development only
 ];
 
 export { DOCS, PAGE_DOCS };

@@ -310,3 +310,105 @@ body {
 }
 /* top level — nested in @media the whole block is dropped by the CSS build (8.6) */
 @page { size: A4; margin: 14mm; }
+
+/* ── Redesign R0 (2026-11-18, direction A «Пътека от стъпки») — the shared building blocks, «ui-*» classes only:
+   nothing existing changes until R1 puts them on the pages. ptsbg.eu's green and orange; every text pair reads at
+   4.5:1 or more (scripts/ui-r0.test.ts) — the brand green #57823c is for borders and shapes, its deeper #456b2c for
+   words and filled buttons. Leaf shapes: rounded, one square corner bottom-left. Plan: docs/participant-portal/REDESIGN.md */
+:root {
+  --leaf-btn: 60px 60px 60px 0;
+  --leaf-card: 36px 36px 36px 0;
+  --leaf-box: 28px 28px 28px 0;
+  --turn: #cf4911;      /* orange — the person's turn (a fill, white words on it) */
+  --turn-ink: #a63a0d;  /* orange words */
+  --turn-soft: #fdf3ee;
+  --turn-ring: #fbe3d6;
+  --done: #57823c;      /* green — done (a fill, a border, a shape) */
+  --done-ink: #456b2c;  /* green words; the green main button */
+  --done-soft: #eef3ea;
+  --later-ink: #5f5f5f; /* grey — later, nothing to do */
+  --later-soft: #fafaf8;
+  --later-line: #d0d0cb;
+  --info-ink: #2f5a72;
+  --info-soft: #e8eff3;
+}
+/* an icon sits in the line of words beside it (the base styles make every svg a block) */
+.ui-icon { display: inline-block; vertical-align: -0.2em; flex: 0 0 auto; }
+.ui-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  min-height: 52px; padding: 12px 26px; box-sizing: border-box;
+  font-family: var(--font-sans), system-ui, sans-serif; font-size: 18px; font-weight: 700; line-height: 1.2;
+  border-radius: 60px; border: 2px solid var(--done); background: #fff; color: var(--done-ink);
+  text-decoration: none; cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.ui-btn:hover { background: var(--done-soft); color: var(--done-ink); }
+.ui-btn:focus-visible { outline: 3px solid var(--turn); outline-offset: 3px; }
+.ui-btn:disabled, .ui-btn[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; }
+.ui-btn-sm { min-height: 44px; padding: 8px 18px; font-size: 16px; }
+.ui-btn-main { background: var(--done-ink); border-color: var(--done-ink); color: #fff; border-radius: var(--leaf-btn); }
+.ui-btn-main:hover { background: #3a5c25; border-color: #3a5c25; color: #fff; }
+.ui-btn-next {
+  background: var(--turn); border-color: var(--turn); color: #fff; border-radius: var(--leaf-btn);
+  font-size: 20px; min-height: 60px; padding: 16px 32px; box-shadow: 0 8px 20px rgba(207, 73, 17, 0.25);
+}
+.ui-btn-next:hover { background: #b8410f; border-color: #b8410f; color: #fff; }
+.ui-btn-main:focus-visible, .ui-btn-next:focus-visible { outline-color: var(--ink); }
+@media (hover: hover) { .ui-btn:not(:disabled):not([aria-disabled="true"]):hover { transform: translateY(-1px); } }
+
+.ui-card { background: #fff; border: 2px solid #e3e9de; border-radius: var(--leaf-card); padding: 28px 30px; }
+.ui-card-now { border: 3px solid var(--turn); box-shadow: 0 10px 26px rgba(207, 73, 17, 0.1); }
+.ui-card-later { border: 2px dashed var(--later-line); background: var(--later-soft); }
+
+.ui-title { display: flex; flex-direction: column; gap: 8px; }
+.ui-title h1 { margin: 0; font-size: clamp(30px, 4vw, 44px); font-weight: 300; line-height: 1.15; color: var(--ink); }
+.ui-title h1 b { font-weight: 700; }
+.ui-title-eyebrow { font-size: 15px; font-weight: 600; color: #555555; text-transform: uppercase; letter-spacing: 0.06em; }
+.ui-title-sub { margin: 0; font-size: 20px; color: #555555; }
+.ui-title-line { display: block; width: 64px; height: 4px; border-radius: 2px; background: var(--done); }
+
+.ui-pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 20px; font-size: 16px; font-weight: 700; line-height: 1.2; }
+.ui-pill-turn { background: var(--turn-soft); color: var(--turn-ink); }
+.ui-pill-done { background: var(--done-soft); color: var(--done-ink); }
+.ui-pill-later { background: var(--later-soft); color: var(--later-ink); border: 1px dashed var(--later-line); }
+.ui-pill-info { background: var(--info-soft); color: var(--info-ink); }
+
+.ui-next {
+  display: flex; flex-wrap: wrap; gap: 20px 28px; align-items: center; justify-content: space-between;
+  padding: 26px 30px; background: var(--turn-soft); border-radius: var(--leaf-card);
+}
+.ui-next-text { display: flex; flex-direction: column; gap: 6px; flex: 1 1 320px; min-width: 0; }
+.ui-next-eyebrow { font-size: 15px; font-weight: 800; color: var(--turn-ink); text-transform: uppercase; letter-spacing: 0.06em; }
+.ui-next-title { font-size: 23px; font-weight: 700; color: var(--ink); }
+.ui-next-detail { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 18px; color: #555555; }
+.ui-next-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+
+.ui-path { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(var(--ui-path-n, 5), minmax(0, 1fr)); gap: 12px; }
+.ui-path > li { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; min-width: 0; }
+.ui-path-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ui-path-dot { width: 68px; height: 68px; flex: 0 0 auto; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-sizing: border-box; font-weight: 800; }
+.ui-path-done .ui-path-dot { background: var(--done); color: #fff; }
+.ui-path-now .ui-path-dot { width: 84px; height: 84px; margin-top: -8px; background: var(--turn); color: #fff; box-shadow: 0 0 0 10px var(--turn-ring); }
+.ui-path-later .ui-path-dot { background: #f1f1ee; color: #6a6a6a; border: 2px dashed #c9c9c4; }
+.ui-path-label { font-size: 18px; font-weight: 700; color: var(--ink); overflow-wrap: break-word; }
+.ui-path-now .ui-path-label { font-size: 20px; font-weight: 800; }
+.ui-path-later .ui-path-label { color: #555555; }
+.ui-path-note { font-size: 15px; font-weight: 600; }
+.ui-path-done .ui-path-note { color: var(--done-ink); }
+.ui-path-now .ui-path-note { color: var(--turn-ink); font-weight: 700; }
+.ui-path-later .ui-path-note { color: var(--later-ink); }
+/* the compact line at the top of a page — «докъде сте» */
+.ui-path.ui-path-compact { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; padding: 14px 20px; background: #f6f9f3; border-radius: 40px 40px 40px 0; }
+.ui-path-compact > li { flex-direction: row; gap: 8px; text-align: left; }
+.ui-path-compact .ui-path-text { display: inline; } /* inline: the space before « — тук сте» stays */
+.ui-path-compact .ui-path-dot { width: 28px; height: 28px; margin: 0; box-shadow: none; font-size: 14px; }
+.ui-path-compact .ui-path-now .ui-path-dot { width: 32px; height: 32px; }
+.ui-path-compact .ui-path-label, .ui-path-compact .ui-path-note { font-size: 16px; }
+/* a phone: the full path stands up, one step per line */
+@media (max-width: 700px) {
+  .ui-path:not(.ui-path-compact) { grid-template-columns: minmax(0, 1fr); }
+  .ui-path:not(.ui-path-compact) > li { flex-direction: row; text-align: left; }
+  .ui-path:not(.ui-path-compact) .ui-path-dot { width: 52px; height: 52px; }
+  .ui-path:not(.ui-path-compact) .ui-path-now .ui-path-dot { width: 60px; height: 60px; margin: 0 6px 0 0; }
+}
+@media (prefers-reduced-motion: reduce) { .ui-btn { transition: none; } .ui-btn:hover { transform: none; } }
