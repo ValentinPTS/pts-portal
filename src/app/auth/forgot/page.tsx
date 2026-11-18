@@ -8,7 +8,7 @@ export default async function ForgotPage({ searchParams }: { searchParams: Promi
   const back = (await searchParams).area === "lab" ? "/lab/login" : "/login";
   return (
     <div className="card p-6 mx-auto mt-12" style={{ maxWidth: 420 }}>
-      <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>{L("Забравена парола", "Forgotten password")}</h1>
+      <h1 className="ui-h1">{L("Забравена парола", "Forgotten password")}</h1>
       <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>
         {L("Въведете имейла, с който влизате. Ще получите връзка за нова парола.", "Enter the e-mail you sign in with. You will get a link for a new password.")}
       </p>

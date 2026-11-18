@@ -126,7 +126,7 @@ export default async function UsersPage() {
   return (
     <div>
       <div className="flex items-baseline gap-3 flex-wrap">
-        <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>{tr("users.title")}</h1>
+        <h1 className="ui-h1">{tr("users.title")}</h1>
         {/* the manager-only system check (part 1.1) */}
         <Link href="/system" className="text-sm ml-auto" style={{ color: "var(--green-dark)" }}>{tr("users.systemCheck")} →</Link>
       </div>

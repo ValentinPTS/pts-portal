@@ -39,7 +39,7 @@ export default async function ValidationRecordPage() {
         <a href="/validation/record/d1.csv" data-d1-csv>{L("Наборът за D1 (CSV) — за проверка с независим инструмент", "The D1 set (CSV) — to check with an independent tool")}</a>
         <span data-record-printed-on>{L(`отпечатан ${day(today)}`, `printed ${day(today)}`)}</span>
       </div>
-      <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>{L("Протокол от валидирането на портала", "The portal's validation record")}</h1>
+      <h1 className="ui-h1">{L("Протокол от валидирането на портала", "The portal's validation record")}</h1>
       <p className="text-sm" style={{ color: "var(--muted)" }}>{L(`Наръчник 7.5.2, П 7.4.1 т. 4.6.2 · отпечатан ${day(today)} · версия на портала ${running}`, `Manual 7.5.2, П 7.4.1 т. 4.6.2 · printed ${day(today)} · the portal's version ${running}`)}</p>
 
       <h2 className="font-bold mt-4" style={{ fontSize: 16 }}>{L("1. Критерии за приемане", "1. Acceptance criteria")}</h2>

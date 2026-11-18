@@ -66,7 +66,7 @@ export default async function ActivityPage({
 
   return (
     <div>
-      <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>{tr("activity.title")}</h1>
+      <h1 className="ui-h1">{tr("activity.title")}</h1>
       <p className="text-sm mt-1" style={{ color: "var(--muted)", maxWidth: 720 }}>{tr("activity.subtitle")}</p>
       {health.failures > 0 && (
         // a write that failed is not swallowed (part 1.9)

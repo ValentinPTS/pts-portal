@@ -78,7 +78,7 @@ export default async function NoticesPage({ searchParams }: { searchParams: Prom
 
   return (
     <div>
-      <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>
+      <h1 className="ui-h1">
         {L("Известия към лабораториите", "Notices to laboratories")}
         <span className="text-base font-normal" style={{ color: "var(--muted)" }}> · {held.length} {L("чакат", "waiting")}</span>
       </h1>

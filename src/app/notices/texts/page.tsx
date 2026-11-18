@@ -46,7 +46,7 @@ export default async function ReminderTextsPage({ searchParams }: { searchParams
   return (
     <div className="max-w-4xl">
       <Link href="/notices" className="text-sm" style={{ color: "var(--muted)" }}>← {L("Известия", "Notices")}</Link>
-      <h1 className="text-2xl font-bold mt-2" style={{ color: "var(--green-dark)" }}>{L("Текстове на напомнянията", "Reminder texts")}</h1>
+      <h1 className="ui-h1 mt-2">{L("Текстове на напомнянията", "Reminder texts")}</h1>
       <p className="text-sm mt-1" style={{ color: "var(--muted)", maxWidth: 760 }}>
         {L("Само напомнянията тръгват сами, и то само с текст, одобрен тук (Реш. 138). Докато текстът не е одобрен, всяко напомняне чака в «Известия» някой да натисне «Изпрати». Промененият текст иска ново одобрение.",
           "Only reminders go out by themselves, and only with a text approved here (Decision 138). Until the text is approved, each reminder waits in «Notices» for someone to press «Send». A changed text needs a new approval.")}

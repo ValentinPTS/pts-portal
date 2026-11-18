@@ -492,3 +492,32 @@ body {
   .ui-tab { padding: 6px 10px; font-size: 15px; gap: 6px; }
   .ui-who { font-size: 13px; padding: 6px 10px; order: 3; } /* «Помощ» and БГ/EN on one line, who you are under them */
 }
+
+/* ── Redesign R4 (2026-11-18): the team's screens ─────────────────────────────────────────────────────────────────
+   The team's pages were built with small type and small hand-made fields. On the screen, inside the team's panel,
+   they read a size bigger and every field is big enough to read and to tap — all pages at once, the same way.
+   Printing keeps its sizes; the documents shown on the screen set their own sizes inline and are not touched;
+   the document editor's own toolbar keeps its compact controls. */
+@media screen {
+  .adminmain .text-xs { font-size: 13.5px; line-height: 1.45; }
+  .adminmain .text-sm { font-size: 15.5px; line-height: 1.5; }
+  .adminmain :is(input:not([type="checkbox"], [type="radio"], [type="hidden"], [type="file"], [type="color"], [type="range"], [type="submit"], [type="button"], [type="image"], .we-num), select, textarea):not(.we-toolbar *, .we-imgbar *, .we-colorpop *) {
+    min-height: 42px; font-size: 16px; padding: 8px 10px; border-radius: 10px;
+  }
+  .adminmain textarea { min-height: 84px; }
+  /* a field's name above it: readable, not a whisper */
+  .adminmain label > .text-xs:first-child { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+}
+/* the team's menu on a phone: a «Меню» button, the list opened under it, one section per line */
+.adminrail-toggle { display: none; }
+@media (max-width: 900px) {
+  .adminrail { flex-wrap: wrap; overflow: visible; }
+  .adminrail-toggle { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; min-height: 44px; padding: 8px 18px; border: 2px solid #57823c; border-radius: 60px; background: #fff; color: #456b2c; font-weight: 700; font-size: 16px; cursor: pointer; }
+  .adminrail-toggle:focus-visible { outline: 3px solid var(--turn); outline-offset: 2px; }
+  .adminrail-toggle[aria-expanded="true"] { background: var(--done-soft); }
+  .adminrail-nav:not([data-open]) { display: none; }
+  .adminrail-nav[data-open] { flex-basis: 100%; flex-direction: column; align-items: stretch; gap: 2px; padding: 6px 0 4px; }
+  .adminrail-nav[data-open] .adminrail-link { white-space: normal; }
+  .adminrail-nav[data-open] .adminrail-rule { border-left: 0; border-top: 1px solid #ececec; height: 0; margin: 6px; }
+  .adminrail-nav[data-open] .adminrail-label { display: block; }
+}

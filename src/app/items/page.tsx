@@ -19,7 +19,7 @@ export default async function ItemsPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold" style={{ color: "var(--green-dark)", letterSpacing: "-0.01em" }}>{tr("items.title")}</h1>
+      <h1 className="ui-h1">{tr("items.title")}</h1>
       <p style={{ color: "var(--muted)", marginTop: 4, marginBottom: 18 }}>{tr("items.subtitle")}</p>
       <ItemsManager initial={items} builtins={builtins} canEdit={await mayAnywhereNow("library.manage")} />
     </div>

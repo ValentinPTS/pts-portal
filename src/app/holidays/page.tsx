@@ -35,7 +35,7 @@ export default async function HolidaysPage({ searchParams }: { searchParams: Pro
 
   return (
     <div>
-      <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>{L("Почивни дни", "Days off")}</h1>
+      <h1 className="ui-h1">{L("Почивни дни", "Days off")}</h1>
       <p className="text-sm mt-1" style={{ color: "var(--muted)", maxWidth: 780 }}>
         {L(
           "Календарът, по който се броят работните дни: прозорецът на всяка лаборатория при калибриране се брои в работни дни от получаването на уреда. Работни са дните от понеделник до петък, без дните тук. Обновява се всяка година — официалните празници се предлагат, вие ги проверявате и записвате, а други дни (обявени от правителството) добавяте ръчно.",

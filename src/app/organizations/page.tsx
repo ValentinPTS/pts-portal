@@ -54,7 +54,7 @@ export default async function OrganizationsPage({ searchParams }: { searchParams
   for (const n of entities.length ? await listEntityMessages().catch(() => []) : []) sentTo.set(n.entityId!, [...(sentTo.get(n.entityId!) ?? []), n]);
   return (
     <div>
-      <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>{L("Юридически лица", "Legal entities")}</h1>
+      <h1 className="ui-h1">{L("Юридически лица", "Legal entities")}</h1>
       <p className="text-sm mt-1" style={{ color: "var(--muted)", maxWidth: 780 }}>
         {L("Първото от трите нива: юридическото лице (ЕИК, ДДС, адрес за кореспонденция, МОЛ), неговите лаборатории и техните потребители. Цената и отстъпката се смятат на ниво юридическо лице. Проверява се: ЕИК по контролната цифра, ДДС във VIES или с приложен документ, и проверка от PTS; активно става след нея. Нищо не се изтрива — освен профил без участия, по искане (Задание §10).",
            "The first of the three levels: the legal entity (ЕИК, VAT, address for correspondence, МОЛ), its laboratories and their users. The price and the discount are computed for the legal entity. Checked: the ЕИК by its check digit, the VAT in VIES or by an attached document, and PTS's own check; it becomes active after it. Nothing is deleted — but a profile with no participation, on request (Zadanie §10).")}

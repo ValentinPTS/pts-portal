@@ -51,7 +51,7 @@ export default async function ValidationPage({ searchParams }: { searchParams: P
 
   return (
     <div>
-      <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>{L("Валидиране", "Validation")}</h1>
+      <h1 className="ui-h1">{L("Валидиране", "Validation")}</h1>
       <p className="text-sm" style={{ margin: "4px 0 0" }}><a href="/validation/record" data-record-link>{L("Протокол от валидирането (за печат и подпис) →", "The validation record (to print and sign) →")}</a></p>
       <p className="text-sm mt-1" style={{ color: "var(--muted)", maxWidth: 820 }}>
         {L("Порталът се валидира преди първа употреба (Наръчник 7.5.2, Реш. 144), на пет нива. Критериите за приемане — какво трябва да съвпадне и с какъв допуск — се пишат и подписват от PTS преди всяко изпитване (Реш. 134). Изпитване на ниво се записва само след като критериите за това ниво са подписани.",

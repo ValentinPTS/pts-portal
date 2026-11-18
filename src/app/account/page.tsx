@@ -13,7 +13,7 @@ export default async function AccountPage() {
   if (!AUTH_ENABLED) {
     return (
       <div className="card p-6 mt-6" style={{ maxWidth: 560 }}>
-        <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>{tr("account.title")}</h1>
+        <h1 className="ui-h1">{tr("account.title")}</h1>
         <p className="mt-2" style={{ color: "var(--muted)" }}>
           Влизането е <b>изключено</b> (AUTH_ENABLED не е включено), затова още няма акаунти. · Authentication is currently <b>disabled</b> (AUTH_ENABLED is off), so there are no accounts yet.
           Настройте го по <code>.env.example</code>; после тази страница управлява входа и 2FA. · Set it up via <code>.env.example</code> when you’re ready, then this page manages your sign-in and 2FA.
@@ -39,7 +39,7 @@ export default async function AccountPage() {
   return (
     <div style={{ maxWidth: 560 }}>
       <BackLink href="/" />
-      <h1 className="text-2xl font-bold mt-3" style={{ color: "var(--green-dark)" }}>{tr("account.title")}</h1>
+      <h1 className="ui-h1 mt-3">{tr("account.title")}</h1>
       <div className="card p-4 mt-4">
         <div className="text-sm" style={{ color: "var(--muted)" }}>{tr("account.signedInAs")}</div>
         <div className="font-bold">{session.email}</div>

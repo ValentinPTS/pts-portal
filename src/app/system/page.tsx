@@ -60,7 +60,7 @@ export default async function SystemPage() {
   return (
     <div className="max-w-3xl">
       <Link href="/users" className="text-sm" style={{ color: "var(--muted)" }}>← {L("Потребители", "Users")}</Link>
-      <h1 className="text-2xl font-bold mt-2" style={{ color: "var(--green-dark)" }}>{L("Проверка на системата", "System check")}</h1>
+      <h1 className="ui-h1 mt-2">{L("Проверка на системата", "System check")}</h1>
       <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>
         {L("Само за четене. Тайните ключове не се показват — само дали са зададени.", "Read-only. Secret keys are never shown — only whether they are set.")}
       </p>

@@ -19,7 +19,7 @@ export default async function BatchesPage() {
   const schemes = (await listSchemes()).filter((s) => s.type === "T" && (scope === "all" || scope.includes(s.id)));
   return (
     <div>
-      <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>{L("Обекти и партиди", "Objects and batches")}</h1>
+      <h1 className="ui-h1">{L("Обекти и партиди", "Objects and batches")}</h1>
       <p className="text-sm mt-1" style={{ color: "var(--muted)", maxWidth: 780 }}>
         {L("Партидите на схемите за изпитване. При калибриране партида няма — уредът обикаля, а записите са във веригата на схемата.", "The batches of the testing schemes. A calibration scheme has none — the instrument travels, and its records are the scheme's chain.")}
       </p>

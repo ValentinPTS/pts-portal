@@ -52,7 +52,7 @@ export default async function SkinsPage({ searchParams }: { searchParams: Promis
     <div>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 240 }}>
-          <h1 className="text-3xl font-bold" style={{ color: "var(--green-dark)", letterSpacing: "-0.01em" }}>{tr("skins.title")}</h1>
+          <h1 className="ui-h1">{tr("skins.title")}</h1>
           <p style={{ color: "var(--muted)" }}>{tr("skins.subtitle")}</p>
         </div>
         {canManage && <Link href="/skins/new" className="btn btn-primary" style={{ fontSize: 14 }}>{tr("skins.new")}</Link>}

@@ -7,10 +7,13 @@ import { ROLE_LABEL } from "@/lib/role-model";
 import { statusChip, typeLabel } from "@/lib/folders";
 import { getServerT } from "@/lib/i18n-server";
 import { listDeclarations } from "@/lib/staff-declarations";
+import Icon from "@/components/ui/Icon";
+import { SECTION_ICON } from "@/lib/ui-nav";
 
 // «Табло» (plan part 2.7): the first section of the administrative panel — who you
 // are in the portal (your roles, from the role model and the Orders, 2.1–2.6), the
 // schemes you work in, and the sections open to you. Nothing here shows a laboratory.
+// The redesign (R4): big and plain — the schemes and the sections as big tiles, as a scheme's «Всичко за схемата».
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
@@ -36,29 +39,35 @@ export default async function DashboardPage() {
         ? L("Още нямате роля. Ролите възлага ръководителят на РТ провайдъра — постоянните и тези от Заповедта на всяка схема.", "You have no role yet. The head of the PT provider gives the roles — the permanent ones, and each scheme's from its Order.")
         : null;
 
+  const h2 = { margin: 0, fontSize: 24, fontWeight: 600, color: "var(--ink)" } as const;
   return (
-    <div data-dashboard className="flex flex-col gap-6">
+    <div data-dashboard className="flex flex-col gap-8">
       <div>
-        <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>{L("Табло", "Dashboard")}</h1>
-        {who && <p data-dashboard-who className="mt-2 text-sm" style={{ color: "var(--muted)", maxWidth: 680 }}>{who}</p>}
+        <h1 className="ui-h1">{L("Табло", "Dashboard")}</h1>
+        {who && <p data-dashboard-who style={{ margin: "16px 0 0", fontSize: 18, lineHeight: 1.5, color: "#555555", maxWidth: 680 }}>{who}</p>}
         {viewer.email && !viewer.auditor && (
-          <p data-dashboard-declaration className="mt-2 text-sm" style={{ color: mine ? "var(--muted)" : "var(--red)" }}>
+          <p data-dashboard-declaration style={{ margin: "12px 0 0", fontSize: 17, lineHeight: 1.5, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", color: mine ? "#555555" : "var(--red)" }}>
+            <Icon name={mine ? "check" : "info"} size={22} />
             {mine
-              ? <>{L("Декларацията ви за конфиденциалност Ф 4.2-1 е подписана на", "Your confidentiality declaration Ф 4.2-1 was signed on")} {mine.signedOn.split("-").reverse().join(".")} · <a href={`/users/declarations/${mine.id}`} target="_blank" rel="noopener">{L("копието", "the scan")}</a></>
-              : L("Декларацията ви за конфиденциалност Ф 4.2-1 още не е записана. Ръководителят на РТ провайдъра я записва в «Потребители».", "Your confidentiality declaration Ф 4.2-1 is not on record yet. The head of the PT provider records it in «Users».")}
+              ? <span>{L("Декларацията ви за конфиденциалност Ф 4.2-1 е подписана на", "Your confidentiality declaration Ф 4.2-1 was signed on")} {mine.signedOn.split("-").reverse().join(".")} · <a href={`/users/declarations/${mine.id}`} target="_blank" rel="noopener">{L("копието", "the scan")}</a></span>
+              : <span>{L("Декларацията ви за конфиденциалност Ф 4.2-1 още не е записана. Ръководителят на РТ провайдъра я записва в «Потребители».", "Your confidentiality declaration Ф 4.2-1 is not on record yet. The head of the PT provider records it in «Users».")}</span>}
           </p>
         )}
       </div>
 
       {(viewer.roles.permanent.length > 0 || held.length > 0) && (
-        <section className="card" style={{ padding: "14px 16px" }} data-dashboard-roles>
-          <h2 className="font-bold" style={{ color: "var(--green-dark)", fontSize: 15 }}>{L("Вашите роли", "Your roles")}</h2>
-          <ul className="mt-2 flex flex-col gap-1 text-sm">
-            {viewer.roles.permanent.map((r) => <li key={r}><b>{label(r)}</b> <span style={{ color: "var(--muted)" }}>· {L("постоянна", "permanent")}</span></li>)}
+        <section className="ui-card" data-dashboard-roles>
+          <h2 style={h2}>{L("Вашите роли", "Your roles")}</h2>
+          <ul style={{ margin: "14px 0 0", padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 10, fontSize: 17 }}>
+            {viewer.roles.permanent.map((r) => (
+              <li key={r} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <Icon name="user" size={22} /><b>{label(r)}</b> <span style={{ color: "#555555" }}>· {L("постоянна", "permanent")}</span>
+              </li>
+            ))}
             {held.map(({ schemeId, role }) => (
-              <li key={`${schemeId}:${role}`}>
-                <b>{label(role)}</b> <span style={{ color: "var(--muted)" }}>· {L("по Заповедта на", "by the Order of")}</span>{" "}
-                <Link href={`/schemes/${schemeId}`} className="font-mono text-xs">{byId.get(schemeId)?.number ?? schemeId}</Link>
+              <li key={`${schemeId}:${role}`} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <Icon name="user" size={22} /><b>{label(role)}</b> <span style={{ color: "#555555" }}>· {L("по Заповедта на", "by the Order of")}</span>
+                <Link href={`/schemes/${schemeId}`} style={{ fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{byId.get(schemeId)?.number ?? schemeId}</Link>
               </li>
             ))}
           </ul>
@@ -66,36 +75,34 @@ export default async function DashboardPage() {
       )}
 
       {schemes.length > 0 && (
-        <section data-dashboard-schemes>
-          <h2 className="font-bold mb-2" style={{ color: "var(--green-dark)", fontSize: 15 }}>{L("Схемите, по които работите", "The schemes you work in")} <span style={{ color: "var(--muted)", fontWeight: 500 }}>({schemes.length})</span></h2>
-          <div className="card overflow-hidden" style={{ overflowX: "auto" }}>
-            <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
-              <tbody>
-                {schemes.slice(0, 20).map((s) => {
-                  const st = statusChip(s.status, lang);
-                  return (
-                    <tr key={s.id} style={{ borderTop: "1px solid var(--line)" }}>
-                      <td className="p-2" style={{ whiteSpace: "nowrap" }}><Link href={`/schemes/${s.id}`} className="font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>{s.number}</Link></td>
-                      <td className="p-2" style={{ color: "var(--muted)" }}>{typeLabel(s.type, lang)}</td>
-                      <td className="p-2"><span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, color: st.fg, background: st.bg }}>{st.label}</span></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        <section data-dashboard-schemes style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <h2 style={h2}>{L("Схемите, по които работите", "The schemes you work in")} <span style={{ color: "#555555", fontWeight: 500 }}>({schemes.length})</span></h2>
+          <div className="ui-tiles">
+            {schemes.slice(0, 20).map((s) => {
+              const st = statusChip(s.status, lang);
+              return (
+                <Link key={s.id} href={`/schemes/${s.id}`} className="ui-tile">
+                  <Icon name={s.type === "T" ? "flask" : "gear"} size={30} />
+                  <span className="ui-tile-name" style={{ fontVariantNumeric: "tabular-nums" }}>{s.number}</span>
+                  <span className="ui-tile-sub">{typeLabel(s.type, lang)}</span>
+                  <span style={{ alignSelf: "flex-start", fontSize: 14, fontWeight: 700, padding: "4px 12px", borderRadius: 999, color: st.fg, background: st.bg }}>{st.label}</span>
+                </Link>
+              );
+            })}
           </div>
-          {schemes.length > 20 && <Link href="/" className="text-sm mt-2 inline-block">{L("Всички в «Схеми»", "All of them in «Schemes»")} →</Link>}
+          {schemes.length > 20 && <Link href="/" className="ui-btn" style={{ alignSelf: "flex-start" }}>{L("Всички в «Схеми»", "All of them in «Schemes»")}<Icon name="arrowRight" size={22} strokeWidth={2.4} /></Link>}
         </section>
       )}
 
       {sections.length > 0 && (
-        <section data-dashboard-sections>
-          <h2 className="font-bold mb-2" style={{ color: "var(--green-dark)", fontSize: 15 }}>{L("Разделите", "The sections")}</h2>
-          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))" }}>
+        <section data-dashboard-sections style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <h2 style={h2}>{L("Разделите", "The sections")}</h2>
+          <div className="ui-tiles">
             {sections.map((s) => (
-              <Link key={s.key} href={s.href} className="card no-underline" style={{ padding: "12px 14px", color: "var(--ink)" }}>
-                <div className="font-bold" style={{ color: "var(--green-dark)" }}>{lang === "en" ? s.en : s.bg}</div>
-                {s.comesIn && <div className="text-xs mt-1" style={{ color: "var(--muted)" }}>{L(`идва в част ${s.comesIn}`, `comes in part ${s.comesIn}`)}</div>}
+              <Link key={s.key} href={s.href} className="ui-tile">
+                <Icon name={SECTION_ICON[s.key]} size={30} />
+                <span className="ui-tile-name">{lang === "en" ? s.en : s.bg}</span>
+                {s.comesIn && <span className="ui-tile-sub">{L(`идва в част ${s.comesIn}`, `comes in part ${s.comesIn}`)}</span>}
               </Link>
             ))}
           </div>

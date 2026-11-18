@@ -38,7 +38,7 @@ export default async function WebsitePage({ searchParams }: { searchParams: Prom
   const fmt = (iso: string) => new Date(iso).toLocaleString(lg === "bg" ? "bg-BG" : "en-GB", { timeZone: "Europe/Sofia" });
   return (
     <div data-website>
-      <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>{L("Сайт — данните за схемите", "Website — the schemes' data")}</h1>
+      <h1 className="ui-h1">{L("Сайт — данните за схемите", "Website — the schemes' data")}</h1>
       <p className="text-sm mt-1" style={{ color: "var(--muted)", maxWidth: 760 }}>
         {L("Сайтът ptsbg.eu взема от портала започналите и приключилите схеми — само когато тук се натисне «Публикувай за сайта». Без чернови, без брой участници и места, без цени. Форматът е предложение на портала (версия 1), още не е съгласуван с Creativiso.",
           "The ptsbg.eu website takes the started and finished schemes from the portal — only when «Publish to the website» is pressed here. No drafts, no counts or places, no prices. The format is the portal's proposal (version 1), not yet agreed with Creativiso.")}

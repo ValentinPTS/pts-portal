@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { useLang } from "@/components/LangProvider";
 import { sectionOf, type Section } from "@/lib/admin-sections";
@@ -13,6 +14,7 @@ import Icon from "@/components/ui/Icon";
 // (lib/admin-nav.ts); a section still to be built says so on its page.
 // The redesign (R1, direction A): light, an icon beside each section's name, the one
 // open lit in green; on a phone or a wide editor page, a bar along the top.
+// R4: on a phone the bar holds a «Меню» button that opens the whole list (it closes again on the next page).
 
 export type RailSection = Pick<Section, "key" | "href" | "bg" | "en" | "group" | "comesIn">;
 
@@ -22,6 +24,9 @@ export default function AdminRail({ sections }: { sections: RailSection[] }) {
   const active = sectionOf(path);
   const label = (s: RailSection) => (lang === "en" ? s.en : s.bg);
   const group = (g: RailSection["group"]) => sections.filter((s) => s.group === g);
+  // open on the page it was opened on — moving to another page closes it, with no effect to run
+  const [openAt, setOpenAt] = useState<string | null>(null);
+  const open = openAt === path;
 
   const item = (s: RailSection) => (
     <Link key={s.key} href={s.href} data-section={s.key} aria-current={active === s.key ? "page" : undefined}
@@ -43,7 +48,10 @@ export default function AdminRail({ sections }: { sections: RailSection[] }) {
         <span className="adminrail-name">PTS</span>
         <span className="adminrail-sub">{lang === "en" ? "Portal · the team" : "Портал · екипът"}</span>
       </Link>
-      <nav className="adminrail-nav" aria-label={lang === "en" ? "Sections" : "Раздели"}>
+      <button type="button" className="adminrail-toggle" aria-expanded={open} aria-controls="adminrail-nav" onClick={() => setOpenAt(open ? null : path)} data-rail-toggle>
+        <Icon name="list" size={22} />{open ? (lang === "en" ? "Close" : "Затвори") : (lang === "en" ? "Menu" : "Меню")}
+      </button>
+      <nav id="adminrail-nav" className="adminrail-nav" data-open={open ? "1" : undefined} aria-label={lang === "en" ? "Sections" : "Раздели"}>
         {group("main").map(item)}
         {group("records").length > 0 && <hr className="adminrail-rule" />}
         {group("records").map(item)}

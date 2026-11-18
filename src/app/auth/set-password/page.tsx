@@ -17,7 +17,7 @@ export default async function SetPasswordPage({ searchParams }: { searchParams: 
   const { from = "", must } = await searchParams;
   return (
     <div className="card p-6 mx-auto mt-12" style={{ maxWidth: 440 }}>
-      <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>
+      <h1 className="ui-h1">
         {from === "invite" ? L("Добре дошли — задайте парола", "Welcome — set a password") : L("Нова парола", "A new password")}
       </h1>
       <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>

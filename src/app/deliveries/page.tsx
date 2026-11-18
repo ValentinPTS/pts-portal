@@ -246,7 +246,7 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
 
   return (
     <div>
-      <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>{L("Доставки", "Deliveries")}</h1>
+      <h1 className="ui-h1">{L("Доставки", "Deliveries")}</h1>
       <p className="text-sm mt-1" style={{ color: "var(--muted)", maxWidth: 820 }}>
         {L("Изпращане на обектите, протоколите за получаване и сигналите на участниците — по код. Изпращат ръководителят на схемата и експертът по кодиране (D18).", "Dispatch of the objects, the participants' receipt protocols and the problems they signal — by code. The scheme manager and the coding expert send them (D18).")}
       </p>

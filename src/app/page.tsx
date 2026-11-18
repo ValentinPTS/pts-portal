@@ -34,7 +34,7 @@ export default async function Home() {
 
   return (
     <div style={{ maxWidth: 920, margin: "0 auto", padding: "48px 24px", width: "100%" }}>
-      <h1 className="text-3xl font-bold" style={{ color: "var(--green-dark)", letterSpacing: "-0.01em" }}>{tr("home.title")}</h1>
+      <h1 className="ui-h1">{tr("home.title")}</h1>
       <p style={{ color: "var(--muted)", marginTop: 4 }}>{tr("home.subtitle")}</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 24, marginTop: 24 }}>
         <FolderTile type="T" href={`/files/${TYPE_SLUG.T}`} label={typeLabel("T", lang)} sub={sub("T")} />

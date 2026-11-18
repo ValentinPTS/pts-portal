@@ -55,7 +55,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
 
   return (
     <div>
-      <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>{L("Фактури", "Invoices")}</h1>
+      <h1 className="ui-h1">{L("Фактури", "Invoices")}</h1>
       <p className="text-sm mt-1" style={{ color: "var(--muted)", maxWidth: 820 }}>
         {L("Порталът не издава фактури и не дава номера: проформата и оригиналната фактура се правят в счетоводния софтуер и се качват на страницата на всяко участие, с номерата си. Проформата — след второто обявяване; фактурата — след плащането (Реш. 35). Плащането не спира изпращането (Реш. 96).",
           "The portal issues no invoice and gives no number: the proforma and the original invoice are made in the accounting software and uploaded on each participation's page, with their numbers. The proforma after the second announcement; the invoice after the payment (Реш. 35). Payment never holds the dispatch back (Реш. 96).")}

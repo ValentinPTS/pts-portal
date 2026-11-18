@@ -16,7 +16,7 @@ export default async function OpenPage({ searchParams }: { searchParams: Promise
   const offered = to !== "/" && path !== "/open" && ACTS_WHEN_OPENED.test(path) ? to : null;
   return (
     <main style={{ maxWidth: 560, margin: "12vh auto", padding: "0 16px" }}>
-      <h1 className="section-title" style={{ fontSize: 22, margin: "0 0 10px" }}>{L("Входът е успешен", "Signed in")}</h1>
+      <h1 className="section-title ui-h1" style={{ margin: "0 0 10px" }}>{L("Входът е успешен", "Signed in")}</h1>
       {offered ? (
         <>
           <p>{L("Връзката, с която влязохте, отваря страница или файл, чието отваряне се записва. Продължете, ако сте я поискали.", "The link you signed in from opens a page or file whose opening is recorded. Continue if you asked for it.")}</p>

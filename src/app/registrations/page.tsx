@@ -69,7 +69,7 @@ export default async function RegistrationsPage({ searchParams }: { searchParams
 
   return (
     <div className="max-w-5xl">
-      <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>{L("Одобрения на регистрации", "Registration approvals")}</h1>
+      <h1 className="ui-h1">{L("Одобрения на регистрации", "Registration approvals")}</h1>
       <p className="text-sm mt-1" style={{ color: "var(--muted)", maxWidth: 780 }}>
         {L("Регистрациите от портала — организацията, първата ѝ лаборатория и администраторът на профила. Одобрената става юридическо лице «чака проверка» в «Организации»; поканата до администратора се изпраща оттам. ЕИК, който вече е на организация, прави заявката заявка за присъединяване: решава я администраторът на профила, а PTS — само ако няма активен администратор или по подписаното писмо на организацията. Отказаната се пази 6 години с причината.",
            "The registrations from the portal — the organisation, its first laboratory and the profile's administrator. An approved one becomes a legal entity «awaiting the check» in «Organisations»; the invitation to the administrator is sent from there. An ЕИК that is already an organisation's makes the request a request to join: the profile's administrator decides it, PTS only when there is no active administrator or on the organisation's signed letter. A refused one is kept 6 years with its reason.")}

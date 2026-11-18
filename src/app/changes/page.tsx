@@ -76,7 +76,7 @@ export default async function ChangesPage({ searchParams }: { searchParams: Prom
   return (
     <div className="max-w-5xl">
       <Link href="/system" className="text-sm" style={{ color: "var(--muted)" }}>← {L("Проверка на системата", "System check")}</Link>
-      <h1 className="text-2xl font-bold mt-2" style={{ color: "var(--green-dark)" }}>{L("Регистър на промените", "Change register")}</h1>
+      <h1 className="ui-h1 mt-2">{L("Регистър на промените", "Change register")}</h1>
       <p className="text-sm mt-1" style={{ color: "var(--muted)", maxWidth: 780 }}>
         {L("Всяка промяна на системата се разрешава, документира и проверява, преди да влезе в употреба (Реш. 67): нова версия на портала, обновяване на библиотека или платформа, промяна на настройка. Сайтът качва нова версия само ако в регистъра има разрешение за точно нея.",
           "Every change of the system is authorised, documented and validated before it is put to use (Decision 67): a new release, an update of a library or the platform, a change of a setting. The site deploys a new release only if the register authorises exactly that one.")}

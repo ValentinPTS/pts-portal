@@ -8,7 +8,7 @@ export default async function ConfirmedPage({ searchParams }: { searchParams: Pr
   const failed = !!(await searchParams).error;
   return (
     <div className="card p-6 mx-auto mt-12" style={{ maxWidth: 440 }} data-auth-landing={failed ? "error" : "ok"}>
-      <h1 className="text-2xl font-bold" style={{ color: failed ? "var(--red)" : "var(--green-dark)" }}>
+      <h1 className="ui-h1" style={failed ? { color: "var(--red)" } : undefined}>
         {failed ? L("Връзката не важи", "This link is no longer valid") : L("Имейлът е потвърден", "Your e-mail is confirmed")}
       </h1>
       <p className="text-sm mt-2">
