@@ -2,23 +2,24 @@ import { PTS_CONTACTS } from "@/lib/doc-shell";
 import Icon from "@/components/ui/Icon";
 import PageTitle from "@/components/ui/PageTitle";
 import type { IconName } from "@/lib/ui-icons";
+import Picture, { type PictureName } from "@/components/ui/Picture";
 
 // «Помощ» (the redesign, R1): how the portal works in a few plain steps, and how to reach PTS — the same contacts the
 // documents print. Nothing of any scheme or laboratory: the page reads no data at all.
-const LAB_STEPS: { icon: IconName; bg: [string, string]; en: [string, string] }[] = [
-  { icon: "plus", bg: ["Записвате се за схема", "От «Заявяване» — изберете схемата и изпратете заявката."], en: ["You apply for a scheme", "From «Apply» — choose the scheme and send the application."] },
-  { icon: "box", bg: ["Получавате обекта или уреда", "Когато пристигне, потвърдете в портала, че е при вас."], en: ["You receive the object or the device", "When it arrives, confirm in the portal that you have it."] },
-  { icon: "pencil", bg: ["Въвеждате резултатите", "Изпитайте и въведете числата до срока. Можете да ги запазите и да продължите по-късно."], en: ["You enter the results", "Test, then enter the numbers by the due date. You can save them and continue later."] },
-  { icon: "chart", bg: ["PTS оценява", "Не е нужно нищо от вас — ще ви пишем."], en: ["PTS scores them", "Nothing is needed from you — we will write to you."] },
-  { icon: "award", bg: ["Доклад и сертификат", "Ще ги намерите в портала, при участието си."], en: ["Report and certificate", "You will find them in the portal, with your participation."] },
+const LAB_STEPS: { icon: IconName; pic: PictureName; bg: [string, string]; en: [string, string] }[] = [
+  { icon: "plus", pic: "step-registration", bg: ["Записвате се за схема", "От «Заявяване» — изберете схемата и изпратете заявката."], en: ["You apply for a scheme", "From «Apply» — choose the scheme and send the application."] },
+  { icon: "box", pic: "step-dispatch", bg: ["Получавате обекта или уреда", "Когато пристигне, потвърдете в портала, че е при вас."], en: ["You receive the object or the device", "When it arrives, confirm in the portal that you have it."] },
+  { icon: "pencil", pic: "step-results", bg: ["Въвеждате резултатите", "Изпитайте и въведете числата до срока. Можете да ги запазите и да продължите по-късно."], en: ["You enter the results", "Test, then enter the numbers by the due date. You can save them and continue later."] },
+  { icon: "chart", pic: "step-evaluation", bg: ["PTS оценява", "Не е нужно нищо от вас — ще ви пишем."], en: ["PTS scores them", "Nothing is needed from you — we will write to you."] },
+  { icon: "award", pic: "certificate-ready", bg: ["Доклад и сертификат", "Ще ги намерите в портала, при участието си."], en: ["Report and certificate", "You will find them in the portal, with your participation."] },
 ];
-const STAFF_STEPS: { icon: IconName; bg: [string, string]; en: [string, string] }[] = [
-  { icon: "doc", bg: ["Подготовка", "Схемата и документите ѝ — в «Схеми»."], en: ["Preparation", "The scheme and its documents — in «Schemes»."] },
-  { icon: "people", bg: ["Записване", "Заявките на лабораториите — на страницата на схемата."], en: ["Applications", "The laboratories' applications — on the scheme's page."] },
-  { icon: "truck", bg: ["Пробите изпратени", "Изпращането и получаването — в «Доставки»."], en: ["Samples sent", "Dispatch and receipt — in «Deliveries»."] },
-  { icon: "pencil", bg: ["Резултати", "Лабораториите ги въвеждат; кой ги е изпратил — в «Резултати» на схемата."], en: ["Results", "The laboratories enter them; who has sent them — in the scheme's «Results»."] },
-  { icon: "chart", bg: ["Оценка", "Анализът и прегледът на резултатите."], en: ["Scoring", "The analysis and the review of the results."] },
-  { icon: "award", bg: ["Доклад и сертификати", "Издават се на страницата на схемата."], en: ["Report and certificates", "Issued on the scheme's page."] },
+const STAFF_STEPS: { icon: IconName; pic: PictureName; bg: [string, string]; en: [string, string] }[] = [
+  { icon: "doc", pic: "step-preparation", bg: ["Подготовка", "Схемата и документите ѝ — в «Схеми»."], en: ["Preparation", "The scheme and its documents — in «Schemes»."] },
+  { icon: "people", pic: "step-registration", bg: ["Записване", "Заявките на лабораториите — на страницата на схемата."], en: ["Applications", "The laboratories' applications — on the scheme's page."] },
+  { icon: "truck", pic: "step-dispatch", bg: ["Пробите изпратени", "Изпращането и получаването — в «Доставки»."], en: ["Samples sent", "Dispatch and receipt — in «Deliveries»."] },
+  { icon: "pencil", pic: "step-results", bg: ["Резултати", "Лабораториите ги въвеждат; кой ги е изпратил — в «Резултати» на схемата."], en: ["Results", "The laboratories enter them; who has sent them — in the scheme's «Results»."] },
+  { icon: "chart", pic: "step-evaluation", bg: ["Оценка", "Анализът и прегледът на резултатите."], en: ["Scoring", "The analysis and the review of the results."] },
+  { icon: "award", pic: "certificate-ready", bg: ["Доклад и сертификати", "Издават се на страницата на схемата."], en: ["Report and certificates", "Issued on the scheme's page."] },
 ];
 
 export default function HelpContent({ lang, audience }: { lang: "bg" | "en"; audience: "lab" | "staff" }) {
@@ -39,7 +40,7 @@ export default function HelpContent({ lang, audience }: { lang: "bg" | "en"; aud
         <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 12 }}>
           {steps.map((s, i) => (
             <li key={s.icon + i} className="ui-card" style={{ display: "flex", gap: 18, alignItems: "center", padding: "18px 22px" }}>
-              <span aria-hidden="true" style={{ width: 52, height: 52, flex: "0 0 52px", borderRadius: "50%", background: "var(--done-soft)", color: "var(--done-ink)", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name={s.icon} size={26} /></span>
+              <Picture name={s.pic} className="ui-pic-step" />
               <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 <span style={{ fontSize: 20, fontWeight: 700 }}>{i + 1}. {lang === "bg" ? s.bg[0] : s.en[0]}</span>
                 <span style={{ fontSize: 17, color: "#555" }}>{lang === "bg" ? s.bg[1] : s.en[1]}</span>

@@ -76,6 +76,7 @@ export default async function ApplicationsPage({
       {apps.length === 0 && (
         <div className="mt-5">
           <EmptyState
+            picture="no-participations"
             title={tr("apps.noneTitle")}
             body={tr("apps.noneBody")}
             action={ONLINE_APPLICATIONS_OPEN

@@ -521,3 +521,40 @@ body {
   .adminrail-nav[data-open] .adminrail-rule { border-left: 0; border-top: 1px solid #ececec; height: 0; margin: 6px; }
   .adminrail-nav[data-open] .adminrail-label { display: block; }
 }
+
+/* ── Redesign R5 (2026-11-18): pictures and gentle motion ──────────────────────────────────────────────────────────
+   The pictures are decoration (alt=""), sized in their place; the motion is soft and short, and only for who has not
+   asked the device for less — with «reduce motion» nothing moves at all; and on the screen only: a print never
+   catches a page half-faded. */
+.ui-pic { display: block; height: auto; max-width: 100%; }
+.ui-pic-welcome { width: min(420px, 100%); margin: 24px auto 0; border-radius: 40px 40px 40px 0; }
+.ui-pic-scene { width: 180px; flex: 0 0 auto; border-radius: 24px 24px 24px 0; }
+.ui-pic-step { width: 88px; height: 88px; flex: 0 0 88px; object-fit: cover; border-radius: 22px 22px 22px 0; }
+@media (max-width: 700px) {
+  .ui-pic-welcome { width: 240px; margin-top: 16px; }
+  .ui-pic-scene { width: 120px; }
+  .ui-pic-step { width: 64px; height: 64px; flex-basis: 64px; }
+}
+@media screen and (prefers-reduced-motion: no-preference) {
+  @keyframes ui-fade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes ui-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  @keyframes ui-pop { 0% { transform: scale(0.6); } 70% { transform: scale(1.08); } 100% { transform: scale(1); } }
+  @keyframes ui-ring { 0%, 100% { box-shadow: 0 0 0 10px var(--turn-ring); } 50% { box-shadow: 0 0 0 17px rgba(207, 73, 17, 0.08); } }
+  /* a page arrives softly (opacity only — nothing moves under the pointer) */
+  main > * { animation: ui-fade 0.24s ease-out both; }
+  /* «Какво следва» / «Сега» rises into place */
+  .ui-next { animation: ui-rise 0.36s ease-out 0.06s both; }
+  /* the path: the done steps pop in one after another; the step that is yours now glows twice, then rests */
+  .ui-path-done .ui-path-dot { animation: ui-pop 0.4s ease-out both; }
+  .ui-path > li:nth-child(2) .ui-path-dot { animation-delay: 0.06s; }
+  .ui-path > li:nth-child(3) .ui-path-dot { animation-delay: 0.12s; }
+  .ui-path > li:nth-child(4) .ui-path-dot { animation-delay: 0.18s; }
+  .ui-path > li:nth-child(5) .ui-path-dot { animation-delay: 0.24s; }
+  .ui-path > li:nth-child(6) .ui-path-dot { animation-delay: 0.3s; }
+  .ui-path:not(.ui-path-compact) .ui-path-now .ui-path-dot { animation: ui-ring 1.6s ease-in-out 0.4s 2; }
+  /* tiles lift a little under the pointer; pictures fade in; the phone menu opens with a short slide */
+  .ui-tile { transition: border-color 0.15s, background 0.15s, transform 0.15s, box-shadow 0.15s; }
+  .ui-tile:hover { transform: translateY(-3px); box-shadow: 0 8px 18px rgba(62, 62, 62, 0.08); }
+  .ui-pic { animation: ui-fade 0.5s ease-out both; }
+  .adminrail-nav[data-open] { animation: ui-rise 0.18s ease-out both; }
+}

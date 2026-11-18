@@ -1,6 +1,7 @@
 import { AUTH_ENABLED } from "@/lib/auth";
 import { safeNext } from "@/lib/auth-links";
 import LoginForm from "@/components/LoginForm";
+import Picture from "@/components/ui/Picture";
 import LanguageToggle from "@/components/LanguageToggle";
 
 // Team (Manager/Staff/Auditor) sign-in. Standalone page — no admin chrome (excluded
@@ -30,6 +31,8 @@ export default async function LoginPage({
         <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "var(--green-light)", borderRadius: 999, padding: "3px 9px", letterSpacing: ".04em" }}>PT PROVIDER</span>
         <span style={{ marginLeft: "auto" }}><LanguageToggle /></span>
       </header>
+      {/* the redesign (R5): a calm welcome — decoration only */}
+      <Picture name="welcome" className="ui-pic-welcome" />
       <LoginForm next={next} denied={sp.denied === "1"} />
       {!AUTH_ENABLED && (
         <p className="text-center text-xs mt-4" style={{ color: "var(--muted)", maxWidth: 420 }}>

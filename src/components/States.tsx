@@ -1,13 +1,15 @@
 import type { ReactNode } from "react";
+import Picture, { type PictureName } from "@/components/ui/Picture";
 
 // Shared empty / error / loading states — the design-system "States" card in code.
 // Presentational only (no client hooks), so they work in server components. The
 // global app/error.tsx renders its own client wrapper around this look.
 
-export function EmptyState({ title, body, action }: { title: string; body?: string; action?: ReactNode }) {
+// The redesign (R5): an empty page may show a picture of what is still to come (decoration — the words say it).
+export function EmptyState({ title, body, action, picture }: { title: string; body?: string; action?: ReactNode; picture?: PictureName }) {
   return (
     <div className="state-box">
-      <div className="state-ico" aria-hidden />
+      {picture ? <Picture name={picture} className="ui-pic-scene" /> : <div className="state-ico" aria-hidden />}
       <div className="state-title">{title}</div>
       {body && <div className="state-body">{body}</div>}
       {action}

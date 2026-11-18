@@ -38,6 +38,7 @@ import LanguageToggle from "@/components/LanguageToggle";
 import { deadlineText, docName, docHref, schemeTitle, actionLine, nowFirst } from "@/components/ParticipationLists";
 import NextStep from "@/components/ui/NextStep";
 import Icon from "@/components/ui/Icon";
+import Picture from "@/components/ui/Picture";
 
 export const dynamic = "force-dynamic";
 
@@ -230,6 +231,16 @@ export default async function ParticipationPage({ params, searchParams }: { para
           {p.sampleCode ? <>{" · "}{L("РТ обект ", "PT object ")}<b style={{ color: "var(--ink)" }}>{p.sampleCode}</b></> : null}
         </p>
         <div className="ui-card" style={{ margin: "20px 0" }}><StageBar lang={lang} type={s.type} state={v.state} payment={v.finished ? undefined : v.payment} /></div>
+        {/* the redesign (R5): the «done» moment — the same released certificate the documents below list */}
+        {hasCert && (
+          <section className="ui-card" data-certificate-ready style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap", margin: "0 0 20px" }}>
+            <Picture name="certificate-ready" className="ui-pic-scene" />
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: "1 1 240px" }}>
+              <span style={{ fontSize: 22, fontWeight: 700 }}>{L("Сертификатът ви е готов", "Your certificate is ready")}</span>
+              <a href={`/lab/doc/${s.id}/certificate?lang=${lang}&p=${encodeURIComponent(v.participantId)}`} target="_blank" rel="noreferrer" className="ui-btn ui-btn-main" style={{ alignSelf: "flex-start" }}><Icon name="award" size={22} />{L("Отворете сертификата", "Open the certificate")}</a>
+            </div>
+          </section>
+        )}
         {firstLine && (
           <div style={{ margin: "0 0 20px" }}>
             <NextStep eyebrow={L("Сега", "Now")} title={firstLine.title} detail={firstLine.detail}>

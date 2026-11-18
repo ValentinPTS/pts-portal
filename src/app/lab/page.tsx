@@ -361,7 +361,7 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
   const activeItems = items.filter((it) => !over(it));
   const doneItems = items.filter((it) => over(it));
   const participatingContent = items.length === 0 ? (
-    <EmptyState title={tr("lab.noSchemesTitle")} body={tr("lab.noSchemesBody")} />
+    <EmptyState title={tr("lab.noSchemesTitle")} body={tr("lab.noSchemesBody")} picture="no-participations" />
   ) : (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {activeItems.map(participCard)}

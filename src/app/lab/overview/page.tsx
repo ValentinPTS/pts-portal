@@ -15,6 +15,7 @@ import { ActionItems, ParticipationsTable, actionLine, nowFirst } from "@/compon
 import PageTitle from "@/components/ui/PageTitle";
 import NextStep from "@/components/ui/NextStep";
 import Icon from "@/components/ui/Icon";
+import Picture from "@/components/ui/Picture";
 
 export const dynamic = "force-dynamic";
 
@@ -125,8 +126,8 @@ export default async function ParticipantOverviewPage({ searchParams }: { search
                   : <Link href={firstLine.href} className="ui-btn ui-btn-next">{firstLine.button}<Icon name="arrowRight" size={22} strokeWidth={2.4} /></Link>}
               </NextStep>
             ) : active.length > 0 && (
-              <p className="ui-card ui-card-later" style={{ margin: 0, fontSize: 19, display: "flex", alignItems: "center", gap: 12, color: "#4a4a4a" }}>
-                <Icon name="clock" size={26} />{L("Сега не е нужно нищо от вас — PTS ще ви пише, когато дойде вашият ред.", "Nothing is needed from you now — PTS will write to you when it is your turn.")}
+              <p className="ui-card ui-card-later" style={{ margin: 0, fontSize: 19, display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap", color: "#4a4a4a" }}>
+                <Picture name="nothing-to-do" className="ui-pic-scene" />{L("Сега не е нужно нищо от вас — PTS ще ви пише, когато дойде вашият ред.", "Nothing is needed from you now — PTS will write to you when it is your turn.")}
               </p>
             ))}
             {!archive && <ActionItems lang={lg} views={active} />}
@@ -143,7 +144,18 @@ export default async function ParticipantOverviewPage({ searchParams }: { search
                 {chosen.deliveryAddress}{chosen.mobileOffice ? ` · ${L("мобилен офис", "mobile office")}` : ""}{(chosen.accreditationNo || chosen.accreditationBody) ? ` · ${L("акредитация", "accreditation")} ${[chosen.accreditationNo, chosen.accreditationBody].filter(Boolean).join(", ")}` : ""}
               </div>
               {(archive ? archived : active).length === 0 ? (
-                <p style={{ margin: 0, padding: "12px 18px 16px", fontSize: 13, color: "var(--muted)" }}>{archive ? L("Няма приключили участия.", "No finished participations.") : L("Тази лаборатория няма активни участия в портала.", "This laboratory has no active participations in the portal.")}</p>
+                archive ? (
+                  <p style={{ margin: 0, padding: "12px 18px 16px", fontSize: 16, color: "#555555" }}>{L("Няма приключили участия.", "No finished participations.")}</p>
+                ) : (
+                  // the redesign (R5): an empty list says what will come, and where to start
+                  <div data-no-participations style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap", padding: "16px 18px 20px" }}>
+                    <Picture name="no-participations" className="ui-pic-scene" />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: "1 1 220px" }}>
+                      <span style={{ fontSize: 18 }}>{L("Тази лаборатория няма активни участия в портала.", "This laboratory has no active participations in the portal.")}</span>
+                      <Link href="/lab/apply" className="ui-btn ui-btn-sm" style={{ alignSelf: "flex-start" }}>{L("Заявете участие", "Apply for a scheme")}<Icon name="arrowRight" size={20} strokeWidth={2.4} /></Link>
+                    </div>
+                  </div>
+                )
               ) : (
                 <div data-participations style={{ paddingTop: 8 }}>
                   <ParticipationsTable lang={lg} views={archive ? archived : active} archive={archive} showLab={false} />

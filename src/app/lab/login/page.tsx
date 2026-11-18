@@ -1,4 +1,5 @@
 import LoginForm from "@/components/LoginForm";
+import Picture from "@/components/ui/Picture";
 
 // Laboratory sign-in. Reuses the shared Supabase sign-in (email + password, 2FA if
 // the lab enrolled one). `next` is constrained to the /lab area to avoid redirecting
@@ -29,6 +30,8 @@ export default async function LabLoginPage({ searchParams }: { searchParams: Pro
           Поканата се приема само чрез връзката в писмото с поканата — отворете я отново (или поискайте нова парола). · The invitation is accepted only through the link in its e-mail — open it again (or ask for a new password).
         </p>
       )}
+      {/* the redesign (R5): a calm welcome — decoration only */}
+      <Picture name="welcome" className="ui-pic-welcome" />
       <LoginForm next={next} audience="lab" denied={sp.denied === "1"} />
     </div>
   );
