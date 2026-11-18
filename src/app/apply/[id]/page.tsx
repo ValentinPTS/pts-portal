@@ -46,9 +46,9 @@ export default async function ApplyToScheme({
     return (
       <div className="text-center">
         <h1 className="text-3xl font-bold">{s.number}</h1>
-        <p className="mt-2" style={{ color: "#cdd6c2" }}>{lang === "bg" ? s.titleBg : s.titleEn}</p>
-        {state && <p className="mt-3" data-public-state={state} style={{ fontWeight: 700, color: takesApplications(state) ? "var(--green-light)" : "#f0c98a" }}>{STATE_TEXT[state][lang === "bg" ? "bg" : "en"]}</p>}
-        <p className="mt-6 mx-auto" style={{ color: "#f0c98a", maxWidth: 620 }}>{tr("apply.closedBody")}</p>
+        <p className="mt-2" style={{ color: "#456b2c" }}>{lang === "bg" ? s.titleBg : s.titleEn}</p>
+        {state && <p className="mt-3" data-public-state={state} style={{ fontWeight: 700, color: takesApplications(state) ? "var(--done-ink)" : "#7a5416" }}>{STATE_TEXT[state][lang === "bg" ? "bg" : "en"]}</p>}
+        <p className="mt-6 mx-auto" style={{ color: "#7a5416", maxWidth: 620 }}>{tr("apply.closedBody")}</p>
         <div className="mt-6 flex gap-3 justify-center flex-wrap">
           {planLink}
           {invitationLink}
@@ -60,9 +60,9 @@ export default async function ApplyToScheme({
           <Link href="/catalogue" className="btn inline-flex" data-catalogue-link>{L("Каталог на схемите", "The schemes' catalogue")}</Link>
         </div>
         {state && wishOffered(state) && (
-          <p className="mt-5 text-sm" data-public-wish-note style={{ color: "#aab59c" }}>
+          <p className="mt-5 text-sm" data-public-wish-note style={{ color: "#555555" }}>
             {L("«Уведоми ме при следваща» — в портала, за влезлите потребители на организация (", "«Notify me of the next» — in the portal, for the signed-in users of an organisation (")}
-            <a href="/lab/catalogue" style={{ color: "var(--green-light)" }}>{L("Каталог в портала", "the portal's catalogue")}</a>).
+            <a href="/lab/catalogue" style={{ color: "var(--done-ink)" }}>{L("Каталог в портала", "the portal's catalogue")}</a>).
           </p>
         )}
       </div>
@@ -74,9 +74,9 @@ export default async function ApplyToScheme({
     return (
       <div className="text-center">
         <h1 className="text-3xl font-bold">{s.number}</h1>
-        <p className="mt-2" style={{ color: "#cdd6c2" }}>{lang === "bg" ? s.titleBg : s.titleEn}</p>
-        {state && <p className="mt-3" data-public-state={state} style={{ fontWeight: 700, color: "#f0c98a" }}>{STATE_TEXT[state][lang === "bg" ? "bg" : "en"]}</p>}
-        <p className="mt-6" style={{ color: "#f0c98a" }}>
+        <p className="mt-2" style={{ color: "#456b2c" }}>{lang === "bg" ? s.titleBg : s.titleEn}</p>
+        {state && <p className="mt-3" data-public-state={state} style={{ fontWeight: 700, color: "#7a5416" }}>{STATE_TEXT[state][lang === "bg" ? "bg" : "en"]}</p>}
+        <p className="mt-6" style={{ color: "#7a5416" }}>
           {tr("apply.notAccepting")}
         </p>
         <div className="mt-4 flex gap-3 justify-center flex-wrap">{planLink}{invitationLink}<Link href="/catalogue" className="btn inline-flex" data-catalogue-link>{L("Каталог на схемите", "The schemes' catalogue")}</Link></div>
@@ -89,10 +89,10 @@ export default async function ApplyToScheme({
 
   return (
     <>
-      <Link href="/apply" className="no-underline text-sm" style={{ color: "#aab59c" }}>
+      <Link href="/apply" className="no-underline text-sm" style={{ color: "#555555" }}>
         {tr("apply.allOpen")}
       </Link>
-      {state && <p className="mt-2" data-public-state={state} style={{ fontWeight: 700, color: "var(--green-light)" }}>{STATE_TEXT[state][lang === "bg" ? "bg" : "en"]}</p>}
+      {state && <p className="mt-2" data-public-state={state} style={{ fontWeight: 700, color: "var(--done-ink)" }}>{STATE_TEXT[state][lang === "bg" ? "bg" : "en"]}</p>}
       <div className="mt-3 flex gap-3 flex-wrap">{planLink}{invitationLink}<Link href="/catalogue" className="btn inline-flex" data-catalogue-link>{L("Каталог на схемите", "The schemes' catalogue")}</Link></div>
       <div className="mt-3">
         <ApplyWizard

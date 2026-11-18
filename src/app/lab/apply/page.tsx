@@ -56,7 +56,7 @@ export default async function LabApplyPage({ searchParams }: { searchParams: Pro
     <div style={{ minHeight: "100dvh", background: "var(--bg)" }}>
       <ParticipantNav lang={lg} active="apply" name={user.name} role={user.role} persona={persona} />
       <main style={{ maxWidth: 820, margin: "0 auto", padding: "32px 24px" }}>
-        <h1 className="section-title" style={{ fontSize: 26, margin: "0 0 8px" }}>{L("Заявяване на участие", "Apply to take part")}</h1>
+        <h1 className="section-title ui-h1" style={{ margin: "0 0 8px" }}>{L("Заявяване на участие", "Apply to take part")}</h1>
         {done && (
           <div role="status" data-apply-done data-apply-done-waiting={doneWaiting ? "" : undefined} className="card" style={{ padding: 14, marginBottom: 14, background: doneWaiting ? "#fff8e6" : "var(--green-soft)" }}>
             {doneWaiting

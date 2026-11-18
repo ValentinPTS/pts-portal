@@ -25,7 +25,7 @@ export default async function ProfileConfirmPage() {
     <div style={{ minHeight: "100dvh", background: "var(--bg)" }}>
       <ParticipantNav lang={lg} active="confirm" name={user.name} role={user.role} persona={persona} />
       <main style={{ maxWidth: 760, margin: "0 auto", padding: "32px 24px" }}>
-        <h1 className="section-title" style={{ fontSize: 26, margin: "0 0 8px" }}>{L("Данните на вашата организация", "Your organisation's data")}</h1>
+        <h1 className="section-title ui-h1" style={{ margin: "0 0 8px" }}>{L("Данните на вашата организация", "Your organisation's data")}</h1>
         {entity.confirmedAt ? (
           <div role="status" data-confirmed={entity.confirmedAt} className="card" style={{ padding: 14, marginBottom: 14, background: "var(--green-soft)" }}>
             {L(`Потвърдени на ${confirmDate(entity.confirmedAt)}${entity.confirmedBy === user.id ? " от вас" : " от администратора на профила"}. Оттогава данните са ваши — поддържате ги тук.`,

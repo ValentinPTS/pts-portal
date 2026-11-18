@@ -40,7 +40,7 @@ export default async function LabCataloguePage() {
     <div style={{ minHeight: "100dvh", background: "var(--bg)" }}>
       <ParticipantNav lang={lg} active="catalogue" name={user.name} role={user.role} persona={persona} />
       <main style={{ maxWidth: 860, margin: "0 auto", padding: "32px 24px" }} data-lab-catalogue>
-        <h1 className="section-title" style={{ fontSize: 26, margin: "0 0 8px" }}>{L("Каталог на схемите", "The schemes' catalogue")}</h1>
+        <h1 className="section-title ui-h1" style={{ margin: "0 0 8px" }}>{L("Каталог на схемите", "The schemes' catalogue")}</h1>
         {!approved && (
           <div role="note" data-catalogue-price-pending className="card" style={{ padding: 12, marginBottom: 12, background: "#fff8e6" }}>
             {L("Цените се виждат, когато PTS провери организацията («активно»).", "The prices show once PTS has checked the organisation («active»).")}

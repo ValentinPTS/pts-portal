@@ -19,14 +19,14 @@ export default async function ApplyHome() {
       <h1 className="text-4xl font-bold text-center" style={{ letterSpacing: "0.5px" }}>
         {tr("apply.title")}
       </h1>
-      <p className="text-center mt-2" style={{ color: "#aab59c" }}>
+      <p className="text-center mt-2" style={{ color: "#555555" }}>
         {tr("apply.openSchemes")}
       </p>
       <div className="mx-auto mt-3" style={{ width: 60, height: 3, background: "var(--green)" }} />
       {/* 10.1: every started scheme — taking applications, under way, finished */}
-      <p className="text-center mt-3"><Link href="/catalogue" data-catalogue-link style={{ color: "var(--green-light)", fontWeight: 700 }}>{lang === "bg" ? "Каталог на всички схеми →" : "The catalogue of all schemes →"}</Link></p>
+      <p className="text-center mt-3"><Link href="/catalogue" data-catalogue-link style={{ color: "var(--done-ink)", fontWeight: 700 }}>{lang === "bg" ? "Каталог на всички схеми →" : "The catalogue of all schemes →"}</Link></p>
       {!ONLINE_APPLICATIONS_OPEN && (
-        <div className="mt-6 mx-auto text-center" style={{ maxWidth: 620, color: "#f0c98a" }}>
+        <div className="mt-6 mx-auto text-center" style={{ maxWidth: 620, color: "#7a5416" }}>
           <p>{tr("apply.closedBody")}</p>
           {/* 9.2: the laboratory applies in its portal — or with the PDF, until Реш. 146 */}
           <div className="mt-3 flex gap-3 justify-center flex-wrap" data-apply-paths>
@@ -38,7 +38,7 @@ export default async function ApplyHome() {
       )}
 
       {open.length === 0 ? (
-        <div className="mt-10 text-center" style={{ color: "#aab59c" }}>
+        <div className="mt-10 text-center" style={{ color: "#555555" }}>
           {tr("apply.noneOpen")}
         </div>
       ) : (
@@ -50,15 +50,15 @@ export default async function ApplyHome() {
               className="no-underline"
               style={{
                 display: "block",
-                background: "#1b2016",
-                border: "1px solid #36422c",
+                background: "#ffffff",
+                border: "1px solid #e3e9de",
                 borderRadius: 14,
                 padding: "18px 22px",
-                color: "#e7ece1",
+                color: "#3e3e3e",
               }}
             >
               <div className="flex items-center gap-3">
-                <span style={{ fontWeight: 700, color: "var(--green-light)" }}>{s.number}</span>
+                <span style={{ fontWeight: 700, color: "var(--done-ink)" }}>{s.number}</span>
                 <span
                   className="chip"
                   style={{ background: "var(--green-dark)", marginLeft: "auto" }}
@@ -67,10 +67,10 @@ export default async function ApplyHome() {
                 </span>
               </div>
               <div className="mt-1" style={{ fontSize: "1.25rem", fontWeight: 700 }}>{lang === "bg" ? s.titleBg : s.titleEn}</div>
-              <div className="mt-2 text-sm" style={{ color: "#cdd6c2" }}>
+              <div className="mt-2 text-sm" style={{ color: "#456b2c" }}>
                 {tr("apply.object")} {lang === "bg" ? s.objectBg : s.objectEn} · {tr("apply.min")} {s.minParticipants} {tr("apply.participants")}
               </div>
-              <div className="mt-3" style={{ color: "var(--green-light)", fontWeight: 700 }}>
+              <div className="mt-3" style={{ color: "var(--done-ink)", fontWeight: 700 }}>
                 {ONLINE_APPLICATIONS_OPEN ? tr("apply.applyCta") : tr("apply.detailsCta")}
               </div>
             </Link>

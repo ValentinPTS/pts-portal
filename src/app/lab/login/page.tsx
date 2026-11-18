@@ -19,7 +19,7 @@ export default async function LabLoginPage({ searchParams }: { searchParams: Pro
         <span style={{ fontFamily: "var(--font-sans)", fontWeight: 800, fontSize: 24, letterSpacing: "-0.01em" }}>
           <span style={{ color: "var(--green-dark)" }}>PTS</span> <span style={{ color: "var(--ink)" }}>Bulgaria</span>
         </span>
-        <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "var(--green-light)", borderRadius: 999, padding: "3px 9px", letterSpacing: ".04em" }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "var(--done-ink)", borderRadius: 999, padding: "3px 9px", letterSpacing: ".04em" }}>
           PT PROVIDER
         </span>
       </div>

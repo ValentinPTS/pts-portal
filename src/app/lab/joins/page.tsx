@@ -33,7 +33,7 @@ export default async function JoinRequestsPage({ searchParams }: { searchParams:
     <div style={{ minHeight: "100dvh", background: "var(--bg)" }}>
       <ParticipantNav lang={lg} active="joins" name={user.name} role={user.role} persona={persona} />
       <main style={{ maxWidth: 760, margin: "0 auto", padding: "32px 24px" }}>
-        <h1 className="section-title" style={{ fontSize: 26, margin: "0 0 8px" }}>{L("Заявки за присъединяване", "Requests to join")}</h1>
+        <h1 className="section-title ui-h1" style={{ margin: "0 0 8px" }}>{L("Заявки за присъединяване", "Requests to join")}</h1>
         <p className="text-sm" style={{ color: "var(--muted)", marginBottom: 14 }}>
           {L(`Хора, които се регистрираха с ЕИК на ${entity.name}. Одобреният става потребител на профила — вижда всички лаборатории на организацията и може да подава резултати; поканата за вход тръгва към неговия e-mail, а официалният e-mail на организацията се уведомява.`,
              `People who registered with the ЕИК of ${entity.name}. An approved one becomes a user of the profile — sees all the organisation's laboratories and may submit results; the invitation goes to their e-mail, and the organisation's official e-mail is told.`)}

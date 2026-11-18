@@ -30,7 +30,7 @@ export default async function LabProfilePage({ searchParams }: { searchParams: P
       </header>
       <main style={{ maxWidth: 640, margin: "0 auto", padding: "32px 24px" }}>
         <Link href="/lab" className="text-sm" style={{ color: "var(--muted)" }}>← {tr("lab.backToDashboard")}</Link>
-        <h1 className="section-title" style={{ fontSize: 26, margin: "6px 0 16px" }}>{tr("lab.editProfile")}</h1>
+        <h1 className="section-title ui-h1" style={{ margin: "6px 0 16px" }}>{tr("lab.editProfile")}</h1>
         {review && (
           <div role="note" data-review-data className="card" style={{ padding: 14, marginBottom: 14, background: "var(--green-soft)" }}>
             {tr("lab.reviewData")}

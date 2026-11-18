@@ -23,7 +23,7 @@ export default async function ParticipantTwoFactorPage() {
         <form action={signOutLabAction} style={{ marginLeft: "auto" }}><button type="submit" className="btn btn-sm">{L("Изход", "Sign out")}</button></form>
       </header>
       <main style={{ maxWidth: 560, margin: "0 auto", padding: "32px 24px" }} data-two-step-required>
-        <h1 className="section-title" style={{ fontSize: 24, margin: "0 0 8px" }}>{L("Влизане в две стъпки", "Two-step sign-in")}</h1>
+        <h1 className="section-title ui-h1" style={{ margin: "0 0 8px" }}>{L("Влизане в две стъпки", "Two-step sign-in")}</h1>
         <p className="text-sm" style={{ color: "var(--muted)" }}>
           {L("PTS изисква за вашия профил влизане в две стъпки. Настройте приложение за удостоверяване, преди да продължите.",
              "PTS requires two-step sign-in for your profile. Set an authenticator app up before you go on.")}

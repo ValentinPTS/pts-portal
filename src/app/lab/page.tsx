@@ -410,7 +410,7 @@ export default async function LabDashboard({ searchParams }: { searchParams: Pro
             in every scheme it joins, so the code belongs on the scheme's own card
             (below) where it can never be read as one code for everything. */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 22 }}>
-          <h1 className="section-title" style={{ fontSize: 30 }}>{tr("lab.welcomePrefix")} {lab.name}</h1>
+          <h1 className="section-title ui-h1">{tr("lab.welcomePrefix")} {lab.name}</h1>
         </div>
         {/* what asks for action now — a deadline, a delivery, a document (5.5; design §4) */}
         {views.length > 0 && <div style={{ marginBottom: 20 }}><ActionItems lang={lang === "bg" ? "bg" : "en"} views={views.filter((v) => !v.finished)} /></div>}

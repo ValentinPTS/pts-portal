@@ -14,16 +14,16 @@ type Param = { standard: string; characteristic: string };
 // that looked like "step 3 sends me to step 1"). Hoisting Field out keeps the inputs
 // mounted and their values intact across steps.
 const inputStyle: CSSProperties = {
-  width: "100%", background: "#e9eef0", border: "1px solid #2b3422", borderRadius: 10,
-  padding: "12px 14px", color: "#10140d", fontSize: "1rem",
+  width: "100%", background: "#ffffff", border: "1px solid #cbd9be", borderRadius: 10,
+  padding: "12px 14px", color: "#ffffff", fontSize: "1rem",
 };
-const labelStyle: CSSProperties = { display: "block", marginBottom: 6, color: "#cdd6c2", fontSize: "0.95rem" };
+const labelStyle: CSSProperties = { display: "block", marginBottom: 6, color: "#456b2c", fontSize: "0.95rem" };
 
 function Field({ name, label, req, type = "text" }: { name: string; label: string; req?: boolean; type?: string }) {
   return (
     <label className="block">
       <span style={labelStyle}>
-        {label} {req && <span style={{ color: "var(--green-light)" }}>*</span>}
+        {label} {req && <span style={{ color: "var(--done-ink)" }}>*</span>}
       </span>
       <input name={name} type={type} style={inputStyle} />
     </label>
@@ -122,7 +122,7 @@ export default function ApplyWizard({
       <div className="flex items-center justify-center gap-3">
         <h1 className="text-4xl font-bold text-center">{L("Заявка за участие", "Application to participate")}</h1>
       </div>
-      <div className="text-center mt-1" style={{ color: "#aab59c" }}>
+      <div className="text-center mt-1" style={{ color: "#555555" }}>
         № {number} — {L(titleBg, titleEn)}
       </div>
       <div className="mx-auto mt-3" style={{ width: 60, height: 3, background: "var(--green)" }} />
@@ -130,7 +130,7 @@ export default function ApplyWizard({
       {/* step indicator */}
       <div
         className="flex items-center mt-6"
-        style={{ background: "#26301c", borderRadius: 40, padding: 6, gap: 4 }}
+        style={{ background: "#eef3ea", borderRadius: 40, padding: 6, gap: 4 }}
       >
         {steps.map((label, i) => {
           const n = i + 1;
@@ -145,7 +145,7 @@ export default function ApplyWizard({
                 padding: "12px 10px",
                 borderRadius: 32,
                 background: active ? "var(--green)" : "transparent",
-                color: active ? "#10140d" : "#cdd6c2",
+                color: active ? "#ffffff" : "#456b2c",
                 fontWeight: 700,
               }}
             >
@@ -154,8 +154,8 @@ export default function ApplyWizard({
                   width: 26,
                   height: 26,
                   borderRadius: "50%",
-                  background: active ? "#10140d" : "#3a472f",
-                  color: active ? "#fff" : "#cdd6c2",
+                  background: active ? "#456b2c" : "#ffffff",
+                  color: active ? "#fff" : "#456b2c",
                   display: "inline-flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -213,10 +213,10 @@ export default function ApplyWizard({
         {/* STEP 3 */}
         <div style={{ display: step === 3 ? "block" : "none" }}>
           <h2 className="text-2xl font-bold text-center mb-2">{L("Брой участия на обект", "Number of participations per item")}</h2>
-          <p className="text-center mb-6" style={{ color: "#aab59c" }}>
+          <p className="text-center mb-6" style={{ color: "#555555" }}>
             {L("Въведете брой участия за всяка заявена характеристика (0 = без заявка).", "Enter the number of participations for each requested characteristic (0 = not requested).")}
           </p>
-          <div style={{ background: "#1b2016", border: "1px solid #36422c", borderRadius: 14, overflow: "hidden" }}>
+          <div style={{ background: "#ffffff", border: "1px solid #e3e9de", borderRadius: 14, overflow: "hidden" }}>
             <div
               className="text-center"
               style={{ background: "var(--green-dark)", color: "#fff", fontWeight: 800, padding: "12px", textTransform: "uppercase", letterSpacing: 1 }}
@@ -231,11 +231,11 @@ export default function ApplyWizard({
                     type="number"
                     min="0"
                     defaultValue="0"
-                    style={{ width: 64, background: "#e9eef0", border: "1px solid #2b3422", borderRadius: 8, padding: "8px 10px", color: "#10140d", textAlign: "center" }}
+                    style={{ width: 64, background: "#ffffff", border: "1px solid #cbd9be", borderRadius: 8, padding: "8px 10px", color: "#ffffff", textAlign: "center" }}
                   />
-                  <div style={{ color: "#e7ece1", fontSize: "0.95rem" }}>
-                    <div style={{ color: "var(--green-light)", fontWeight: 700 }}>{p.standard}</div>
-                    <div style={{ color: "#cdd6c2" }}>{p.characteristic}</div>
+                  <div style={{ color: "#3e3e3e", fontSize: "0.95rem" }}>
+                    <div style={{ color: "var(--done-ink)", fontWeight: 700 }}>{p.standard}</div>
+                    <div style={{ color: "#456b2c" }}>{p.characteristic}</div>
                   </div>
                 </div>
               ))}
@@ -244,7 +244,7 @@ export default function ApplyWizard({
         </div>
 
         {error && (
-          <div className="mt-4 text-center" style={{ color: "#f0a8a8" }}>
+          <div className="mt-4 text-center" style={{ color: "#8f2f2f" }}>
             {error}
           </div>
         )}
@@ -252,7 +252,7 @@ export default function ApplyWizard({
         {/* navigation */}
         <div className="flex items-center mt-8" style={{ gap: 12 }}>
           {step > 1 && (
-            <button type="button" onClick={back} className="btn" style={{ background: "transparent", color: "var(--green-light)", borderColor: "var(--green)" }}>
+            <button type="button" onClick={back} className="btn" style={{ background: "transparent", color: "var(--done-ink)", borderColor: "var(--green)" }}>
               {L("Назад", "Back")}
             </button>
           )}

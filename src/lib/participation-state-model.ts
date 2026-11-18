@@ -294,3 +294,9 @@ export const actionOrder = (a: ActionItem, b: ActionItem): number => {
   const rank = { deadline: 0, delivery: 1, acknowledge: 2, document: 3 } as const;
   return rank[a.kind] - rank[b.kind] || deadlineOrder(a.at) - deadlineOrder(b.at) || (a.at ?? "").localeCompare(b.at ?? "");
 };
+
+
+/** «Сега» (the redesign, R2) — the step the laboratory is ON first: the object to confirm before its testing, the testing before a
+ *  signature, a document to open last; within a kind, the list's own order (actionOrder). The list keeps its order. */
+const NOW_RANK: Record<ActionItem["kind"], number> = { delivery: 0, deadline: 1, acknowledge: 2, document: 3 };
+export const nowFirst = (a: ActionItem, b: ActionItem): number => NOW_RANK[a.kind] - NOW_RANK[b.kind] || actionOrder(a, b);

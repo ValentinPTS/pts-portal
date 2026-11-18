@@ -24,11 +24,11 @@ export default async function CataloguePage() {
   // «Запълнена» asked only of a scheme taking applications — the count stays on the server
   const full = new Set((await Promise.all(started.filter((s) => s.status === "open").map(async (s) => (schemeFull(s, await listParticipants(s.id)) ? [s.id] : []) as string[]))).flat());
   const rows = catalogueRows(started, schemeNowMs, (s) => full.has(s.id));
-  const card = { display: "block", background: "#1b2016", border: "1px solid #36422c", borderRadius: 14, padding: "16px 20px", color: "#e7ece1" } as const;
+  const card = { display: "block", background: "#ffffff", border: "1px solid #e3e9de", borderRadius: 14, padding: "16px 20px", color: "#3e3e3e" } as const;
   return (
     <div data-catalogue>
       <h1 className="text-4xl font-bold text-center" style={{ letterSpacing: "0.5px" }}>{L("Каталог на схемите", "The schemes' catalogue")}</h1>
-      <p className="text-center mt-2" style={{ color: "#aab59c", maxWidth: 680, marginInline: "auto" }}>
+      <p className="text-center mt-2" style={{ color: "#555555", maxWidth: 680, marginInline: "auto" }}>
         {L("Схемите за изпитване за пригодност на PTS — които приемат заявки, които са в ход и които са приключили. Планът и поканата на всяка са на страницата ѝ.",
           "PTS's proficiency-testing schemes — those taking applications, those under way and those finished. Each one's plan and invitation are on its page.")}
       </p>
@@ -37,25 +37,25 @@ export default async function CataloguePage() {
         <a href="/register" className="btn inline-flex">{L("Регистрация на организация", "Register an organisation")}</a>
         <a href={PDF_APPLICATION_URL} target="_blank" rel="noopener" className="btn inline-flex">{L("Формуляр за заявка (PDF)", "The application form (PDF)")}</a>
       </div>
-      <p className="text-center text-sm mt-3" style={{ color: "#aab59c" }} data-catalogue-wish-note>
+      <p className="text-center text-sm mt-3" style={{ color: "#555555" }} data-catalogue-wish-note>
         {L("«Уведоми ме при следваща» — в портала, за влезлите потребители на организация.", "«Notify me of the next» — in the portal, for the signed-in users of an organisation.")}
       </p>
       {GROUPS.map((g) => (
         <section key={g} className="mt-8" data-catalogue-group={g}>
-          <h2 className="text-xl font-bold" style={{ color: "var(--green-light)" }}>{GROUP_TEXT[g][lg]}</h2>
+          <h2 className="text-xl font-bold" style={{ color: "var(--done-ink)" }}>{GROUP_TEXT[g][lg]}</h2>
           {rows[g].length === 0 ? (
-            <p className="mt-2 text-sm" style={{ color: "#aab59c" }}>{L("Няма.", "None.")}</p>
+            <p className="mt-2 text-sm" style={{ color: "#555555" }}>{L("Няма.", "None.")}</p>
           ) : (
             <div className="mt-3 grid gap-3">
               {rows[g].map(({ scheme: s, state }) => (
                 <Link key={s.id} href={`/apply/${s.id}`} className="no-underline" style={card} data-catalogue-scheme={s.id} data-catalogue-state={state}>
                   <div className="flex items-center gap-3 flex-wrap">
-                    <span style={{ fontWeight: 700, color: "var(--green-light)" }}>{s.number}</span>
+                    <span style={{ fontWeight: 700, color: "var(--done-ink)" }}>{s.number}</span>
                     <span className="chip" style={{ background: "var(--green-dark)" }}>{activityText(s, lg)}</span>
-                    <span className="text-sm" style={{ marginLeft: "auto", fontWeight: 700, color: takesApplications(state) ? "var(--green-light)" : "#f0c98a" }}>{STATE_TEXT[state][lg]}</span>
+                    <span className="text-sm" style={{ marginLeft: "auto", fontWeight: 700, color: takesApplications(state) ? "var(--done-ink)" : "#7a5416" }}>{STATE_TEXT[state][lg]}</span>
                   </div>
                   <div className="mt-1" style={{ fontSize: "1.15rem", fontWeight: 700 }}>{L(s.titleBg || s.titleEn, s.titleEn || s.titleBg)}</div>
-                  <div className="mt-1 text-sm" style={{ color: "#cdd6c2" }}>
+                  <div className="mt-1 text-sm" style={{ color: "#456b2c" }}>
                     {L("Обект:", "Object:")} {L(s.objectBg || s.objectEn, s.objectEn || s.objectBg)}
                     {takesApplications(state) && s.dates?.applicationsDue ? ` · ${L("заявки до", "applications by")} ${fmtSchemeDate(s.dates.applicationsDue)}` : ""}
                   </div>

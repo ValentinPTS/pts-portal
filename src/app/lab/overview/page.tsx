@@ -11,7 +11,10 @@ import { getServerT } from "@/lib/i18n-server";
 import { confirmDate } from "@/lib/profile-confirm-model";
 import ParticipantNav from "@/components/ParticipantNav";
 import MarkNoticesRead from "@/components/MarkNoticesRead";
-import { ActionItems, ParticipationsTable } from "@/components/ParticipationLists";
+import { ActionItems, ParticipationsTable, actionLine, nowFirst } from "@/components/ParticipationLists";
+import PageTitle from "@/components/ui/PageTitle";
+import NextStep from "@/components/ui/NextStep";
+import Icon from "@/components/ui/Icon";
 
 export const dynamic = "force-dynamic";
 
@@ -55,12 +58,16 @@ export default async function ParticipantOverviewPage({ searchParams }: { search
   const notices = feed.length ? await withReadState(feed, readerKey.participant(user.id)).catch(logged) : [];
   const unread = notices.filter((n) => !n.readAt).length;
   const here = (extra: string) => `/lab/overview?${chosen ? `lab=${chosen.id}` : ""}${extra}`;
+  // the redesign (R2, direction A): the one most urgent thing, on top — the list below keeps them all
+  const first = active.flatMap((v) => v.actions).sort(nowFirst)[0];
+  const firstView = first ? active.find((v) => v.participantId === first.participantId) : undefined;
+  const firstLine = first && firstView ? actionLine(first, firstView, lg) : null;
 
   // the notices — the participations' and the organisation's own messages (5.10)
   const noticeCard = (
             <section className="card" style={{ padding: "14px 18px" }}>
               <div className="flex items-center gap-3" style={{ flexWrap: "wrap" }}>
-                <h2 className="field-label" style={{ fontSize: 15, margin: 0 }}>{L("Известия", "Notices")} {unread > 0 && <span data-unread={unread} aria-label={L(`${unread} непрочетени`, `${unread} unread`)} style={{ background: "var(--red)", color: "#fff", borderRadius: 999, padding: "0 7px", fontSize: 12 }}>{unread}</span>}</h2>
+                <h2 className="field-label" style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{L("Известия", "Notices")} {unread > 0 && <span data-unread={unread} aria-label={L(`${unread} непрочетени`, `${unread} unread`)} style={{ background: "var(--red)", color: "#fff", borderRadius: 999, padding: "0 7px", fontSize: 12 }}>{unread}</span>}</h2>
                 {unread > 0 && <MarkNoticesRead lang={lg} ids={notices.map((n) => n.id)} />}
               </div>
               {notices.length === 0 ? <p className="text-sm" style={{ color: "var(--muted)" }}>{L("Няма известия.", "No notices.")}</p> : (
@@ -81,9 +88,8 @@ export default async function ParticipantOverviewPage({ searchParams }: { search
       <ParticipantNav lang={lg} active="overview" name={user.name} role={user.role} persona={persona} />
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 24px 40px", display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <h1 className="section-title" style={{ fontSize: 24, margin: 0 }}>{L("Начало", "Home")}</h1>
-            <div style={{ fontSize: 13, color: "var(--muted)" }}>{entity.name}{chosen ? ` · ${chosen.name}${chosen.state === "inactive" ? ` (${L("неактивна", "inactive")})` : ""}` : ""}</div>
+          <div style={{ flex: 1, minWidth: 260 }}>
+            <PageTitle light={L("Здравейте!", "Hello!")} bold={archive ? L("Архив", "Archive") : L("Ето докъде сте.", "Here is where you are.")} sub={<>{entity.name}{chosen ? ` · ${chosen.name}${chosen.state === "inactive" ? ` (${L("неактивна", "inactive")})` : ""}` : ""}</>} />
           </div>
           {shown.length > 1 && (
             // the laboratory switcher — only the user's own entity's (К5)
@@ -98,9 +104,10 @@ export default async function ParticipantOverviewPage({ searchParams }: { search
           )}
         </div>
         {!entity.confirmedAt && (
-          <p role="note" data-unconfirmed className="text-sm" style={{ background: "#fff8e6", border: "1px solid #ecd9a8", borderRadius: 8, padding: "8px 10px", margin: 0 }}>
+          <p role="note" data-unconfirmed className="ui-card" style={{ margin: 0, padding: "16px 22px", fontSize: 17, display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px 14px", background: "var(--info-soft)", borderColor: "#c9d8e2" }}>
+            <Icon name="building" size={24} />
             {user.role === "admin" ? L("Данните на организацията чакат вашето потвърждение — ", "The organisation's data awaits your confirmation — ") : L("Данните на организацията чакат потвърждението на администратора на профила — ", "The organisation's data awaits the profile administrator's confirmation — ")}
-            <Link href="/lab/confirm">{L("към данните", "to the data")}</Link>
+            <Link href="/lab/confirm" className="ui-btn ui-btn-sm">{L("към данните", "to the data")}</Link>
           </p>
         )}
         {shown.length === 0 ? (
@@ -111,10 +118,21 @@ export default async function ParticipantOverviewPage({ searchParams }: { search
           </>
         ) : chosen && (
           <>
+            {!archive && (firstLine ? (
+              <NextStep eyebrow={L("Сега", "Now")} title={`${firstLine.title} · ${firstLine.where}`} detail={firstLine.detail}>
+                {first!.kind === "document"
+                  ? <a href={firstLine.href} target="_blank" rel="noreferrer" className="ui-btn ui-btn-next">{firstLine.button}<Icon name="arrowRight" size={22} strokeWidth={2.4} /></a>
+                  : <Link href={firstLine.href} className="ui-btn ui-btn-next">{firstLine.button}<Icon name="arrowRight" size={22} strokeWidth={2.4} /></Link>}
+              </NextStep>
+            ) : active.length > 0 && (
+              <p className="ui-card ui-card-later" style={{ margin: 0, fontSize: 19, display: "flex", alignItems: "center", gap: 12, color: "#4a4a4a" }}>
+                <Icon name="clock" size={26} />{L("Сега не е нужно нищо от вас — PTS ще ви пише, когато дойде вашият ред.", "Nothing is needed from you now — PTS will write to you when it is your turn.")}
+              </p>
+            ))}
             {!archive && <ActionItems lang={lg} views={active} />}
             <section className="card" data-chosen-lab={chosen.id} style={{ padding: 0, overflow: "hidden" }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "14px 18px", borderBottom: "1px solid var(--line)", flexWrap: "wrap" }}>
-                <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, flex: 1 }}>{archive ? L("Архив", "Archive") : L("Моите участия", "My participations")}</h2>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "18px 22px", borderBottom: "1px solid var(--line)", flexWrap: "wrap" }}>
+                <h2 style={{ margin: 0, fontSize: 24, fontWeight: 600, flex: 1 }}>{archive ? L("Архив", "Archive") : L("Моите участия", "My participations")}</h2>
                 <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
                   {archive
                     ? <>{L("Приключилите участия. ", "The finished participations. ")}<Link href={here("")} data-view-active>{L("Към активните", "To the active ones")} ({active.length})</Link></>

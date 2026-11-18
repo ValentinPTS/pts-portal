@@ -8,6 +8,10 @@ import { isProvisional } from "@/lib/coding-model";
 import { getServerT } from "@/lib/i18n-server";
 import { signOutLabAction } from "@/lib/auth-actions";
 import ParticipantNav from "@/components/ParticipantNav";
+import StepPath from "@/components/ui/StepPath";
+import Icon from "@/components/ui/Icon";
+import { STAGES, STATE_STAGE, stageLabel } from "@/lib/participation-state-model";
+import { labsTurn, STAGE_ICON } from "@/lib/ui-model";
 import LanguageToggle from "@/components/LanguageToggle";
 import ResultsForm from "@/components/ResultsForm";
 import CalibrationResultsForm from "@/components/CalibrationResultsForm";
@@ -174,8 +178,12 @@ export default async function ResultsFormPage({ params }: { params: Promise<{ id
         </header>
       )}
       <main data-results-page={v.participantId} style={{ maxWidth: 980, margin: "0 auto", padding: "22px 24px 40px", display: "flex", flexDirection: "column", gap: 14 }}>
-        <nav style={{ fontSize: 12.5, color: "var(--muted)" }}><Link href={self}>← {L("Към участието", "Back to the participation")}</Link> · {s.number}{!isProvisional(p.code) ? ` · ${L("код", "code")} ${p.code}` : ""}</nav>
-        <h1 className="section-title" style={{ fontSize: 24, margin: 0 }}>{L("Резултати", "Results")}</h1>
+        <nav style={{ fontSize: 16, color: "#555", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}><Icon name="arrowLeft" size={18} /><Link href={self}>{L("Към участието", "Back to the participation")}</Link> · {s.number}{!isProvisional(p.code) ? ` · ${L("код", "code")} ${p.code}` : ""}</nav>
+        {/* the redesign (R2): where the participation is, on one line — the path, compact */}
+        {(() => { const cur = STATE_STAGE[v.state]; const at = cur ? STAGES.indexOf(cur) : -1; return cur ? (
+          <StepPath compact lang={lang} label={L("Докъде сте", "Where you are")} steps={STAGES.map((st, i) => ({ key: st, label: L(stageLabel(st, s.type).bg, stageLabel(st, s.type).en), icon: STAGE_ICON[st], state: i < at ? "done" as const : i === at ? (labsTurn(v.state) ? "now" as const : "wait" as const) : "later" as const }))} />
+        ) : null; })()}
+        <h1 style={{ margin: "4px 0 0", fontSize: "clamp(28px, 3.6vw, 40px)", fontWeight: 700, lineHeight: 1.15, color: "var(--ink)" }}>{L("Резултати", "Results")}</h1>
         {/* the scheme's static reminder (3.6) — «one decimal place», «U to two significant figures» … */}
         {closedNote}
         {reminder ? <p role="note" data-static-reminder className="card" style={{ padding: "10px 14px", margin: 0, fontSize: 13, background: "#faf2e0", border: "1px solid #ecd9ae" }}>{reminder}</p> : null}

@@ -8,7 +8,7 @@ import { lookupCertificateAction, type CertLookupState } from "@/lib/actions";
 export default function CertificateLookup({ number, lang }: { number: string; lang: "bg" | "en" }) {
   const L = (bg: string, en: string) => (lang === "bg" ? bg : en);
   const [state, action, pending] = useActionState<CertLookupState, FormData>(lookupCertificateAction, { state: "idle" });
-  const field = { width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #36422c", background: "#f4f6f1", color: "#10140d", fontSize: 16 } as const;
+  const field = { width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #e3e9de", background: "#f4f6f1", color: "#ffffff", fontSize: 16 } as const;
   return (
     <div>
       <form action={action} data-cert-form style={{ display: "grid", gap: 12, maxWidth: 460, margin: "0 auto" }}>
@@ -19,8 +19,8 @@ export default function CertificateLookup({ number, lang }: { number: string; la
       {state.state !== "idle" && (
         <div className="mt-6 mx-auto" style={{ maxWidth: 560 }} data-cert-result={state.state} role="status">
           {state.state === "valid" ? (
-            <div style={{ background: "#1b2016", border: "1px solid #36422c", borderRadius: 14, padding: "16px 20px" }}>
-              <div style={{ fontWeight: 700, fontSize: 20, color: "var(--green-light)" }}>{L("Валиден", "Valid")}</div>
+            <div style={{ background: "#ffffff", border: "1px solid #e3e9de", borderRadius: 14, padding: "16px 20px" }}>
+              <div style={{ fontWeight: 700, fontSize: 20, color: "var(--done-ink)" }}>{L("Валиден", "Valid")}</div>
               <dl style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 14px", marginTop: 10 }}>
                 <dt>{L("Лаборатория", "Laboratory")}</dt><dd data-cert-lab>{state.answer.laboratory}</dd>
                 <dt>{L("Вид", "Kind")}</dt><dd>{L(state.answer.kind.bg, state.answer.kind.en)}{state.answer.activity ? ` · ${L(state.answer.activity.bg, state.answer.activity.en)}` : ""}</dd>
@@ -31,7 +31,7 @@ export default function CertificateLookup({ number, lang }: { number: string; la
               </dl>
             </div>
           ) : (
-            <p style={{ color: "#f0c98a", textAlign: "center" }}>{state.message}</p>
+            <p style={{ color: "#7a5416", textAlign: "center" }}>{state.message}</p>
           )}
         </div>
       )}

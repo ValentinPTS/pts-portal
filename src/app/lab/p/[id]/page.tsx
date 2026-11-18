@@ -35,7 +35,9 @@ import DeviceChainCard from "@/components/DeviceChainCard";
 import ParticipantNav from "@/components/ParticipantNav";
 import { lockInForce, lockEntryOf, lockWord } from "@/lib/submission-lock-model";
 import LanguageToggle from "@/components/LanguageToggle";
-import { deadlineText, docName, docHref, schemeTitle } from "@/components/ParticipationLists";
+import { deadlineText, docName, docHref, schemeTitle, actionLine, nowFirst } from "@/components/ParticipationLists";
+import NextStep from "@/components/ui/NextStep";
+import Icon from "@/components/ui/Icon";
 
 export const dynamic = "force-dynamic";
 
@@ -187,16 +189,20 @@ export default async function ParticipationPage({ params, searchParams }: { para
   // a record's moment as a person reads it: the day and the hour, both on Sofia's clock (review)
   const dayTime = ackMoment;
   const declaration = rows.find((r) => r.key === DECLARATION && r.ack.state !== "none");
+  // the redesign (R2): bigger cards — a heading a person finds at a glance
   const card = (title: string, body: React.ReactNode, attrs: Record<string, string> = {}) => (
     <section className="card" style={{ padding: 0, overflow: "hidden" }} {...attrs}>
-      <h2 style={{ margin: 0, padding: "12px 16px", borderBottom: "1px solid var(--line)", fontSize: 15, fontWeight: 800 }}>{title}</h2>
-      <div style={{ padding: "12px 16px" }}>{body}</div>
+      <h2 style={{ margin: 0, padding: "16px 22px", borderBottom: "1px solid #e3e9de", fontSize: 22, fontWeight: 600 }}>{title}</h2>
+      <div style={{ padding: "16px 22px", fontSize: 15 }}>{body}</div>
     </section>
   );
+  // the one most urgent thing of this participation, on top (as on «Начало»)
+  const first = [...v.actions].sort(nowFirst)[0];
+  const firstLine = first ? actionLine(first, v, lang, true) : null;
   const kv = (k: string, val: React.ReactNode) => (
     <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 120 }}>
-      <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{k}</span>
-      <span style={{ fontSize: 13.5 }}>{val || "—"}</span>
+      <span style={{ fontSize: 14, color: "#555" }}>{k}</span>
+      <span style={{ fontSize: 16 }}>{val || "—"}</span>
     </div>
   );
   const dl = v.deadline;
@@ -216,14 +222,23 @@ export default async function ParticipationPage({ params, searchParams }: { para
         </header>
       )}
       <main data-participation-page={v.participantId} data-state={v.state} style={{ maxWidth: 1180, margin: "0 auto", padding: "22px 24px 40px" }}>
-        <nav style={{ fontSize: 12.5, color: "var(--muted)" }}><Link href={back}>{L("Моите участия", "My participations")}</Link> · {s.number}</nav>
-        <h1 className="section-title" style={{ fontSize: 26, margin: "4px 0 2px" }}>{schemeTitle(s, lang) || s.number}</h1>
-        <p style={{ margin: 0, fontSize: 13.5, color: "var(--muted)" }}>
+        <nav style={{ fontSize: 16, color: "#555", display: "flex", alignItems: "center", gap: 6 }}><Icon name="arrowLeft" size={18} /><Link href={back}>{L("Моите участия", "My participations")}</Link> · {s.number}</nav>
+        <h1 style={{ margin: "10px 0 6px", fontSize: "clamp(28px, 3.6vw, 40px)", fontWeight: 700, lineHeight: 1.15, color: "var(--ink)" }}>{schemeTitle(s, lang) || s.number}</h1>
+        <p style={{ margin: 0, fontSize: 17, color: "#555" }}>
           {s.type === "C" ? L("Калибриране", "Calibration") : L("Изпитване за пригодност", "Proficiency testing")}{v.labName ? ` · ${v.labName}` : ""}
           {" · "}{coded ? <>{L("код на лабораторията ", "laboratory code ")}<b data-own-code style={{ color: "var(--ink)" }}>{p.code}</b></> : <span data-code-to-come>{L("кодът предстои — тегли се след затваряне на заявяването", "the code is to come — drawn after applications close")}</span>}
           {p.sampleCode ? <>{" · "}{L("РТ обект ", "PT object ")}<b style={{ color: "var(--ink)" }}>{p.sampleCode}</b></> : null}
         </p>
-        <div style={{ margin: "14px 0 18px" }}><StageBar lang={lang} type={s.type} state={v.state} payment={v.finished ? undefined : v.payment} /></div>
+        <div className="ui-card" style={{ margin: "20px 0" }}><StageBar lang={lang} type={s.type} state={v.state} payment={v.finished ? undefined : v.payment} /></div>
+        {firstLine && (
+          <div style={{ margin: "0 0 20px" }}>
+            <NextStep eyebrow={L("Сега", "Now")} title={firstLine.title} detail={firstLine.detail}>
+              {first!.kind === "document"
+                ? <a href={firstLine.href} target="_blank" rel="noreferrer" className="ui-btn ui-btn-next">{firstLine.button}<Icon name="arrowRight" size={22} strokeWidth={2.4} /></a>
+                : <a href={firstLine.href} className="ui-btn ui-btn-next">{firstLine.button}<Icon name="arrowRight" size={22} strokeWidth={2.4} /></a>}
+            </NextStep>
+          </div>
+        )}
         {errText && <div role="alert" data-page-err={err} style={{ background: "#fdecec", border: "1px solid #d9534f", color: "#8a1f1f", borderRadius: 10, padding: "8px 12px", marginBottom: 14, fontSize: 13 }}>{errText}</div>}
         {okText && <div role="status" data-page-ok={sp.ok} style={{ background: "var(--green-soft)", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 12px", marginBottom: 14, fontSize: 13 }}>{okText}</div>}
         {/* 9.5: the carrier chosen — from PTS's offers */}
@@ -321,7 +336,7 @@ export default async function ParticipationPage({ params, searchParams }: { para
             {(s.type === "T" ? s.status === "running" : (s.status === "open" || s.status === "running") && (s.chain?.stops ?? []).some((x) => x.kind === "lab" && x.code === p.code && !!x.receivedAt)) && !v.finished ? card(L("Резултати", "Results"), (
               <div data-results-link style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", fontSize: 13 }}>
                 <span style={{ color: "var(--muted)", flex: 1, minWidth: 220 }}>{s.type === "C" ? L("Попълнете резултатите от калибрирането онлайн: общата информация и за всяка точка референтната и измерената стойност. Черновата се пази, както е написана.", "Fill in the calibration results online: the general info and, for each point, the reference and the measured value. The draft is kept as typed.") : L("Попълнете резултатите онлайн: определянията, средната стойност, U и k. Черновата се пази, както е написана.", "Fill in the results online: the determinations, the mean, U and k. The draft is kept as typed.")}</span>
-                <Link href={`${self}/results`} className="btn btn-primary btn-sm" data-open-results>{L("Към формуляра", "Open the form")}</Link>
+                <Link href={`${self}/results`} className="ui-btn ui-btn-next" data-open-results>{L("Към формуляра", "Open the form")}<Icon name="arrowRight" size={22} strokeWidth={2.4} /></Link>
               </div>
             )) : ["processing", "report", "closed"].includes(s.status) ? (
               // 6.8: after the form has closed — the submitted versions and their records (the record

@@ -311,8 +311,10 @@ body {
 /* the participation's bar (5.5): on a phone, its segments alone; the stage it is in named beside the state */
 .stage-now-narrow { display: none; }
 @media (max-width: 600px) {
-  .stage-bar .stage-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
-  .stage-now-narrow { display: inline; }
+  /* the redesign (R2): the bar is the path — on a phone it stands up, one stage per line, with room for every name;
+     the old thin bar's «segments alone» (names hidden, the one it is in named below) is for the compact line only */
+  .stage-bar.ui-path-compact .stage-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+  .stage-bar.ui-path-compact ~ div .stage-now-narrow { display: inline; }
 }
 
 /* printing a record (the results record, 6.8; the validation record, 8.6): the page alone — no panel,
@@ -404,19 +406,23 @@ body {
 .ui-path-done .ui-path-dot { background: var(--done); color: #fff; }
 .ui-path-now .ui-path-dot { width: 84px; height: 84px; margin-top: -8px; background: var(--turn); color: #fff; box-shadow: 0 0 0 10px var(--turn-ring); }
 .ui-path-later .ui-path-dot { background: #f1f1ee; color: #6a6a6a; border: 2px dashed #c9c9c4; }
+.ui-path-wait .ui-path-dot { width: 76px; height: 76px; margin-top: -4px; background: #fff; color: var(--later-ink); border: 3px solid #b9b9b3; }
 .ui-path-label { font-size: 18px; font-weight: 700; color: var(--ink); overflow-wrap: break-word; }
 .ui-path-now .ui-path-label { font-size: 20px; font-weight: 800; }
 .ui-path-later .ui-path-label { color: #555555; }
+.ui-path-wait .ui-path-label { font-weight: 800; }
 .ui-path-note { font-size: 15px; font-weight: 600; }
 .ui-path-done .ui-path-note { color: var(--done-ink); }
 .ui-path-now .ui-path-note { color: var(--turn-ink); font-weight: 700; }
 .ui-path-later .ui-path-note { color: var(--later-ink); }
+.ui-path-wait .ui-path-note { color: var(--later-ink); font-weight: 700; }
 /* the compact line at the top of a page — «докъде сте» */
 .ui-path.ui-path-compact { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; padding: 14px 20px; background: #f6f9f3; border-radius: 40px 40px 40px 0; }
 .ui-path-compact > li { flex-direction: row; gap: 8px; text-align: left; }
 .ui-path-compact .ui-path-text { display: inline; } /* inline: the space before « — тук сте» stays */
 .ui-path-compact .ui-path-dot { width: 28px; height: 28px; margin: 0; box-shadow: none; font-size: 14px; }
 .ui-path-compact .ui-path-now .ui-path-dot { width: 32px; height: 32px; }
+.ui-path-compact .ui-path-wait .ui-path-dot { width: 32px; height: 32px; margin: 0; border-width: 2px; }
 .ui-path-compact .ui-path-label, .ui-path-compact .ui-path-note { font-size: 16px; }
 /* a phone: the full path stands up, one step per line */
 @media (max-width: 700px) {
@@ -424,6 +430,7 @@ body {
   .ui-path:not(.ui-path-compact) > li { flex-direction: row; text-align: left; }
   .ui-path:not(.ui-path-compact) .ui-path-dot { width: 52px; height: 52px; }
   .ui-path:not(.ui-path-compact) .ui-path-now .ui-path-dot { width: 60px; height: 60px; margin: 0 6px 0 0; }
+  .ui-path:not(.ui-path-compact) .ui-path-wait .ui-path-dot { width: 56px; height: 56px; margin: 0 6px 0 0; }
 }
 @media (prefers-reduced-motion: reduce) { .ui-btn { transition: none; } .ui-btn:hover { transform: none; } }
 
@@ -441,6 +448,9 @@ body {
 .ui-tab:focus-visible { outline: 3px solid var(--turn); outline-offset: 2px; }
 .ui-tab.is-on { background: var(--done-soft); color: #2f4a1e; font-weight: 700; }
 .ui-tab.is-on .ui-icon { color: #2f4a1e; }
+/* a page's title (R2): big and clear, a short green line under it — as ptsbg.eu */
+.ui-h1 { font-size: clamp(28px, 3.6vw, 40px); font-weight: 700; line-height: 1.15; color: var(--ink); }
+.ui-h1::after { content: ""; display: block; width: 64px; height: 4px; border-radius: 2px; background: var(--done); margin-top: 12px; }
 .ui-who { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 60px; background: var(--done-soft); font-size: 15px; font-weight: 600; color: #2f4a1e; }
 /* a phone: the tabs two by two (words kept, 44 px each), the rest on one line — the header stays short */
 @media (max-width: 700px) {

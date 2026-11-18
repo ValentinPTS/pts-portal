@@ -45,7 +45,7 @@ t("R0: every pill state has an icon that exists", PILL_STATES.every((s) => !!ICO
 const pathSrc = read("src/components/ui/StepPath.tsx"), pillSrc = read("src/components/ui/StatusPill.tsx");
 t("R0: the path says each step's state in words (visible, or for a screen reader in the compact line)", /STATE_WORD\[s\.state\]\[lang\]/.test(pathSrc) && /sr-only-pts/.test(pathSrc));
 t("R0: the path and the pill carry their state for the browser checks (data-step-state, data-pill)", /data-step-state=\{s\.state\}/.test(pathSrc) && /data-pill=\{state\}/.test(pillSrc));
-t("R0: the step where the person is, is the page's current step for a screen reader", /aria-current=\{s\.state === "now" \? "step" : undefined\}/.test(pathSrc));
+t("R0: the step where the person is (theirs or PTS's), is the page's current step for a screen reader", /aria-current=\{s\.state === "now" \|\| s\.state === "wait" \? "step" : undefined\}/.test(pathSrc));
 
 // ── the path's states from where the person is ──
 const five = ["a", "b", "c", "d", "e"].map((label) => ({ label }));

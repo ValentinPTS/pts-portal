@@ -87,7 +87,7 @@ export default function SubmitPanel({ schemeId, participantId, lang, kind, flush
         </div>
       ) : stage === "idle" || stage === "preparing" ? (
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <button type="button" className="btn btn-primary btn-sm" data-review onClick={review} disabled={stage === "preparing"}>{stage === "preparing" ? L("Записва се…", "Saving…") : L("Прегледай и подай", "Review and submit")}</button>
+          <button type="button" className="btn btn-primary btn-sm ui-btn-next" data-review onClick={review} disabled={stage === "preparing"}>{stage === "preparing" ? L("Записва се…", "Saving…") : L("Прегледай и подай", "Review and submit")}</button>
           <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{L("Подаването записва версия с разписка. До срока може да подадете отново — като нова версия; старите се пазят.", "Submitting records a version with a receipt. Until the deadline you may submit again — as a new version; the old ones are kept.")}</span>
         </div>
       ) : (
@@ -108,7 +108,7 @@ export default function SubmitPanel({ schemeId, participantId, lang, kind, flush
           )}
           {error && <p role="alert" data-submit-error style={{ margin: 0, fontSize: 13, color: "#8f2f2f" }}>{error}</p>}
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {blocks.length === 0 && <button type="button" className="btn btn-primary btn-sm" data-submit onClick={submit} disabled={stage === "sending"}>{stage === "sending" ? L("Подава се…", "Submitting…") : L("Подай", "Submit")}</button>}
+            {blocks.length === 0 && <button type="button" className="btn btn-primary btn-sm ui-btn-next" data-submit onClick={submit} disabled={stage === "sending"}>{stage === "sending" ? L("Подава се…", "Submitting…") : L("Подай", "Submit")}</button>}
             <button type="button" className="btn btn-sm" onClick={() => { setStage("idle"); setError(null); }} disabled={stage === "sending"}>{L("Назад към формуляра", "Back to the form")}</button>
           </div>
         </>

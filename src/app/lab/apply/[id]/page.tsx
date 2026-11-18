@@ -53,7 +53,7 @@ export default async function LabApplySchemePage({ params }: { params: Promise<{
   const earlierOf = (labId: string) => earlierProblem(mine.filter((m) => m.laboratoryId === labId).map((m) => rows.find((x) => x.id === m.participantId) ?? { standing: null }));
   return shell(
     <>
-      <h1 className="section-title" style={{ fontSize: 24, margin: "10px 0 4px" }}>{scheme.number} · {L(scheme.titleBg || scheme.titleEn, scheme.titleEn || scheme.titleBg)}</h1>
+      <h1 className="section-title ui-h1" style={{ margin: "10px 0 4px" }}>{scheme.number} · {L(scheme.titleBg || scheme.titleEn, scheme.titleEn || scheme.titleBg)}</h1>
       {full && <div role="note" data-apply-full className="card" style={{ padding: 12, marginBottom: 12, background: "#fdf6e3", color: "#7a5a12" }}>{L("Схемата е запълнена — заявката ви влиза в списъка на изчакващите, по реда на подаване (Реш. 120). Ако се освободи място навреме, PTS ще ви уведоми.", "The scheme is full — your application goes on the waiting list, in the order of submission (Decision 120). Should a place become free in time, PTS will tell you.")}</div>}
       <p className="text-sm" style={{ color: "var(--muted)", marginBottom: 14 }}>
         {scheme.dates?.applicationsDue ? L(`Краен срок за заявки: ${fmtSchemeDate(scheme.dates.applicationsDue)}. `, `Applications due: ${fmtSchemeDate(scheme.dates.applicationsDue)}. `) : ""}
