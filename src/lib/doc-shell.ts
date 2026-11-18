@@ -17,7 +17,8 @@ export { esc, pick, BODY_START, BODY_END, stripBodyMarkers, DOC_CSS } from "./do
 
 // ── Contact strip shown on every document title page (matches the brand cards) ──
 // Hardcoded brand contacts for now (a future Organization profile can override).
-const PTS_CONTACTS = { web: "www.ptsbg.eu", email: "office@ptsbg.eu", phone: "+359 897 503 980" };
+// PTS's contacts as the documents print them — also the portal's «Помощ» (the redesign, R1)
+export const PTS_CONTACTS = { web: "www.ptsbg.eu", email: "office@ptsbg.eu", phone: "+359 897 503 980" };
 const ICO_GLOBE = `<svg viewBox="0 0 32 32" fill="none" stroke="#111" stroke-width="1.6"><circle cx="16" cy="16" r="13"/><ellipse cx="16" cy="16" rx="6.5" ry="13"/><line x1="3" y1="16" x2="29" y2="16"/><line x1="6" y1="9.5" x2="26" y2="9.5"/><line x1="6" y1="22.5" x2="26" y2="22.5"/></svg>`;
 const ICO_MAIL = `<svg viewBox="0 0 32 32" fill="none" stroke="#111" stroke-width="1.6"><circle cx="16" cy="16" r="13"/><rect x="8.5" y="11" width="15" height="10.5" rx="1.5"/><path d="M8.7 11.6 16 17l7.3-5.4"/></svg>`;
 const ICO_PHONE = `<svg viewBox="0 0 32 32" fill="#111" stroke="none"><circle cx="16" cy="16" r="13" fill="none" stroke="#111" stroke-width="1.6"/><path d="M13.1 9.2c.4 2 .9 3.1 1.5 4 .2.4.2.8-.1 1.1l-1 1c.9 1.6 2.1 2.8 3.7 3.7l1-1c.3-.3.7-.4 1.1-.2.9.6 2 1.1 4 1.5.5.1.8.5.8 1V24c0 .6-.5 1-1 1-6.8 0-12.3-5.5-12.3-12.3 0-.5.4-1 1-1H12c.6 0 1 .3 1.1.8z"/></svg>`;

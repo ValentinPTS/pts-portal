@@ -4,11 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLang } from "@/components/LangProvider";
 import { sectionOf, type Section } from "@/lib/admin-sections";
+import { SECTION_ICON } from "@/lib/ui-nav";
+import Icon from "@/components/ui/Icon";
 
 // The administrative panel's rail (plan part 2.7; PTS's design «10. Административен
 // панел»): the sections this person may open, in the design's order — the work, then
 // the records — and the portal's own pages under «Още». The server decides which
 // (lib/admin-nav.ts); a section still to be built says so on its page.
+// The redesign (R1, direction A): light, an icon beside each section's name, the one
+// open lit in green; on a phone or a wide editor page, a bar along the top.
 
 export type RailSection = Pick<Section, "key" | "href" | "bg" | "en" | "group" | "comesIn">;
 
@@ -22,7 +26,10 @@ export default function AdminRail({ sections }: { sections: RailSection[] }) {
   const item = (s: RailSection) => (
     <Link key={s.key} href={s.href} data-section={s.key} aria-current={active === s.key ? "page" : undefined}
       className={`adminrail-link${active === s.key ? " is-active" : ""}`}>
-      <span>{label(s)}</span>
+      <span className="adminrail-item">
+        <Icon name={SECTION_ICON[s.key]} size={22} />
+        <span className="adminrail-text">{label(s)}</span>
+      </span>
       {s.comesIn && (
         <span className="adminrail-soon" aria-hidden="true">{s.comesIn}</span>
       )}
@@ -33,8 +40,8 @@ export default function AdminRail({ sections }: { sections: RailSection[] }) {
   return (
     <aside className="adminrail" data-admin-rail aria-label={lang === "en" ? "Administrative panel" : "Административен панел"}>
       <Link href="/dashboard" className="adminrail-brand no-underline">
-        <span className="adminrail-name">PTS Bulgaria</span>
-        <span className="adminrail-sub">{lang === "en" ? "Administrative panel" : "Административен панел"}</span>
+        <span className="adminrail-name">PTS</span>
+        <span className="adminrail-sub">{lang === "en" ? "Portal · the team" : "Портал · екипът"}</span>
       </Link>
       <nav className="adminrail-nav" aria-label={lang === "en" ? "Sections" : "Раздели"}>
         {group("main").map(item)}

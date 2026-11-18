@@ -47,6 +47,7 @@ export const ROUTES = [
   { file: "system/page.tsx", names: "never", paths: () => ["/system"] },
   { file: "account/page.tsx", names: "never", paths: () => ["/account"] },
   { file: "activity/page.tsx", names: "scheme", paths: (c) => ["/activity", `/activity?scheme=${c.S}`] },
+  { file: "help/page.tsx", names: "never", paths: () => ["/help"] }, // «Помощ» for the team (the redesign, R1)
   { file: "notices/page.tsx", names: "scheme", paths: () => ["/notices"] },
   { file: "notices/texts/page.tsx", names: "never", paths: () => ["/notices/texts"] },
   // the laboratory ACCOUNTS (names, no codes) — not the participant's identity here
@@ -111,6 +112,7 @@ export const ROUTES = [
   { file: "lab/profile/page.tsx", names: "own", paths: () => ["/lab/profile"] },
   // a participant's user's review of its own entity's data (4.4)
   { file: "lab/confirm/page.tsx", names: "own", paths: () => ["/lab/confirm"] },
+  { file: "lab/help/page.tsx", names: "never", paths: () => ["/lab/help"] }, // «Помощ» for a laboratory (the redesign, R1)
   { file: "lab/joins/page.tsx", names: "own", paths: () => ["/lab/joins"] },
   { file: "lab/apply/page.tsx", names: "own", paths: () => ["/lab/apply"] },
   { file: "lab/apply/[id]/page.tsx", names: "own", paths: (c) => [`/lab/apply/${c.S}`, `/lab/apply/${c.OTHER}`] },

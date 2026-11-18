@@ -7,6 +7,7 @@ import AccountMenu from "@/components/AccountMenu";
 import NotificationBell from "@/components/NotificationBell";
 import type { Notification } from "@/lib/types";
 import AdminRail, { type RailSection } from "@/components/AdminRail";
+import HelpLink from "@/components/ui/HelpLink";
 
 type EffectiveRole = "manager" | "staff" | "auditor" | "lab";
 type User = { email: string; role: EffectiveRole | null } | null;
@@ -17,7 +18,7 @@ type User = { email: string; role: EffectiveRole | null } | null;
 // (they provide their own sidebar + padding); other pages stay centered.
 export default function Chrome({ user, sections = [], canViewActivity, notifications = [], children }: { user: User; sections?: RailSection[]; canViewActivity?: boolean; notifications?: Notification[]; children: React.ReactNode }) {
   const path = usePathname() ?? "";
-  const { t } = useLang();
+  const { t, lang } = useLang();
   // Public/auth flows render full-bleed with their own (non-owner) headers — no admin
   // chrome: the scheme-application flow (/apply), the lab portal (/lab, incl.
   // /lab/login), the team sign-in (/login), the lab-account application (/register) and the
@@ -43,9 +44,10 @@ export default function Chrome({ user, sections = [], canViewActivity, notificat
       <a href="#content" className="skip-link">{t("a11y.skip")}</a>
       {sections.length > 0 && <AdminRail sections={sections} />}
       <div className="adminmain">
-        <header className="flex items-center gap-3 px-6 py-2.5" style={{ background: "#fff", borderBottom: "1px solid var(--line)", color: "var(--ink)" }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "var(--green-light)", borderRadius: 999, padding: "3px 9px", letterSpacing: ".04em" }}>PT PROVIDER</span>
-          <div className="ml-auto flex items-center gap-2">
+        {/* the redesign (R1): «Помощ» first, then the notices, the language, who you are */}
+        <header className="ui-topbar" data-topbar>
+          <div className="ui-topbar-end">
+            <HelpLink href="/help" label={lang === "en" ? "Help" : "Помощ"} />
             {canViewActivity && <NotificationBell items={notifications} />}
             <LanguageToggle />
             {user && <AccountMenu email={user.email} role={user.role} />}

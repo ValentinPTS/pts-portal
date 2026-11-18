@@ -76,10 +76,11 @@ body {
 }
 
 /* small, reusable UI primitives — keep the app simple & sectioned */
+/* the redesign (R1, direction A): the base pieces in ptsbg.eu's shapes — leaf corners, green outlines, bigger */
 .card {
   background: var(--white);
-  border: 1px solid var(--line);
-  border-radius: 14px;
+  border: 1px solid #e3e9de;
+  border-radius: 24px 24px 24px 0;
 }
 .btn {
   display: inline-flex;
@@ -87,38 +88,43 @@ body {
   gap: 8px;
   font-family: var(--font-sans), system-ui, sans-serif;
   font-weight: 700;
-  font-size: 15px;
-  border-radius: 10px;
-  padding: 11px 18px;
+  font-size: 16px;
+  line-height: 1.2;
+  justify-content: center;
+  min-height: 44px;
+  box-sizing: border-box;
+  border-radius: 60px;
+  padding: 10px 20px;
   cursor: pointer;
-  border: 1px solid var(--line);
+  border: 2px solid #57823c;
   background: #fff;
-  color: var(--ink);
+  color: #456b2c;
   transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 .btn:hover {
   background: var(--green-soft);
-  border-color: var(--green-line);
+  border-color: #456b2c;
 }
 .btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
 .btn-primary {
-  background: var(--green-dark);
+  background: var(--done-ink);
   color: #fff;
-  border-color: var(--green-dark);
+  border-color: var(--done-ink);
+  border-radius: 60px 60px 60px 0;
 }
 .btn-primary:hover {
-  background: var(--green-deep);
-  border-color: var(--green-deep);
+  background: #3a5c25;
+  border-color: #3a5c25;
 }
 .chip {
   display: inline-block;
   font-family: var(--font-sans), system-ui, sans-serif;
   font-weight: 700;
-  font-size: 11px;
-  padding: 2px 9px;
+  font-size: 12px;
+  padding: 3px 10px;
   border-radius: 20px;
   color: #fff;
 }
@@ -128,40 +134,41 @@ body {
 .input:focus-visible,
 .input:focus {
   outline: none;
-  border-color: var(--green-line);
-  box-shadow: 0 0 0 3px var(--green-soft);
+  border-color: #456b2c;
+  box-shadow: 0 0 0 3px #cbd9be;
 }
 
 /* form/control primitives — adopt these to keep screens consistent */
 .btn-sm {
-  font-size: 13px;
-  padding: 8px 13px;
-  border-radius: 9px;
+  font-size: 14px;
+  min-height: 40px;
+  padding: 7px 15px;
+  border-radius: 60px;
 }
 .field-label {
   display: block;
   font-family: var(--font-sans), system-ui, sans-serif;
   font-weight: 600;
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 5px;
+  font-size: 15px;
+  color: var(--ink);
+  margin-bottom: 6px;
 }
 .input {
   width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 9px 11px;
-  font-size: 14px;
+  min-height: 44px;
+  box-sizing: border-box;
+  border: 2px solid #cbd9be;
+  border-radius: 12px;
+  padding: 9px 13px;
+  font-size: 16px;
   color: var(--ink);
   background: #fff;
 }
 .section-title {
   font-family: var(--font-sans), system-ui, sans-serif;
-  font-weight: 700;
-  font-size: 22px;
-  color: var(--green-dark);
+  font-weight: 600;
+  font-size: 24px;
+  color: var(--ink);
   letter-spacing: -0.01em;
 }
 
@@ -174,8 +181,8 @@ body {
   gap: 10px;
   padding: 40px 24px;
   background: var(--white);
-  border: 1px solid var(--line);
-  border-radius: 14px;
+  border: 1px solid #e3e9de;
+  border-radius: 24px 24px 24px 0;
 }
 .state-ico {
   width: 44px;
@@ -191,11 +198,11 @@ body {
 .state-title {
   font-family: var(--font-sans), system-ui, sans-serif;
   font-weight: 700;
-  font-size: 16px;
+  font-size: 19px;
   color: var(--ink);
 }
 .state-body {
-  font-size: 13px;
+  font-size: 16px;
   color: var(--muted);
   max-width: 440px;
   line-height: 1.5;
@@ -251,26 +258,30 @@ body {
 .adminshell { flex: 1; display: flex; }
 .adminmain { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .adminrail {
-  width: 224px; flex-shrink: 0; background: #1e2a22; color: #c9d3c4;
-  display: flex; flex-direction: column; gap: 14px; padding: 18px 10px 24px;
+  width: 256px; flex-shrink: 0; background: #fff; color: var(--ink); border-right: 1px solid #ececec;
+  display: flex; flex-direction: column; gap: 18px; padding: 22px 14px 28px;
   position: sticky; top: var(--banner-h); height: calc(100dvh - var(--banner-h)); overflow-y: auto;
 }
-.adminrail-brand { display: flex; flex-direction: column; gap: 2px; padding: 2px 10px 6px; }
-.adminrail-name { font-family: var(--font-serif), Georgia, serif; font-weight: 700; font-size: 19px; color: #fff; letter-spacing: -0.01em; }
-.adminrail-sub { font-size: 11.5px; color: #9fae98; letter-spacing: 0.02em; }
-.adminrail-nav { display: flex; flex-direction: column; gap: 2px; }
+.adminrail-brand { display: flex; flex-direction: column; gap: 2px; padding: 2px 12px 6px; text-decoration: none; }
+.adminrail-name { font-family: var(--font-sans), system-ui, sans-serif; font-weight: 800; font-size: 30px; color: #57823c; letter-spacing: 0.04em; line-height: 1; }
+.adminrail-sub { font-size: 12px; font-weight: 600; color: #5f5f5f; text-transform: uppercase; letter-spacing: 0.1em; }
+.adminrail-nav { display: flex; flex-direction: column; gap: 4px; }
 .adminrail-link {
   display: flex; align-items: center; gap: 8px; justify-content: space-between;
-  padding: 8px 10px; border-radius: 7px; font-size: 13.5px; font-weight: 500; line-height: 1.3;
-  color: #c9d3c4; text-decoration: none;
+  min-height: 44px; box-sizing: border-box;
+  padding: 9px 14px; border-radius: 24px 24px 24px 0; font-size: 16px; font-weight: 600; line-height: 1.3;
+  color: var(--ink); text-decoration: none;
   position: relative; /* its screen-reader text stays inside the bar's scroll on a phone */
 }
-.adminrail-link:hover { background: #2a3a2f; color: #fff; }
-.adminrail-link:focus-visible { outline: 2px solid var(--green-light); outline-offset: 1px; }
-.adminrail-link.is-active { background: #3b5a44; color: #fff; font-weight: 700; }
-.adminrail-soon { font-size: 10.5px; font-weight: 600; color: #9fae98; border: 1px solid #3b4a40; border-radius: 999px; padding: 0 6px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
-.adminrail-rule { border: 0; border-top: 1px solid #34443a; margin: 8px 6px; }
-.adminrail-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: #8a9a85; padding: 2px 10px 4px; }
+.adminrail-item { display: inline-flex; align-items: center; gap: 12px; min-width: 0; }
+.adminrail-item .ui-icon { color: #57823c; }
+.adminrail-link:hover { background: #f3f6f0; color: #2f4a1e; }
+.adminrail-link:focus-visible { outline: 3px solid var(--turn); outline-offset: 1px; }
+.adminrail-link.is-active { background: var(--done-soft); color: #2f4a1e; font-weight: 700; }
+.adminrail-link.is-active .ui-icon { color: #2f4a1e; }
+.adminrail-soon { font-size: 12px; font-weight: 600; color: #5f5f5f; border: 1px dashed #c9c9c4; border-radius: 999px; padding: 0 7px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.adminrail-rule { border: 0; border-top: 1px solid #ececec; margin: 8px 6px; }
+.adminrail-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #5f5f5f; padding: 2px 14px 4px; }
 /* the bar: a phone, or a wide editor page */
 .adminshell.is-bar { flex-direction: column; }
 .adminshell.is-bar .adminrail { width: auto; height: auto; position: static; flex-direction: row; align-items: center; gap: 10px; padding: 8px 12px; overflow-x: auto; overflow-y: hidden; }
@@ -278,15 +289,18 @@ body {
 .adminshell.is-bar .adminrail-sub, .adminshell.is-bar .adminrail-label { display: none; }
 .adminshell.is-bar .adminrail-nav { flex-direction: row; align-items: center; gap: 4px; }
 .adminshell.is-bar .adminrail-link { white-space: nowrap; }
-.adminshell.is-bar .adminrail-rule { border-top: 0; border-left: 1px solid #34443a; height: 22px; margin: 0 4px; }
+.adminshell.is-bar .adminrail { border-right: 0; border-bottom: 1px solid #ececec; }
+.adminshell.is-bar .adminrail-name { font-size: 24px; }
+.adminshell.is-bar .adminrail-rule { border-top: 0; border-left: 1px solid #ececec; height: 22px; margin: 0 4px; }
 @media (max-width: 900px) {
   .adminshell { flex-direction: column; }
-  .adminrail { width: auto; height: auto; position: static; flex-direction: row; align-items: center; gap: 10px; padding: 8px 12px; overflow-x: auto; overflow-y: hidden; }
+  .adminrail { width: auto; height: auto; position: static; flex-direction: row; align-items: center; gap: 10px; padding: 8px 12px; overflow-x: auto; overflow-y: hidden; border-right: 0; border-bottom: 1px solid #ececec; }
+  .adminrail-name { font-size: 24px; }
   .adminrail-brand { flex-shrink: 0; padding: 0 6px 0 0; }
   .adminrail-sub, .adminrail-label { display: none; }
   .adminrail-nav { flex-direction: row; align-items: center; gap: 4px; }
   .adminrail-link { white-space: nowrap; }
-  .adminrail-rule { border-top: 0; border-left: 1px solid #34443a; height: 22px; margin: 0 4px; }
+  .adminrail-rule { border-top: 0; border-left: 1px solid #ececec; height: 22px; margin: 0 4px; }
 }
 /* for a screen reader only */
 .sr-only-pts { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
@@ -412,3 +426,27 @@ body {
   .ui-path:not(.ui-path-compact) .ui-path-now .ui-path-dot { width: 60px; height: 60px; margin: 0 6px 0 0; }
 }
 @media (prefers-reduced-motion: reduce) { .ui-btn { transition: none; } .ui-btn:hover { transform: none; } }
+
+/* ── Redesign R1 (2026-11-18): the frame — the top bar («Помощ», the notices, the language, who you are), the
+   laboratory's tabs and brand. The team's menu and the base pieces are restyled in place above. ── */
+.ui-topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 12px 28px; min-height: 68px; flex-shrink: 0; /* the page is a column of the window's height: a bar never squeezed under its own words */ box-sizing: border-box; background: #fff; border-bottom: 1px solid #ececec; color: var(--ink); }
+.ui-topbar-end { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.ui-brand { display: flex; flex-direction: column; gap: 2px; text-decoration: none; }
+.ui-brand-name { font-weight: 800; font-size: 28px; color: #57823c; letter-spacing: 0.04em; line-height: 1; }
+.ui-brand-sub { font-size: 12px; font-weight: 600; color: #5f5f5f; text-transform: uppercase; letter-spacing: 0.1em; }
+.ui-tabs { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.ui-tab { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; box-sizing: border-box; padding: 8px 16px; border-radius: 24px 24px 24px 0; font-size: 16px; font-weight: 600; color: var(--ink); text-decoration: none; }
+.ui-tab .ui-icon { color: #57823c; }
+.ui-tab:hover { background: #f3f6f0; color: #2f4a1e; }
+.ui-tab:focus-visible { outline: 3px solid var(--turn); outline-offset: 2px; }
+.ui-tab.is-on { background: var(--done-soft); color: #2f4a1e; font-weight: 700; }
+.ui-tab.is-on .ui-icon { color: #2f4a1e; }
+.ui-who { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 60px; background: var(--done-soft); font-size: 15px; font-weight: 600; color: #2f4a1e; }
+/* a phone: the tabs two by two (words kept, 44 px each), the rest on one line — the header stays short */
+@media (max-width: 700px) {
+  .ui-topbar { padding: 10px 16px; gap: 10px; }
+  .ui-topbar-end { margin-left: 0; width: 100%; gap: 8px; }
+  .ui-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; width: 100%; }
+  .ui-tab { padding: 6px 10px; font-size: 15px; gap: 6px; }
+  .ui-who { font-size: 13px; padding: 6px 10px; order: 3; } /* «Помощ» and БГ/EN on one line, who you are under them */
+}

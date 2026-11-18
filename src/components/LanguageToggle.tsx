@@ -26,7 +26,7 @@ export default function LanguageToggle({ dark = false }: { dark?: boolean }) {
             type="button"
             onClick={() => setLang(l)}
             aria-pressed={active}
-            style={{ border: "none", cursor: "pointer", padding: "5px 11px", fontSize: 12, fontWeight: 700, background: bg, color: fg }}
+            style={{ border: "none", cursor: "pointer", padding: "9px 15px", minHeight: 40, fontSize: 15, fontWeight: 700, background: bg, color: fg }}
           >
             {LABEL[l]}
           </button>
