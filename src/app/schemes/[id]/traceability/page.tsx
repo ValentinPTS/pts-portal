@@ -62,7 +62,7 @@ export default async function TraceabilityPage({ params }: { params: Promise<{ i
       <Link href={`/schemes/${id}`} className="text-sm" style={{ color: "var(--muted)" }}>
         ← {s.number}
       </Link>
-      <h1 className="text-2xl font-bold mt-2" style={{ color: "var(--green-dark)" }}>
+      <h1 className="ui-h1 mt-2">
         {tr("trace.title")}{" "}
         <span className="text-base font-normal" style={{ color: "var(--muted)" }}>· {participants.length}</span>
       </h1>

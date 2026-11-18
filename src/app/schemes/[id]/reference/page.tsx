@@ -62,7 +62,7 @@ export default async function ReferenceValuesPage({ params, searchParams }: { pa
   return (
     <div>
       <Link href={`/schemes/${id}`} className="text-sm" style={{ color: "var(--muted)" }}>← {s.number}</Link>
-      <h1 className="text-2xl font-bold mt-2" style={{ color: "var(--green-dark)" }}>{L("Референтни стойности по точки", "Reference values per point")}</h1>
+      <h1 className="ui-h1 mt-2">{L("Референтни стойности по точки", "Reference values per point")}</h1>
       {s.type !== "C" ? (
         <div className="card p-4 mt-4" data-no-reference>{L("Референтни стойности има само схема за калибриране — при изпитване приписаната стойност се определя иначе.", "Only a calibration scheme has reference values — in testing the assigned value is set otherwise.")}</div>
       ) : (

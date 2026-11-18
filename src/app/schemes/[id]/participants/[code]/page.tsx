@@ -147,7 +147,7 @@ export default async function CaseFilePage({
         <div className="card p-3 mt-3 text-sm" style={{ background: "#fbeeee", border: "1px solid #e3c8c8", color: "#8f2f2f" }}>{tr(sp.void === "reason" ? "case.voidNeedsReason" : "case.voidFailed")}</div>
       )}
       <div className="flex items-center gap-3 mt-2 flex-wrap">
-        <h1 className="text-2xl font-bold" style={{ color: "var(--green-dark)" }}>{tr("case.title")}</h1>
+        <h1 className="ui-h1">{tr("case.title")}</h1>
         <span className="font-mono font-bold text-lg" style={{ color: "var(--green-dark)" }}>{code}</span>
         <span style={{ fontSize: 12, fontWeight: 700, color: STATUS_COLOR[p.status] ?? "var(--muted)" }}>● {tr(`pstatus.${p.status}`)}</span>
       </div>

@@ -73,7 +73,7 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
   return (
     <div data-review-page>
       <Link href={`/schemes/${id}`} className="text-sm" style={{ color: "var(--muted)" }}>← {s.number}</Link>
-      <h1 className="text-2xl font-bold mt-2" style={{ color: "var(--green-dark)" }}>{L("Преглед след срока", "Review after the deadline")}</h1>
+      <h1 className="ui-h1 mt-2">{L("Преглед след срока", "Review after the deadline")}</h1>
       <p className="text-sm" style={{ color: "var(--muted)", maxWidth: 860 }}>
         {s.type === "T"
           ? L("Трите проверки (Реш. 88): декларираната средна стойност спрямо определянията, резолюцията на представяне, U спрямо CMC (при изпитване — неприложимо).", "The three checks (Реш. 88): the declared mean against the determinations, the reporting resolution, U against CMC (not applicable in testing).")

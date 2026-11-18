@@ -33,10 +33,11 @@ export default function ExplorerShell({
         })}
       </div>
 
-      <div style={{ flex: 1, display: "flex", alignItems: "stretch", background: "var(--bg)" }}>
+      {/* on a phone the tree steps aside (R3) — the breadcrumb above leads to every folder */}
+      <div className="ui-explorer" style={{ flex: 1, display: "flex", alignItems: "stretch", background: "var(--bg)" }}>
         <Sidebar active={active} />
         {/* a section, not a second <main> — the app's chrome has the main (2.7) */}
-        <div style={{ flex: 1, minWidth: 0, padding: "24px 28px" }}>{children}</div>
+        <div className="ui-explorer-main">{children}</div>
       </div>
     </div>
   );

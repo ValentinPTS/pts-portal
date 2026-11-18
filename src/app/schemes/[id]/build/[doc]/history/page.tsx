@@ -49,7 +49,7 @@ export default async function DocHistoryPage({
       <Link href={`/schemes/${id}/build/${encodeURIComponent(doc)}`} className="text-sm" style={{ color: "var(--muted)" }}>
         ← {tr("hist.back")}
       </Link>
-      <h1 className="text-2xl font-bold mt-2" style={{ color: "var(--green-dark)" }}>
+      <h1 className="ui-h1 mt-2">
         {tr("hist.title")} <span className="text-base font-normal" style={{ color: "var(--muted)" }}>· {docName}</span>
       </h1>
       <p className="text-sm mt-1" style={{ color: "var(--muted)", maxWidth: 720 }}>{tr("hist.subtitle")}</p>

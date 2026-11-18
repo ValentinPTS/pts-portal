@@ -17,7 +17,7 @@ export default function StageBar({ lang, type, state, payment, compact }: { lang
   const ended = cur === null;
   const yours = labsTurn(state);
   return (
-    <div data-stage-bar={cur ?? "ended"} data-state={state} style={{ display: "flex", flexDirection: "column", gap: compact ? 6 : 14 }}>
+    <div data-stage-bar={cur ?? "ended"} data-state={state} className={compact ? undefined : "ui-path-box"} style={{ display: "flex", flexDirection: "column", gap: compact ? 6 : 14 }}>
       {ended ? (
         <span data-ended-state={state} className="ui-pill ui-pill-later" style={{ alignSelf: "flex-start" }}>
           {L(STATE_LABEL[state])}

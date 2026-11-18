@@ -37,7 +37,7 @@ import SkinPicker from "@/components/SkinPicker";
 import ManageMenu from "@/components/ManageMenu";
 import FolderActions from "@/components/FolderActions";
 import { skinsForTypeAsync } from "@/skins";
-import { TYPE_SLUG, typeLabel, schemeName, statusChip, ACCENT } from "@/lib/folders";
+import { TYPE_SLUG, typeLabel, schemeName, statusChip } from "@/lib/folders";
 import { markerLabels, schemeMarkers } from "@/lib/scheme-number";
 import SchemeLifecycle, { type ActButton, type StageRow } from "@/components/SchemeLifecycle";
 import { listSubmissions, submittedParticipantIds, listCorrections } from "@/lib/submissions";
@@ -61,6 +61,10 @@ import { waitingBeforeList } from "@/lib/waitlist-model";
 import { fmtSchemeDate } from "@/lib/scheme-dates";
 import { schemeNowMs, sofiaToday } from "@/lib/clock";
 import { ACTS, BACK_TO, STAGES, STATE_LABEL, actProblem, stageViews, tickProblem, untickProblem, tickerLabel, currentSecondAnnouncement, TICK_PROBLEM_TEXT, ACT_PROBLEM_TEXT, type ActKey } from "@/lib/lifecycle-model";
+import StepPath from "@/components/ui/StepPath";
+import NextStep from "@/components/ui/NextStep";
+import Icon from "@/components/ui/Icon";
+import type { IconName } from "@/lib/ui-icons";
 import SecondAnnouncementForm from "@/components/SecondAnnouncementForm";
 import CodingPanel from "@/components/CodingPanel";
 import { toCode, codingProblem, unfinished, objectsGiven, isProvisional, CODING_PROBLEM_TEXT } from "@/lib/coding-model";
@@ -97,7 +101,6 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
   const seesOrder = await mayViewDoc(ORDER_DOC, id);
   const type = s.type;
   const slug = TYPE_SLUG[type];
-  const ac = ACCENT[type];
   const st = statusChip(s.status, lang);
   const marks = markerLabels(schemeMarkers(s), lang === "bg" ? "bg" : "en");
   const skins = await skinsForTypeAsync(type);
@@ -156,6 +159,19 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
     };
   }));
   const canAct = await mayNow("scheme.edit", id);
+  // the redesign (R3, direction A): the scheme's six states as the path — orange where it is now for who may edit it,
+  // «Чака PTS» for who only reads; «Какво следва» — the next of the 19 stages not done yet, from the list itself
+  const PATH: { key: "draft" | "open" | "running" | "processing" | "report" | "closed"; bg: string; en: string; icon: IconName }[] = [
+    { key: "draft", bg: "Подготовка", en: "Preparation", icon: "doc" },
+    { key: "open", bg: "Записване", en: "Applications", icon: "people" },
+    { key: "running", bg: "Провеждане", en: "Running", icon: "truck" },
+    { key: "processing", bg: "Обработка", en: "Processing", icon: "chart" },
+    { key: "report", bg: "Доклад и сертификати", en: "Report and certificates", icon: "award" },
+    { key: "closed", bg: "Приключена", en: "Closed", icon: "check" },
+  ];
+  const pathAt = PATH.findIndex((x) => x.key === s.status);
+  const nextStage = stageRows.find((r) => r.current && !r.done && !r.skipped);
+  const nextState = pathAt >= 0 && pathAt < PATH.length - 1 ? PATH[pathAt + 1] : null;
   const mayReview = (await mayNow("results.read", id)) || (await mayNow("results.enter", id)) || (await mayNow("results.process", id));
   // the validation's recorders (8.1/8.3): the head and the quality manager
   const testable = testableRound(s);
@@ -411,8 +427,8 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
     >
       {/* header */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 4 }}>
-        <div style={{ flex: 1, minWidth: 240 }}>
-          <div style={{ fontFamily: "var(--font-sans)", fontWeight: 800, fontSize: 26, color: ac.accent, letterSpacing: "-.01em", lineHeight: 1.12 }}>{schemeName(s)}</div>
+        <div style={{ flex: "1 1 100%", minWidth: 0 }}>
+          <h1 style={{ margin: 0, fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: "clamp(26px, 2.4vw, 34px)", color: "var(--ink)", letterSpacing: "-.01em", lineHeight: 1.2 }}>{schemeName(s)}</h1>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
             <span style={{ fontSize: 14, color: "var(--muted)", fontWeight: 600 }}>{s.number}</span>
             <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, color: st.fg, background: st.bg }}>{st.label}</span>
@@ -423,13 +439,6 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <Link href={`/schemes/${id}/edit`} className="btn" style={{ fontSize: 13 }}>{tr("scheme.editData")}</Link>
-          <Link href={`/schemes/${id}/participants`} className="btn" style={{ fontSize: 13 }}>{tr("scheme.participants")}</Link>
-          <Link href={`/schemes/${id}/traceability`} className="btn" style={{ fontSize: 13 }}>{tr("trace.title")}</Link>
-          <Link href={`/schemes/${id}/editions`} className="btn" style={{ fontSize: 13 }}>{L("Редакции", "Editions")}</Link>
-          <Link href={`/schemes/${id}/amendments`} className="btn" style={{ fontSize: 13 }}>{L("Изменения", "Amendments")}{s.amendments?.length ? ` (${s.amendments.length})` : ""}</Link>
-          {type === "T" && <Link href={`/schemes/${id}/batches`} className="btn" style={{ fontSize: 13 }}>{L("Партиди", "Batches")}{s.batches?.length ? ` (${s.batches.length})` : ""}</Link>}
-          <Link href={`/schemes/${id}/results`} className="btn" style={{ fontSize: 13 }}>{tr("scheme.results")}</Link>
           <SkinPicker schemeId={id} current={s.skin ?? "classic"} skins={skins.map((k) => ({ id: k.meta.id, name: k.meta.name }))} />
           <ManageMenu label={L("Управление", "Manage")}>
             {canManage && <Link href={`/schemes/${id}/applications`} className="hoverrow" style={menuRow}>📥 {tr("scheme.applications")}</Link>}
@@ -446,6 +455,41 @@ export default async function SchemePage({ params, searchParams }: { params: Pro
           </ManageMenu>
         </div>
       </div>
+
+      {/* the redesign (R3): where the scheme is, what comes next, and everything about it as big tiles */}
+      {pathAt >= 0 ? (
+        <div className="ui-card" style={{ margin: "18px 0 16px" }}>
+          <StepPath lang={lg === "bg" ? "bg" : "en"} label={L("Етапи на схемата", "The scheme's stages")} steps={PATH.map((x, i) => ({
+            key: x.key, label: L(x.bg, x.en), icon: x.icon,
+            note: i === pathAt && x.key === "running" && goingOn.length ? `${withResults}/${goingOn.length} ${L("резултата", "results")}` : undefined,
+            state: i < pathAt || (i === pathAt && x.key === "closed") ? "done" as const : i === pathAt ? (canAct ? "now" as const : "wait" as const) : "later" as const,
+          }))} />
+        </div>
+      ) : (
+        <p className="ui-pill ui-pill-later" style={{ margin: "18px 0 16px" }} data-scheme-ended>{STATE_LABEL[s.status][lg]}</p>
+      )}
+      {s.status !== "closed" && s.status !== "not_held" && (nextStage ? (
+        <NextStep calm={!canAct} eyebrow={L("Какво следва", "What's next")} title={`${nextStage.no}. ${nextStage.title}`}
+          detail={nextStage.who ? L(`Отбелязва: ${nextStage.who}`, `Marked by: ${nextStage.who}`) : L("Прави се в портала — бутонът е при етапа.", "Done in the portal — its button is at the stage.")}>
+          <a href="#stages" className={canAct ? "ui-btn ui-btn-next" : "ui-btn"}>{L("Към етапите", "To the stages")}<Icon name="arrowRight" size={22} strokeWidth={2.4} /></a>
+        </NextStep>
+      ) : nextState && (
+        <NextStep calm={!canAct} eyebrow={L("Какво следва", "What's next")} title={L(`Етапите на «${STATE_LABEL[s.status][lg]}» са готови — следва «${nextState.bg}».`, `The stages of «${STATE_LABEL[s.status][lg]}» are done — next: «${nextState.en}».`)}>
+          <a href="#stages" className={canAct ? "ui-btn ui-btn-next" : "ui-btn"}>{L("Към етапите", "To the stages")}<Icon name="arrowRight" size={22} strokeWidth={2.4} /></a>
+        </NextStep>
+      ))}
+      <section style={{ margin: "18px 0 6px", display: "flex", flexDirection: "column", gap: 12 }} data-scheme-tiles>
+        <h2 style={{ margin: 0, fontSize: 24, fontWeight: 600 }}>{L("Всичко за схемата", "Everything about the scheme")}</h2>
+        <div className="ui-tiles">
+          <Link href={`/schemes/${id}/participants`} className="ui-tile"><Icon name="people" size={30} /><span className="ui-tile-name">{tr("scheme.participants")}</span><span className="ui-tile-sub">{participantsNow.length}</span></Link>
+          <Link href={`/schemes/${id}/results`} className="ui-tile"><Icon name="chart" size={30} /><span className="ui-tile-name">{tr("scheme.results")}</span>{goingOn.length > 0 && <span className="ui-tile-sub">{withResults} {L("от", "of")} {goingOn.length}</span>}</Link>
+          <Link href={`/schemes/${id}/traceability`} className="ui-tile"><Icon name="list" size={30} /><span className="ui-tile-name">{tr("trace.title")}</span><span className="ui-tile-sub">{L("Кой докъде е", "Who is where")}</span></Link>
+          <Link href={`/schemes/${id}/editions`} className="ui-tile"><Icon name="doc" size={30} /><span className="ui-tile-name">{L("Редакции", "Editions")}</span><span className="ui-tile-sub">{L("Издадените документи", "The issued documents")}</span></Link>
+          <Link href={`/schemes/${id}/amendments`} className="ui-tile"><Icon name="history" size={30} /><span className="ui-tile-name">{L("Изменения", "Amendments")}</span>{s.amendments?.length ? <span className="ui-tile-sub">{s.amendments.length}</span> : null}</Link>
+          {type === "T" && <Link href={`/schemes/${id}/batches`} className="ui-tile"><Icon name="box" size={30} /><span className="ui-tile-name">{L("Партиди", "Batches")}</span>{s.batches?.length ? <span className="ui-tile-sub">{s.batches.length}</span> : null}</Link>}
+          <Link href={`/schemes/${id}/edit`} className="ui-tile"><Icon name={canAct ? "pencil" : "info"} size={30} /><span className="ui-tile-name">{canAct ? tr("scheme.editData") : L("Данните на схемата", "The scheme's data")}</span><span className="ui-tile-sub">{L("Данни, екип, срокове", "Data, team, dates")}</span></Link>
+        </div>
+      </section>
 
       {/* progress */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, padding: "12px 16px", margin: "16px 0 6px", flexWrap: "wrap" }}>

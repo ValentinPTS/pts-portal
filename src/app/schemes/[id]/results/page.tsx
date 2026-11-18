@@ -71,7 +71,7 @@ export default async function ResultsPage({
       <Link href={`/schemes/${id}`} className="text-sm" style={{ color: "var(--muted)" }}>
         ← {s.number}
       </Link>
-      <h1 className="text-2xl font-bold mt-2" style={{ color: "var(--green-dark)" }}>
+      <h1 className="ui-h1 mt-2">
         {tr("results.title")}
       </h1>
       <p className="text-sm" style={{ color: "var(--muted)" }}>

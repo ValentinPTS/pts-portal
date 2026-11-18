@@ -393,6 +393,8 @@ body {
   display: flex; flex-wrap: wrap; gap: 20px 28px; align-items: center; justify-content: space-between;
   padding: 26px 30px; background: var(--turn-soft); border-radius: var(--leaf-card);
 }
+.ui-next-calm { background: var(--later-soft); border: 2px solid var(--later-line); }
+.ui-next-calm .ui-next-eyebrow { color: var(--later-ink); }
 .ui-next-text { display: flex; flex-direction: column; gap: 6px; flex: 1 1 320px; min-width: 0; }
 .ui-next-eyebrow { font-size: 15px; font-weight: 800; color: var(--turn-ink); text-transform: uppercase; letter-spacing: 0.06em; }
 .ui-next-title { font-size: 23px; font-weight: 700; color: var(--ink); }
@@ -432,6 +434,28 @@ body {
   .ui-path:not(.ui-path-compact) .ui-path-now .ui-path-dot { width: 60px; height: 60px; margin: 0 6px 0 0; }
   .ui-path:not(.ui-path-compact) .ui-path-wait .ui-path-dot { width: 56px; height: 56px; margin: 0 6px 0 0; }
 }
+/* the folder explorer (R3): the page beside the tree; on a phone the tree steps aside and the page has the width */
+.ui-explorer-main { flex: 1; min-width: 0; padding: 24px 28px; }
+@media (max-width: 700px) {
+  .ui-explorer > aside { display: none; }
+  .ui-explorer-main { padding: 20px 16px; }
+}
+/* the path in its box (R3): by the box's width, not the screen's — six steps beside the folder tree must not collide */
+.ui-path-box { container-type: inline-size; }
+@container (max-width: 900px) {
+  .ui-path:not(.ui-path-compact) { gap: 8px; }
+  .ui-path:not(.ui-path-compact) .ui-path-label { font-size: 16px; }
+  .ui-path:not(.ui-path-compact) .ui-path-now .ui-path-label { font-size: 17px; }
+}
+@container (max-width: 680px) {
+  .ui-path:not(.ui-path-compact) { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .ui-path:not(.ui-path-compact) > li { flex-direction: row; text-align: left; }
+  .ui-path:not(.ui-path-compact) .ui-path-label { font-size: 18px; }
+  .ui-path:not(.ui-path-compact) .ui-path-now .ui-path-label { font-size: 20px; }
+  .ui-path:not(.ui-path-compact) .ui-path-dot { width: 52px; height: 52px; }
+  .ui-path:not(.ui-path-compact) .ui-path-now .ui-path-dot { width: 60px; height: 60px; margin: 0 6px 0 0; }
+  .ui-path:not(.ui-path-compact) .ui-path-wait .ui-path-dot { width: 56px; height: 56px; margin: 0 6px 0 0; }
+}
 @media (prefers-reduced-motion: reduce) { .ui-btn { transition: none; } .ui-btn:hover { transform: none; } }
 
 /* ── Redesign R1 (2026-11-18): the frame — the top bar («Помощ», the notices, the language, who you are), the
@@ -448,6 +472,14 @@ body {
 .ui-tab:focus-visible { outline: 3px solid var(--turn); outline-offset: 2px; }
 .ui-tab.is-on { background: var(--done-soft); color: #2f4a1e; font-weight: 700; }
 .ui-tab.is-on .ui-icon { color: #2f4a1e; }
+/* big tiles (R3): «Всичко за схемата» — a picture, a name, a count; the whole tile is the link */
+.ui-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; }
+.ui-tile { display: flex; flex-direction: column; gap: 8px; padding: 20px 22px; background: #fff; border: 2px solid #e3e9de; border-radius: 28px 28px 28px 0; color: var(--ink); text-decoration: none; transition: border-color 0.15s, background 0.15s; }
+.ui-tile .ui-icon { color: #57823c; }
+.ui-tile:hover { border-color: #57823c; background: #f6f9f3; color: var(--ink); }
+.ui-tile:focus-visible { outline: 3px solid var(--turn); outline-offset: 2px; }
+.ui-tile-name { font-size: 19px; font-weight: 700; line-height: 1.25; }
+.ui-tile-sub { font-size: 15px; color: #555555; }
 /* a page's title (R2): big and clear, a short green line under it — as ptsbg.eu */
 .ui-h1 { font-size: clamp(28px, 3.6vw, 40px); font-weight: 700; line-height: 1.15; color: var(--ink); }
 .ui-h1::after { content: ""; display: block; width: 64px; height: 4px; border-radius: 2px; background: var(--done); margin-top: 12px; }

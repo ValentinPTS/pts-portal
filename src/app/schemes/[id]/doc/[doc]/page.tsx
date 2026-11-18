@@ -91,7 +91,7 @@ export default async function DocPage({
       <Link href={`/schemes/${id}`} className="text-sm" style={{ color: "var(--muted)" }}>
         ← {s.number}
       </Link>
-      <h1 className="text-2xl font-bold mt-2" style={{ color: "var(--green-dark)" }}>
+      <h1 className="ui-h1 mt-2">
         {docName}{" "}
         {def.formNumber && <span className="text-sm font-normal" style={{ color: "var(--muted)" }}>· {def.formNumber}</span>}
       </h1>

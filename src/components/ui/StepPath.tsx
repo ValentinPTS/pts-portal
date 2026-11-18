@@ -8,9 +8,9 @@ export type PathStep = { key: string; label: string; state: StepState; note?: st
 // Redesign R0 — «Пътека от стъпки» (direction A): where the person is, in big steps — done (green, a tick), now
 // (orange, larger, a ring), later (grey, dashed). Each step says its state in words; the current one is the page's
 // current step for a screen reader. `compact`: one line for the top of a page («докъде сте»), the state words for a
-// screen reader, the current step's note shown («Ваш ред сега» or «Чака PTS»). On a phone the full path stands up, one step per line.
+// screen reader, the current step's note shown («Ваш ред сега» or «Чака PTS»). The full path sits in a box it measures (ui-path-box): in a narrow one — a phone, or beside the folder tree — it stands up, one step per line.
 export default function StepPath({ steps, label, lang, compact = false }: { steps: readonly PathStep[]; label: string; lang: "bg" | "en"; compact?: boolean }) {
-  return (
+  const path = (
     <ol className={`ui-path${compact ? " ui-path-compact" : ""}`} aria-label={label} data-step-path style={{ "--ui-path-n": steps.length } as CSSProperties}>
       {steps.map((s, i) => (
         <li key={s.key} className={`ui-path-${s.state}`} data-step={s.key} data-step-state={s.state} aria-current={s.state === "now" || s.state === "wait" ? "step" : undefined}>
@@ -30,4 +30,5 @@ export default function StepPath({ steps, label, lang, compact = false }: { step
       ))}
     </ol>
   );
+  return compact ? path : <div className="ui-path-box">{path}</div>;
 }

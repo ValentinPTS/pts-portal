@@ -56,7 +56,7 @@ export default async function ApplicationsPage({
       <Link href={`/schemes/${id}`} className="text-sm" style={{ color: "var(--muted)" }}>
         ← {s.number}
       </Link>
-      <h1 className="text-2xl font-bold mt-2" style={{ color: "var(--green-dark)" }}>
+      <h1 className="ui-h1 mt-2">
         {tr("apps.title")}{" "}
         <span className="text-base font-normal" style={{ color: "var(--muted)" }}>
           · {pending.length} {tr("apps.pending")} / {apps.length} {tr("apps.total")}

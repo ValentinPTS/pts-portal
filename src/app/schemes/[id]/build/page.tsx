@@ -28,7 +28,7 @@ export default async function BuildIndex({
       <Link href={`/schemes/${id}`} className="text-sm" style={{ color: "var(--muted)" }}>
         ← {s.number}
       </Link>
-      <h1 className="text-3xl font-bold mt-2" style={{ color: "var(--green-dark)", letterSpacing: "-0.01em" }}>
+      <h1 className="ui-h1 mt-2">
         {tr("build.title")}
       </h1>
       <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>

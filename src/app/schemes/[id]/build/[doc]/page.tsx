@@ -121,7 +121,7 @@ export default async function BuildDocPage({
           {tr("hist.link")}
         </Link>
       </div>
-      <h1 className="text-3xl font-bold mt-1 mb-4" style={{ color: "var(--green-dark)", letterSpacing: "-0.01em" }}>
+      <h1 className="ui-h1 mt-1 mb-4">
         {canEdit ? tr("build.prefix") : lang === "bg" ? "Документ" : "Document"}: {(lang === "bg" ? def?.nameBg : def?.nameEn) ?? doc}
       </h1>
       <WordEditor

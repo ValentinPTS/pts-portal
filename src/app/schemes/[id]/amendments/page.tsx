@@ -37,7 +37,7 @@ export default async function AmendmentsPage({ params }: { params: Promise<{ id:
   return (
     <div>
       <Link href={`/schemes/${id}`} className="text-sm" style={{ color: "var(--muted)" }}>← {s.number}</Link>
-      <h1 className="text-2xl font-bold mt-2" style={{ color: "var(--green-dark)" }}>{L("Изменения", "Amendments")}</h1>
+      <h1 className="ui-h1 mt-2">{L("Изменения", "Amendments")}</h1>
       <p className="text-sm mt-1" style={{ color: "var(--muted)", maxWidth: 780 }}>
         {L(
           "Промени в утвърдения план и в публикуваната покана, включително в сроковете, се правят със заповед за изменение на ръководителя на РТ провайдъра. Изменените план и покана се издават като нови редакции с отбелязване на изменението; предишните редакции остават. Участниците се уведомяват. Закъснение на превозвач не удължава срок само по себе си (Реш. 154).",

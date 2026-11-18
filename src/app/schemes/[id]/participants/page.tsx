@@ -137,7 +137,7 @@ export default async function ParticipantsPage({
       <Link href={`/schemes/${id}`} className="text-sm" style={{ color: "var(--muted)" }}>
         ← {s.number}
       </Link>
-      <h1 className="text-2xl font-bold mt-2" style={{ color: "var(--green-dark)" }}>
+      <h1 className="ui-h1 mt-2">
         {tr("scheme.participants")}{" "}
         <span className="text-base font-normal" style={{ color: "var(--muted)" }}>
           · <span data-in-round-count={inRoundParts.length}>{inRoundParts.length}</span>{participants.length > inRoundParts.length && <span style={{ color: "var(--muted)" }}> {L(`(+${participants.length - inRoundParts.length} извън кръга)`, `(+${participants.length - inRoundParts.length} out of the round)`)}</span>}{max !== undefined && <span data-max-participants title={L("Участници и чакащи заявки / максимален брой", "Participants and pending applications / maximum")}> ({L("със заявките", "with applications")} {taken} / {max})</span>}

@@ -39,7 +39,7 @@ export default async function SchemeBatchesPage({ params }: { params: Promise<{ 
   return (
     <div>
       <Link href={`/schemes/${id}`} className="text-sm" style={{ color: "var(--muted)" }}>← {s.number}</Link>
-      <h1 className="text-2xl font-bold mt-2" style={{ color: "var(--green-dark)" }}>{L("Обекти и партиди", "Objects and batches")}</h1>
+      <h1 className="ui-h1 mt-2">{L("Обекти и партиди", "Objects and batches")}</h1>
       {s.type === "C" ? (
         <div className="card p-4 mt-4" data-no-batch>
           {L("При схема за калибриране партида няма: един калибрационен обект обикаля между лабораториите и записите се водят за него — във веригата на схемата (Реш. 151).",
